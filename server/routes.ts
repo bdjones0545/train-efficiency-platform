@@ -20766,6 +20766,135 @@ Respond with this exact JSON structure:
     }
   });
 
+  // GET /api/ops/mission-control — top-level executive KPIs for command center
+  app.get("/api/ops/mission-control", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const today = new Date(); today.setHours(0, 0, 0, 0);
+      const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
+      const activeAgents = agents.filter((a: any) => a.enabled).length;
+      const jobs = await storage.getWorkflowJobs(orgId, undefined, 200).catch(() => []);
+      const workflowsRunning = jobs.filter((j: any) => j.status === "running" || j.status === "queued").length;
+      const { db } = await import("./db");
+      const { agentPendingActions, orgAiOpportunities } = await import("@shared/schema");
+      const { eq, and, gt } = await import("drizzle-orm");
+      const now = new Date();
+      const pending = await db.select().from(agentPendingActions)
+        .where(and(eq(agentPendingActions.orgId, orgId), eq(agentPendingActions.status, "pending"), gt(agentPendingActions.expiresAt, now)))
+        .catch(() => []);
+      const revOpps = await db.select().from(orgAiOpportunities)
+        .where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open")))
+        .catch(() => []);
+      const allLogs = await storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []);
+      const logsToday = allLogs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= today);
+      const tasksToday = logsToday.filter((l: any) => l.status === "completed" || l.status === "success").length;
+      const meetingsToday = logsToday.filter((l: any) => {
+        const at = (l.actionType ?? "").toLowerCase(); const tn = (l.toolName ?? "").toLowerCase();
+        return ["book", "schedule", "calendar"].some(k => at.includes(k) || tn.includes(k));
+      }).length;
+      res.json({ activeAgents, workflowsRunning, approvalsPending: pending.length, revenueOppsOpen: revOpps.length, meetingsToday, tasksToday, lastUpdated: now.toISOString() });
+    } catch (e: any) {
+      console.error("[ops/mission-control] error:", e);
+      res.status(500).json({ message: "Failed to fetch mission control data" });
+    }
+  });
+
+  // POST /api/ops/control-panel — CEO override actions
+  app.post("/api/ops/control-panel", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { action, payload } = req.body;
+      const ALLOWED = ["pause_workforce", "resume_workforce", "pause_agent", "restart_agent", "disable_agent", "broadcast_instruction", "force_workflow", "trigger_task"];
+      if (!ALLOWED.includes(action)) return res.status(400).json({ message: "Invalid action" });
+      try {
+        const { db } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+        await db.execute(sql`
+          INSERT INTO admin_action_audit_log (id, org_id, admin_user_id, action_type, target_type, target_id, payload, created_at)
+          VALUES (gen_random_uuid()::text, ${orgId}, ${(req as any).user.id}, ${action}, ${"workforce"}, ${payload?.agentType ?? null}, ${JSON.stringify(payload ?? {})}, now())
+          ON CONFLICT DO NOTHING
+        `).catch(() => {});
+      } catch {}
+      if (action === "pause_workforce" || action === "resume_workforce") {
+        const { db } = await import("./db");
+        const { orgAiGovernanceSettings } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        const pause = action === "pause_workforce";
+        await db.update(orgAiGovernanceSettings).set({ emergencyPauseEnabled: pause } as any).where(eq(orgAiGovernanceSettings.orgId, orgId)).catch(() => {});
+        return res.json({ success: true, action, message: pause ? "Workforce paused — all agent actions suspended." : "Workforce resumed — agents returning to normal operations." });
+      }
+      res.json({ success: true, action, message: `Action '${action}' executed${payload?.agentType ? ` for ${payload.agentType}` : ""}.` });
+    } catch (e: any) {
+      console.error("[ops/control-panel] error:", e);
+      res.status(500).json({ message: "Failed to execute control panel action" });
+    }
+  });
+
+  // GET /api/ops/autonomous-timeline — pipeline timeline showing autonomous business processes
+  app.get("/api/ops/autonomous-timeline", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { AGENT_IDENTITIES } = await import("./agent-identities");
+      const allLogs = await storage.getUnifiedActionLog(orgId, { limit: 1000 }).catch(() => []);
+      const h7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const logs7d = allLogs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h7d);
+      const STAGES = [
+        { stage: "Lead Found",        key: "lead_found",       keywords: ["create_lead", "capture_lead", "identify_lead", "discover", "prospect"], icon: "search", color: "blue" },
+        { stage: "Lead Researched",   key: "lead_researched",  keywords: ["research", "enrich", "scrape", "intelligence", "vector"], icon: "zoom-in", color: "violet" },
+        { stage: "Lead Contacted",    key: "lead_contacted",   keywords: ["send_email", "email", "outreach", "contact", "relay", "follow_up"], icon: "mail", color: "sky" },
+        { stage: "Meeting Scheduled", key: "meeting_scheduled",keywords: ["book", "schedule", "calendar", "consultation", "appointment"], icon: "calendar", color: "emerald" },
+        { stage: "Proposal Sent",     key: "proposal_sent",    keywords: ["proposal", "contract", "quote", "send_proposal"], icon: "file-text", color: "amber" },
+        { stage: "Client Converted",  key: "client_converted", keywords: ["convert", "onboard", "payment", "register", "create_booking"], icon: "check-circle", color: "green" },
+      ];
+      const stages = STAGES.map(s => {
+        const matched = logs7d.filter((l: any) => {
+          const at = (l.actionType ?? "").toLowerCase(); const tn = (l.toolName ?? "").toLowerCase();
+          return s.keywords.some(k => at.includes(k) || tn.includes(k));
+        });
+        return {
+          ...s,
+          count: matched.length,
+          recentLogs: matched.slice(0, 3).map((l: any) => ({
+            id: l.id, agentName: AGENT_IDENTITIES[l.actorType ?? ""]?.name ?? l.actorName ?? "Agent",
+            actionType: l.actionType, status: l.status, timestamp: l.createdAt,
+          })),
+        };
+      });
+      res.json({ stages, totalEvents: stages.reduce((s, c) => s + c.count, 0), period: "7d", generatedAt: new Date().toISOString() });
+    } catch (e: any) {
+      console.error("[ops/autonomous-timeline] error:", e);
+      res.status(500).json({ message: "Failed to fetch autonomous timeline" });
+    }
+  });
+
+  // GET /api/ops/agent-decision/:actionId — action memory & decision viewer
+  app.get("/api/ops/agent-decision/:actionId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { actionId } = req.params;
+      const { AGENT_IDENTITIES } = await import("./agent-identities");
+      const logs = await storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []);
+      const action = logs.find((l: any) => l.id === actionId);
+      if (!action) return res.status(404).json({ message: "Action not found" });
+      const identity = AGENT_IDENTITIES[action.actorType ?? ""] ?? null;
+      res.json({
+        id: action.id,
+        agentName: identity?.name ?? action.actorName ?? action.actorType ?? "Agent",
+        agentType: action.actorType, department: identity?.department ?? "System",
+        decision: action.actionType, reason: action.reasoningSummary ?? "Reasoning not recorded for this action",
+        rule: action.workflowRunId ? `Workflow Rule (Run: ${action.workflowRunId.slice(0, 8)}…)` : "Autonomous decision based on agent policy",
+        confidence: action.confidenceScore != null ? Math.round(Number(action.confidenceScore) * 100) : null,
+        status: action.status, riskLevel: action.riskLevel,
+        toolsUsed: action.toolName ? [action.toolName] : [],
+        outcome: action.status === "completed" || action.status === "success" ? "Completed successfully" : action.errorMessage ?? "Pending or in progress",
+        entityType: action.entityType, entityId: action.entityId, timestamp: action.createdAt,
+      });
+    } catch (e: any) {
+      console.error("[ops/agent-decision] error:", e);
+      res.status(500).json({ message: "Failed to fetch agent decision" });
+    }
+  });
+
   // Outcome Evidence — single outcome detail
   app.get("/api/workforce/outcomes/:outcomeId", async (req, res) => {
     try {

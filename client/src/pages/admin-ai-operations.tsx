@@ -1,966 +1,1391 @@
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { RecentAgentActivity } from "@/components/recent-agent-activity";
-import { OrgMemoryFeed, OutcomeAnalyticsPanel } from "@/components/workflow-memory-panel";
-import { SetupProgressWidget } from "@/components/setup-progress-widget";
-import { TrustSignalsWidget } from "@/components/trust-signals-widget";
-import { RecommendationPanel } from "@/components/recommendation-panel";
+import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Inbox, Brain, ShieldAlert, Activity, GitBranch, Plug, Zap,
-  AlertTriangle, CheckCircle, XCircle, Clock, ArrowRight, RefreshCw,
-  TrendingUp, BarChart3, AlertCircle, CircleDot, Timer, Cpu, Archive,
-  Layers, SkipForward, Ban, Repeat, Users, Sliders, BarChart2,
-  Shield, Eye, Lightbulb, Wrench, Globe, ChevronRight,
+  Activity, Brain, Clock, CheckCircle, XCircle, AlertCircle,
+  ArrowLeft, RefreshCw, CircleDot, TrendingUp, GitBranch, Users,
+  Mail, Calendar, Search, FileText, ChevronRight, ChevronDown, X,
+  Play, Pause, RotateCcw, StopCircle, Zap, Radio, Eye,
+  BarChart3, Shield, DollarSign, MessageSquare, Target, Cpu,
+  AlertTriangle, Filter, Check, Layers, Timer, Award, Crosshair,
+  BrainCircuit, SlidersHorizontal, SkipForward, Ban,
 } from "lucide-react";
 import { formatDistanceToNow, format } from "date-fns";
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// ─── Static agent metadata ─────────────────────────────────────────────────────
 
-type AttentionItem = {
-  id: string;
-  level: string;
-  category: string;
-  title: string;
-  body: string | null;
-  status: string;
-  createdAt: string;
+const AGENT_META: Record<string, { name: string; dept: string; color: string; initials: string }> = {
+  relay_agent:   { name: "Relay",  dept: "Communications",       color: "bg-blue-500",    initials: "RL" },
+  pulse_agent:   { name: "Pulse",  dept: "Client Success",       color: "bg-emerald-500", initials: "PS" },
+  tempo_agent:   { name: "Tempo",  dept: "Scheduling",           color: "bg-violet-500",  initials: "TM" },
+  apex_agent:    { name: "Apex",   dept: "Revenue",              color: "bg-amber-500",   initials: "AX" },
+  vector_agent:  { name: "Vector", dept: "Research",             color: "bg-pink-500",    initials: "VC" },
+  atlas_agent:   { name: "Atlas",  dept: "Executive Intelligence",color: "bg-slate-600",   initials: "AT" },
+  ceo_heartbeat: { name: "CEO Heartbeat", dept: "Executive",     color: "bg-primary",     initials: "CH" },
 };
 
-type WorkflowRun = {
-  id: string;
-  workflowType: string | null;
-  displayName: string | null;
-  workflowTemplateKey: string | null;
-  status: string;
-  startedAt: string | null;
-  updatedAt: string | null;
-  failureReason: string | null;
-  error: string | null;
+const STATUS_CONFIG: Record<string, { icon: typeof CheckCircle; color: string; bg: string; label: string; pulse?: boolean }> = {
+  running:           { icon: CircleDot,    color: "text-blue-500",    bg: "bg-blue-500/10",    label: "Running",    pulse: true },
+  active:            { icon: CircleDot,    color: "text-blue-500",    bg: "bg-blue-500/10",    label: "Active",     pulse: true },
+  completed:         { icon: CheckCircle,  color: "text-emerald-500", bg: "bg-emerald-500/10", label: "Completed" },
+  success:           { icon: CheckCircle,  color: "text-emerald-500", bg: "bg-emerald-500/10", label: "Completed" },
+  failed:            { icon: XCircle,      color: "text-rose-500",    bg: "bg-rose-500/10",    label: "Failed" },
+  error:             { icon: XCircle,      color: "text-rose-500",    bg: "bg-rose-500/10",    label: "Error" },
+  pending:           { icon: Clock,        color: "text-amber-500",   bg: "bg-amber-500/10",   label: "Pending" },
+  pending_approval:  { icon: Clock,        color: "text-amber-500",   bg: "bg-amber-500/10",   label: "Needs Approval" },
+  queued:            { icon: Timer,        color: "text-slate-500",   bg: "bg-slate-500/10",   label: "Queued" },
+  idle:              { icon: Timer,        color: "text-slate-400",   bg: "bg-slate-400/10",   label: "Idle" },
+  paused:            { icon: Pause,        color: "text-orange-500",  bg: "bg-orange-500/10",  label: "Paused" },
 };
 
-type ActionEntry = {
-  id: string;
-  actorType: string;
-  actorName: string | null;
-  actionType: string;
-  toolName: string | null;
-  status: string;
-  riskLevel: string | null;
-  reasoningSummary: string | null;
-  errorMessage: string | null;
-  createdAt: string;
-};
+const TABS = [
+  { id: "feed",       label: "Live Feed",    icon: Activity },
+  { id: "agents",     label: "Agents",       icon: Brain },
+  { id: "workflows",  label: "Workflows",    icon: GitBranch },
+  { id: "revenue",    label: "Revenue",      icon: DollarSign },
+  { id: "approvals",  label: "Approvals",    icon: Clock },
+  { id: "analytics",  label: "Analytics",    icon: BarChart3 },
+  { id: "memory",     label: "Memory",       icon: BrainCircuit },
+  { id: "controls",   label: "CEO Controls", icon: SlidersHorizontal },
+  { id: "timeline",   label: "Timeline",     icon: Layers },
+] as const;
 
-type ActionSummary = {
-  total: number;
-  failed: number;
-  completed: number;
-  requiresApproval: number;
-};
+type TabId = typeof TABS[number]["id"];
 
-type DashboardData = {
-  attentionItems: AttentionItem[];
-  activeWorkflows: WorkflowRun[];
-  failedWorkflows: WorkflowRun[];
-  stuckWorkflows: WorkflowRun[];
-  recentActions: ActionEntry[];
-  actionSummary: ActionSummary;
-  openAttentionCount: number;
-};
+// ─── Shared helper components ──────────────────────────────────────────────────
 
-type JobQueueStats = {
-  queued: number;
-  running: number;
-  retrying: number;
-  dead_letter: number;
-  stuck: number;
-  runner?: { isRunning: boolean; lastCycleAt: string | null; cyclesCompleted: number };
-};
+function AgentChip({ agentType, size = "sm" }: { agentType: string; size?: "sm" | "xs" }) {
+  const m = AGENT_META[agentType];
+  const sz = size === "xs" ? "h-5 w-5 text-[9px]" : "h-7 w-7 text-[10px]";
+  return (
+    <div className={`${sz} ${m?.color ?? "bg-slate-500"} rounded-md flex items-center justify-center text-white font-bold shrink-0`}>
+      {m?.initials ?? agentType.slice(0, 2).toUpperCase()}
+    </div>
+  );
+}
 
-// ─── Sub-components ───────────────────────────────────────────────────────────
+function StatusBadge({ status, size = "sm" }: { status: string; size?: "sm" | "xs" }) {
+  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
+  const Icon = cfg.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${cfg.color} ${cfg.bg}`}>
+      {cfg.pulse ? (
+        <span className="relative flex h-2 w-2">
+          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-60 ${cfg.color.replace("text-", "bg-")}`} />
+          <span className={`relative inline-flex rounded-full h-2 w-2 ${cfg.color.replace("text-", "bg-")}`} />
+        </span>
+      ) : (
+        <Icon className="h-2.5 w-2.5" />
+      )}
+      {cfg.label}
+    </span>
+  );
+}
 
-const LEVEL_CONFIG: Record<string, { color: string; bg: string }> = {
-  critical: { color: "text-red-600 dark:text-red-400", bg: "bg-red-50 dark:bg-red-900/20" },
-  important: { color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-50 dark:bg-orange-900/20" },
-  suggested: { color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/20" },
-  informational: { color: "text-gray-600 dark:text-gray-400", bg: "bg-gray-50 dark:bg-gray-900/20" },
-};
+// ─── Mission Control Strip ─────────────────────────────────────────────────────
 
-const WORKFLOW_STATUS_CONFIG: Record<string, { icon: typeof Clock; color: string; label: string }> = {
-  running: { icon: CircleDot, color: "text-blue-500", label: "Running" },
-  pending: { icon: Clock, color: "text-amber-500", label: "Pending" },
-  failed: { icon: XCircle, color: "text-red-500", label: "Failed" },
-  completed: { icon: CheckCircle, color: "text-green-500", label: "Done" },
-};
+function MissionControlStrip() {
+  const { data, isLoading, refetch, isFetching } = useQuery<any>({
+    queryKey: ["/api/ops/mission-control"],
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
 
-function StatCard({
-  label, value, icon: Icon, color, href,
-}: { label: string; value: number | string; icon: typeof Cpu; color: string; href?: string }) {
-  const content = (
-    <Card
-      className="hover:shadow-md transition-shadow cursor-pointer"
-      data-testid={`stat-card-${label.toLowerCase().replace(/\s+/g, "-")}`}
-    >
-      <CardContent className="pt-4 pb-4 px-5">
-        <div className="flex items-center justify-between">
+  const kpis = [
+    { label: "Active Agents",       value: data?.activeAgents ?? 0,       icon: Brain,      color: "text-blue-600 dark:text-blue-400",   bg: "bg-blue-500/10",   accent: "border-blue-500/20" },
+    { label: "Workflows Running",   value: data?.workflowsRunning ?? 0,   icon: GitBranch,  color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-500/10", accent: "border-violet-500/20" },
+    { label: "Approvals Pending",   value: data?.approvalsPending ?? 0,   icon: Clock,      color: data?.approvalsPending > 0 ? "text-amber-600 dark:text-amber-400" : "text-emerald-600 dark:text-emerald-400", bg: data?.approvalsPending > 0 ? "bg-amber-500/10" : "bg-emerald-500/10", accent: "border-amber-500/20" },
+    { label: "Revenue Opps Open",   value: data?.revenueOppsOpen ?? 0,   icon: TrendingUp, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-500/10", accent: "border-emerald-500/20" },
+    { label: "Meetings Today",      value: data?.meetingsToday ?? 0,      icon: Calendar,   color: "text-sky-600 dark:text-sky-400",      bg: "bg-sky-500/10",    accent: "border-sky-500/20" },
+    { label: "Tasks Completed",     value: data?.tasksToday ?? 0,        icon: CheckCircle,color: "text-green-600 dark:text-green-400",   bg: "bg-green-500/10",  accent: "border-green-500/20" },
+  ];
+
+  return (
+    <div className="bg-card border rounded-xl p-4" data-testid="section-mission-control">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <div className="h-7 w-7 rounded-lg bg-primary/10 flex items-center justify-center">
+            <Crosshair className="h-4 w-4 text-primary" />
+          </div>
           <div>
-            <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{label}</p>
-            <p className={`text-2xl font-bold mt-1 ${color}`}>{value}</p>
+            <h2 className="text-sm font-semibold">Executive Mission Control</h2>
+            <p className="text-[10px] text-muted-foreground">
+              Live operations snapshot
+              {data?.lastUpdated && ` · Updated ${formatDistanceToNow(new Date(data.lastUpdated), { addSuffix: true })}`}
+            </p>
           </div>
-          <div className={`p-2.5 rounded-lg bg-current/10 ${color}`}>
-            <Icon className="h-5 w-5" />
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-  return href ? <Link href={href}>{content}</Link> : content;
-}
-
-function AttentionRow({ item }: { item: AttentionItem }) {
-  const cfg = LEVEL_CONFIG[item.level] ?? LEVEL_CONFIG.informational;
-  return (
-    <div className="flex items-start gap-3 py-2.5 border-b border-border/50 last:border-0" data-testid={`attention-row-${item.id}`}>
-      <AlertCircle className={`h-4 w-4 mt-0.5 shrink-0 ${cfg.color}`} />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium line-clamp-1">{item.title}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {item.category} · {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
-        </p>
-      </div>
-      <Badge variant="outline" className={`text-xs shrink-0 ${cfg.color}`}>{item.level}</Badge>
-    </div>
-  );
-}
-
-function WorkflowRow({ wf, isStuck }: { wf: WorkflowRun; isStuck?: boolean }) {
-  const status = isStuck ? "running" : wf.status;
-  const cfg = WORKFLOW_STATUS_CONFIG[status] ?? WORKFLOW_STATUS_CONFIG.pending;
-  const StatusIcon = cfg.icon;
-  const name = wf.displayName ?? wf.workflowTemplateKey ?? wf.workflowType ?? "Unnamed Workflow";
-
-  return (
-    <div className="flex items-start gap-3 py-2.5 border-b border-border/50 last:border-0" data-testid={`workflow-row-${wf.id}`}>
-      <StatusIcon className={`h-4 w-4 mt-0.5 shrink-0 ${isStuck ? "text-amber-500" : cfg.color}`} />
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium line-clamp-1">{name}</p>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {isStuck ? "Stuck >30 min" : cfg.label}
-          {wf.updatedAt && ` · ${formatDistanceToNow(new Date(wf.updatedAt), { addSuffix: true })}`}
-        </p>
-        {wf.failureReason && <p className="text-xs text-red-500 mt-0.5 line-clamp-1">{wf.failureReason}</p>}
-        {wf.error && !wf.failureReason && <p className="text-xs text-red-500 mt-0.5 line-clamp-1">{wf.error}</p>}
-      </div>
-    </div>
-  );
-}
-
-// ─── Scorecard Types ──────────────────────────────────────────────────────────
-
-type ScorecardData = {
-  agents: { running: number; paused: number; failed: number; lastActivityAt: string | null; successRate: number };
-  revenue: { upsellCount: number; estimatedLiftCents: number };
-  churn: { highRisk: number; mediumRisk: number; total: number };
-  alerts: { critical: number; important: number; total: number; unresolved: number };
-  integrations: { connected: number; total: number; error: number; degraded: number; items: { type: string; displayName: string; status: string }[] };
-  healthScore: { score: number; revenueIntelligence: string; automations: string; integrations: string; alerts: string };
-};
-
-// ─── Scorecard Helper ─────────────────────────────────────────────────────────
-
-function statusColor(status: string) {
-  if (status === "critical") return "text-red-500";
-  if (status === "warning") return "text-amber-500";
-  return "text-green-500";
-}
-
-function statusDot(status: string) {
-  if (status === "critical") return "bg-red-500";
-  if (status === "warning") return "bg-amber-500";
-  return "bg-green-500";
-}
-
-function integrationStatusColor(status: string) {
-  if (status === "error") return "text-red-500";
-  if (status === "degraded") return "text-amber-500";
-  if (status === "connected") return "text-green-500";
-  return "text-muted-foreground";
-}
-
-function integrationStatusDot(status: string) {
-  if (status === "error") return "bg-red-500";
-  if (status === "degraded") return "bg-amber-500";
-  if (status === "connected") return "bg-green-500";
-  return "bg-muted-foreground";
-}
-
-const INTEGRATION_LABELS: Record<string, string> = {
-  gmail: "Gmail",
-  google_calendar: "Calendar",
-  slack: "Slack",
-  meta_ads: "Meta",
-  stripe: "Stripe",
-  hubspot: "HubSpot",
-};
-
-// ─── Scorecard Component ──────────────────────────────────────────────────────
-
-function AiOpsScorecard() {
-  const { data, isLoading } = useQuery<ScorecardData>({
-    queryKey: ["/api/ai-ops/scorecard"],
-    refetchInterval: 60000,
-    staleTime: 30000,
-  });
-
-  const healthScore = data?.healthScore.score ?? 0;
-  const healthColor =
-    healthScore >= 85 ? "text-green-500" : healthScore >= 65 ? "text-amber-500" : "text-red-500";
-  const healthRingColor =
-    healthScore >= 85 ? "stroke-green-500" : healthScore >= 65 ? "stroke-amber-500" : "stroke-red-500";
-
-  const circumference = 2 * Math.PI * 20;
-  const dashOffset = circumference - (healthScore / 100) * circumference;
-
-  return (
-    <div data-testid="ai-ops-scorecard" className="space-y-3">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
-          <BarChart3 className="h-3.5 w-3.5" />
-          Executive Scorecard
-        </p>
-        {!isLoading && data && (
-          <span className={`text-xs font-semibold ${healthColor}`}>
-            AI Health: {healthScore}/100
-          </span>
-        )}
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
-        {/* ── Card 1: Active Agents ───────────────────────────────────────── */}
-        <Link href="/admin/workflows">
-          <div
-            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
-            data-testid="scorecard-agents"
-          >
-            <div className="flex items-center gap-2 px-3 py-2 bg-blue-500/10 border-b border-blue-500/20">
-              <GitBranch className="h-3.5 w-3.5 text-blue-500" />
-              <span className="text-xs font-semibold text-blue-600 dark:text-blue-400">Active Agents</span>
-            </div>
-            <div className="px-3 py-2.5">
-              {isLoading ? (
-                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
-              ) : (
-                <>
-                  <p className="text-2xl font-bold text-blue-600 dark:text-blue-400">
-                    {(data?.agents.running ?? 0) + (data?.agents.paused ?? 0)}
-                  </p>
-                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
-                    <div className="flex justify-between">
-                      <span className="flex items-center gap-1"><CircleDot className="h-2.5 w-2.5 text-green-500" /> Running</span>
-                      <span className="font-medium">{data?.agents.running ?? 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="flex items-center gap-1"><Timer className="h-2.5 w-2.5 text-amber-500" /> Paused</span>
-                      <span className="font-medium">{data?.agents.paused ?? 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="flex items-center gap-1"><XCircle className="h-2.5 w-2.5 text-red-500" /> Failed</span>
-                      <span className="font-medium">{data?.agents.failed ?? 0}</span>
-                    </div>
-                  </div>
-                  {data?.agents.lastActivityAt && (
-                    <p className="mt-1.5 text-[10px] text-muted-foreground/70 truncate">
-                      Last: {formatDistanceToNow(new Date(data.agents.lastActivityAt), { addSuffix: true })}
-                    </p>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-        </Link>
-
-        {/* ── Card 2: Revenue Opportunities ───────────────────────────────── */}
-        <Link href="/admin/recommendations">
-          <div
-            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
-            data-testid="scorecard-revenue"
-          >
-            <div className="flex items-center gap-2 px-3 py-2 bg-emerald-500/10 border-b border-emerald-500/20">
-              <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-              <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">Revenue</span>
-            </div>
-            <div className="px-3 py-2.5">
-              {isLoading ? (
-                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
-              ) : (
-                <>
-                  <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
-                    {data?.revenue.upsellCount ?? 0}
-                  </p>
-                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
-                    <div className="flex justify-between">
-                      <span>Upsell Opps</span>
-                      <span className="font-medium">{data?.revenue.upsellCount ?? 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Est. Lift</span>
-                      <span className="font-medium text-emerald-600 dark:text-emerald-400">
-                        ${((data?.revenue.estimatedLiftCents ?? 0) / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}
-                      </span>
-                    </div>
-                  </div>
-                  <p className="mt-1.5 text-[10px] text-muted-foreground/70">Upsell opportunities identified</p>
-                </>
-              )}
-            </div>
-          </div>
-        </Link>
-
-        {/* ── Card 3: Churn Risks ─────────────────────────────────────────── */}
-        <Link href="/admin/attention">
-          <div
-            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
-            data-testid="scorecard-churn"
-          >
-            <div className="flex items-center gap-2 px-3 py-2 bg-orange-500/10 border-b border-orange-500/20">
-              <Users className="h-3.5 w-3.5 text-orange-500" />
-              <span className="text-xs font-semibold text-orange-600 dark:text-orange-400">Churn Risk</span>
-            </div>
-            <div className="px-3 py-2.5">
-              {isLoading ? (
-                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
-              ) : (
-                <>
-                  <p className={`text-2xl font-bold ${(data?.churn.highRisk ?? 0) > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}`}>
-                    {data?.churn.total ?? 0}
-                  </p>
-                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
-                    <div className="flex justify-between">
-                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-red-500 inline-block" /> High</span>
-                      <span className="font-medium text-red-500">{data?.churn.highRisk ?? 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-full bg-amber-500 inline-block" /> Medium</span>
-                      <span className="font-medium text-amber-500">{data?.churn.mediumRisk ?? 0}</span>
-                    </div>
-                  </div>
-                  <p className="mt-1.5 text-[10px] text-muted-foreground/70">Clients at retention risk</p>
-                </>
-              )}
-            </div>
-          </div>
-        </Link>
-
-        {/* ── Card 4: Open Alerts ─────────────────────────────────────────── */}
-        <Link href="/admin/attention">
-          <div
-            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
-            data-testid="scorecard-alerts"
-          >
-            <div className={`flex items-center gap-2 px-3 py-2 border-b ${(data?.alerts.critical ?? 0) > 0 ? "bg-red-500/10 border-red-500/20" : "bg-amber-500/10 border-amber-500/20"}`}>
-              <AlertTriangle className={`h-3.5 w-3.5 ${(data?.alerts.critical ?? 0) > 0 ? "text-red-500" : "text-amber-500"}`} />
-              <span className={`text-xs font-semibold ${(data?.alerts.critical ?? 0) > 0 ? "text-red-600 dark:text-red-400" : "text-amber-600 dark:text-amber-400"}`}>
-                Open Alerts
-              </span>
-            </div>
-            <div className="px-3 py-2.5">
-              {isLoading ? (
-                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
-              ) : (
-                <>
-                  <p className={`text-2xl font-bold ${(data?.alerts.critical ?? 0) > 0 ? "text-red-600 dark:text-red-400" : (data?.alerts.total ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-green-600 dark:text-green-400"}`}>
-                    {data?.alerts.total ?? 0}
-                  </p>
-                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
-                    <div className="flex justify-between">
-                      <span className="flex items-center gap-1"><XCircle className="h-2.5 w-2.5 text-red-500" /> Critical</span>
-                      <span className="font-medium">{data?.alerts.critical ?? 0}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="flex items-center gap-1"><AlertTriangle className="h-2.5 w-2.5 text-amber-500" /> Important</span>
-                      <span className="font-medium">{data?.alerts.important ?? 0}</span>
-                    </div>
-                  </div>
-                  <p className="mt-1.5 text-[10px] text-muted-foreground/70">
-                    {(data?.alerts.total ?? 0) === 0 ? "All clear — no open alerts" : "Need attention"}
-                  </p>
-                </>
-              )}
-            </div>
-          </div>
-        </Link>
-
-        {/* ── Card 5: Integrations ────────────────────────────────────────── */}
-        <Link href="/admin/gmail-conversations">
-          <div
-            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
-            data-testid="scorecard-integrations"
-          >
-            <div className="flex items-center gap-2 px-3 py-2 bg-violet-500/10 border-b border-violet-500/20">
-              <Globe className="h-3.5 w-3.5 text-violet-500" />
-              <span className="text-xs font-semibold text-violet-600 dark:text-violet-400">Integrations</span>
-            </div>
-            <div className="px-3 py-2.5">
-              {isLoading ? (
-                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
-              ) : (
-                <>
-                  <p className={`text-2xl font-bold ${(data?.integrations.error ?? 0) > 0 ? "text-red-600 dark:text-red-400" : "text-violet-600 dark:text-violet-400"}`}>
-                    {data?.integrations.connected ?? 0}
-                    <span className="text-sm font-normal text-muted-foreground">/{data?.integrations.total ?? 0}</span>
-                  </p>
-                  <div className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
-                    {(data?.integrations.items ?? []).slice(0, 3).map((item) => (
-                      <div key={item.type} className="flex justify-between items-center">
-                        <span>{INTEGRATION_LABELS[item.type] ?? item.displayName}</span>
-                        <span className={`flex items-center gap-1 ${integrationStatusColor(item.status)}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${integrationStatusDot(item.status)}`} />
-                          {item.status === "connected" ? "OK" : item.status}
-                        </span>
-                      </div>
-                    ))}
-                    {(data?.integrations.items ?? []).length === 0 && (
-                      <p className="text-muted-foreground/70">No integrations configured</p>
-                    )}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </Link>
-
-        {/* ── Card 6: AI Health Score ─────────────────────────────────────── */}
-        <Link href="/admin/agent-ops">
-          <div
-            className="rounded-xl border border-border/60 bg-card hover:shadow-md transition-shadow cursor-pointer overflow-hidden"
-            data-testid="scorecard-health"
-          >
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-500/10 border-b border-slate-500/20">
-              <ShieldAlert className="h-3.5 w-3.5 text-slate-500" />
-              <span className="text-xs font-semibold text-slate-600 dark:text-slate-400">AI Health</span>
-            </div>
-            <div className="px-3 py-2.5">
-              {isLoading ? (
-                <div className="space-y-1.5"><Skeleton className="h-6 w-16" /><Skeleton className="h-3 w-full" /></div>
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <svg className="h-9 w-9 -rotate-90 flex-shrink-0" viewBox="0 0 48 48">
-                      <circle cx="24" cy="24" r="20" fill="none" stroke="currentColor" strokeWidth="4" className="text-muted/30" />
-                      <circle
-                        cx="24" cy="24" r="20"
-                        fill="none" strokeWidth="4" strokeLinecap="round"
-                        className={healthRingColor}
-                        strokeDasharray={circumference}
-                        strokeDashoffset={dashOffset}
-                        style={{ transition: "stroke-dashoffset 0.6s ease" }}
-                      />
-                    </svg>
-                    <p className={`text-2xl font-bold ${healthColor}`}>{healthScore}<span className="text-sm font-normal text-muted-foreground">/100</span></p>
-                  </div>
-                  <div className="mt-1.5 space-y-0.5 text-[11px]">
-                    {[
-                      { label: "Revenue", val: data?.healthScore.revenueIntelligence ?? "healthy" },
-                      { label: "Automations", val: data?.healthScore.automations ?? "healthy" },
-                      { label: "Integrations", val: data?.healthScore.integrations ?? "healthy" },
-                    ].map(({ label, val }) => (
-                      <div key={label} className="flex items-center justify-between">
-                        <span className="text-muted-foreground">{label}</span>
-                        <span className={`flex items-center gap-1 capitalize font-medium ${statusColor(val)}`}>
-                          <span className={`h-1.5 w-1.5 rounded-full ${statusDot(val)}`} />
-                          {val}
-                        </span>
-                      </div>
-                    ))}
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Alerts</span>
-                      <span className={`text-[10px] font-medium ${(data?.alerts.critical ?? 0) > 0 ? "text-red-500" : "text-green-500"}`}>
-                        {data?.healthScore.alerts ?? "All Clear"}
-                      </span>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        </Link>
-      </div>
-    </div>
-  );
-}
-
-// ─── Section Nav Groups ────────────────────────────────────────────────────────
-
-const NAV_GROUPS = [
-  {
-    label: "Intelligence",
-    icon: Lightbulb,
-    color: "text-violet-600",
-    bg: "bg-violet-50 dark:bg-violet-900/20",
-    border: "border-violet-200 dark:border-violet-800/50",
-    links: [
-      { href: "/admin/attention", label: "Attention Inbox", icon: Inbox },
-      { href: "/admin/business-brain", label: "Business Brain", icon: Brain },
-      { href: "/admin/recommendations", label: "Suggestions", icon: Zap },
-      { href: "/admin/workflow-heatmap", label: "Heatmap", icon: BarChart2 },
-    ],
-  },
-  {
-    label: "Automation",
-    icon: GitBranch,
-    color: "text-blue-600",
-    bg: "bg-blue-50 dark:bg-blue-900/20",
-    border: "border-blue-200 dark:border-blue-800/50",
-    links: [
-      { href: "/admin/workflow-orchestrator", label: "Orchestration", icon: Activity },
-      { href: "/admin/workflows", label: "Automations", icon: GitBranch },
-      { href: "/admin/ai-workforce", label: "Workforce", icon: Users },
-      { href: "/admin/autonomy-controls", label: "Autonomy", icon: Sliders },
-    ],
-  },
-  {
-    label: "Build & Configure",
-    icon: Wrench,
-    color: "text-emerald-600",
-    bg: "bg-emerald-50 dark:bg-emerald-900/20",
-    border: "border-emerald-200 dark:border-emerald-800/50",
-    links: [
-      { href: "/admin/workflow-builder", label: "Builder", icon: Zap },
-      { href: "/admin/workflows-library", label: "Library", icon: Layers },
-      { href: "/admin/agent-tools", label: "AI Tools", icon: Plug },
-    ],
-  },
-  {
-    label: "Monitoring",
-    icon: Eye,
-    color: "text-orange-600",
-    bg: "bg-orange-50 dark:bg-orange-900/20",
-    border: "border-orange-200 dark:border-orange-800/50",
-    links: [
-      { href: "/admin/agent-ops", label: "System Health", icon: ShieldAlert },
-      { href: "/admin/trigger-audit", label: "Activity Log", icon: Activity },
-      { href: "/admin/ai-governance", label: "Governance", icon: Shield },
-    ],
-  },
-  {
-    label: "Integrations",
-    icon: Globe,
-    color: "text-pink-600",
-    bg: "bg-pink-50 dark:bg-pink-900/20",
-    border: "border-pink-200 dark:border-pink-800/50",
-    links: [
-      { href: "/admin/gmail-conversations", label: "Gmail", icon: Inbox },
-    ],
-  },
-];
-
-// ─── WorkforceCta — org-state-aware entry point ───────────────────────────────
-
-function WorkforceCta() {
-  const { data: settings, isLoading } = useQuery<any | null>({
-    queryKey: ["/api/workforce/settings"],
-    staleTime: 5 * 60 * 1000,
-  });
-
-  const isConfigured = !isLoading && settings != null;
-  const href = isConfigured ? "/admin/ai-workforce/settings" : "/onboarding/ai-workforce";
-  const label = isConfigured ? "Edit AI Workforce" : "AI Workforce Setup Wizard";
-  const subtitle = isConfigured
-    ? "View agents, rules & automation"
-    : "Configure and deploy your AI workforce — agents, roles, and automation rules.";
-
-  return (
-    <Link href={href}>
-      <div
-        className="flex items-center gap-4 px-5 py-4 rounded-xl border border-violet-200 dark:border-violet-800/50 bg-gradient-to-r from-violet-50 to-purple-50 dark:from-violet-900/20 dark:to-purple-900/20 hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-900/30 dark:hover:to-purple-900/30 transition-colors cursor-pointer"
-        data-testid={isConfigured ? "cta-workforce-edit" : "cta-workforce-setup-wizard"}
-      >
-        <div className="h-10 w-10 rounded-lg bg-violet-100 dark:bg-violet-800/40 flex items-center justify-center flex-shrink-0">
-          <Zap className="h-5 w-5 text-violet-600 dark:text-violet-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="font-semibold text-violet-900 dark:text-violet-200 text-sm">{label}</p>
-          <p className="text-xs text-violet-600 dark:text-violet-400 mt-0.5">{subtitle}</p>
-        </div>
-        <ChevronRight className="h-4 w-4 text-violet-500 flex-shrink-0" />
-      </div>
-    </Link>
-  );
-}
-
-// ─── Main Page ────────────────────────────────────────────────────────────────
-
-export default function AdminAiOperationsPage() {
-  const { data, isLoading, refetch, isFetching } = useQuery<DashboardData>({
-    queryKey: ["/api/ai-ops/dashboard"],
-    refetchInterval: 60000,
-  });
-
-  const { data: jobStats, isLoading: jobStatsLoading } = useQuery<JobQueueStats>({
-    queryKey: ["/api/job-queue/stats"],
-    refetchInterval: 30000,
-  });
-
-  const summary = data?.actionSummary;
-
-  return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto" data-testid="page-ai-operations">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Cpu className="h-6 w-6 text-primary" />
-            AI Operations Command Center
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Central hub for all AI agent activity, workflow health, and operational intelligence.
-          </p>
         </div>
         <Button
-          variant="outline"
-          size="sm"
+          variant="ghost" size="sm"
           onClick={() => refetch()}
           disabled={isFetching}
-          data-testid="button-refresh-dashboard"
+          className="h-7 w-7 p-0"
+          data-testid="button-refresh-mission"
         >
-          <RefreshCw className={`h-4 w-4 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
-          Refresh
+          <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+        </Button>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+        {kpis.map(kpi => {
+          const Icon = kpi.icon;
+          return (
+            <div key={kpi.label} className={`flex flex-col gap-1 p-3 rounded-lg border ${kpi.accent} ${kpi.bg}`} data-testid={`mission-kpi-${kpi.label.toLowerCase().replace(/\s+/g, "-")}`}>
+              <div className="flex items-center gap-1.5">
+                <Icon className={`h-3.5 w-3.5 ${kpi.color}`} />
+                <span className="text-[10px] text-muted-foreground leading-tight">{kpi.label}</span>
+              </div>
+              {isLoading ? <Skeleton className="h-7 w-10" /> : (
+                <span className={`text-2xl font-extrabold ${kpi.color}`}>{kpi.value}</span>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab 1: Live Operations Feed ───────────────────────────────────────────────
+
+function LiveFeedTab() {
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [agentFilter, setAgentFilter] = useState("all");
+  const [selectedAction, setSelectedAction] = useState<any | null>(null);
+
+  const { data: feed, isLoading, refetch, isFetching } = useQuery<any[]>({
+    queryKey: ["/api/workforce/activity", statusFilter, agentFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams({ limit: "100" });
+      if (statusFilter !== "all") params.set("status", statusFilter);
+      if (agentFilter !== "all") params.set("agent", agentFilter);
+      const r = await fetch(`/api/workforce/activity?${params}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    refetchInterval: 15_000,
+    staleTime: 10_000,
+  });
+
+  const { data: decision, isLoading: decisionLoading } = useQuery<any>({
+    queryKey: ["/api/ops/agent-decision", selectedAction?.id],
+    queryFn: async () => {
+      const r = await fetch(`/api/ops/agent-decision/${selectedAction.id}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Not found");
+      return r.json();
+    },
+    enabled: !!selectedAction,
+  });
+
+  const STATUS_FILTERS = ["all", "running", "completed", "failed", "pending"];
+
+  const actionLabel = (type: string) =>
+    (type ?? "action").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+  return (
+    <div className="space-y-3" data-testid="tab-live-feed">
+      {/* Filters */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Filter className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <div className="flex gap-1 flex-wrap">
+          {STATUS_FILTERS.map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              data-testid={`filter-status-${s}`}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors capitalize ${
+                statusFilter === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {s === "all" ? "All Activity" : s}
+            </button>
+          ))}
+        </div>
+        <div className="flex gap-1 flex-wrap ml-auto">
+          {Object.entries(AGENT_META).map(([type, m]) => (
+            <button
+              key={type}
+              onClick={() => setAgentFilter(agentFilter === type ? "all" : type)}
+              data-testid={`filter-agent-${type}`}
+              className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium transition-colors ${
+                agentFilter === type ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <span className={`h-3 w-3 rounded-sm ${m.color} flex items-center justify-center text-[7px] text-white font-bold`}>{m.initials}</span>
+              {m.name}
+            </button>
+          ))}
+        </div>
+        <Button
+          variant="ghost" size="sm" className="h-7 w-7 p-0 ml-1"
+          onClick={() => refetch()} disabled={isFetching}
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
         </Button>
       </div>
 
-      {/* Executive Scorecard */}
-      <AiOpsScorecard />
-
-      {/* Workforce CTA — state-aware */}
-      <WorkforceCta />
-
-      {/* AI Area Navigation */}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-1.5">
-          <Cpu className="h-3.5 w-3.5" />
-          AI Operations Areas
-        </p>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-          {NAV_GROUPS.map((group) => (
-            <div
-              key={group.label}
-              className={`rounded-lg border p-3 ${group.bg} ${group.border}`}
-              data-testid={`nav-group-${group.label.toLowerCase().replace(/\s+/g, "-")}`}
-            >
-              <div className={`flex items-center gap-1.5 mb-2 ${group.color}`}>
-                <group.icon className="h-3.5 w-3.5" />
-                <span className="text-xs font-semibold">{group.label}</span>
-                <span className="ml-auto text-[9px] font-medium px-1 py-0.5 rounded-full bg-white/60 dark:bg-black/20">
-                  {group.links.length}
-                </span>
-              </div>
-              <div className="space-y-0.5">
-                {group.links.map(({ href, label, icon: Icon }) => (
-                  <Link key={href} href={href}>
-                    <button
-                      className="w-full flex items-center gap-2 px-2 py-1 rounded text-xs hover:bg-white/50 dark:hover:bg-white/5 transition-colors text-left text-foreground/80"
-                      data-testid={`link-nav-group-${label.toLowerCase().replace(/\s+/g, "-")}`}
-                    >
-                      <Icon className="h-3 w-3 text-muted-foreground shrink-0" />
-                      <span className="truncate">{label}</span>
-                    </button>
-                  </Link>
-                ))}
-              </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+        {/* Feed list */}
+        <div className={`space-y-1.5 ${selectedAction ? "lg:col-span-2" : "lg:col-span-3"}`}>
+          {isLoading ? (
+            Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)
+          ) : !feed?.length ? (
+            <div className="text-center py-12 text-sm text-muted-foreground border-2 border-dashed rounded-xl">
+              <Activity className="h-6 w-6 mx-auto mb-2 opacity-40" />
+              No activity matching current filters.
             </div>
-          ))}
+          ) : (
+            feed.map((item: any) => {
+              const meta = AGENT_META[item.agentType ?? item.actorType];
+              const isSelected = selectedAction?.id === item.id;
+              return (
+                <button
+                  key={item.id}
+                  onClick={() => setSelectedAction(isSelected ? null : item)}
+                  data-testid={`feed-item-${item.id}`}
+                  className={`w-full flex items-start gap-3 p-3 rounded-lg border text-left transition-all hover:border-primary/40 ${
+                    isSelected ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-muted/30"
+                  }`}
+                >
+                  <AgentChip agentType={item.agentType ?? item.actorType ?? ""} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-semibold">{meta?.name ?? item.agentName ?? "Agent"}</span>
+                      <span className="text-xs text-muted-foreground truncate">{actionLabel(item.actionType)}</span>
+                    </div>
+                    {item.reasoningSummary && (
+                      <p className="text-[10px] text-muted-foreground mt-0.5 line-clamp-1">{item.reasoningSummary}</p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-1 shrink-0">
+                    <StatusBadge status={item.status} />
+                    <span className="text-[9px] text-muted-foreground">
+                      {item.timestamp ? formatDistanceToNow(new Date(item.timestamp), { addSuffix: true }) : ""}
+                    </span>
+                  </div>
+                </button>
+              );
+            })
+          )}
         </div>
-      </div>
 
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {isLoading ? (
-          [...Array(4)].map((_, i) => <Skeleton key={i} className="h-24" />)
-        ) : (
-          <>
-            <StatCard
-              label="Open Attention"
-              value={data?.openAttentionCount ?? 0}
-              icon={Inbox}
-              color={data?.openAttentionCount ? "text-amber-600" : "text-green-600"}
-              href="/admin/attention"
-            />
-            <StatCard
-              label="Active Workflows"
-              value={data?.activeWorkflows.length ?? 0}
-              icon={GitBranch}
-              color="text-blue-600"
-              href="/admin/workflows"
-            />
-            <StatCard
-              label="Failed Workflows"
-              value={data?.failedWorkflows.length ?? 0}
-              icon={XCircle}
-              color={data?.failedWorkflows.length ? "text-red-600" : "text-green-600"}
-              href="/admin/workflows"
-            />
-            <StatCard
-              label="Needs Approval"
-              value={summary?.requiresApproval ?? 0}
-              icon={AlertTriangle}
-              color={summary?.requiresApproval ? "text-orange-600" : "text-green-600"}
-            />
-          </>
+        {/* Decision detail panel */}
+        {selectedAction && (
+          <div className="lg:col-span-1">
+            <Card className="sticky top-4">
+              <CardContent className="pt-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-semibold">Action Detail</span>
+                  <button onClick={() => setSelectedAction(null)}>
+                    <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                  </button>
+                </div>
+                {decisionLoading ? (
+                  <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-8 rounded" />)}</div>
+                ) : decision ? (
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2">
+                      <AgentChip agentType={decision.agentType ?? ""} size="sm" />
+                      <div>
+                        <p className="text-xs font-semibold">{decision.agentName}</p>
+                        <p className="text-[10px] text-muted-foreground">{decision.department}</p>
+                      </div>
+                    </div>
+                    <Separator />
+                    {[
+                      { label: "Decision", value: actionLabel(decision.decision) },
+                      { label: "Reason", value: decision.reason },
+                      { label: "Rule", value: decision.rule },
+                      { label: "Risk Level", value: decision.riskLevel ?? "unknown" },
+                      { label: "Outcome", value: decision.outcome },
+                    ].map(row => (
+                      <div key={row.label}>
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium">{row.label}</p>
+                        <p className="text-xs mt-0.5">{row.value}</p>
+                      </div>
+                    ))}
+                    {decision.confidence != null && (
+                      <div>
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium">Confidence</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${decision.confidence >= 80 ? "bg-emerald-500" : decision.confidence >= 60 ? "bg-amber-500" : "bg-rose-500"}`}
+                              style={{ width: `${decision.confidence}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-semibold">{decision.confidence}%</span>
+                        </div>
+                      </div>
+                    )}
+                    {decision.toolsUsed?.length > 0 && (
+                      <div>
+                        <p className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium">Tools Used</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {decision.toolsUsed.map((t: string) => (
+                            <span key={t} className="text-[9px] bg-muted px-1.5 py-0.5 rounded-full">{t}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <StatusBadge status={decision.status} />
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Decision details not available for this action.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
-
-      {/* Job Queue stats row */}
-      <div>
-        <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2 flex items-center gap-1.5">
-          <Layers className="h-3.5 w-3.5" />
-          Job Queue Health
-          {jobStats?.runner && (
-            <span className={`ml-2 inline-flex items-center gap-1 text-xs font-normal ${jobStats.runner.isRunning ? "text-green-600" : "text-amber-600"}`}>
-              <span className={`inline-block h-1.5 w-1.5 rounded-full ${jobStats.runner.isRunning ? "bg-green-500" : "bg-amber-500"}`} />
-              {jobStats.runner.isRunning ? "Runner active" : "Runner idle"}
-            </span>
-          )}
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-          {jobStatsLoading ? (
-            [...Array(5)].map((_, i) => <Skeleton key={i} className="h-20" />)
-          ) : (
-            <>
-              <StatCard label="Queued" value={jobStats?.queued ?? 0} icon={Layers} color="text-blue-600" href="/admin/agent-ops" />
-              <StatCard label="Running" value={jobStats?.running ?? 0} icon={CircleDot} color="text-cyan-600" href="/admin/agent-ops" />
-              <StatCard label="Retrying" value={jobStats?.retrying ?? 0} icon={Repeat} color={jobStats?.retrying ? "text-amber-600" : "text-green-600"} href="/admin/agent-ops" />
-              <StatCard label="Dead Letter" value={jobStats?.dead_letter ?? 0} icon={Archive} color={jobStats?.dead_letter ? "text-red-600" : "text-green-600"} href="/admin/agent-ops" />
-              <StatCard label="Stuck Jobs" value={jobStats?.stuck ?? 0} icon={SkipForward} color={jobStats?.stuck ? "text-orange-600" : "text-green-600"} href="/admin/agent-ops" />
-            </>
-          )}
-        </div>
-      </div>
-
-      {/* Action summary strip */}
-      {!isLoading && summary && (
-        <div className="flex items-center gap-6 bg-muted/40 rounded-lg px-5 py-3 text-sm" data-testid="action-summary-strip">
-          <span className="text-muted-foreground font-medium">Action Log:</span>
-          <span className="flex items-center gap-1.5">
-            <BarChart3 className="h-3.5 w-3.5 text-muted-foreground" />
-            <span className="font-semibold">{summary.total}</span> total
-          </span>
-          <span className="flex items-center gap-1.5">
-            <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-            <span className="font-semibold">{summary.completed}</span> completed
-          </span>
-          <span className="flex items-center gap-1.5">
-            <XCircle className="h-3.5 w-3.5 text-red-500" />
-            <span className="font-semibold">{summary.failed}</span> failed
-          </span>
-        </div>
-      )}
-
-      {/* Main grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column */}
-        <div className="space-y-6 lg:col-span-2">
-          {/* Open Attention Items */}
-          <Card data-testid="card-attention-items">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                <Inbox className="h-4 w-4 text-amber-500" />
-                Open Attention Items
-                <Link href="/admin/attention" className="ml-auto">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs gap-1">
-                    View all <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </Link>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
-              ) : !data?.attentionItems.length ? (
-                <div className="text-center py-6 text-sm text-muted-foreground">
-                  <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
-                  All clear — no open attention items
-                </div>
-              ) : (
-                data.attentionItems.map(item => <AttentionRow key={item.id} item={item} />)
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Active + Stuck Workflows */}
-          <Card data-testid="card-workflow-status">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                <GitBranch className="h-4 w-4 text-blue-500" />
-                Workflow Status
-                <Link href="/admin/workflows" className="ml-auto">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs gap-1">
-                    View all <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </Link>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-10" />)}</div>
-              ) : (
-                <>
-                  {/* Stuck */}
-                  {data?.stuckWorkflows && data.stuckWorkflows.length > 0 && (
-                    <div className="mb-3">
-                      <p className="text-xs font-semibold text-amber-600 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                        <Timer className="h-3 w-3" /> Stuck (&gt;30 min)
-                      </p>
-                      {data.stuckWorkflows.map(wf => <WorkflowRow key={wf.id} wf={wf} isStuck />)}
-                    </div>
-                  )}
-                  {/* Failed */}
-                  {data?.failedWorkflows && data.failedWorkflows.length > 0 && (
-                    <div className="mb-3">
-                      <p className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                        <XCircle className="h-3 w-3" /> Failed
-                      </p>
-                      {data.failedWorkflows.slice(0, 5).map(wf => <WorkflowRow key={wf.id} wf={wf} />)}
-                    </div>
-                  )}
-                  {/* Active */}
-                  {data?.activeWorkflows && data.activeWorkflows.length > 0 && (
-                    <div>
-                      <p className="text-xs font-semibold text-blue-600 uppercase tracking-wide mb-1.5 flex items-center gap-1">
-                        <CircleDot className="h-3 w-3" /> Active
-                      </p>
-                      {data.activeWorkflows.slice(0, 5).map(wf => <WorkflowRow key={wf.id} wf={wf} />)}
-                    </div>
-                  )}
-                  {!data?.failedWorkflows.length && !data?.activeWorkflows.length && !data?.stuckWorkflows.length && (
-                    <div className="text-center py-6 text-sm text-muted-foreground">
-                      <CheckCircle className="h-8 w-8 mx-auto mb-2 text-green-500" />
-                      No active or failed workflows
-                    </div>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Recent Agent Activity — full log */}
-          <RecentAgentActivity limit={20} title="Recent Agent Actions" />
-        </div>
-
-        {/* Right column */}
-        <div className="space-y-6">
-          {/* System Health Summary */}
-          <Card data-testid="card-system-health">
-            <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                <ShieldAlert className="h-4 w-4 text-primary" />
-                System Health
-                <Link href="/admin/agent-ops" className="ml-auto">
-                  <Button variant="ghost" size="sm" className="h-6 text-xs gap-1">
-                    Details <ArrowRight className="h-3 w-3" />
-                  </Button>
-                </Link>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isLoading ? (
-                <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-8" />)}</div>
-              ) : (
-                <div className="space-y-2">
-                  <HealthRow label="Workflow Engine" ok={!data?.stuckWorkflows.length} detail={data?.stuckWorkflows.length ? `${data.stuckWorkflows.length} stuck` : "Healthy"} />
-                  <HealthRow label="Failed Workflows" ok={!data?.failedWorkflows.length} detail={data?.failedWorkflows.length ? `${data.failedWorkflows.length} failed` : "None"} />
-                  <HealthRow label="Attention Queue" ok={!data?.openAttentionCount} detail={data?.openAttentionCount ? `${data.openAttentionCount} open` : "Clear"} />
-                  <HealthRow label="Approval Queue" ok={!summary?.requiresApproval} detail={summary?.requiresApproval ? `${summary.requiresApproval} waiting` : "Clear"} />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Failed-only activity */}
-          <RecentAgentActivity limit={5} status="failed" title="Failed Actions" compact />
-
-          {/* Phase 7 — Setup Progress */}
-          <SetupProgressWidget />
-
-          {/* Phase 7 — Trust Signals */}
-          <TrustSignalsWidget />
-        </div>
-      </div>
-
-      {/* Phase 7 — Recommendations */}
-      <RecommendationPanel />
-
-      {/* ── Memory + Outcome Analytics Row ────────────────────────────────── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <OrgMemoryFeed limit={12} />
-        <OutcomeAnalyticsPanel />
-      </div>
-
-      {/* ── Memory Lifecycle Controls ─────────────────────────────────────── */}
-      <MemoryLifecycleCard />
     </div>
   );
 }
 
-function MemoryLifecycleCard() {
-  const { toast } = useToast();
+// ─── Tab 2: Active Agent Monitor ───────────────────────────────────────────────
 
-  const lifecycleMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/workflow-context/lifecycle"),
-    onSuccess: async (res) => {
-      const data = await res.json();
-      toast({ title: "Memory lifecycle complete", description: `Compressed ${data.compressed}, archived ${data.archived} memories.` });
-      queryClient.invalidateQueries({ queryKey: ["/api/workflow-context/stats"] });
-    },
-    onError: () => toast({ title: "Lifecycle failed", variant: "destructive" }),
-  });
+function AgentsTab() {
+  const [expandedAgent, setExpandedAgent] = useState<string | null>(null);
+  const { data: agents, isLoading } = useQuery<any[]>({ queryKey: ["/api/workforce/agents"], staleTime: 30_000, refetchInterval: 30_000 });
+  const { data: scorecard } = useQuery<any>({ queryKey: ["/api/workforce/scorecard"], staleTime: 60_000 });
+
+  const agentBreakdown: Record<string, any> = {};
+  (scorecard?.agentBreakdown ?? []).forEach((a: any) => { agentBreakdown[a.agentType] = a; });
 
   return (
-    <Card data-testid="memory-lifecycle-card">
-      <CardHeader className="pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-medium">
-          <Archive className="h-4 w-4 text-muted-foreground" />
-          Memory Lifecycle Management
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex items-center justify-between gap-4">
-          <div className="text-sm text-muted-foreground">
-            <p>Compress low-value memories and archive stale entries.</p>
-            <p className="text-xs mt-0.5">Operator overrides are never auto-deleted.</p>
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => lifecycleMutation.mutate()}
-            disabled={lifecycleMutation.isPending}
-            data-testid="button-run-lifecycle"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${lifecycleMutation.isPending ? "animate-spin" : ""}`} />
-            {lifecycleMutation.isPending ? "Running…" : "Run Lifecycle"}
-          </Button>
+    <div className="space-y-3" data-testid="tab-agents">
+      {isLoading ? (
+        Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)
+      ) : !agents?.length ? (
+        <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl">
+          <Brain className="h-6 w-6 mx-auto mb-2 opacity-40" />No agents configured.
         </div>
-      </CardContent>
-    </Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {agents.map((agent: any) => {
+            const meta = AGENT_META[agent.agentType];
+            const breakdown = agentBreakdown[agent.agentType];
+            const status = agent.enabled ? (breakdown?.actions > 0 ? "active" : "idle") : "paused";
+            const successRate = breakdown && breakdown.actions > 0
+              ? Math.round(((breakdown.actions - breakdown.errors) / breakdown.actions) * 100)
+              : 0;
+            const expanded = expandedAgent === agent.agentType;
+            return (
+              <div key={agent.agentType} className="rounded-xl border bg-card overflow-hidden" data-testid={`agent-monitor-${agent.agentType}`}>
+                <button
+                  className="w-full flex items-center gap-3 p-4 text-left hover:bg-muted/30 transition-colors"
+                  onClick={() => setExpandedAgent(expanded ? null : agent.agentType)}
+                >
+                  <div className={`h-10 w-10 rounded-xl ${meta?.color ?? "bg-slate-500"} flex items-center justify-center text-white text-xs font-bold shrink-0`}>
+                    {meta?.initials ?? "?"}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold">{meta?.name ?? agent.agentType}</span>
+                      <StatusBadge status={status} />
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">{meta?.dept}</p>
+                    {breakdown && (
+                      <div className="flex gap-3 mt-1">
+                        <span className="text-[10px] text-muted-foreground">{breakdown.actions ?? 0} actions</span>
+                        {breakdown.actions > 0 && (
+                          <span className={`text-[10px] font-medium ${successRate >= 80 ? "text-emerald-600 dark:text-emerald-400" : successRate >= 60 ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"}`}>
+                            {successRate}% success
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                  <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expanded ? "rotate-180" : ""}`} />
+                </button>
+
+                {expanded && (
+                  <div className="px-4 pb-4 border-t bg-muted/20 space-y-3">
+                    <div className="grid grid-cols-3 gap-2 mt-3">
+                      {[
+                        { label: "Autonomy", value: agent.autonomyMode ?? "Default" },
+                        { label: "Approval", value: agent.requiresApproval ? "Required" : "Auto" },
+                        { label: "Recent Actions", value: agent.recentActions ?? 0 },
+                      ].map(m => (
+                        <div key={m.label} className="p-2 rounded-lg bg-card border text-center">
+                          <p className="text-[9px] text-muted-foreground uppercase">{m.label}</p>
+                          <p className="text-xs font-semibold mt-0.5 capitalize">{m.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                    {breakdown && (
+                      <div>
+                        <div className="flex items-center justify-between text-xs mb-1">
+                          <span className="text-muted-foreground">Success rate</span>
+                          <span className="font-semibold">{successRate}%</span>
+                        </div>
+                        <div className="w-full h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${successRate >= 80 ? "bg-emerald-500" : successRate >= 60 ? "bg-amber-500" : "bg-rose-500"}`}
+                            style={{ width: `${successRate}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
+                    {agent.disabledReason && (
+                      <p className="text-[10px] text-muted-foreground italic">{agent.disabledReason}</p>
+                    )}
+                    <Link href="/admin/ai-workforce/capabilities">
+                      <Button variant="outline" size="sm" className="h-7 text-xs gap-1 w-full">
+                        Configure Agent <ChevronRight className="h-3.5 w-3.5" />
+                      </Button>
+                    </Link>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 
-function HealthRow({ label, ok, detail }: { label: string; ok: boolean; detail: string }) {
+// ─── Tab 3: Workflow Execution Center ─────────────────────────────────────────
+
+function WorkflowsTab() {
+  const { toast } = useToast();
+  const { data: stats } = useQuery<any>({ queryKey: ["/api/job-queue/stats"], staleTime: 15_000, refetchInterval: 15_000 });
+  const { data: jobs, isLoading, refetch } = useQuery<any[]>({ queryKey: ["/api/job-queue/jobs"], staleTime: 15_000, refetchInterval: 15_000 });
+
+  const cancelMutation = useMutation({
+    mutationFn: async (id: string) => { const r = await apiRequest("POST", `/api/job-queue/${id}/cancel`, {}); return r.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/job-queue/jobs"] }); toast({ title: "Workflow cancelled." }); },
+    onError: () => toast({ title: "Failed to cancel", variant: "destructive" }),
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: async (id: string) => { const r = await apiRequest("POST", `/api/job-queue/dead-letter/${id}/retry`, {}); return r.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/job-queue/jobs"] }); toast({ title: "Workflow queued for retry." }); },
+    onError: () => toast({ title: "Failed to retry", variant: "destructive" }),
+  });
+
+  const queueStats = [
+    { label: "Queued",    value: stats?.queued ?? 0,      color: "text-blue-600 dark:text-blue-400" },
+    { label: "Running",   value: stats?.running ?? 0,     color: "text-violet-600 dark:text-violet-400" },
+    { label: "Retrying",  value: stats?.retrying ?? 0,    color: "text-amber-600 dark:text-amber-400" },
+    { label: "Stuck",     value: stats?.stuck ?? 0,       color: "text-rose-600 dark:text-rose-400" },
+    { label: "Dead Letter", value: stats?.dead_letter ?? 0, color: "text-slate-600 dark:text-slate-400" },
+  ];
+
   return (
-    <div className="flex items-center justify-between gap-2" data-testid={`health-row-${label.toLowerCase().replace(/\s+/g, "-")}`}>
-      <span className="text-sm text-muted-foreground">{label}</span>
-      <div className="flex items-center gap-1.5">
-        <span className="text-xs font-medium">{detail}</span>
-        {ok
-          ? <CheckCircle className="h-3.5 w-3.5 text-green-500" />
-          : <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />}
+    <div className="space-y-4" data-testid="tab-workflows">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+        {queueStats.map(s => (
+          <div key={s.label} className="flex flex-col gap-0.5 p-3 rounded-lg border bg-card">
+            <span className="text-[10px] text-muted-foreground">{s.label}</span>
+            <span className={`text-xl font-bold ${s.color}`}>{s.value}</span>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold">Workflow Queue</h3>
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => refetch()}>
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
+      ) : !jobs?.length ? (
+        <div className="text-center py-10 text-sm text-muted-foreground border-2 border-dashed rounded-xl">
+          <GitBranch className="h-6 w-6 mx-auto mb-2 opacity-40" />No workflows in queue.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {jobs.slice(0, 20).map((job: any) => {
+            const isActive = job.status === "running" || job.status === "queued";
+            return (
+              <div key={job.id} className="flex items-center gap-3 p-3 rounded-lg border bg-card" data-testid={`workflow-job-${job.id}`}>
+                <StatusBadge status={job.status} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{job.displayName ?? job.workflowType ?? "Workflow"}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">
+                    {job.workflowTemplateKey && <span className="mr-2 font-mono">{job.workflowTemplateKey}</span>}
+                    {job.createdAt ? formatDistanceToNow(new Date(job.createdAt), { addSuffix: true }) : ""}
+                  </p>
+                  {job.failureReason && <p className="text-[10px] text-rose-500 mt-0.5 truncate">{job.failureReason}</p>}
+                </div>
+                <div className="flex gap-1.5 shrink-0">
+                  {isActive && (
+                    <Button
+                      variant="outline" size="sm"
+                      className="h-7 text-xs gap-1 border-rose-300 text-rose-600 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-400"
+                      onClick={() => cancelMutation.mutate(job.id)}
+                      disabled={cancelMutation.isPending}
+                      data-testid={`button-cancel-workflow-${job.id}`}
+                    >
+                      <StopCircle className="h-3 w-3" />Cancel
+                    </Button>
+                  )}
+                  {job.status === "failed" && (
+                    <Button
+                      variant="outline" size="sm"
+                      className="h-7 text-xs gap-1"
+                      onClick={() => retryMutation.mutate(job.id)}
+                      disabled={retryMutation.isPending}
+                      data-testid={`button-retry-workflow-${job.id}`}
+                    >
+                      <RotateCcw className="h-3 w-3" />Retry
+                    </Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab 4: Revenue Operations Center ─────────────────────────────────────────
+
+function RevenueTab() {
+  const { data: opps, isLoading } = useQuery<any[]>({ queryKey: ["/api/workforce/opportunities"], staleTime: 60_000 });
+  const { data: attr } = useQuery<any>({ queryKey: ["/api/workforce/revenue-attribution"], staleTime: 60_000 });
+
+  const probColor = (p: number) => p >= 70 ? "text-emerald-600 dark:text-emerald-400" : p >= 40 ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400";
+
+  return (
+    <div className="space-y-4" data-testid="tab-revenue">
+      {/* Attribution summary */}
+      {attr && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[
+            { label: "Revenue Generated",  value: `$${Number(attr.totalRevenueGenerated ?? 0).toLocaleString()}`, color: "text-emerald-600 dark:text-emerald-400" },
+            { label: "Revenue Influenced", value: `$${Number(attr.totalRevenueInfluenced ?? 0).toLocaleString()}`, color: "text-blue-600 dark:text-blue-400" },
+            { label: "Revenue Recovered",  value: `$${Number(attr.totalRevenueRecovered ?? 0).toLocaleString()}`, color: "text-violet-600 dark:text-violet-400" },
+            { label: "Labor Saved",        value: `$${Number(attr.totalEstimatedLaborSavings ?? 0).toLocaleString()}`, color: "text-amber-600 dark:text-amber-400" },
+          ].map(m => (
+            <div key={m.label} className="flex flex-col gap-0.5 p-3 rounded-lg border bg-card">
+              <span className="text-[10px] text-muted-foreground">{m.label}</span>
+              <span className={`text-lg font-bold ${m.color}`}>{m.value}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <h3 className="text-sm font-semibold">Revenue Opportunities</h3>
+
+      {isLoading ? (
+        <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
+      ) : !opps?.length ? (
+        <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-xl">
+          <TrendingUp className="h-6 w-6 mx-auto mb-2 opacity-40" />No open revenue opportunities right now.
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="border-b">
+                {["Opportunity", "Est. Value", "Agent Owner", "Status", "Probability", "Next Action"].map(h => (
+                  <th key={h} className="text-left py-2 px-3 text-[10px] text-muted-foreground uppercase tracking-wide font-medium">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {opps.map((opp: any) => (
+                <tr key={opp.id} className="border-b hover:bg-muted/30 transition-colors" data-testid={`revenue-opp-${opp.id}`}>
+                  <td className="py-2.5 px-3 font-medium">{opp.title}</td>
+                  <td className="py-2.5 px-3 text-emerald-600 dark:text-emerald-400 font-semibold">
+                    {opp.potentialValue ? `$${Number(opp.potentialValue).toLocaleString()}` : "—"}
+                  </td>
+                  <td className="py-2.5 px-3">
+                    <div className="flex items-center gap-1.5">
+                      <AgentChip agentType={opp.agentId ?? ""} size="xs" />
+                      <span>{AGENT_META[opp.agentId ?? ""]?.name ?? opp.agentId ?? "—"}</span>
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-3"><StatusBadge status={opp.status ?? "open"} /></td>
+                  <td className="py-2.5 px-3">
+                    {opp.probability != null ? (
+                      <span className={`font-semibold ${probColor(opp.probability)}`}>{opp.probability}%</span>
+                    ) : "—"}
+                  </td>
+                  <td className="py-2.5 px-3 text-muted-foreground max-w-32 truncate">{opp.nextAction ?? "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab 5: Approval Command Center ───────────────────────────────────────────
+
+function ApprovalsTab() {
+  const { toast } = useToast();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  const { data: approvals, isLoading, refetch } = useQuery<any[]>({
+    queryKey: ["/api/ai-approvals"],
+    refetchInterval: 20_000,
+    staleTime: 10_000,
+  });
+
+  const pending = (approvals ?? []).filter(a => a.status === "pending_approval" || a.status === "pending");
+
+  const approveMutation = useMutation({
+    mutationFn: async (id: string) => { const r = await apiRequest("POST", `/api/ai-approvals/${id}/approve`, {}); return r.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals"] }); queryClient.invalidateQueries({ queryKey: ["/api/ops/mission-control"] }); toast({ title: "Approved." }); },
+    onError: () => toast({ title: "Failed to approve", variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: async (id: string) => { const r = await apiRequest("POST", `/api/ai-approvals/${id}/reject`, {}); return r.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals"] }); toast({ title: "Rejected." }); },
+    onError: () => toast({ title: "Failed to reject", variant: "destructive" }),
+  });
+
+  const bulkApproveMutation = useMutation({
+    mutationFn: async (ids: string[]) => { const r = await apiRequest("POST", "/api/ai-approvals/bulk-approve", { ids }); return r.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals"] }); setSelected(new Set()); toast({ title: `${selected.size} actions approved.` }); },
+    onError: () => toast({ title: "Bulk approve failed", variant: "destructive" }),
+  });
+
+  const bulkRejectMutation = useMutation({
+    mutationFn: async (ids: string[]) => { const r = await apiRequest("POST", "/api/ai-approvals/bulk-reject", { ids }); return r.json(); },
+    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals"] }); setSelected(new Set()); toast({ title: `${selected.size} actions rejected.` }); },
+    onError: () => toast({ title: "Bulk reject failed", variant: "destructive" }),
+  });
+
+  const toggleSelect = (id: string) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+  const selectAll = () => setSelected(new Set(pending.map((a: any) => a.id)));
+  const clearSelect = () => setSelected(new Set());
+
+  const impactColors: Record<string, string> = {
+    high: "text-rose-600 dark:text-rose-400", medium: "text-amber-600 dark:text-amber-400", low: "text-emerald-600 dark:text-emerald-400",
+  };
+
+  return (
+    <div className="space-y-4" data-testid="tab-approvals">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="flex items-center gap-2">
+          <h3 className="text-sm font-semibold">Pending Approvals</h3>
+          {pending.length > 0 && (
+            <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 text-xs">{pending.length}</Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {selected.size > 0 && (
+            <>
+              <span className="text-xs text-muted-foreground">{selected.size} selected</span>
+              <Button size="sm" className="h-7 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={() => bulkApproveMutation.mutate([...selected])} disabled={bulkApproveMutation.isPending}
+                data-testid="button-bulk-approve">
+                <Check className="h-3 w-3 mr-1" />Approve All
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-rose-300 text-rose-600"
+                onClick={() => bulkRejectMutation.mutate([...selected])} disabled={bulkRejectMutation.isPending}
+                data-testid="button-bulk-reject">
+                <X className="h-3 w-3 mr-1" />Reject All
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={clearSelect}>Clear</Button>
+            </>
+          )}
+          {selected.size === 0 && pending.length > 1 && (
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={selectAll} data-testid="button-select-all">
+              Select All
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => refetch()}>
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{Array.from({ length: 5 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-lg" />)}</div>
+      ) : pending.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground border-2 border-dashed rounded-xl">
+          <CheckCircle className="h-6 w-6 mx-auto mb-2 text-emerald-500 opacity-70" />
+          <p className="text-sm">No pending approvals</p>
+          <p className="text-xs mt-1">All agent actions are operating within approved parameters.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {pending.map((item: any) => {
+            const isSelected = selected.has(item.id);
+            return (
+              <div key={item.id} className={`p-4 rounded-xl border transition-colors ${isSelected ? "border-primary bg-primary/5" : "border-border bg-card"}`} data-testid={`approval-item-${item.id}`}>
+                <div className="flex items-start gap-3">
+                  <button
+                    onClick={() => toggleSelect(item.id)}
+                    className={`h-4 w-4 rounded border-2 shrink-0 mt-0.5 flex items-center justify-center transition-colors ${isSelected ? "bg-primary border-primary" : "border-muted-foreground"}`}
+                  >
+                    {isSelected && <Check className="h-2.5 w-2.5 text-primary-foreground" />}
+                  </button>
+                  <AgentChip agentType={item.agentType ?? ""} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-semibold">{item.subject ?? item.messageType ?? item.actionType ?? "Agent Action"}</span>
+                      {item.riskLevel && (
+                        <Badge variant="outline" className={`text-[10px] px-1.5 py-0 h-4 ${impactColors[item.riskLevel] ?? ""}`}>
+                          {item.riskLevel} risk
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                      {item.proposedContent ?? item.reasoningSummary ?? "No details available"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      {item.timestamp ? formatDistanceToNow(new Date(item.timestamp), { addSuffix: true }) : ""}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex gap-2 mt-3 pl-10">
+                  <Button size="sm" className="h-7 text-xs flex-1 bg-emerald-600 hover:bg-emerald-700 text-white"
+                    onClick={() => approveMutation.mutate(item.id)} disabled={approveMutation.isPending || rejectMutation.isPending}
+                    data-testid={`button-approve-${item.id}`}>
+                    <Check className="h-3 w-3 mr-1" />Approve
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs flex-1 border-rose-300 text-rose-600 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-400"
+                    onClick={() => rejectMutation.mutate(item.id)} disabled={approveMutation.isPending || rejectMutation.isPending}
+                    data-testid={`button-reject-${item.id}`}>
+                    <X className="h-3 w-3 mr-1" />Reject
+                  </Button>
+                  <Link href="/admin/ai-approvals">
+                    <Button size="sm" variant="ghost" className="h-7 text-xs gap-1">
+                      <Eye className="h-3 w-3" />View
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab 6: Workforce Performance Analytics ────────────────────────────────────
+
+function AnalyticsTab() {
+  const [period, setPeriod] = useState("7d");
+  const { data: scorecard, isLoading } = useQuery<any>({
+    queryKey: ["/api/workforce/scorecard", period],
+    queryFn: async () => {
+      const r = await fetch(`/api/workforce/scorecard?period=${period}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 60_000,
+  });
+
+  const topPerformers = [...(scorecard?.agentBreakdown ?? [])].sort((a, b) => b.actions - a.actions).slice(0, 3);
+
+  return (
+    <div className="space-y-4" data-testid="tab-analytics">
+      {/* Period selector */}
+      <div className="flex gap-2">
+        {[{ label: "Today", value: "today" }, { label: "7 Days", value: "7d" }, { label: "30 Days", value: "30d" }].map(p => (
+          <button key={p.value} onClick={() => setPeriod(p.value)}
+            className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${period === p.value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
+            {p.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Summary KPIs */}
+      {isLoading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">{Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {[
+              { label: "Total Actions",       value: scorecard?.totalActions ?? 0,         color: "text-foreground" },
+              { label: "Success Rate",        value: `${scorecard?.successRate ?? 0}%`,    color: scorecard?.successRate >= 80 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400" },
+              { label: "Workflow Executions", value: scorecard?.workflowExecutions ?? 0,   color: "text-blue-600 dark:text-blue-400" },
+              { label: "Revenue Influenced",  value: `$${Number(scorecard?.revenueInfluenced ?? 0).toLocaleString()}`, color: "text-emerald-600 dark:text-emerald-400" },
+              { label: "Approvals Requested", value: scorecard?.approvalsRequested ?? 0,  color: "text-amber-600 dark:text-amber-400" },
+              { label: "Approvals Approved",  value: scorecard?.approvalsApproved ?? 0,   color: "text-emerald-600 dark:text-emerald-400" },
+              { label: "Agent Utilization",   value: `${scorecard?.agentUtilization ?? 0}%`, color: "text-violet-600 dark:text-violet-400" },
+              { label: "Failed Actions",      value: scorecard?.failedActions ?? 0,        color: scorecard?.failedActions > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
+            ].map(m => (
+              <div key={m.label} className="flex flex-col gap-0.5 p-3 rounded-lg border bg-card">
+                <span className="text-[10px] text-muted-foreground">{m.label}</span>
+                <span className={`text-xl font-bold ${m.color}`}>{m.value}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Top performers */}
+          {topPerformers.length > 0 && (
+            <div>
+              <div className="flex items-center gap-2 mb-2">
+                <Award className="h-4 w-4 text-amber-500" />
+                <h3 className="text-sm font-semibold">Top Performers</h3>
+              </div>
+              <div className="flex gap-2 flex-wrap">
+                {topPerformers.map((a: any, i: number) => (
+                  <div key={a.agentType} className={`flex items-center gap-2.5 p-3 rounded-xl border bg-card flex-1 min-w-40 ${i === 0 ? "border-amber-300 dark:border-amber-700 bg-amber-50/50 dark:bg-amber-900/10" : ""}`}>
+                    {i === 0 && <Award className="h-4 w-4 text-amber-500 shrink-0" />}
+                    <AgentChip agentType={a.agentType} size="sm" />
+                    <div>
+                      <p className="text-xs font-semibold">{AGENT_META[a.agentType]?.name ?? a.agentName}</p>
+                      <p className="text-[10px] text-muted-foreground">{a.actions} actions · {a.errors} errors</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Agent breakdown table */}
+          {(scorecard?.agentBreakdown ?? []).length > 0 && (
+            <div>
+              <h3 className="text-sm font-semibold mb-2">Agent Scorecards</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b">
+                      {["Agent", "Actions", "Errors", "Success Rate", "Status"].map(h => (
+                        <th key={h} className="text-left py-2 px-3 text-[10px] text-muted-foreground uppercase tracking-wide">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {scorecard.agentBreakdown.map((a: any) => {
+                      const rate = a.actions > 0 ? Math.round(((a.actions - a.errors) / a.actions) * 100) : 0;
+                      return (
+                        <tr key={a.agentType} className="border-b hover:bg-muted/30" data-testid={`scorecard-row-${a.agentType}`}>
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-2">
+                              <AgentChip agentType={a.agentType} size="xs" />
+                              <span className="font-medium">{AGENT_META[a.agentType]?.name ?? a.agentName}</span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3 font-semibold">{a.actions}</td>
+                          <td className="py-2.5 px-3 text-rose-500">{a.errors}</td>
+                          <td className="py-2.5 px-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-16 h-1.5 rounded-full bg-muted overflow-hidden">
+                                <div className={`h-full rounded-full ${rate >= 80 ? "bg-emerald-500" : rate >= 60 ? "bg-amber-500" : "bg-rose-500"}`} style={{ width: `${rate}%` }} />
+                              </div>
+                              <span className={`font-semibold ${rate >= 80 ? "text-emerald-600 dark:text-emerald-400" : rate >= 60 ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"}`}>{rate}%</span>
+                            </div>
+                          </td>
+                          <td className="py-2.5 px-3">
+                            <StatusBadge status={a.actions > 0 ? "active" : "idle"} />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab 7: Agent Memory & Decision Viewer ────────────────────────────────────
+
+function MemoryTab() {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const { data: feed, isLoading } = useQuery<any[]>({
+    queryKey: ["/api/workforce/activity"],
+    queryFn: async () => {
+      const r = await fetch("/api/workforce/activity?limit=50", { credentials: "include" });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    staleTime: 30_000,
+  });
+
+  const { data: decision, isLoading: decisionLoading } = useQuery<any>({
+    queryKey: ["/api/ops/agent-decision", selectedId],
+    queryFn: async () => {
+      const r = await fetch(`/api/ops/agent-decision/${selectedId}`, { credentials: "include" });
+      if (!r.ok) throw new Error("Not found");
+      return r.json();
+    },
+    enabled: !!selectedId,
+  });
+
+  const actionLabel = (type: string) => (type ?? "action").replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" data-testid="tab-memory">
+      {/* Action selector */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <BrainCircuit className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Select an Action</h3>
+        </div>
+        {isLoading ? (
+          <div className="space-y-2">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-lg" />)}</div>
+        ) : (
+          <div className="space-y-1.5 max-h-[480px] overflow-y-auto pr-1">
+            {(feed ?? []).filter(a => a.reasoningSummary).map((item: any) => (
+              <button
+                key={item.id}
+                onClick={() => setSelectedId(selectedId === item.id ? null : item.id)}
+                data-testid={`memory-action-${item.id}`}
+                className={`w-full flex items-start gap-2.5 p-3 rounded-lg border text-left transition-all ${selectedId === item.id ? "border-primary bg-primary/5" : "border-border bg-card hover:bg-muted/30"}`}
+              >
+                <AgentChip agentType={item.agentType ?? ""} size="xs" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{actionLabel(item.actionType)}</p>
+                  <p className="text-[10px] text-muted-foreground line-clamp-1 mt-0.5">{item.reasoningSummary}</p>
+                </div>
+                <StatusBadge status={item.status} />
+              </button>
+            ))}
+            {(feed ?? []).filter(a => a.reasoningSummary).length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-6">No actions with recorded reasoning yet.</p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Decision detail */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Eye className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Decision Viewer</h3>
+        </div>
+        {!selectedId ? (
+          <div className="flex flex-col items-center justify-center py-16 text-muted-foreground border-2 border-dashed rounded-xl">
+            <BrainCircuit className="h-8 w-8 mb-2 opacity-30" />
+            <p className="text-sm">Select an action to inspect its decision</p>
+          </div>
+        ) : decisionLoading ? (
+          <div className="space-y-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-12 rounded-lg" />)}</div>
+        ) : decision ? (
+          <Card>
+            <CardContent className="pt-4 space-y-4">
+              <div className="flex items-center gap-2">
+                <AgentChip agentType={decision.agentType ?? ""} />
+                <div>
+                  <p className="text-sm font-semibold">{decision.agentName}</p>
+                  <p className="text-xs text-muted-foreground">{decision.department}</p>
+                </div>
+              </div>
+              <Separator />
+              {[
+                { label: "Decision Made",    value: actionLabel(decision.decision), icon: Zap },
+                { label: "Reason",           value: decision.reason,                icon: Target },
+                { label: "Rule / Trigger",   value: decision.rule,                  icon: Shield },
+                { label: "Outcome",          value: decision.outcome,               icon: CheckCircle },
+              ].map(row => {
+                const Icon = row.icon;
+                return (
+                  <div key={row.label} className="flex items-start gap-3 p-3 rounded-lg bg-muted/40">
+                    <Icon className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-[9px] text-muted-foreground uppercase tracking-wide font-medium">{row.label}</p>
+                      <p className="text-xs mt-0.5">{row.value}</p>
+                    </div>
+                  </div>
+                );
+              })}
+              {decision.confidence != null && (
+                <div className="p-3 rounded-lg bg-muted/40">
+                  <div className="flex items-center justify-between text-xs mb-2">
+                    <span className="text-muted-foreground uppercase tracking-wide font-medium text-[9px]">Confidence Level</span>
+                    <span className={`font-bold text-base ${decision.confidence >= 80 ? "text-emerald-600 dark:text-emerald-400" : decision.confidence >= 60 ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"}`}>{decision.confidence}%</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-muted overflow-hidden">
+                    <div className={`h-full rounded-full ${decision.confidence >= 80 ? "bg-emerald-500" : decision.confidence >= 60 ? "bg-amber-500" : "bg-rose-500"}`} style={{ width: `${decision.confidence}%` }} />
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center gap-2 flex-wrap">
+                <StatusBadge status={decision.status} />
+                {decision.riskLevel && (
+                  <Badge variant="outline" className="text-[10px] capitalize">{decision.riskLevel} risk</Badge>
+                )}
+                {decision.toolsUsed?.map((t: string) => (
+                  <Badge key={t} variant="secondary" className="text-[10px]">{t}</Badge>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="text-center py-10 text-muted-foreground border-2 border-dashed rounded-xl">
+            <p className="text-xs">Decision details not available for this action.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab 8: CEO Control Panel ─────────────────────────────────────────────────
+
+function ControlsTab() {
+  const { toast } = useToast();
+  const [broadcast, setBroadcast] = useState("");
+  const { data: govSettings } = useQuery<any>({ queryKey: ["/api/governance/settings"], staleTime: 30_000 });
+  const { data: agents } = useQuery<any[]>({ queryKey: ["/api/workforce/agents"], staleTime: 30_000 });
+
+  const controlMutation = useMutation({
+    mutationFn: async ({ action, payload }: { action: string; payload?: any }) => {
+      const r = await apiRequest("POST", "/api/ops/control-panel", { action, payload });
+      return r.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/governance/settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ops/mission-control"] });
+      toast({ title: data.message ?? "Action executed." });
+      setBroadcast("");
+    },
+    onError: () => toast({ title: "Failed to execute action", variant: "destructive" }),
+  });
+
+  const isPaused = govSettings?.emergencyPauseEnabled === true;
+  const enabledAgents = (agents ?? []).filter((a: any) => a.enabled);
+
+  const QUICK_ACTIONS = [
+    { action: "pause_workforce",   label: "Pause Entire Workforce",    icon: Pause,       danger: true,     desc: "Suspend all agent actions immediately" },
+    { action: "resume_workforce",  label: "Resume Workforce",          icon: Play,        success: true,    desc: "Restore normal agent operations" },
+    { action: "force_workflow",    label: "Force Workflow Run",        icon: SkipForward, warning: false,   desc: "Manually trigger workflow execution" },
+    { action: "trigger_task",      label: "Trigger Agent Task",        icon: Zap,         warning: false,   desc: "Manually dispatch a specific task" },
+  ];
+
+  return (
+    <div className="space-y-6" data-testid="tab-controls">
+      {/* Emergency status banner */}
+      {isPaused && (
+        <div className="flex items-center gap-3 p-4 rounded-xl border-2 border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/20">
+          <Pause className="h-5 w-5 text-rose-600 dark:text-rose-400 shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-semibold text-rose-700 dark:text-rose-300">Workforce Emergency Pause Active</p>
+            <p className="text-xs text-muted-foreground">All agent actions are currently suspended. Resume to restore operations.</p>
+          </div>
+          <Button
+            size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            onClick={() => controlMutation.mutate({ action: "resume_workforce" })}
+            disabled={controlMutation.isPending}
+            data-testid="button-resume-workforce-banner"
+          >
+            <Play className="h-3.5 w-3.5 mr-1.5" />Resume Workforce
+          </Button>
+        </div>
+      )}
+
+      {/* Quick actions */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <SlidersHorizontal className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Workforce Controls</h3>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {QUICK_ACTIONS.map(qa => {
+            const Icon = qa.icon;
+            return (
+              <button
+                key={qa.action}
+                onClick={() => controlMutation.mutate({ action: qa.action })}
+                disabled={controlMutation.isPending}
+                data-testid={`control-${qa.action}`}
+                className={`flex items-start gap-3 p-4 rounded-xl border-2 text-left transition-all hover:opacity-90 ${
+                  qa.danger ? "border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/10 hover:bg-rose-100 dark:hover:bg-rose-900/20" :
+                  qa.success ? "border-emerald-300 dark:border-emerald-700 bg-emerald-50 dark:bg-emerald-900/10 hover:bg-emerald-100 dark:hover:bg-emerald-900/20" :
+                  "border-border bg-card hover:bg-muted/30"
+                }`}
+              >
+                <div className={`h-9 w-9 rounded-lg flex items-center justify-center shrink-0 ${
+                  qa.danger ? "bg-rose-100 dark:bg-rose-900/30" : qa.success ? "bg-emerald-100 dark:bg-emerald-900/30" : "bg-primary/10"
+                }`}>
+                  <Icon className={`h-4.5 w-4.5 ${qa.danger ? "text-rose-600 dark:text-rose-400" : qa.success ? "text-emerald-600 dark:text-emerald-400" : "text-primary"}`} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold">{qa.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{qa.desc}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Per-agent controls */}
+      {enabledAgents.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-3">Agent-Level Controls</h3>
+          <div className="space-y-2">
+            {enabledAgents.map((agent: any) => {
+              const meta = AGENT_META[agent.agentType];
+              return (
+                <div key={agent.agentType} className="flex items-center gap-3 p-3 rounded-lg border bg-card" data-testid={`agent-control-${agent.agentType}`}>
+                  <AgentChip agentType={agent.agentType} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium">{meta?.name ?? agent.agentType}</p>
+                    <p className="text-[10px] text-muted-foreground">{meta?.dept}</p>
+                  </div>
+                  <div className="flex gap-1.5 shrink-0">
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                      onClick={() => controlMutation.mutate({ action: "pause_agent", payload: { agentType: agent.agentType } })}
+                      disabled={controlMutation.isPending}
+                      data-testid={`button-pause-agent-${agent.agentType}`}>
+                      <Pause className="h-3 w-3" />Pause
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1"
+                      onClick={() => controlMutation.mutate({ action: "restart_agent", payload: { agentType: agent.agentType } })}
+                      disabled={controlMutation.isPending}
+                      data-testid={`button-restart-agent-${agent.agentType}`}>
+                      <RotateCcw className="h-3 w-3" />Restart
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Broadcast instruction */}
+      <div>
+        <div className="flex items-center gap-2 mb-3">
+          <Radio className="h-4 w-4 text-primary" />
+          <h3 className="text-sm font-semibold">Broadcast Instruction to All Agents</h3>
+        </div>
+        <div className="space-y-2">
+          <Textarea
+            value={broadcast}
+            onChange={(e: any) => setBroadcast(e.target.value)}
+            placeholder='e.g. "All agents prioritize lead recovery today." or "Focus only on high-value prospects this week."'
+            className="text-sm min-h-24 resize-none"
+            data-testid="input-broadcast"
+          />
+          <div className="flex justify-between items-center gap-2">
+            <p className="text-[10px] text-muted-foreground">This instruction will be logged and queued for agent context on next run.</p>
+            <Button
+              size="sm"
+              onClick={() => controlMutation.mutate({ action: "broadcast_instruction", payload: { instruction: broadcast } })}
+              disabled={!broadcast.trim() || controlMutation.isPending}
+              data-testid="button-broadcast"
+            >
+              <Radio className="h-3.5 w-3.5 mr-1.5" />
+              {controlMutation.isPending ? "Sending…" : "Broadcast"}
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab 9: Autonomous Operations Timeline ────────────────────────────────────
+
+function TimelineTab() {
+  const { data: timeline, isLoading } = useQuery<any>({ queryKey: ["/api/ops/autonomous-timeline"], staleTime: 60_000 });
+
+  const STAGE_ICONS: Record<string, typeof Search> = {
+    search: Search, "zoom-in": Eye, mail: Mail, calendar: Calendar, "file-text": FileText, "check-circle": CheckCircle,
+  };
+
+  const STAGE_COLORS: Record<string, { bg: string; border: string; text: string; bar: string }> = {
+    blue:    { bg: "bg-blue-500/10",    border: "border-blue-200 dark:border-blue-800",    text: "text-blue-600 dark:text-blue-400",    bar: "bg-blue-500" },
+    violet:  { bg: "bg-violet-500/10",  border: "border-violet-200 dark:border-violet-800",  text: "text-violet-600 dark:text-violet-400",  bar: "bg-violet-500" },
+    sky:     { bg: "bg-sky-500/10",     border: "border-sky-200 dark:border-sky-800",     text: "text-sky-600 dark:text-sky-400",     bar: "bg-sky-500" },
+    emerald: { bg: "bg-emerald-500/10", border: "border-emerald-200 dark:border-emerald-800", text: "text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500" },
+    amber:   { bg: "bg-amber-500/10",   border: "border-amber-200 dark:border-amber-800",   text: "text-amber-600 dark:text-amber-400",   bar: "bg-amber-500" },
+    green:   { bg: "bg-green-500/10",   border: "border-green-200 dark:border-green-800",   text: "text-green-600 dark:text-green-400",   bar: "bg-green-500" },
+  };
+
+  const stages: any[] = timeline?.stages ?? [];
+  const totalEvents = timeline?.totalEvents ?? 0;
+  const maxCount = Math.max(...stages.map((s: any) => s.count), 1);
+
+  return (
+    <div className="space-y-4" data-testid="tab-timeline">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Autonomous Operations Pipeline</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {totalEvents} events in the last 7 days — showing your complete autonomous business process
+          </p>
+        </div>
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-3">{Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
+      ) : (
+        <div className="relative">
+          {/* Vertical connector line */}
+          <div className="absolute left-5 top-6 bottom-6 w-0.5 bg-border" />
+
+          <div className="space-y-3">
+            {stages.map((stage: any, idx: number) => {
+              const Icon = STAGE_ICONS[stage.icon] ?? CircleDot;
+              const colors = STAGE_COLORS[stage.color] ?? STAGE_COLORS.blue;
+              const pct = maxCount > 0 ? Math.round((stage.count / maxCount) * 100) : 0;
+
+              return (
+                <div key={stage.key} className="relative pl-12" data-testid={`timeline-stage-${stage.key}`}>
+                  {/* Node */}
+                  <div className={`absolute left-0 top-3 h-10 w-10 rounded-xl ${colors.bg} border ${colors.border} flex items-center justify-center z-10`}>
+                    <Icon className={`h-4.5 w-4.5 ${colors.text}`} />
+                  </div>
+
+                  {/* Arrow connector (not on last) */}
+                  {idx < stages.length - 1 && (
+                    <div className="absolute left-4.5 top-10 h-3 flex flex-col items-center">
+                      <ChevronRight className="h-3 w-3 text-muted-foreground/40 rotate-90" />
+                    </div>
+                  )}
+
+                  <div className={`p-4 rounded-xl border ${colors.border} ${colors.bg}`}>
+                    <div className="flex items-center justify-between flex-wrap gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold">{stage.stage}</span>
+                        <Badge className={`${colors.text.replace("text-", "bg-").replace(" dark:text-", " dark:bg-")} bg-opacity-10 text-xs`} style={{ background: undefined }}>
+                          <span className={colors.text}>{stage.count} events</span>
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Progress bar showing relative activity */}
+                    <div className="w-full h-1.5 rounded-full bg-black/10 dark:bg-white/10 mb-3 overflow-hidden">
+                      <div className={`h-full rounded-full ${colors.bar} transition-all`} style={{ width: `${pct}%` }} />
+                    </div>
+
+                    {/* Recent events */}
+                    {stage.recentLogs?.length > 0 && (
+                      <div className="space-y-1">
+                        {stage.recentLogs.map((log: any) => (
+                          <div key={log.id} className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                            <CircleDot className={`h-2.5 w-2.5 shrink-0 ${colors.text}`} />
+                            <span className="font-medium">{log.agentName}</span>
+                            <span>·</span>
+                            <span>{log.actionType?.replace(/_/g, " ")}</span>
+                            <span>·</span>
+                            <span>{log.timestamp ? formatDistanceToNow(new Date(log.timestamp), { addSuffix: true }) : ""}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {stage.count === 0 && (
+                      <p className="text-[10px] text-muted-foreground italic">No activity in this stage yet</p>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Main Page ─────────────────────────────────────────────────────────────────
+
+export default function AdminAiOperationsPage() {
+  const [activeTab, setActiveTab] = useState<TabId>("feed");
+  const { data: approvals } = useQuery<any[]>({ queryKey: ["/api/ai-approvals"], staleTime: 30_000, refetchInterval: 30_000 });
+  const pendingCount = (approvals ?? []).filter(a => a.status === "pending_approval" || a.status === "pending").length;
+
+  return (
+    <div className="p-4 sm:p-6 space-y-5 max-w-6xl mx-auto" data-testid="page-ai-operations">
+
+      {/* Header */}
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div>
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Link href="/admin/ai-workforce">
+              <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground h-7 px-2 -ml-2">
+                <ArrowLeft className="h-3.5 w-3.5" />AI Workforce
+              </Button>
+            </Link>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+            <Cpu className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
+            AI Operations Command Center
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Live execution layer — monitor, control, and orchestrate your AI workforce in real time.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link href="/admin/ai-workforce/settings">
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" data-testid="button-go-settings">
+              <SlidersHorizontal className="h-3.5 w-3.5" />Settings
+            </Button>
+          </Link>
+          <Link href="/admin/ai-approvals">
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8 relative" data-testid="button-go-approvals">
+              <Clock className="h-3.5 w-3.5" />
+              Approvals
+              {pendingCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 h-4 w-4 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center">
+                  {pendingCount > 9 ? "9+" : pendingCount}
+                </span>
+              )}
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      {/* Mission Control always visible */}
+      <MissionControlStrip />
+
+      {/* Tab Navigation */}
+      <div className="flex gap-1 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0" data-testid="tab-navigation">
+        {TABS.map(tab => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          const hasBadge = tab.id === "approvals" && pendingCount > 0;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              data-testid={`tab-button-${tab.id}`}
+              className={`relative flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium whitespace-nowrap transition-colors shrink-0 ${
+                isActive ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Icon className="h-3.5 w-3.5" />
+              {tab.label}
+              {hasBadge && (
+                <span className="h-4 w-4 rounded-full bg-amber-500 text-white text-[9px] font-bold flex items-center justify-center ml-0.5">
+                  {pendingCount > 9 ? "9+" : pendingCount}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab Content */}
+      <div className="min-h-96">
+        {activeTab === "feed"      && <LiveFeedTab />}
+        {activeTab === "agents"    && <AgentsTab />}
+        {activeTab === "workflows" && <WorkflowsTab />}
+        {activeTab === "revenue"   && <RevenueTab />}
+        {activeTab === "approvals" && <ApprovalsTab />}
+        {activeTab === "analytics" && <AnalyticsTab />}
+        {activeTab === "memory"    && <MemoryTab />}
+        {activeTab === "controls"  && <ControlsTab />}
+        {activeTab === "timeline"  && <TimelineTab />}
       </div>
     </div>
   );
