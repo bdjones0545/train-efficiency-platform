@@ -858,6 +858,20 @@ export default function AdminBillingIntelligencePage() {
         {activeTab === "revops"       && <RevOpsTab />}
         {activeTab === "advisor"      && <AIAdvisorTab />}
       </div>
+
+      {/* Forward navigation → Platform Reliability & Enterprise Readiness */}
+      <Link href="/admin/platform-health">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-rose-500/5 hover:from-primary/10 hover:to-rose-500/10 transition-colors cursor-pointer group" data-testid="nav-platform-health">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <Activity className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Platform Reliability &amp; Enterprise Readiness</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Health command center, endpoint audit, error intelligence, AI reliability monitor, observability dashboard, and full release readiness audit.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
     </div>
   );
 }
