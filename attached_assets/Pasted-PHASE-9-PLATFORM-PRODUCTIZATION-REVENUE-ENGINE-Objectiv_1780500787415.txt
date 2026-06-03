@@ -1,0 +1,404 @@
+PHASE 9 — PLATFORM PRODUCTIZATION & REVENUE ENGINE
+
+Objective
+
+Transform TrainEfficiency from a powerful internal platform into a scalable SaaS business with clear packaging, monetization, activation paths, expansion revenue, and enterprise sales readiness.
+
+Core Principle
+
+Phases 1–8 built the operating system.
+
+Phase 9 turns the operating system into a product.
+
+───────────────────────────────────────
+
+1. PLATFORM TIER ARCHITECTURE
+    ───────────────────────────────────────
+
+Create plan-based access.
+
+Starter
+$49/month
+
+Includes:
+
+* Scheduling
+* CRM
+* Lead Capture
+* Basic Automations
+* Athlete Management
+
+Professional
+$149/month
+
+Adds:
+
+* AI Workforce
+* AI Operations
+* Executive Intelligence
+* Advanced Automations
+* Approval Center
+
+Growth
+$299/month
+
+Adds:
+
+* Autonomous Management
+* Trust & Attribution
+* Market Intelligence
+* AI Chief of Staff
+
+Enterprise
+Custom Pricing
+
+Adds:
+
+* Network Intelligence
+* White Label
+* Multi-location
+* Custom Agents
+* API Access
+* Priority Support
+
+System Requirements:
+
+* Plan entitlement engine
+* Feature gating
+* Usage tracking
+* Upgrade prompts
+
+───────────────────────────────────────
+2. FEATURE ENTITLEMENT SYSTEM
+───────────────────────────────────────
+
+New table:
+
+plan_entitlements
+
+Map:
+
+Feature
+Required Plan
+
+Examples:
+
+AI Workforce
+Professional
+
+Autonomous Management
+Growth
+
+Network Intelligence
+Enterprise
+
+Middleware:
+
+requireFeatureAccess()
+
+Display:
+
+Locked modules
+Upgrade CTAs
+Plan comparison modal
+
+───────────────────────────────────────
+3. ROI-BASED UPGRADE ENGINE
+───────────────────────────────────────
+
+When a user reaches a plan boundary:
+
+Show:
+
+Potential Value Unlocked
+
+Example:
+
+Autonomous Management
+
+Expected Value:
++$4,200/year
+
+Time Saved:
+9 hours/week
+
+Upgrade to Growth
+
+Use actual platform data.
+
+───────────────────────────────────────
+4. ACTIVATION ENGINE
+───────────────────────────────────────
+
+Track onboarding progress.
+
+Examples:
+
+✓ Created Organization
+✓ Added Coaches
+✓ Connected Gmail
+✓ Created Workforce
+✓ Activated Workflows
+✓ Connected Calendar
+✓ Generated First Lead
+
+Activation Score
+
+0–100
+
+Display:
+
+Progress tracker
+Next recommended action
+
+───────────────────────────────────────
+5. EXPANSION OPPORTUNITY ENGINE
+───────────────────────────────────────
+
+Identify upsell opportunities.
+
+Examples:
+
+Using Workforce
+Not using Executive Intelligence
+
+Using Executive Intelligence
+Not using Autonomous Management
+
+Using Growth
+Eligible for Enterprise
+
+Generate:
+
+Upgrade recommendations
+
+Expected ROI
+
+───────────────────────────────────────
+6. SUBSCRIPTION HEALTH CENTER
+───────────────────────────────────────
+
+New Route:
+
+/admin/billing-intelligence
+
+Track:
+
+Plan
+MRR
+Usage
+Seats
+Features Used
+Features Unused
+Upgrade Potential
+
+Display:
+
+Health Score
+
+Expansion Score
+
+Retention Risk
+
+───────────────────────────────────────
+7. USAGE INTELLIGENCE
+───────────────────────────────────────
+
+Track:
+
+* Logins
+* Agent executions
+* Workflow runs
+* Revenue generated
+* Opportunities created
+* Features used
+
+Generate:
+
+Most Valuable Features
+
+Least Used Features
+
+Power User Analysis
+
+───────────────────────────────────────
+8. PLAN COMPARISON ENGINE
+───────────────────────────────────────
+
+Unified comparison matrix.
+
+Display:
+
+Current Plan
+Next Plan
+
+Columns:
+
+Features
+ROI
+Automation Capacity
+Agents
+Workflows
+Support
+
+Upgrade CTA.
+
+───────────────────────────────────────
+9. ENTERPRISE READINESS CENTER
+───────────────────────────────────────
+
+Prepare for larger customers.
+
+Features:
+
+Multi-location management
+
+Department management
+
+Role-based governance
+
+Custom branding
+
+Custom domains
+
+Advanced permissions
+
+API access
+
+SSO readiness
+
+───────────────────────────────────────
+10. REVENUE OPERATIONS DASHBOARD
+───────────────────────────────────────
+
+For TrainEfficiency itself.
+
+Track:
+
+Total MRR
+
+Expansion Revenue
+
+Churn Risk
+
+Upgrade Pipeline
+
+Plan Distribution
+
+Activation Rates
+
+Feature Adoption
+
+Most Valuable Features
+
+Purpose:
+
+Understand platform economics.
+
+───────────────────────────────────────
+11. AI PRODUCT ADVISOR
+───────────────────────────────────────
+
+New AI layer.
+
+Questions:
+
+What features should we release next?
+
+What drives upgrades?
+
+What drives retention?
+
+Which modules are underutilized?
+
+Uses:
+
+Network Intelligence
+Usage Intelligence
+Revenue Intelligence
+
+Provides product recommendations.
+
+───────────────────────────────────────
+12. PLATFORM MARKETPLACE
+───────────────────────────────────────
+
+Future ecosystem.
+
+Modules:
+
+Agents
+
+Workflows
+
+Playbooks
+
+Templates
+
+Industry Packs
+
+Partner Integrations
+
+Revenue Sharing Model
+
+Allows third-party contributions.
+
+───────────────────────────────────────
+13. FINAL TRAIN EFFICIENCY ARCHITECTURE
+───────────────────────────────────────
+
+Layer 1
+Setup Wizard
+
+Layer 2
+Workforce Management
+
+Layer 3
+AI Operations
+
+Layer 4
+Executive Intelligence
+
+Layer 5
+Autonomous Management
+
+Layer 6
+Trust & Attribution
+
+Layer 7
+External Intelligence
+
+Layer 8
+Network Intelligence
+
+Layer 9
+Productization & Revenue Engine
+
+Responsibilities
+
+Operate Business
+↓
+Improve Business
+↓
+Learn From Market
+↓
+Learn From Network
+↓
+Monetize Platform
+
+Acceptance Criteria
+
+* Plan architecture
+* Entitlement engine
+* Feature gating
+* Activation engine
+* Expansion engine
+* Billing intelligence
+* Usage intelligence
+* Enterprise readiness
+* Revenue operations dashboard
+* AI product advisor
+* Marketplace foundation
+* Upgrade flows
+* Mobile responsive
+* Enterprise SaaS monetization framework

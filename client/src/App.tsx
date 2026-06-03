@@ -65,6 +65,7 @@ import AdminAutonomousManagementPage from "@/pages/admin-autonomous-management";
 import AdminTrustAttributionPage from "@/pages/admin-trust-attribution";
 import AdminMarketIntelligencePage from "@/pages/admin-market-intelligence";
 import AdminNetworkIntelligencePage from "@/pages/admin-network-intelligence";
+import AdminBillingIntelligencePage from "@/pages/admin-billing-intelligence";
 import AdminAiGovernancePage from "@/pages/admin-ai-governance";
 import AdminAiWorkforcePage from "@/pages/admin-ai-workforce";
 import AdminAiWorkforceSettingsPage from "@/pages/admin-ai-workforce-settings";
@@ -432,6 +433,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/trust-attribution" component={AdminTrustAttributionPage} />
                   <Route path="/admin/market-intelligence" component={AdminMarketIntelligencePage} />
                   <Route path="/admin/network-intelligence" component={AdminNetworkIntelligencePage} />
+                  <Route path="/admin/billing-intelligence" component={AdminBillingIntelligencePage} />
                   <Route path="/command-center" component={BusinessCommandCenterPage} />
                   <Route path="/admin/trigger-audit" component={EmailTriggerAuditPage} />
                   <Route path="/admin/ai-approvals" component={AdminAiApprovalsPage} />
