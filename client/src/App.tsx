@@ -60,6 +60,7 @@ import AdminOutreachCenterPage from "@/pages/admin-outreach-center";
 import BusinessCommandCenterPage from "@/pages/business-command-center";
 import BusinessBrainPage from "@/pages/business-brain";
 import AdminAiOperationsPage from "@/pages/admin-ai-operations";
+import AdminExecutiveIntelligencePage from "@/pages/admin-executive-intelligence";
 import AdminAiGovernancePage from "@/pages/admin-ai-governance";
 import AdminAiWorkforcePage from "@/pages/admin-ai-workforce";
 import AdminAiWorkforceSettingsPage from "@/pages/admin-ai-workforce-settings";
@@ -422,6 +423,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/lead-pipeline" component={AdminLeadPipelinePage} />
                   <Route path="/admin/business-brain" component={BusinessBrainPage} />
                   <Route path="/admin/ai-operations" component={AdminAiOperationsPage} />
+                  <Route path="/admin/executive-intelligence" component={AdminExecutiveIntelligencePage} />
                   <Route path="/command-center" component={BusinessCommandCenterPage} />
                   <Route path="/admin/trigger-audit" component={EmailTriggerAuditPage} />
                   <Route path="/admin/ai-approvals" component={AdminAiApprovalsPage} />

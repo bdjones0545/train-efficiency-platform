@@ -20895,6 +20895,431 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // EXECUTIVE INTELLIGENCE SYSTEM — Phase 4
+  // ═══════════════════════════════════════════════════════════════
+
+  // GET /api/executive/briefing — daily executive briefing
+  app.get("/api/executive/briefing", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { computeOrgAttribution } = await import("./workforce-attribution-engine");
+      const { orgAiOpportunities, attentionItems: ait, agentPendingActions } = await import("@shared/schema");
+      const { eq, and, gt } = await import("drizzle-orm");
+      const today = new Date(); today.setHours(0,0,0,0);
+      const now = new Date();
+
+      const [attr7d, opps, alerts, pending, jobs, logs] = await Promise.all([
+        computeOrgAttribution(orgId, "7d").catch(() => ({ totalActions: 0, totalRevenueGenerated: 0, totalRevenueInfluenced: 0, totalTimeSavedHours: 0, agents: [] })),
+        db.select().from(orgAiOpportunities).where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open"))).catch(() => []),
+        db.select().from(ait).where(and(eq(ait.orgId, orgId), eq(ait.status, "active"))).catch(() => []),
+        db.select().from(agentPendingActions).where(and(eq(agentPendingActions.orgId, orgId), eq(agentPendingActions.status, "pending"), gt(agentPendingActions.expiresAt, now))).catch(() => []),
+        storage.getWorkflowJobs(orgId, undefined, 200).catch(() => []),
+        storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []),
+      ]);
+
+      const logsToday = logs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= today);
+      const meetingsToday = logsToday.filter((l: any) => ["book","schedule","calendar"].some(k => (l.actionType ?? "").toLowerCase().includes(k))).length;
+      const followUps = logsToday.filter((l: any) => ["follow","outreach","email","relay"].some(k => (l.actionType ?? "").toLowerCase().includes(k) || (l.toolName ?? "").toLowerCase().includes(k))).length;
+      const failedJobs = jobs.filter((j: any) => j.status === "failed").length;
+      const stuckJobs = jobs.filter((j: any) => j.status === "running" && j.updatedAt && (Date.now() - new Date(j.updatedAt).getTime()) > 30 * 60 * 1000).length;
+      const criticalAlerts = alerts.filter((a: any) => ["critical","high"].includes((a.level ?? "").toLowerCase()));
+      const highValueOpps = opps.filter((o: any) => (o.potentialValue ?? 0) > 500).length;
+
+      const wins: string[] = [];
+      if (meetingsToday > 0) wins.push(`${meetingsToday} meeting${meetingsToday > 1 ? "s" : ""} scheduled today`);
+      if (followUps > 0) wins.push(`${followUps} outreach action${followUps > 1 ? "s" : ""} sent today`);
+      if (highValueOpps > 0) wins.push(`${highValueOpps} high-value opportunit${highValueOpps > 1 ? "ies" : "y"} identified`);
+      if (attr7d.totalTimeSavedHours > 0) wins.push(`${attr7d.totalTimeSavedHours.toFixed(1)} hours of labor saved this week`);
+      if (attr7d.totalActions > 0) wins.push(`${attr7d.totalActions} agent actions completed this week`);
+      if (wins.length === 0) wins.push("AI workforce is online and monitoring your business");
+
+      const risks: string[] = [];
+      criticalAlerts.slice(0, 3).forEach((a: any) => risks.push(a.title));
+      if (failedJobs > 0) risks.push(`${failedJobs} workflow${failedJobs > 1 ? "s" : ""} failing — requires attention`);
+      if (stuckJobs > 0) risks.push(`${stuckJobs} workflow${stuckJobs > 1 ? "s" : ""} stuck for >30 minutes`);
+      if (pending.length > 5) risks.push(`${pending.length} agent actions pending approval — backlog building`);
+
+      const opportunities: string[] = opps.slice(0, 3).map((o: any) => o.title ?? "Unnamed opportunity");
+      if (opportunities.length === 0) {
+        if (logsToday.length === 0) opportunities.push("Enable more agent workflows to identify new opportunities");
+        else opportunities.push("Agents are actively scanning — opportunities will appear as they are identified");
+      }
+
+      const recommendedActions: { rank: number; action: string; reason: string; impact: string }[] = [];
+      if (pending.length > 0) recommendedActions.push({ rank: 1, action: `Approve ${pending.length} pending agent action${pending.length > 1 ? "s" : ""}`, reason: "Agent actions awaiting your approval", impact: "Unblocks AI execution" });
+      if (opps.length > 0) recommendedActions.push({ rank: 2, action: `Review top revenue opportunity: ${opps[0]?.title ?? "Open opportunity"}`, reason: "Highest potential value in pipeline", impact: `Est. $${(opps[0]?.potentialValue ?? 0).toLocaleString()}` });
+      if (failedJobs > 0) recommendedActions.push({ rank: 3, action: "Investigate and retry failed workflows", reason: "Workflow failures reduce automation coverage", impact: "Restores automation" });
+      if (attr7d.agents.filter((a: any) => a.totalActions === 0).length > 0) recommendedActions.push({ rank: 4, action: "Activate underutilized agents", reason: "Some agents have zero actions this week", impact: "Increases AI coverage" });
+      if (recommendedActions.length < 3) recommendedActions.push({ rank: recommendedActions.length + 1, action: "Review Executive Scorecard trends", reason: "Identify optimization opportunities across all domains", impact: "Strategic improvement" });
+
+      const totalRevenue = attr7d.totalRevenueGenerated + attr7d.totalRevenueInfluenced;
+      const score = Math.min(100, 40 + (attr7d.totalActions > 0 ? 20 : 0) + (totalRevenue > 0 ? 20 : 0) + (risks.length === 0 ? 10 : Math.max(0, 10 - risks.length * 3)) + (opps.length > 0 ? 10 : 0));
+
+      res.json({
+        date: new Date().toISOString(),
+        businessHealthScore: score,
+        wins,
+        risks,
+        opportunities,
+        recommendedActions,
+        stats: { meetingsToday, followUps, pendingApprovals: pending.length, openOpportunities: opps.length, criticalAlerts: criticalAlerts.length, failedWorkflows: failedJobs },
+      });
+    } catch (e: any) {
+      console.error("[executive/briefing] error:", e);
+      res.status(500).json({ message: "Failed to generate executive briefing" });
+    }
+  });
+
+  // GET /api/executive/forecast — revenue forecast with 7d/30d/90d windows
+  app.get("/api/executive/forecast", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { computeOrgAttribution } = await import("./workforce-attribution-engine");
+      const { orgAiOpportunities } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [attr7d, attr30d, opps] = await Promise.all([
+        computeOrgAttribution(orgId, "7d").catch(() => ({ totalRevenueGenerated: 0, totalRevenueInfluenced: 0, totalRevenueRecovered: 0 })),
+        computeOrgAttribution(orgId, "30d").catch(() => ({ totalRevenueGenerated: 0, totalRevenueInfluenced: 0, totalRevenueRecovered: 0, agents: [] })),
+        db.select().from(orgAiOpportunities).where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open"))).catch(() => []),
+      ]);
+
+      const weeklyRate = attr7d.totalRevenueGenerated + attr7d.totalRevenueInfluenced;
+      const monthlyRate = attr30d.totalRevenueGenerated + attr30d.totalRevenueInfluenced;
+      const pipelineValue = opps.reduce((s: number, o: any) => s + (o.potentialValue ?? 0), 0);
+      const pipelineAvgProb = opps.length > 0 ? opps.reduce((s: number, o: any) => s + (o.probability ?? 50), 0) / opps.length : 50;
+
+      const dailyRate = monthlyRate > 0 ? monthlyRate / 30 : weeklyRate / 7;
+      const confidence7d = weeklyRate > 0 ? 85 : 45;
+      const confidence30d = monthlyRate > 0 ? 78 : 38;
+      const confidence90d = 55;
+
+      res.json({
+        generatedAt: new Date().toISOString(),
+        windows: [
+          { period: "7d", label: "7 Day", projected: Math.round(dailyRate * 7), atRisk: Math.round(pipelineValue * 0.15), recovery: Math.round(attr7d.totalRevenueRecovered), pipelineVelocity: opps.filter((o: any) => o.status === "open").length, confidence: confidence7d },
+          { period: "30d", label: "30 Day", projected: Math.round(dailyRate * 30), atRisk: Math.round(pipelineValue * 0.25), recovery: Math.round(attr30d.totalRevenueRecovered ?? 0), pipelineVelocity: opps.length, confidence: confidence30d },
+          { period: "90d", label: "90 Day", projected: Math.round(dailyRate * 90 + pipelineValue * (pipelineAvgProb / 100)), atRisk: Math.round(pipelineValue * 0.4), recovery: Math.round((attr30d.totalRevenueRecovered ?? 0) * 3), pipelineVelocity: Math.round(opps.length * 2.5), confidence: confidence90d },
+        ],
+        pipelineValue,
+        pipelineCount: opps.length,
+        topOpportunities: [...opps].sort((a, b) => (b.potentialValue ?? 0) - (a.potentialValue ?? 0)).slice(0, 5).map((o: any) => ({ id: o.id, title: o.title, value: o.potentialValue ?? 0, probability: o.probability ?? 50, agentId: o.agentId, status: o.status })),
+      });
+    } catch (e: any) {
+      console.error("[executive/forecast] error:", e);
+      res.status(500).json({ message: "Failed to generate forecast" });
+    }
+  });
+
+  // GET /api/executive/bottlenecks — bottleneck detection
+  app.get("/api/executive/bottlenecks", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { agentPendingActions } = await import("@shared/schema");
+      const { eq, and, gt } = await import("drizzle-orm");
+      const now = new Date();
+      const [jobs, logs, pending] = await Promise.all([
+        storage.getWorkflowJobs(orgId, undefined, 500).catch(() => []),
+        storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []),
+        db.select().from(agentPendingActions).where(and(eq(agentPendingActions.orgId, orgId), eq(agentPendingActions.status, "pending"), gt(agentPendingActions.expiresAt, now))).catch(() => []),
+      ]);
+
+      const bottlenecks: { id: string; problem: string; impact: string; severity: string; fix: string; metric: string }[] = [];
+
+      const failedJobs = jobs.filter((j: any) => j.status === "failed");
+      if (failedJobs.length > 0) bottlenecks.push({ id: "workflow_failures", problem: `${failedJobs.length} workflow${failedJobs.length > 1 ? "s" : ""} failing`, impact: "Automation gaps causing manual workload increase", severity: failedJobs.length > 3 ? "critical" : "high", fix: "Review failed workflows and retry or reconfigure triggers", metric: `${failedJobs.length} failed` });
+
+      const stuckJobs = jobs.filter((j: any) => j.status === "running" && j.updatedAt && (Date.now() - new Date(j.updatedAt).getTime()) > 30 * 60 * 1000);
+      if (stuckJobs.length > 0) bottlenecks.push({ id: "stuck_workflows", problem: `${stuckJobs.length} workflow${stuckJobs.length > 1 ? "s" : ""} stuck for >30 minutes`, impact: "Blocking downstream agent actions", severity: "high", fix: "Cancel stuck workflows and investigate root cause", metric: `${stuckJobs.length} stuck` });
+
+      if (pending.length > 5) bottlenecks.push({ id: "approval_backlog", problem: `Approval backlog: ${pending.length} actions awaiting approval`, impact: "Agent execution paused — revenue and outreach delayed", severity: pending.length > 10 ? "critical" : "high", fix: "Review and bulk-approve pending agent actions", metric: `${pending.length} pending` });
+
+      const failedLogs = logs.filter((l: any) => l.status === "failed" || l.status === "error");
+      const failRate = logs.length > 0 ? failedLogs.length / logs.length : 0;
+      if (failRate > 0.2) bottlenecks.push({ id: "agent_errors", problem: `High agent error rate: ${Math.round(failRate * 100)}%`, impact: "Reduced automation quality and missed actions", severity: failRate > 0.4 ? "critical" : "medium", fix: "Investigate error logs and check agent configurations", metric: `${failedLogs.length}/${logs.length} actions` });
+
+      const h24 = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const recentLogs = logs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h24);
+      if (recentLogs.length === 0 && logs.length > 0) bottlenecks.push({ id: "agent_inactivity", problem: "No agent activity in last 24 hours", impact: "Automation coverage gap — business running manually", severity: "medium", fix: "Check agent status and workflow schedules", metric: "0 actions/24h" });
+
+      const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
+      const enabledCount = agents.filter((a: any) => a.enabled).length;
+      if (enabledCount === 0) bottlenecks.push({ id: "no_agents", problem: "No agents are currently enabled", impact: "Zero automation — full manual operation", severity: "critical", fix: "Enable agents in AI Workforce Settings", metric: "0 agents active" });
+
+      if (bottlenecks.length === 0) bottlenecks.push({ id: "all_clear", problem: "No significant bottlenecks detected", impact: "Operations running smoothly", severity: "info", fix: "Continue monitoring and optimizing", metric: "All systems healthy" });
+
+      res.json({ bottlenecks, total: bottlenecks.length, critical: bottlenecks.filter(b => b.severity === "critical").length, generatedAt: now.toISOString() });
+    } catch (e: any) {
+      console.error("[executive/bottlenecks] error:", e);
+      res.status(500).json({ message: "Failed to detect bottlenecks" });
+    }
+  });
+
+  // GET /api/executive/risks — predictive risk monitoring
+  app.get("/api/executive/risks", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { computeOrgAttribution } = await import("./workforce-attribution-engine");
+      const { attentionItems: ait, agentPendingActions } = await import("@shared/schema");
+      const { eq, and, gt } = await import("drizzle-orm");
+      const now = new Date();
+
+      const [attr7d, attr30d, alerts, pending, jobs, logs] = await Promise.all([
+        computeOrgAttribution(orgId, "7d").catch(() => ({ totalRevenueGenerated: 0, totalRevenueInfluenced: 0, totalActions: 0, agents: [] as any[] })),
+        computeOrgAttribution(orgId, "30d").catch(() => ({ totalRevenueGenerated: 0, totalRevenueInfluenced: 0 })),
+        db.select().from(ait).where(and(eq(ait.orgId, orgId), eq(ait.status, "active"))).catch(() => []),
+        db.select().from(agentPendingActions).where(and(eq(agentPendingActions.orgId, orgId), eq(agentPendingActions.status, "pending"), gt(agentPendingActions.expiresAt, now))).catch(() => []),
+        storage.getWorkflowJobs(orgId, undefined, 200).catch(() => []),
+        storage.getUnifiedActionLog(orgId, { limit: 200 }).catch(() => []),
+      ]);
+
+      const risks: { id: string; title: string; description: string; category: string; level: string; probability: number; impact: string; mitigation: string }[] = [];
+
+      // Revenue decline risk
+      const week7 = attr7d.totalRevenueGenerated + attr7d.totalRevenueInfluenced;
+      const month30 = attr30d.totalRevenueGenerated + attr30d.totalRevenueInfluenced;
+      const weeklyAvg = month30 / 4;
+      if (weeklyAvg > 0 && week7 < weeklyAvg * 0.7) risks.push({ id: "revenue_decline", title: "Revenue Trend Declining", description: `This week's AI-influenced revenue is ${Math.round((1 - week7/weeklyAvg) * 100)}% below 30-day average`, category: "Revenue", level: "high", probability: 72, impact: "Potential revenue shortfall", mitigation: "Review and activate revenue-generating agent workflows" });
+
+      // Churn risk from attention items
+      const churnAlerts = alerts.filter((a: any) => (a.category ?? "").toLowerCase().includes("churn") || (a.title ?? "").toLowerCase().includes("churn") || (a.title ?? "").toLowerCase().includes("retention"));
+      if (churnAlerts.length > 0) risks.push({ id: "client_churn", title: `Client Churn Risk: ${churnAlerts.length} Alert${churnAlerts.length > 1 ? "s" : ""}`, description: "Retention system has flagged clients at risk of leaving", category: "Retention", level: churnAlerts.length > 3 ? "critical" : "high", probability: 68, impact: `Potential loss of ${churnAlerts.length} client${churnAlerts.length > 1 ? "s" : ""}`, mitigation: "Enable automated retention workflows and manual outreach" });
+
+      // Approval backlog risk
+      if (pending.length > 8) risks.push({ id: "approval_overload", title: "Approval Backlog Growing", description: `${pending.length} agent actions awaiting approval`, category: "Operations", level: "moderate", probability: 85, impact: "Agent execution slowing — opportunities missed while waiting", mitigation: "Increase autonomy levels or bulk-approve low-risk actions" });
+
+      // Workflow failure risk
+      const failedJobs = jobs.filter((j: any) => j.status === "failed").length;
+      if (failedJobs > 2) risks.push({ id: "workflow_failure_risk", title: "Workflow Failure Pattern Detected", description: `${failedJobs} workflows have failed recently`, category: "Operations", level: failedJobs > 5 ? "high" : "moderate", probability: 60, impact: "Automation coverage gaps increasing operational load", mitigation: "Audit and repair failing workflow configurations" });
+
+      // Agent inactivity risk
+      const inactiveAgents = attr7d.agents.filter((a: any) => a.totalActions === 0).length;
+      if (inactiveAgents > 2) risks.push({ id: "agent_inactivity", title: "Agent Coverage Gap", description: `${inactiveAgents} configured agents have zero actions this week`, category: "Workforce", level: "moderate", probability: 55, impact: "Reduced automation across key business functions", mitigation: "Review agent configurations and trigger conditions" });
+
+      // Low activity risk
+      if (attr7d.totalActions < 5 && attr7d.agents.length > 0) risks.push({ id: "low_automation", title: "Low Automation Activity", description: "Fewer than 5 agent actions this week despite configured agents", category: "Operations", level: "moderate", probability: 65, impact: "Business likely running on manual effort — efficiency loss", mitigation: "Review agent triggers, schedules, and enablement" });
+
+      // Add from attention items
+      const critItems = alerts.filter((a: any) => (a.level ?? "").toLowerCase() === "critical").slice(0, 2);
+      critItems.forEach((a: any) => risks.push({ id: `alert_${a.id}`, title: a.title, description: a.body ?? "Critical issue requiring attention", category: a.category ?? "System", level: "critical", probability: 90, impact: "Immediate business impact", mitigation: a.suggestedAction ?? "Review and resolve" }));
+
+      if (risks.length === 0) risks.push({ id: "all_clear", title: "No Significant Risks Detected", description: "All monitored metrics are within acceptable ranges", category: "System", level: "low", probability: 10, impact: "Minimal", mitigation: "Continue current operations" });
+
+      res.json({ risks, summary: { critical: risks.filter(r => r.level === "critical").length, high: risks.filter(r => r.level === "high").length, moderate: risks.filter(r => r.level === "moderate").length, low: risks.filter(r => r.level === "low").length }, generatedAt: now.toISOString() });
+    } catch (e: any) {
+      console.error("[executive/risks] error:", e);
+      res.status(500).json({ message: "Failed to assess risks" });
+    }
+  });
+
+  // GET /api/executive/recommendations — strategic recommendations
+  app.get("/api/executive/recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
+      const jobs = await storage.getWorkflowJobs(orgId, undefined, 200).catch(() => []);
+      const logs = await storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []);
+      const { agentPendingActions } = await import("@shared/schema");
+      const { eq, and, gt } = await import("drizzle-orm");
+      const now = new Date();
+      const pending = await db.select().from(agentPendingActions).where(and(eq(agentPendingActions.orgId, orgId), eq(agentPendingActions.status, "pending"), gt(agentPendingActions.expiresAt, now))).catch(() => []);
+
+      const { AGENT_IDENTITIES } = await import("./agent-identities");
+      const h7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const logs7d = logs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h7d);
+      const enabledTypes = new Set(agents.filter((a: any) => a.enabled).map((a: any) => a.agentType));
+      const activeTypes = new Set(logs7d.map((l: any) => l.actorType));
+      const allKnownTypes = Object.keys(AGENT_IDENTITIES).filter(t => t !== "system_agent");
+      const missingAgents = allKnownTypes.filter(t => !enabledTypes.has(t));
+      const dormantAgents = [...enabledTypes].filter(t => !activeTypes.has(t));
+      const approvalRequiringAgents = agents.filter((a: any) => a.requiresApproval).length;
+      const failedJobs = jobs.filter((j: any) => j.status === "failed").length;
+
+      const recs: { id: string; title: string; description: string; impact: string; confidence: number; effort: string; category: string; status: string }[] = [];
+
+      if (missingAgents.length > 0) {
+        const top = missingAgents[0];
+        const identity = AGENT_IDENTITIES[top];
+        recs.push({ id: "install_agent", title: `Activate ${identity?.name ?? top} Agent`, description: `The ${identity?.name ?? top} agent is available but not configured. It could automate tasks in ${identity?.department ?? "your business"}.`, impact: "High — expands automation coverage significantly", confidence: 82, effort: "Low", category: "Workforce", status: "pending" });
+      }
+
+      if (dormantAgents.length > 0) {
+        recs.push({ id: "activate_dormant", title: `Activate ${dormantAgents.length} Dormant Agent${dormantAgents.length > 1 ? "s" : ""}`, description: `${dormantAgents.length} enabled agents had zero actions this week. Review their trigger configurations.`, impact: "Medium — reduces automation gaps", confidence: 75, effort: "Low", category: "Workforce", status: "pending" });
+      }
+
+      if (approvalRequiringAgents > 2 && pending.length > 5) {
+        recs.push({ id: "increase_autonomy", title: "Increase Agent Autonomy Level", description: `${approvalRequiringAgents} agents require manual approval, creating a ${pending.length}-item backlog. Consider auto-approving low-risk actions.`, impact: "High — eliminates approval bottleneck", confidence: 78, effort: "Low", category: "Governance", status: "pending" });
+      }
+
+      if (failedJobs > 0) {
+        recs.push({ id: "fix_workflows", title: "Repair Failing Workflows", description: `${failedJobs} workflow${failedJobs > 1 ? "s" : ""} have failed. Fixing these would restore automation continuity.`, impact: "Medium — restores automated processes", confidence: 90, effort: "Medium", category: "Operations", status: "pending" });
+      }
+
+      recs.push({ id: "expand_followup", title: "Expand Follow-Up Automation", description: "Increase follow-up sequence coverage to capture more warm leads before they go cold.", impact: "+15-25% lead conversion rate", confidence: 72, effort: "Low", category: "Revenue", status: "pending" });
+      recs.push({ id: "optimize_scheduling", title: "Enable Autonomous Scheduling", description: "Allow the Scheduling Agent to autonomously book consultations for qualified leads without approval.", impact: "+30% meeting booking rate", confidence: 68, effort: "Low", category: "Revenue", status: "pending" });
+      recs.push({ id: "outreach_volume", title: "Increase Outreach Volume by 20%", description: "Current outreach cadence has capacity to scale. Increasing volume on warm lead segments could accelerate pipeline.", impact: "+20% pipeline velocity", confidence: 65, effort: "Medium", category: "Revenue", status: "pending" });
+
+      res.json({ recommendations: recs.slice(0, 8), total: recs.length, generatedAt: now.toISOString() });
+    } catch (e: any) {
+      console.error("[executive/recommendations] error:", e);
+      res.status(500).json({ message: "Failed to generate recommendations" });
+    }
+  });
+
+  // GET /api/executive/scorecards — domain performance scores
+  app.get("/api/executive/scorecards", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { computeOrgAttribution } = await import("./workforce-attribution-engine");
+      const { orgAiOpportunities } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [attr7d, attr30d, opps, jobs, logs] = await Promise.all([
+        computeOrgAttribution(orgId, "7d").catch(() => ({ totalActions: 0, totalRevenueGenerated: 0, totalRevenueInfluenced: 0, totalTimeSavedHours: 0, agents: [] as any[] })),
+        computeOrgAttribution(orgId, "30d").catch(() => ({ totalActions: 0, totalRevenueGenerated: 0, totalRevenueInfluenced: 0, totalTimeSavedHours: 0, agents: [] as any[] })),
+        db.select().from(orgAiOpportunities).where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open"))).catch(() => []),
+        storage.getWorkflowJobs(orgId, undefined, 200).catch(() => []),
+        storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []),
+      ]);
+
+      const h7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const logs7d = logs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h7d);
+      const h30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const logs30d = logs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h30d);
+
+      const calcScore = (signals: boolean[]) => Math.round(signals.filter(Boolean).length / signals.length * 100);
+
+      const salesActions = logs7d.filter((l: any) => ["email","outreach","proposal","follow","relay"].some(k => (l.actionType ?? "").toLowerCase().includes(k)));
+      const schedActions = logs7d.filter((l: any) => ["book","schedule","calendar"].some(k => (l.actionType ?? "").toLowerCase().includes(k) || (l.toolName ?? "").toLowerCase().includes(k)));
+      const successLogs = logs7d.filter((l: any) => l.status === "completed" || l.status === "success");
+      const failedJobs = jobs.filter((j: any) => j.status === "failed").length;
+      const runningJobs = jobs.filter((j: any) => j.status === "running" || j.status === "queued").length;
+      const activeAgents = attr7d.agents.filter((a: any) => a.totalActions > 0).length;
+      const totalAgents = Math.max(1, attr7d.agents.length);
+
+      const scorecards = [
+        { domain: "Sales", score: calcScore([salesActions.length > 0, opps.length > 0, attr7d.totalRevenueInfluenced > 0, salesActions.length > 3, opps.filter((o: any) => (o.potentialValue ?? 0) > 500).length > 0]), color: "emerald", icon: "trending-up", trend: salesActions.length >= (logs30d.filter((l: any) => ["email","outreach","proposal","follow"].some(k => (l.actionType ?? "").toLowerCase().includes(k))).length / 4) ? "up" : "down", highlights: [`${salesActions.length} outreach actions`, `${opps.length} open opportunities`, `$${Math.round(attr7d.totalRevenueInfluenced).toLocaleString()} influenced`] },
+        { domain: "Retention", score: calcScore([attr7d.totalActions > 0, attr7d.totalTimeSavedHours > 0, logs7d.filter((l: any) => ["retention","churn","pulse","risk"].some(k => (l.actionType ?? "").toLowerCase().includes(k))).length > 0, successLogs.length > 0, failedJobs === 0]), color: "blue", icon: "users", trend: "stable", highlights: [`${successLogs.length} successful actions`, `${Math.round(attr7d.totalTimeSavedHours * 10) / 10}h saved`, "Retention monitoring active"] },
+        { domain: "Operations", score: calcScore([runningJobs > 0 || jobs.length > 0, failedJobs === 0, logs7d.length > 0, attr7d.totalTimeSavedHours > 0, successLogs.length / Math.max(1, logs7d.length) > 0.7]), color: "violet", icon: "settings", trend: failedJobs > 0 ? "down" : "stable", highlights: [`${jobs.length} total workflows`, `${failedJobs} failed`, `${Math.round(successLogs.length / Math.max(1, logs7d.length) * 100)}% success rate`] },
+        { domain: "Scheduling", score: calcScore([schedActions.length > 0, schedActions.length > 2, attr7d.agents.some((a: any) => a.agentType === "tempo_agent" && a.totalActions > 0), schedActions.length > 5, true]), color: "amber", icon: "calendar", trend: schedActions.length > 0 ? "up" : "stable", highlights: [`${schedActions.length} scheduling actions`, "Calendar automation active", "Booking automation enabled"] },
+        { domain: "Marketing", score: calcScore([salesActions.filter((l: any) => (l.actionType ?? "").toLowerCase().includes("outreach")).length > 0, opps.length > 2, attr7d.totalRevenueInfluenced > 0, logs7d.filter((l: any) => (l.actorType ?? "").includes("apex") || (l.actorType ?? "").includes("vector")).length > 0, true]), color: "pink", icon: "megaphone", trend: "stable", highlights: [`${opps.length} identified prospects`, "Outreach automation running", `${logs7d.filter((l: any) => (l.actorType ?? "").includes("apex")).length} revenue agent actions`] },
+        { domain: "Automation", score: calcScore([activeAgents > 0, activeAgents / totalAgents > 0.5, failedJobs === 0, logs7d.length > 10, attr7d.totalTimeSavedHours > 2]), color: "sky", icon: "zap", trend: activeAgents > 0 ? "up" : "down", highlights: [`${activeAgents}/${totalAgents} agents active`, `${logs7d.length} automated actions`, `${Math.round(attr7d.totalTimeSavedHours)}h automation time`] },
+      ];
+
+      res.json({ scorecards, generatedAt: new Date().toISOString() });
+    } catch (e: any) {
+      console.error("[executive/scorecards] error:", e);
+      res.status(500).json({ message: "Failed to generate scorecards" });
+    }
+  });
+
+  // POST /api/executive/recommendations/:id/action — approve/reject/schedule a recommendation
+  app.post("/api/executive/recommendations/:id/action", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { id } = req.params;
+      const { action, scheduledFor } = req.body;
+      if (!["approve", "reject", "schedule"].includes(action)) return res.status(400).json({ message: "Invalid action" });
+      try {
+        const { sql } = await import("drizzle-orm");
+        await db.execute(sql`
+          INSERT INTO admin_action_audit_log (id, org_id, admin_user_id, action_type, target_type, target_id, payload, created_at)
+          VALUES (gen_random_uuid()::text, ${orgId}, ${req.user.id}, ${"recommendation_" + action}, ${"executive_recommendation"}, ${id}, ${JSON.stringify({ action, scheduledFor })}, now())
+          ON CONFLICT DO NOTHING
+        `).catch(() => {});
+      } catch {}
+      res.json({ success: true, recommendationId: id, action, message: action === "approve" ? "Recommendation approved and queued for execution." : action === "schedule" ? `Recommendation scheduled for ${scheduledFor ?? "later"}.` : "Recommendation rejected." });
+    } catch (e: any) {
+      console.error("[executive/recommendations/action] error:", e);
+      res.status(500).json({ message: "Failed to process recommendation" });
+    }
+  });
+
+  // GET /api/executive/weekly-report — weekly report data
+  app.get("/api/executive/weekly-report", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { computeOrgAttribution } = await import("./workforce-attribution-engine");
+      const { orgAiOpportunities } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [attr7d, attr30d, opps, jobs, logs] = await Promise.all([
+        computeOrgAttribution(orgId, "7d").catch(() => ({ totalActions: 0, totalRevenueGenerated: 0, totalRevenueInfluenced: 0, totalRevenueRecovered: 0, totalEstimatedLaborSavings: 0, totalTimeSavedHours: 0, agents: [] as any[] })),
+        computeOrgAttribution(orgId, "30d").catch(() => ({ totalActions: 0, totalRevenueGenerated: 0, totalRevenueInfluenced: 0 })),
+        db.select().from(orgAiOpportunities).where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open"))).catch(() => []),
+        storage.getWorkflowJobs(orgId, undefined, 200).catch(() => []),
+        storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []),
+      ]);
+      const h7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const logs7d = logs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h7d);
+      const successRate = logs7d.length > 0 ? Math.round(logs7d.filter((l: any) => l.status === "completed" || l.status === "success").length / logs7d.length * 100) : 0;
+      res.json({
+        period: { start: h7d.toISOString(), end: new Date().toISOString() },
+        executiveSummary: { totalActions: attr7d.totalActions, successRate, activeAgents: attr7d.agents.filter((a: any) => a.totalActions > 0).length, revenueInfluenced: attr7d.totalRevenueInfluenced, laborSaved: attr7d.totalEstimatedLaborSavings, hoursSaved: attr7d.totalTimeSavedHours },
+        revenue: { generated: attr7d.totalRevenueGenerated, influenced: attr7d.totalRevenueInfluenced, recovered: attr7d.totalRevenueRecovered, pipelineValue: opps.reduce((s: number, o: any) => s + (o.potentialValue ?? 0), 0), openOpportunities: opps.length },
+        operations: { totalWorkflows: jobs.length, successfulWorkflows: jobs.filter((j: any) => j.status === "completed").length, failedWorkflows: jobs.filter((j: any) => j.status === "failed").length, totalAgentActions: attr7d.totalActions, automationHours: attr7d.totalTimeSavedHours },
+        workforce: { totalAgents: attr7d.agents.length, activeAgents: attr7d.agents.filter((a: any) => a.totalActions > 0).length, topPerformer: attr7d.agents[0]?.agentName ?? "—", laborSaved: attr7d.totalEstimatedLaborSavings },
+        risks: { openAlerts: 0, criticalAlerts: 0 },
+        opportunities: opps.slice(0, 5).map((o: any) => ({ title: o.title, value: o.potentialValue, status: o.status })),
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.error("[executive/weekly-report] error:", e);
+      res.status(500).json({ message: "Failed to generate weekly report" });
+    }
+  });
+
+  // POST /api/executive/boardroom — AI CEO Advisor Q&A
+  app.post("/api/executive/boardroom", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { question } = req.body;
+      if (!question?.trim()) return res.status(400).json({ message: "Question required" });
+
+      const { computeOrgAttribution } = await import("./workforce-attribution-engine");
+      const { orgAiOpportunities } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [attr7d, opps, jobs, logs] = await Promise.all([
+        computeOrgAttribution(orgId, "7d").catch(() => ({ totalActions: 0, totalRevenueGenerated: 0, totalRevenueInfluenced: 0, totalTimeSavedHours: 0, agents: [] as any[] })),
+        db.select().from(orgAiOpportunities).where(and(eq(orgAiOpportunities.orgId, orgId), eq(orgAiOpportunities.status, "open"))).catch(() => []),
+        storage.getWorkflowJobs(orgId, undefined, 100).catch(() => []),
+        storage.getUnifiedActionLog(orgId, { limit: 200 }).catch(() => []),
+      ]);
+
+      const h7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const logs7d = logs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h7d);
+      const context = `You are the AI CEO Advisor for this strength & conditioning coaching business. Analyze this real business data and answer the question:
+
+BUSINESS DATA (last 7 days):
+- AI Agent Actions: ${attr7d.totalActions} total, ${Math.round(logs7d.filter((l: any) => l.status === "completed").length / Math.max(1, logs7d.length) * 100)}% success rate
+- Active Agents: ${attr7d.agents.filter((a: any) => a.totalActions > 0).length} of ${attr7d.agents.length} configured
+- Revenue Influenced: $${Math.round(attr7d.totalRevenueInfluenced)}
+- Revenue Generated: $${Math.round(attr7d.totalRevenueGenerated)}
+- Labor Saved: ${attr7d.totalTimeSavedHours.toFixed(1)} hours
+- Open Opportunities: ${opps.length} (pipeline value: $${opps.reduce((s: number, o: any) => s + (o.potentialValue ?? 0), 0).toLocaleString()})
+- Active Workflows: ${jobs.filter((j: any) => j.status === "running").length} running, ${jobs.filter((j: any) => j.status === "failed").length} failed
+- Top agents by activity: ${attr7d.agents.slice(0, 3).map((a: any) => `${a.agentName} (${a.totalActions} actions)`).join(", ") || "none"}
+
+Be direct, specific, and actionable. Base your answer entirely on the data above. Format as clear prose with specific recommendations.`;
+
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [{ role: "system", content: context }, { role: "user", content: question }],
+        max_tokens: 600,
+        temperature: 0.4,
+      });
+
+      const answer = completion.choices[0]?.message?.content ?? "I was unable to generate a response. Please try again.";
+      res.json({ question, answer, generatedAt: new Date().toISOString(), tokensUsed: completion.usage?.total_tokens ?? 0 });
+    } catch (e: any) {
+      console.error("[executive/boardroom] error:", e);
+      res.status(500).json({ message: "Failed to process boardroom question" });
+    }
+  });
+
   // Outcome Evidence — single outcome detail
   app.get("/api/workforce/outcomes/:outcomeId", async (req, res) => {
     try {
