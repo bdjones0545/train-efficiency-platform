@@ -1,0 +1,304 @@
+PHASE 7 — EXTERNAL INTELLIGENCE NETWORK
+
+Objective
+
+Expand TrainEfficiency from an internal operating system into an external business intelligence platform capable of continuously monitoring the environment around the business.
+
+Core Principle
+
+Current System:
+Knows the business.
+
+Phase 7:
+Knows the market.
+
+───────────────────────────────────────
+
+1. MARKET INTELLIGENCE CENTER
+    ───────────────────────────────────────
+
+New Route:
+
+/admin/market-intelligence
+
+Track:
+
+* Industry trends
+* Local market trends
+* Seasonal opportunities
+* Demand shifts
+* Consumer behavior signals
+
+Display:
+
+Market Health Score
+
+Growth Opportunities
+
+Threat Detection
+
+Trend Forecasts
+
+───────────────────────────────────────
+2. COMPETITOR INTELLIGENCE
+───────────────────────────────────────
+
+Create competitor monitoring.
+
+Track:
+
+* Competitor websites
+* Service changes
+* Pricing changes
+* New programs
+* Hiring activity
+* Marketing activity
+
+Display:
+
+Competitor Alerts
+
+Examples:
+
+Competitor launched new youth speed program
+
+Competitor increased pricing
+
+Competitor hiring coaches
+
+Impact:
+
+Low / Moderate / High
+
+───────────────────────────────────────
+3. LOCAL OPPORTUNITY DISCOVERY
+───────────────────────────────────────
+
+Monitor:
+
+* Schools
+* Sports organizations
+* Recreation departments
+* Businesses
+* Community events
+
+Detect:
+
+* Partnership opportunities
+* Sponsorship opportunities
+* Recruiting opportunities
+* Contract opportunities
+
+Rank opportunities by value.
+
+───────────────────────────────────────
+4. CUSTOMER SENTIMENT ENGINE
+───────────────────────────────────────
+
+Aggregate:
+
+* Reviews
+* Testimonials
+* Surveys
+* Feedback
+
+Measure:
+
+Positive
+Neutral
+Negative
+
+Generate:
+
+Top complaints
+Top praise themes
+Retention risks
+
+───────────────────────────────────────
+5. REPUTATION MONITOR
+───────────────────────────────────────
+
+Track:
+
+* Google Reviews
+* Facebook Reviews
+* Social mentions
+* Community feedback
+
+Display:
+
+Reputation Score
+
+Alert when:
+
+Negative trend detected
+
+Review volume spikes
+
+───────────────────────────────────────
+6. HIRING INTELLIGENCE
+───────────────────────────────────────
+
+Monitor:
+
+* Coach availability
+* Local job activity
+* Candidate pipeline
+* Recruiting effectiveness
+
+Detect:
+
+Best hiring windows
+
+Talent shortages
+
+High-value candidates
+
+───────────────────────────────────────
+7. INDUSTRY TREND RADAR
+───────────────────────────────────────
+
+Track:
+
+* Fitness industry trends
+* Coaching trends
+* AI trends
+* Sports performance trends
+
+Display:
+
+Emerging Trends
+
+Examples:
+
+AI adoption increasing
+
+Small-group training demand rising
+
+Recovery services growing
+
+───────────────────────────────────────
+8. PARTNERSHIP INTELLIGENCE
+───────────────────────────────────────
+
+Discover:
+
+* Schools
+* Teams
+* Gyms
+* Businesses
+* Health organizations
+
+Rank:
+
+Strategic fit
+
+Estimated value
+
+Likelihood of success
+
+───────────────────────────────────────
+9. GROWTH OPPORTUNITY ENGINE
+───────────────────────────────────────
+
+Combine:
+
+Market Data
+Revenue Data
+Operations Data
+Customer Data
+
+Generate:
+
+Top Growth Opportunities
+
+Example:
+
+Launch Girls Soccer Performance Program
+
+Expected Revenue:
+$18,000/year
+
+Confidence:
+84%
+
+───────────────────────────────────────
+10. COMPETITIVE ADVANTAGE ANALYZER
+───────────────────────────────────────
+
+Compare:
+
+Your Business
+vs
+Market
+
+Identify:
+
+Strengths
+Weaknesses
+Threats
+Opportunities
+
+Generate:
+
+Strategic recommendations.
+
+───────────────────────────────────────
+11. EXTERNAL INTELLIGENCE AGENTS
+───────────────────────────────────────
+
+New Agents:
+
+Market Research Agent
+
+Competitor Intelligence Agent
+
+Partnership Agent
+
+Hiring Intelligence Agent
+
+Sentiment Agent
+
+Trend Analysis Agent
+
+───────────────────────────────────────
+12. ARCHITECTURE
+───────────────────────────────────────
+
+Setup Wizard
+↓
+Workforce Management
+↓
+AI Operations
+↓
+Executive Intelligence
+↓
+Autonomous Management
+↓
+Trust & Attribution
+↓
+External Intelligence Network
+
+Responsibilities
+
+Internal Layers:
+Understand the business.
+
+External Intelligence:
+Understand the environment.
+
+Acceptance Criteria
+
+* Market Intelligence Center
+* Competitor Monitoring
+* Opportunity Discovery
+* Customer Sentiment
+* Reputation Monitoring
+* Hiring Intelligence
+* Industry Trend Radar
+* Partnership Discovery
+* Growth Opportunity Engine
+* Competitive Advantage Analysis
+* External Intelligence Agents
+* Full audit trail
+* Mobile responsive
