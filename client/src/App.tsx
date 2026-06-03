@@ -68,6 +68,7 @@ import AdminNetworkIntelligencePage from "@/pages/admin-network-intelligence";
 import AdminBillingIntelligencePage from "@/pages/admin-billing-intelligence";
 import AdminPlatformHealthPage from "@/pages/admin-platform-health";
 import AdminExecutionCenterPage from "@/pages/admin-execution-center";
+import AdminEcosystemPage from "@/pages/admin-ecosystem";
 import AdminAiGovernancePage from "@/pages/admin-ai-governance";
 import AdminAiWorkforcePage from "@/pages/admin-ai-workforce";
 import AdminAiWorkforceSettingsPage from "@/pages/admin-ai-workforce-settings";
@@ -438,6 +439,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/billing-intelligence" component={AdminBillingIntelligencePage} />
                   <Route path="/admin/platform-health" component={AdminPlatformHealthPage} />
                   <Route path="/admin/execution-center" component={AdminExecutionCenterPage} />
+                  <Route path="/admin/ecosystem" component={AdminEcosystemPage} />
                   <Route path="/command-center" component={BusinessCommandCenterPage} />
                   <Route path="/admin/trigger-audit" component={EmailTriggerAuditPage} />
                   <Route path="/admin/ai-approvals" component={AdminAiApprovalsPage} />

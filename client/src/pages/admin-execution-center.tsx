@@ -977,6 +977,20 @@ export default function AdminExecutionCenterPage() {
         {activeTab === "deployments"  && <DeploymentsTab />}
         {activeTab === "outcomes"     && <OutcomesTab />}
       </div>
+
+      {/* Forward navigation → Ecosystem */}
+      <Link href="/admin/ecosystem">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-blue-500/5 hover:from-primary/10 hover:to-blue-500/10 transition-colors cursor-pointer group" data-testid="nav-ecosystem">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <Layers className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Ecosystem, White-Label &amp; Multi-Org Orchestration</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Manage franchises, agencies, enterprise hierarchies, template marketplaces, cross-org benchmarking, and full white-label control across thousands of organizations.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
     </div>
   );
 }
