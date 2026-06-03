@@ -1,0 +1,272 @@
+AI Workforce Management Dashboard — Phase 2 Upgrade
+
+Objective
+
+Transform the AI Workforce Management Dashboard from a configuration screen into a true executive operating center that provides visibility, governance, performance monitoring, workforce optimization, and agent deployment management.
+
+1. Workforce Health Score
+
+Add a prominent Workforce Health card at the top of the page.
+
+Metrics:
+
+* Workforce Health Score (0–100)
+* Agents Online / Total Agents
+* Integrations Connected / Available Integrations
+* Governance Coverage %
+* Workflow Coverage %
+* Active Departments %
+
+Scoring Factors:
+
+* Agent uptime
+* Connected integrations
+* Governance completeness
+* Workflow enablement
+* Approval configuration
+* Missing critical agents
+
+Display:
+
+* Green: 90–100
+* Yellow: 70–89
+* Red: Below 70
+
+2. AI Executive Summary
+
+Add a CEO-level summary card directly beneath Workforce Health.
+
+Display:
+
+AI Executive Summary
+
+Over the last 7 days:
+
+* Prospects contacted
+* Follow-ups generated
+* Meetings scheduled
+* Workflows executed
+* Revenue opportunities created
+* Tasks completed
+
+Include:
+
+Primary Bottleneck:
+Recommended Action:
+Data Sources:
+
+* Agent execution logs
+* Workflow jobs
+* Outreach activity
+* Revenue intelligence
+* Scheduling activity
+
+3. Workforce Activity Dashboard
+
+Create an operational metrics section.
+
+Last 24 Hours:
+
+* Emails Sent
+* SMS Sent
+* Leads Researched
+* Follow-Ups Generated
+* Meetings Scheduled
+* Workflows Executed
+* Tasks Completed
+* Revenue Opportunities Identified
+
+Add trend indicators:
+
+* Up
+* Down
+* Stable
+
+Compared to previous 24 hours.
+
+4. Agent Organization Chart
+
+Add a visual workforce hierarchy component.
+
+Example:
+
+CEO / Heartbeat
+│
+├── Revenue Agent
+├── Scheduling Agent
+├── Client Success Agent
+├── Retention Agent
+├── Research Agent
+├── Hiring Agent
+└── Marketing Agent
+
+Requirements:
+
+* Pull live agent data
+* Show active/inactive status
+* Click opens agent details
+* Mobile responsive
+
+5. Approval Queue Widget
+
+Add a governance operations card.
+
+Display:
+
+Pending Approvals
+
+* Emails awaiting approval
+* Follow-up sequences awaiting approval
+* Scheduling actions awaiting approval
+* Revenue actions awaiting approval
+* Workflow executions awaiting approval
+
+Features:
+
+* Approve
+* Reject
+* View Details
+
+No navigation required.
+
+6. Workforce Coverage Analysis
+
+Add AI-generated gap detection.
+
+Examples:
+
+Configured:
+
+✓ Revenue Agent
+✓ Scheduling Agent
+✓ Client Success Agent
+
+Missing:
+
+⚠ Hiring Agent
+⚠ Research Agent
+⚠ Marketing Agent
+
+Optimization Suggestions:
+
+⚠ Gmail connected but outreach automation disabled
+⚠ Google Calendar connected but scheduling automation disabled
+⚠ Workflow engine enabled with no active workflows
+
+Generate recommendations dynamically.
+
+7. Agent Marketplace
+
+Create a workforce expansion section.
+
+Installed Agents
+
+* Revenue Agent
+* Scheduling Agent
+* Client Success Agent
+
+Available Agents
+
+* Hiring Agent
+* Research Agent
+* Marketing Agent
+* Referral Agent
+* Recruiting Agent
+* Team Training Agent
+* Meta Ads Agent
+* Content Agent
+* Revenue Recovery Agent
+
+Features:
+
+* One-click install
+* Preview capabilities
+* Estimated business impact
+* Required integrations
+
+8. Executive Insights Engine
+
+Add an AI-generated insights feed.
+
+Examples:
+
+“Lead response time exceeds 24 hours.”
+
+“Follow-up completion rate dropped 12% this week.”
+
+“Revenue agent identified 14 uncontacted prospects.”
+
+“Scheduling agent increased booking rate by 18%.”
+
+Requirements:
+
+* Generate automatically
+* Prioritize by impact
+* Include recommended actions
+
+9. Workforce Readiness Score
+
+Add a deployment readiness section.
+
+Checks:
+
+* Gmail Connected
+* Calendar Connected
+* Governance Configured
+* Agents Enabled
+* Workflows Active
+* Approval Rules Defined
+
+Display:
+
+Ready for Autonomous Operations
+or
+
+Action Required Before Full Deployment
+
+10. Navigation Architecture
+
+Final hierarchy:
+
+AI Workforce Setup Wizard
+↓
+AI Workforce Management Dashboard
+↓
+AI Operations Command Center
+
+Responsibilities:
+
+Setup Wizard:
+
+* First-time onboarding only
+
+Management Dashboard:
+
+* Configuration
+* Governance
+* Workforce monitoring
+* Agent deployment
+* Health monitoring
+
+AI Operations:
+
+* Live execution
+* Agent activity
+* Workflow monitoring
+* Logs
+* Performance analytics
+
+Acceptance Criteria
+
+* Existing organizations land in Management Dashboard
+* Dashboard displays operational metrics
+* Dashboard displays workforce health score
+* Dashboard displays executive summary
+* Dashboard displays approval queue
+* Dashboard displays coverage analysis
+* Dashboard displays organization chart
+* Dashboard displays agent marketplace
+* Dashboard displays executive insights
+* No duplicate workforce configurations created
+* Fully responsive on mobile and desktop
+* Consistent with TrainEfficiency command-center design language

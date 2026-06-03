@@ -20580,6 +20580,192 @@ Respond with this exact JSON structure:
     }
   });
 
+  // GET /api/workforce/activity-metrics — 24h dashboard metrics with prev-24h trend
+  app.get("/api/workforce/activity-metrics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const now = new Date();
+      const h24Start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const h48Start = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+      const allLogs = await storage.getUnifiedActionLog(orgId, { limit: 2000 }).catch(() => []);
+      const last24 = allLogs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h24Start);
+      const prev24 = allLogs.filter((l: any) => {
+        const t = l.createdAt ? new Date(l.createdAt) : null;
+        return t && t >= h48Start && t < h24Start;
+      });
+      const ct = (logs: any[], kw: string) =>
+        logs.filter((l: any) => (l.actionType ?? "").includes(kw) || (l.toolName ?? "").includes(kw)).length;
+      const trend = (c: number, p: number) => c > p ? "up" : c < p ? "down" : "stable";
+
+      const emailsSent = ct(last24, "email") + ct(last24, "send_email");
+      const emailsPrev = ct(prev24, "email") + ct(prev24, "send_email");
+      const smsSent = ct(last24, "sms"); const smsPrev = ct(prev24, "sms");
+      const leads = ct(last24, "research") + ct(last24, "enrich");
+      const leadsPrev = ct(prev24, "research") + ct(prev24, "enrich");
+      const followUps = ct(last24, "follow_up") + ct(last24, "followup");
+      const followUpsPrev = ct(prev24, "follow_up") + ct(prev24, "followup");
+      const meetings = ct(last24, "meeting") + ct(last24, "schedule") + ct(last24, "book");
+      const meetingsPrev = ct(prev24, "meeting") + ct(prev24, "schedule") + ct(prev24, "book");
+      const tasks = last24.filter((l: any) => l.status === "completed" || l.status === "success").length;
+      const tasksPrev = prev24.filter((l: any) => l.status === "completed" || l.status === "success").length;
+      const jobs = await storage.getWorkflowJobs(orgId, undefined, 500).catch(() => []);
+      const wfExec = jobs.filter((j: any) => j.createdAt && new Date(j.createdAt) >= h24Start).length;
+      const wfPrev = jobs.filter((j: any) => { const t = j.createdAt ? new Date(j.createdAt) : null; return t && t >= h48Start && t < h24Start; }).length;
+      let revOps = 0, revPrev = 0;
+      try {
+        const { db } = await import("./db");
+        const { aiRevenueEvents } = await import("@shared/schema");
+        const { eq } = await import("drizzle-orm");
+        const evts = await db.select().from(aiRevenueEvents).where(eq(aiRevenueEvents.orgId, orgId)).catch(() => []);
+        revOps = evts.filter((e: any) => e.createdAt && new Date(e.createdAt) >= h24Start).length;
+        revPrev = evts.filter((e: any) => { const t = e.createdAt ? new Date(e.createdAt) : null; return t && t >= h48Start && t < h24Start; }).length;
+      } catch {}
+      res.json({
+        period: "24h",
+        metrics: [
+          { key: "emails_sent", label: "Emails Sent", value: emailsSent, prev: emailsPrev, trend: trend(emailsSent, emailsPrev), icon: "mail" },
+          { key: "sms_sent", label: "SMS Sent", value: smsSent, prev: smsPrev, trend: trend(smsSent, smsPrev), icon: "message-square" },
+          { key: "leads_researched", label: "Leads Researched", value: leads, prev: leadsPrev, trend: trend(leads, leadsPrev), icon: "search" },
+          { key: "follow_ups", label: "Follow-Ups Generated", value: followUps, prev: followUpsPrev, trend: trend(followUps, followUpsPrev), icon: "repeat" },
+          { key: "meetings", label: "Meetings Scheduled", value: meetings, prev: meetingsPrev, trend: trend(meetings, meetingsPrev), icon: "calendar" },
+          { key: "workflows", label: "Workflows Executed", value: wfExec, prev: wfPrev, trend: trend(wfExec, wfPrev), icon: "git-branch" },
+          { key: "tasks", label: "Tasks Completed", value: tasks, prev: tasksPrev, trend: trend(tasks, tasksPrev), icon: "check-circle" },
+          { key: "revenue_ops", label: "Revenue Opportunities", value: revOps, prev: revPrev, trend: trend(revOps, revPrev), icon: "trending-up" },
+        ],
+      });
+    } catch (e: any) {
+      console.error("[workforce/activity-metrics] error:", e);
+      res.status(500).json({ message: "Failed to fetch activity metrics" });
+    }
+  });
+
+  // GET /api/workforce/coverage-analysis — gap detection across agents/integrations/workflows
+  app.get("/api/workforce/coverage-analysis", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { db } = await import("./db");
+      const { orgAiWorkforceSettings } = await import("@shared/schema");
+      const { eq } = await import("drizzle-orm");
+      const [settings] = await db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []);
+      const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
+      const integrations = await storage.getExternalIntegrations(orgId).catch(() => []);
+      const graphs = await storage.getWorkflowGraphs(orgId).catch(() => []);
+      const enabledAgentTypes = new Set(agents.filter((a: any) => a.enabled).map((a: any) => a.agentType));
+      const gmailOn = integrations.some((i: any) => i.integrationType === "gmail" && i.status === "connected");
+      const calOn = integrations.some((i: any) => i.integrationType === "google_calendar" && i.status === "connected");
+      const hasPublished = graphs.some((g: any) => g.published);
+      const enabledDepts: string[] = Array.isArray(settings?.enabledDepartments) ? settings.enabledDepartments : [];
+      const CORE = [
+        { type: "relay_agent",  name: "Relay",  dept: "Communications",        reason: "Email outreach and follow-up sequences" },
+        { type: "tempo_agent",  name: "Tempo",  dept: "Scheduling",             reason: "Session booking and calendar automation" },
+        { type: "pulse_agent",  name: "Pulse",  dept: "Client Success",         reason: "Client retention monitoring and re-engagement" },
+        { type: "apex_agent",   name: "Apex",   dept: "Revenue",                reason: "Lead generation and deal progression" },
+        { type: "vector_agent", name: "Vector", dept: "Research",               reason: "Decision-maker discovery and contact enrichment" },
+        { type: "atlas_agent",  name: "Atlas",  dept: "Executive Intelligence", reason: "Business briefings and KPI tracking" },
+      ];
+      const configured = CORE.filter(a => enabledAgentTypes.has(a.type));
+      const missing = CORE.filter(a => !enabledAgentTypes.has(a.type));
+      const gaps: Array<{ type: string; message: string; actionUrl: string }> = [];
+      if (gmailOn && !enabledDepts.includes("communications")) gaps.push({ type: "integration_mismatch", message: "Gmail connected but outreach automation is disabled", actionUrl: "/admin/ai-workforce/settings" });
+      if (calOn && !enabledDepts.includes("scheduling")) gaps.push({ type: "integration_mismatch", message: "Google Calendar connected but scheduling automation is disabled", actionUrl: "/admin/ai-workforce/settings" });
+      if (graphs.length > 0 && !hasPublished) gaps.push({ type: "workflow_inactive", message: "Workflow engine has drafts but no published (live) workflows", actionUrl: "/admin/workflow-builder" });
+      if (missing.some(a => a.type === "relay_agent") && gmailOn) gaps.push({ type: "agent_gap", message: "Gmail connected — activate Relay to automate outreach", actionUrl: "/admin/ai-workforce/settings" });
+      if (missing.some(a => a.type === "tempo_agent") && calOn) gaps.push({ type: "agent_gap", message: "Calendar connected — activate Tempo to automate scheduling", actionUrl: "/admin/ai-workforce/settings" });
+      if (missing.length === CORE.length) gaps.push({ type: "no_agents", message: "No core agents are enabled — run the Setup Wizard to deploy your workforce", actionUrl: "/onboarding/ai-workforce" });
+      const coverageScore = CORE.length > 0 ? Math.round((configured.length / CORE.length) * 100) : 0;
+      res.json({ configured, missing, optimizationGaps: gaps, coverageScore });
+    } catch (e: any) {
+      console.error("[workforce/coverage-analysis] error:", e);
+      res.status(500).json({ message: "Failed to fetch coverage analysis" });
+    }
+  });
+
+  // GET /api/workforce/agent-marketplace — installed core agents + available expansion agents
+  app.get("/api/workforce/agent-marketplace", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
+      const enabledSet = new Set(agents.filter((a: any) => a.enabled).map((a: any) => a.agentType));
+      const CORE_CATALOG = [
+        { agentType: "relay_agent", name: "Relay", category: "Communications", description: "Email outreach, reply classification, follow-up sequences, and client notifications.", capabilities: ["Email automation", "Reply classification", "Follow-up sequences", "Client notifications"], requiredIntegrations: ["Gmail"], estimatedImpact: "Save 8–12 hrs/week on client communication", riskLevel: "low" },
+        { agentType: "tempo_agent", name: "Tempo", category: "Scheduling", description: "Session booking, calendar management, reminders, and capacity optimization.", capabilities: ["Session booking", "Calendar sync", "Automated reminders", "Capacity management"], requiredIntegrations: ["Google Calendar"], estimatedImpact: "Eliminate 95% of manual scheduling overhead", riskLevel: "low" },
+        { agentType: "pulse_agent", name: "Pulse", category: "Client Success", description: "Client engagement monitoring, churn risk detection, and re-engagement automation.", capabilities: ["Churn prediction", "Re-engagement campaigns", "Satisfaction scoring", "Retention alerts"], requiredIntegrations: [], estimatedImpact: "Reduce client churn by 20–35%", riskLevel: "low" },
+        { agentType: "apex_agent", name: "Apex", category: "Revenue", description: "Lead qualification, deal progression, prospecting campaigns, and revenue recovery.", capabilities: ["Lead scoring", "Deal tracking", "Prospecting", "Revenue recovery"], requiredIntegrations: ["Gmail", "Stripe"], estimatedImpact: "Increase pipeline by 25–40%", riskLevel: "medium" },
+        { agentType: "vector_agent", name: "Vector", category: "Research", description: "Decision-maker discovery, web intelligence, and contact enrichment at scale.", capabilities: ["Contact discovery", "Web research", "Lead enrichment", "Decision-maker ID"], requiredIntegrations: [], estimatedImpact: "Find qualified contacts 10× faster", riskLevel: "low" },
+        { agentType: "atlas_agent", name: "Atlas", category: "Executive", description: "Daily business briefings, KPI tracking, and strategic performance insights.", capabilities: ["Business briefings", "KPI summaries", "Trend analysis", "Strategic insights"], requiredIntegrations: [], estimatedImpact: "1 hr/day saved on reporting", riskLevel: "low" },
+      ];
+      const EXPANSION_CATALOG = [
+        { agentType: "hiring_agent", name: "Hiring Agent", category: "HR", description: "Automates candidate sourcing, screening, and interview scheduling for coaching staff.", capabilities: ["Candidate sourcing", "Resume screening", "Interview scheduling", "Offer management"], requiredIntegrations: ["Gmail", "Google Calendar"], estimatedImpact: "Cut time-to-hire by 40%", riskLevel: "medium" },
+        { agentType: "marketing_agent", name: "Marketing Agent", category: "Marketing", description: "Social content generation, campaign management, and brand awareness analytics.", capabilities: ["Content generation", "Campaign management", "Analytics", "Brand monitoring"], requiredIntegrations: [], estimatedImpact: "3× content output with same team", riskLevel: "low" },
+        { agentType: "referral_agent", name: "Referral Agent", category: "Growth", description: "Automates referral program management, tracking, and reward distribution.", capabilities: ["Referral tracking", "Reward automation", "Program management", "Conversion analytics"], requiredIntegrations: ["Stripe"], estimatedImpact: "Grow client base 15–20% via referrals", riskLevel: "low" },
+        { agentType: "team_training_agent", name: "Team Training Agent", category: "B2B Sales", description: "Manages team training prospect outreach and corporate fitness program sales.", capabilities: ["B2B prospecting", "Corporate outreach", "Program proposals", "Contract management"], requiredIntegrations: ["Gmail"], estimatedImpact: "10–15 new corporate contracts/quarter", riskLevel: "medium" },
+        { agentType: "content_agent", name: "Content Agent", category: "Marketing", description: "Creates training plans, social media posts, email newsletters, and client resources.", capabilities: ["Blog posts", "Social content", "Newsletters", "Training resources"], requiredIntegrations: [], estimatedImpact: "Publish 5× more content without extra staff", riskLevel: "low" },
+        { agentType: "revenue_recovery_agent", name: "Revenue Recovery Agent", category: "Finance", description: "Identifies and recovers failed payments, expired subscriptions, and lapsed memberships.", capabilities: ["Payment recovery", "Subscription revival", "Churn revenue recovery", "Win-back campaigns"], requiredIntegrations: ["Stripe", "Gmail"], estimatedImpact: "Recover 60–75% of failed payment revenue", riskLevel: "medium" },
+        { agentType: "meta_ads_agent", name: "Meta Ads Agent", category: "Advertising", description: "Manages Meta ad campaigns, audience optimization, and performance reporting.", capabilities: ["Ad creation", "Audience targeting", "Budget optimization", "Performance reporting"], requiredIntegrations: [], estimatedImpact: "Cut cost-per-acquisition by 30%", riskLevel: "medium" },
+        { agentType: "recruiting_agent", name: "Recruiting Agent", category: "HR", description: "Proactively sources top coaching talent and manages the full recruiting pipeline.", capabilities: ["Talent sourcing", "Pipeline management", "Outreach automation", "Offer negotiation support"], requiredIntegrations: ["Gmail"], estimatedImpact: "Fill coaching roles 2× faster", riskLevel: "medium" },
+      ];
+      const installed = CORE_CATALOG.map(a => ({ ...a, enabled: enabledSet.has(a.agentType), status: "installed" as const }));
+      const available = EXPANSION_CATALOG.map(a => ({ ...a, enabled: false, status: "available" as const }));
+      res.json({ installed, available });
+    } catch (e: any) {
+      console.error("[workforce/agent-marketplace] error:", e);
+      res.status(500).json({ message: "Failed to fetch agent marketplace" });
+    }
+  });
+
+  // GET /api/workforce/insights — rule-based executive insights ranked by impact
+  app.get("/api/workforce/insights", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { db } = await import("./db");
+      const { orgAiWorkforceSettings, agentPendingActions, attentionItems } = await import("@shared/schema");
+      const { eq, and, gt } = await import("drizzle-orm");
+      const [settings] = await db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []);
+      const allLogs = await storage.getUnifiedActionLog(orgId, { limit: 1000 }).catch(() => []);
+      const now = new Date();
+      const h24 = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      const h7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const logs7d = allLogs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h7d);
+      const logs24h = allLogs.filter((l: any) => l.createdAt && new Date(l.createdAt) >= h24);
+      const failed7d = logs7d.filter((l: any) => l.status === "failed" || l.status === "error");
+      const success7d = logs7d.filter((l: any) => l.status === "completed" || l.status === "success");
+      const successRate = logs7d.length > 0 ? Math.round((success7d.length / logs7d.length) * 100) : 100;
+      const pending = await db.select().from(agentPendingActions)
+        .where(and(eq(agentPendingActions.orgId, orgId), eq(agentPendingActions.status, "pending"), gt(agentPendingActions.expiresAt, now)))
+        .catch(() => []);
+      const openItems = await db.select().from(attentionItems)
+        .where(and(eq(attentionItems.orgId, orgId), eq(attentionItems.status, "active")))
+        .catch(() => []);
+      const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
+      const disabledAgents = agents.filter((a: any) => !a.enabled);
+      const enabledDepts: string[] = Array.isArray(settings?.enabledDepartments) ? settings.enabledDepartments : [];
+      type Insight = { id: string; message: string; type: "success" | "warning" | "info" | "critical"; impact: "high" | "medium" | "low"; action?: string; actionUrl?: string };
+      const insights: Insight[] = [];
+      if (pending.length > 5) insights.push({ id: "pending-high", type: "warning", impact: "high", message: `${pending.length} agent actions awaiting approval — delayed review reduces automation ROI.`, action: "Review Approvals", actionUrl: "/admin/ai-approvals" });
+      if (failed7d.length > 10) insights.push({ id: "failures-high", type: "critical", impact: "high", message: `${failed7d.length} agent actions failed this week. Review error logs to restore automation coverage.`, action: "View Logs", actionUrl: "/admin/ai-operations" });
+      if (logs24h.length === 0 && agents.filter((a: any) => a.enabled).length > 0) insights.push({ id: "no-activity", type: "warning", impact: "high", message: "No agent activity recorded in the last 24 hours. Verify agents are configured and triggered correctly.", action: "Check Operations", actionUrl: "/admin/ai-operations" });
+      if (successRate < 70 && logs7d.length > 5) insights.push({ id: "low-success", type: "critical", impact: "high", message: `Agent success rate dropped to ${successRate}% this week. Investigate failed actions to prevent disruption.`, action: "View Details", actionUrl: "/admin/ai-operations" });
+      const criticalAlerts = openItems.filter((a: any) => (a.level ?? "").toLowerCase() === "critical");
+      if (criticalAlerts.length > 0) insights.push({ id: "critical-alerts", type: "critical", impact: "high", message: `${criticalAlerts.length} critical system alert(s) require immediate attention.`, action: "View Alerts", actionUrl: "/admin/ai-operations" });
+      if (disabledAgents.length >= 3) insights.push({ id: "inactive-agents", type: "info", impact: "medium", message: `${disabledAgents.length} agents are inactive. Enabling them could significantly expand your automation coverage.`, action: "Configure Agents", actionUrl: "/admin/ai-workforce/settings" });
+      if (successRate >= 90 && logs7d.length >= 10) insights.push({ id: "high-perf", type: "success", impact: "medium", message: `Agent success rate is ${successRate}% this week — your workforce is operating at peak performance.` });
+      if (logs7d.length >= 50) insights.push({ id: "high-volume", type: "success", impact: "medium", message: `${logs7d.length} automated actions completed in 7 days. Your AI workforce is actively running your business.` });
+      if (!enabledDepts.includes("communications") && !enabledDepts.includes("comm")) insights.push({ id: "no-comms", type: "info", impact: "medium", message: "Communications department is disabled. Enable it to automate email outreach and follow-up sequences.", action: "Enable Now", actionUrl: "/admin/ai-workforce/settings" });
+      if (pending.length > 0 && pending.length <= 5) insights.push({ id: "pending-low", type: "info", impact: "low", message: `${pending.length} action(s) pending approval. Review when available.`, action: "Review", actionUrl: "/admin/ai-approvals" });
+      if (insights.length === 0) insights.push({ id: "all-good", type: "success", impact: "low", message: "All systems operational. Your AI workforce is performing well with no issues detected." });
+      const typeOrder: Record<string, number> = { critical: 0, warning: 1, success: 2, info: 3 };
+      const impactOrder: Record<string, number> = { high: 0, medium: 1, low: 2 };
+      insights.sort((a, b) => {
+        const t = typeOrder[a.type] - typeOrder[b.type];
+        return t !== 0 ? t : impactOrder[a.impact] - impactOrder[b.impact];
+      });
+      res.json({ insights: insights.slice(0, 8), generatedAt: now.toISOString() });
+    } catch (e: any) {
+      console.error("[workforce/insights] error:", e);
+      res.status(500).json({ message: "Failed to generate insights" });
+    }
+  });
+
   // Outcome Evidence — single outcome detail
   app.get("/api/workforce/outcomes/:outcomeId", async (req, res) => {
     try {
