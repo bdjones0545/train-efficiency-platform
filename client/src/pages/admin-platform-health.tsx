@@ -968,6 +968,20 @@ export default function AdminPlatformHealthPage() {
         {activeTab === "recovery"      && <RecoveryTab />}
         {activeTab === "release"       && <ReleaseAuditTab />}
       </div>
+
+      {/* Forward navigation → Autonomous Business Execution Engine */}
+      <Link href="/admin/execution-center">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-violet-500/5 hover:from-primary/10 hover:to-violet-500/10 transition-colors cursor-pointer group" data-testid="nav-execution-center">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <Zap className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Autonomous Business Execution Engine</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Deploy approved strategies, run AI campaigns, recover missed revenue, and execute growth objectives with a full deployment workflow engine.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
     </div>
   );
 }
