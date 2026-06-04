@@ -10,7 +10,7 @@ import {
   ArrowLeft, Heart, Zap, Eye, TrendingUp, AlertTriangle, DollarSign,
   Bot, BookOpen, Map, Users, Star, BarChart3, ChevronRight,
   CheckCircle, X, RefreshCw, ArrowUpRight, Target, Clock,
-  Shield, Activity, MessageSquare, Send,
+  Shield, Activity, MessageSquare, Send, Brain,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -947,6 +947,20 @@ export default function AdminCustomerSuccessOsPage() {
         {activeTab === "satisfaction" && <SatisfactionTab />}
         {activeTab === "forecast"     && <ForecastTab />}
       </div>
+
+      {/* Forward nav → Platform Brain */}
+      <Link href="/admin/platform-brain">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-violet-500/5 hover:from-primary/10 hover:to-violet-500/10 transition-colors cursor-pointer group" data-testid="nav-platform-brain">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <Brain className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Platform Brain &amp; Continuous Learning System</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Cross-layer intelligence that observes every system, learns from outcomes, detects patterns, evolves agents and workflows, and continuously improves the platform itself.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
 
       {/* Architecture note */}
       <div className="p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-emerald-500/5" data-testid="architecture-note">
