@@ -1,0 +1,101 @@
+Debug Attendance Tracker coach report SendGrid delivery.
+
+Current issue:
+It is after 5 PM Eastern and no Attendance Tracker coach summary email appears in the sent inbox.
+
+Expected:
+Coach recipients should receive:
+- Daily attendance summary Monday-Friday at 5 PM ET
+- Weekly summary Friday at 5 PM ET
+
+Audit the full report pipeline.
+
+Check:
+
+1. Is the cron/job registered in production?
+- Confirm the attendance report scheduler starts when the server boots.
+- Add startup log:
+  "Attendance report scheduler registered"
+
+2. Is the job using America/New_York?
+- Daily: Monday-Friday 5:00 PM ET
+- Weekly: Friday 5:00 PM ET
+
+3. Is the job querying recipients correctly?
+Check:
+attendance_report_recipients
+- active = true
+- receive_daily = true
+- receive_weekly = true
+- email exists
+- attendance_program_id matches the tracker
+- org_id matches the program
+
+4. Is the job querying attendance records correctly?
+Check:
+attendance_records
+- org_id matches
+- attendance_program_id matches
+- created_at falls within today’s report window
+
+5. Is SendGrid actually being called?
+Add logs:
+- recipient email
+- report type
+- SendGrid response status
+- SendGrid message id
+- error message if failed
+
+6. Is report email history being written?
+Check:
+attendance_report_email_history
+
+If no row exists:
+- cron did not run
+- recipients not found
+- program not found
+- query skipped
+
+If failed row exists:
+- surface the SendGrid error in UI
+
+7. Add manual test endpoints:
+POST /api/attendance-programs/:id/reports/send-test-daily
+POST /api/attendance-programs/:id/reports/send-test-weekly
+
+These should send immediately and return:
+{
+  success: true,
+  recipients: [
+    {
+      email,
+      status,
+      sendgridMessageId,
+      error
+    }
+  ]
+}
+
+8. Add buttons in Configure Tracker → Coach Reports:
+- Send Test Daily Report
+- Send Test Weekly Report
+
+9. Add last sent status in UI:
+- Last daily report sent
+- Last weekly report sent
+- Last error
+
+10. Add a fallback warning:
+If SendGrid is not configured, show:
+"SendGrid is not configured in this environment."
+
+11. Make sure this does not rely on Gmail sent mail.
+SendGrid emails may not appear in Gmail Sent unless Gmail itself sent them.
+Confirm delivery through:
+- recipient inbox
+- SendGrid Activity Feed
+- attendance_report_email_history
+
+Run:
+npm run check
+npm run build

@@ -870,11 +870,12 @@ export async function registerAttendanceRoutes(app: Express) {
         ORDER BY created_at ASC
       `));
       const history = rows(await db.execute(sql`
-        SELECT recipient_email, report_type, period_start, sent_at, status
+        SELECT recipient_email, report_type, period_start, sent_at, status,
+               sendgrid_message_id, error_message
         FROM attendance_report_email_history
         WHERE attendance_program_id = ${programId}
         ORDER BY sent_at DESC
-        LIMIT 50
+        LIMIT 100
       `));
       const lastSent: Record<string, any> = {};
       for (const h of history) {
@@ -954,7 +955,7 @@ export async function registerAttendanceRoutes(app: Express) {
     }
   });
 
-  // ─── Send test report ─────────────────────────────────────────────────────
+  // ─── Send test report (per-recipient) ────────────────────────────────────
   app.post("/api/attendance-programs/:programId/report-recipients/send-test", async (req, res) => {
     try {
       const { programId } = req.params;
@@ -965,6 +966,41 @@ export async function registerAttendanceRoutes(app: Express) {
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || "Failed" });
+    }
+  });
+
+  // ─── SendGrid status check ────────────────────────────────────────────────
+  app.get("/api/attendance-programs/:programId/reports/sendgrid-status", async (_req, res) => {
+    try {
+      const { checkSendGridConfigured } = await import("./attendance-report-cron");
+      const status = await checkSendGridConfigured();
+      res.json(status);
+    } catch (e: any) {
+      res.json({ configured: false, error: e?.message });
+    }
+  });
+
+  // ─── Send test daily report → all active recipients ───────────────────────
+  app.post("/api/attendance-programs/:programId/reports/send-test-daily", async (req, res) => {
+    try {
+      const { programId } = req.params;
+      const { sendTestReportToAll } = await import("./attendance-report-cron");
+      const result = await sendTestReportToAll(programId, "daily");
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ success: false, sendgridConfigured: false, recipients: [], error: e?.message || "Failed" });
+    }
+  });
+
+  // ─── Send test weekly report → all active recipients ──────────────────────
+  app.post("/api/attendance-programs/:programId/reports/send-test-weekly", async (req, res) => {
+    try {
+      const { programId } = req.params;
+      const { sendTestReportToAll } = await import("./attendance-report-cron");
+      const result = await sendTestReportToAll(programId, "weekly");
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ success: false, sendgridConfigured: false, recipients: [], error: e?.message || "Failed" });
     }
   });
 

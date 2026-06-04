@@ -25,15 +25,17 @@ function getNYDatetime() {
   const dayMap: Record<string, number> = {
     Sunday: 0, Monday: 1, Tuesday: 2, Wednesday: 3, Thursday: 4, Friday: 5, Saturday: 6,
   };
+  // hour12:false can return "24" for midnight — normalize
+  const rawHour = parseInt(p.hour || "0");
   return {
-    hour: parseInt(p.hour || "0"),
+    hour: rawHour === 24 ? 0 : rawHour,
     minute: parseInt(p.minute || "0"),
     day: dayMap[p.weekday ?? ""] ?? -1,
     dateStr: `${p.year}-${p.month}-${p.day}`,
   };
 }
 
-function formatDateLabel(dateStr: string): string {
+export function formatDateLabel(dateStr: string): string {
   const [, m, d] = dateStr.split("-");
   const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   return `${months[parseInt(m) - 1]} ${parseInt(d)}`;
@@ -71,13 +73,24 @@ async function getOrgBranding(orgId: string): Promise<{ name: string; color: str
 async function getSendGridSettings() {
   try {
     const sgMail = (await import("@sendgrid/mail")).default;
-    const { getConnectionSettings } = await import("./replit_integrations/sendgrid");
-    const settings = await getConnectionSettings();
-    if (!settings?.api_key || !settings?.from_email) return null;
-    sgMail.setApiKey(settings.api_key);
-    return { sgMail, fromEmail: settings.from_email as string };
+    const { getCredentials } = await import("./email");
+    const { apiKey, email: fromEmail } = await getCredentials();
+    if (!apiKey || !fromEmail) return null;
+    sgMail.setApiKey(apiKey);
+    return { sgMail, fromEmail };
   } catch {
     return null;
+  }
+}
+
+export async function checkSendGridConfigured(): Promise<{ configured: boolean; fromEmail?: string }> {
+  try {
+    const { getCredentials } = await import("./email");
+    const { apiKey, email: fromEmail } = await getCredentials();
+    if (!apiKey || !fromEmail) return { configured: false };
+    return { configured: true, fromEmail };
+  } catch {
+    return { configured: false };
   }
 }
 
@@ -96,6 +109,7 @@ async function alreadySent(
       AND recipient_email = ${recipientEmail}
       AND report_type = ${reportType}
       AND period_start = ${periodStart}::date
+      AND status = 'sent'
     LIMIT 1
   `));
   return !!existing;
@@ -104,6 +118,7 @@ async function alreadySent(
 // ── Stats queries ─────────────────────────────────────────────────────────────
 
 async function getDailyStats(orgId: string, programId: string, dateStr: string) {
+  console.log(`[AttendanceReportCron] Querying daily stats — org=${orgId} program=${programId} date=${dateStr}`);
   const totals = row0(await db.execute(sql`
     SELECT COUNT(*) AS total, COUNT(DISTINCT athlete_email) AS unique_count
     FROM attendance_records
@@ -153,10 +168,12 @@ async function getDailyStats(orgId: string, programId: string, dateStr: string) 
   const total = Number(totals?.total || 0);
   const unique = Number(totals?.unique_count || 0);
   const newAthletes = Number(newRow?.new_count || 0);
+  console.log(`[AttendanceReportCron] Daily stats — total=${total} unique=${unique} new=${newAthletes} rewards=${rewardsToday.length}`);
   return { total, unique, newAthletes, returning: Math.max(0, unique - newAthletes), attendees, sports, rewardsToday };
 }
 
 async function getWeeklyStats(orgId: string, programId: string, weekStart: string, weekEnd: string) {
+  console.log(`[AttendanceReportCron] Querying weekly stats — org=${orgId} program=${programId} ${weekStart}→${weekEnd}`);
   const totals = row0(await db.execute(sql`
     SELECT COUNT(*) AS total, COUNT(DISTINCT athlete_email) AS unique_count
     FROM attendance_records
@@ -216,6 +233,7 @@ async function getWeeklyStats(orgId: string, programId: string, weekStart: strin
   const total = Number(totals?.total || 0);
   const unique = Number(totals?.unique_count || 0);
   const newAthletes = Number(newRow?.new_count || 0);
+  console.log(`[AttendanceReportCron] Weekly stats — total=${total} unique=${unique} new=${newAthletes}`);
   return {
     total, unique, newAthletes, returning: Math.max(0, unique - newAthletes),
     topAthletes, byDay, rewardsEarned: Number(rewardsEarnedRow?.count || 0), nearReward,
@@ -291,11 +309,74 @@ function buildWeeklyHtml(p: { orgName: string; orgColor: string; programName: st
   </div></div>`;
 }
 
-// ── Report senders ────────────────────────────────────────────────────────────
+// ── Core send helpers ─────────────────────────────────────────────────────────
+
+interface SendResult {
+  email: string;
+  status: "sent" | "failed" | "skipped";
+  sendgridMessageId?: string;
+  error?: string;
+}
+
+async function sendOneReport(opts: {
+  sg: { sgMail: any; fromEmail: string };
+  orgId: string;
+  programId: string;
+  programName: string;
+  orgName: string;
+  recipientEmail: string;
+  subject: string;
+  html: string;
+  reportType: "daily" | "weekly";
+  periodStart: string;
+  periodEnd: string;
+  skipDupCheck?: boolean;
+}): Promise<SendResult> {
+  const { sg, orgId, programId, programName, orgName, recipientEmail, subject, html, reportType, periodStart, periodEnd, skipDupCheck } = opts;
+
+  if (!skipDupCheck && await alreadySent(orgId, programId, recipientEmail, reportType, periodStart)) {
+    console.log(`[AttendanceReportCron] ${reportType} already sent → ${recipientEmail} — skipping`);
+    return { email: recipientEmail, status: "skipped" };
+  }
+
+  console.log(`[AttendanceReportCron] Sending ${reportType} → ${recipientEmail} [${programName}]`);
+  try {
+    const [sgResponse] = await sg.sgMail.send({
+      to: recipientEmail,
+      from: { email: sg.fromEmail, name: orgName },
+      subject,
+      html,
+    });
+    const messageId = (sgResponse?.headers?.["x-message-id"] as string | undefined) || undefined;
+    console.log(`[AttendanceReportCron] ${reportType} ✓ → ${recipientEmail} messageId=${messageId ?? "n/a"}`);
+    await db.execute(sql`
+      INSERT INTO attendance_report_email_history
+        (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, sendgrid_message_id)
+      VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'sent', ${messageId ?? null})
+    `).catch((e: any) => console.error("[AttendanceReportCron] history insert error:", e?.message));
+    return { email: recipientEmail, status: "sent", sendgridMessageId: messageId };
+  } catch (e: any) {
+    const errMsg = e?.response?.body?.errors?.[0]?.message || e?.message || String(e);
+    console.error(`[AttendanceReportCron] ${reportType} ✗ → ${recipientEmail}: ${errMsg}`);
+    await db.execute(sql`
+      INSERT INTO attendance_report_email_history
+        (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, error_message)
+      VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'failed', ${errMsg})
+    `).catch(() => {});
+    return { email: recipientEmail, status: "failed", error: errMsg };
+  }
+}
+
+// ── Scheduled senders ─────────────────────────────────────────────────────────
 
 export async function sendDailyReports(dateStr: string): Promise<void> {
+  console.log(`[AttendanceReportCron] sendDailyReports — date=${dateStr} tz=America/New_York`);
   const sg = await getSendGridSettings();
-  if (!sg) { console.log("[AttendanceReportCron] SendGrid not configured — skipping"); return; }
+  if (!sg) {
+    console.warn("[AttendanceReportCron] SendGrid not configured — daily reports skipped");
+    return;
+  }
+  console.log(`[AttendanceReportCron] SendGrid from: ${sg.fromEmail}`);
 
   const programs = rows(await db.execute(sql`
     SELECT DISTINCT ap.id AS program_id, ap.organization_id, ap.name AS program_name
@@ -303,6 +384,7 @@ export async function sendDailyReports(dateStr: string): Promise<void> {
     JOIN attendance_report_recipients arr ON arr.attendance_program_id = ap.id
     WHERE ap.type = 'attendance_tracker' AND arr.active = true AND arr.receive_daily = true
   `));
+  console.log(`[AttendanceReportCron] Found ${programs.length} program(s) with active daily recipients`);
 
   for (const prog of programs) {
     const { program_id, organization_id, program_name } = prog;
@@ -317,32 +399,27 @@ export async function sendDailyReports(dateStr: string): Promise<void> {
       SELECT email, name FROM attendance_report_recipients
       WHERE attendance_program_id = ${program_id} AND active = true AND receive_daily = true
     `));
+    console.log(`[AttendanceReportCron] Program "${program_name}" — ${recipients.length} daily recipient(s)`);
 
     for (const rec of recipients) {
-      if (await alreadySent(organization_id, program_id, rec.email, "daily", dateStr)) continue;
-      try {
-        await sg.sgMail.send({ to: rec.email, from: { email: sg.fromEmail, name: orgName }, subject, html });
-        await db.execute(sql`
-          INSERT INTO attendance_report_email_history
-            (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status)
-          VALUES (${organization_id}, ${program_id}, ${rec.email}, 'daily', ${dateStr}::date, ${dateStr}::date, NOW(), 'sent')
-        `);
-        console.log(`[AttendanceReportCron] Daily ✓ → ${rec.email} [${program_name}]`);
-      } catch (e: any) {
-        await db.execute(sql`
-          INSERT INTO attendance_report_email_history
-            (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, error_message)
-          VALUES (${organization_id}, ${program_id}, ${rec.email}, 'daily', ${dateStr}::date, ${dateStr}::date, NOW(), 'failed', ${String(e?.message || e)})
-        `).catch(() => {});
-        console.error(`[AttendanceReportCron] Daily ✗ → ${rec.email}:`, e?.message);
-      }
+      await sendOneReport({
+        sg, orgId: organization_id, programId: program_id, programName: program_name, orgName,
+        recipientEmail: rec.email, subject, html, reportType: "daily",
+        periodStart: dateStr, periodEnd: dateStr,
+      });
     }
   }
+  console.log(`[AttendanceReportCron] sendDailyReports complete for ${dateStr}`);
 }
 
 export async function sendWeeklyReports(fridayDateStr: string): Promise<void> {
+  console.log(`[AttendanceReportCron] sendWeeklyReports — friday=${fridayDateStr} tz=America/New_York`);
   const sg = await getSendGridSettings();
-  if (!sg) return;
+  if (!sg) {
+    console.warn("[AttendanceReportCron] SendGrid not configured — weekly reports skipped");
+    return;
+  }
+  console.log(`[AttendanceReportCron] SendGrid from: ${sg.fromEmail}`);
 
   const { start: weekStart, end: weekEnd, label: weekRange } = getWeekRange(fridayDateStr);
 
@@ -352,6 +429,7 @@ export async function sendWeeklyReports(fridayDateStr: string): Promise<void> {
     JOIN attendance_report_recipients arr ON arr.attendance_program_id = ap.id
     WHERE ap.type = 'attendance_tracker' AND arr.active = true AND arr.receive_weekly = true
   `));
+  console.log(`[AttendanceReportCron] Found ${programs.length} program(s) with active weekly recipients`);
 
   for (const prog of programs) {
     const { program_id, organization_id, program_name } = prog;
@@ -365,78 +443,155 @@ export async function sendWeeklyReports(fridayDateStr: string): Promise<void> {
       SELECT email, name FROM attendance_report_recipients
       WHERE attendance_program_id = ${program_id} AND active = true AND receive_weekly = true
     `));
+    console.log(`[AttendanceReportCron] Program "${program_name}" — ${recipients.length} weekly recipient(s)`);
 
     for (const rec of recipients) {
-      if (await alreadySent(organization_id, program_id, rec.email, "weekly", weekStart)) continue;
-      try {
-        await sg.sgMail.send({ to: rec.email, from: { email: sg.fromEmail, name: orgName }, subject, html });
-        await db.execute(sql`
-          INSERT INTO attendance_report_email_history
-            (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status)
-          VALUES (${organization_id}, ${program_id}, ${rec.email}, 'weekly', ${weekStart}::date, ${weekEnd}::date, NOW(), 'sent')
-        `);
-        console.log(`[AttendanceReportCron] Weekly ✓ → ${rec.email} [${program_name}]`);
-      } catch (e: any) {
-        await db.execute(sql`
-          INSERT INTO attendance_report_email_history
-            (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, error_message)
-          VALUES (${organization_id}, ${program_id}, ${rec.email}, 'weekly', ${weekStart}::date, ${weekEnd}::date, NOW(), 'failed', ${String(e?.message || e)})
-        `).catch(() => {});
-        console.error(`[AttendanceReportCron] Weekly ✗ → ${rec.email}:`, e?.message);
-      }
+      await sendOneReport({
+        sg, orgId: organization_id, programId: program_id, programName: program_name, orgName,
+        recipientEmail: rec.email, subject, html, reportType: "weekly",
+        periodStart: weekStart, periodEnd: weekEnd,
+      });
     }
   }
+  console.log(`[AttendanceReportCron] sendWeeklyReports complete for ${fridayDateStr}`);
 }
 
-// ── Test sender (exposed as HTTP endpoint) ───────────────────────────────────
+// ── Test senders ──────────────────────────────────────────────────────────────
 
+// Send test report to ALL active recipients (program-level buttons)
+export async function sendTestReportToAll(
+  programId: string,
+  reportType: "daily" | "weekly",
+): Promise<{ success: boolean; sendgridConfigured: boolean; recipients: SendResult[]; error?: string }> {
+  const sgCheck = await checkSendGridConfigured();
+  if (!sgCheck.configured) {
+    return { success: false, sendgridConfigured: false, recipients: [], error: "SendGrid is not configured in this environment." };
+  }
+  const sg = await getSendGridSettings();
+  if (!sg) {
+    return { success: false, sendgridConfigured: false, recipients: [], error: "SendGrid not available." };
+  }
+
+  const prog = row0(await db.execute(sql`
+    SELECT id, organization_id, name FROM athletic_programs WHERE id = ${programId}
+  `));
+  if (!prog) {
+    return { success: false, sendgridConfigured: true, recipients: [], error: "Program not found." };
+  }
+
+  const { name: orgName, color: orgColor } = await getOrgBranding(prog.organization_id);
+  const { dateStr } = getNYDatetime();
+  const dashboardUrl = `https://www.efficiencystrengthtraining.com/admin/attendance-tracker`;
+
+  let subject: string;
+  let html: string;
+  let periodStart: string;
+  let periodEnd: string;
+
+  if (reportType === "daily") {
+    const stats = await getDailyStats(prog.organization_id, prog.id, dateStr);
+    const dateLabel = formatDateLabel(dateStr);
+    subject = `[TEST] Attendance Summary — ${prog.name} — ${dateLabel}`;
+    html = buildDailyHtml({ orgName, orgColor, programName: prog.name, dateLabel, stats, dashboardUrl });
+    periodStart = dateStr;
+    periodEnd = dateStr;
+  } else {
+    const { start: weekStart, end: weekEnd, label: weekRange } = getWeekRange(dateStr);
+    const stats = await getWeeklyStats(prog.organization_id, prog.id, weekStart, weekEnd);
+    subject = `[TEST] Weekly Attendance Summary — ${prog.name} — ${weekRange}`;
+    html = buildWeeklyHtml({ orgName, orgColor, programName: prog.name, weekRange, stats, dashboardUrl });
+    periodStart = weekStart;
+    periodEnd = weekEnd;
+  }
+
+  const field = reportType === "daily" ? "receive_daily" : "receive_weekly";
+  const recipientRows = rows(await db.execute(sql`
+    SELECT email, name FROM attendance_report_recipients
+    WHERE attendance_program_id = ${programId} AND active = true
+      AND ${sql.raw(field)} = true
+  `));
+
+  if (recipientRows.length === 0) {
+    return { success: false, sendgridConfigured: true, recipients: [], error: "No active recipients with this report type enabled." };
+  }
+
+  const results: SendResult[] = [];
+  for (const rec of recipientRows) {
+    const result = await sendOneReport({
+      sg, orgId: prog.organization_id, programId: prog.id, programName: prog.name, orgName,
+      recipientEmail: rec.email, subject, html, reportType,
+      periodStart, periodEnd, skipDupCheck: true,
+    });
+    results.push(result);
+  }
+
+  const anyFailed = results.some(r => r.status === "failed");
+  return { success: !anyFailed, sendgridConfigured: true, recipients: results };
+}
+
+// Send test report to a single email (per-recipient test buttons)
 export async function sendTestReport(
   programId: string,
   recipientEmail: string,
   reportType: "daily" | "weekly",
-): Promise<{ ok: boolean; error?: string }> {
-  try {
-    const sg = await getSendGridSettings();
-    if (!sg) return { ok: false, error: "SendGrid not configured" };
-
-    const prog = await (async () => {
-      const { db: _db } = await import("./db");
-      return row0(await _db.execute(sql`
-        SELECT ap.id, ap.organization_id, ap.name FROM athletic_programs ap WHERE ap.id = ${programId}
-      `));
-    })();
-    if (!prog) return { ok: false, error: "Program not found" };
-
-    const { name: orgName, color: orgColor } = await getOrgBranding(prog.organization_id);
-    const { dateStr } = getNYDatetime();
-    const dashboardUrl = `https://www.efficiencystrengthtraining.com/admin/attendance-tracker`;
-
-    let subject: string;
-    let html: string;
-
-    if (reportType === "daily") {
-      const stats = await getDailyStats(prog.organization_id, prog.id, dateStr);
-      const dateLabel = formatDateLabel(dateStr);
-      subject = `[TEST] Attendance Summary — ${prog.name} — ${dateLabel}`;
-      html = buildDailyHtml({ orgName, orgColor, programName: prog.name, dateLabel, stats, dashboardUrl });
-    } else {
-      const { start: weekStart, end: weekEnd, label: weekRange } = getWeekRange(dateStr);
-      const stats = await getWeeklyStats(prog.organization_id, prog.id, weekStart, weekEnd);
-      subject = `[TEST] Weekly Attendance Summary — ${prog.name} — ${weekRange}`;
-      html = buildWeeklyHtml({ orgName, orgColor, programName: prog.name, weekRange, stats, dashboardUrl });
-    }
-
-    await sg.sgMail.send({ to: recipientEmail, from: { email: sg.fromEmail, name: orgName }, subject, html });
-    console.log(`[AttendanceReportCron] Test ${reportType} sent → ${recipientEmail}`);
-    return { ok: true };
-  } catch (e: any) {
-    return { ok: false, error: e?.message || String(e) };
+): Promise<{ ok: boolean; sendgridMessageId?: string; error?: string }> {
+  const sgCheck = await checkSendGridConfigured();
+  if (!sgCheck.configured) {
+    return { ok: false, error: "SendGrid is not configured in this environment." };
   }
+  const sg = await getSendGridSettings();
+  if (!sg) return { ok: false, error: "SendGrid not available." };
+
+  const prog = row0(await db.execute(sql`
+    SELECT id, organization_id, name FROM athletic_programs WHERE id = ${programId}
+  `));
+  if (!prog) return { ok: false, error: "Program not found." };
+
+  const { name: orgName, color: orgColor } = await getOrgBranding(prog.organization_id);
+  const { dateStr } = getNYDatetime();
+  const dashboardUrl = `https://www.efficiencystrengthtraining.com/admin/attendance-tracker`;
+
+  let subject: string;
+  let html: string;
+  let periodStart: string;
+  let periodEnd: string;
+
+  if (reportType === "daily") {
+    const stats = await getDailyStats(prog.organization_id, prog.id, dateStr);
+    const dateLabel = formatDateLabel(dateStr);
+    subject = `[TEST] Attendance Summary — ${prog.name} — ${dateLabel}`;
+    html = buildDailyHtml({ orgName, orgColor, programName: prog.name, dateLabel, stats, dashboardUrl });
+    periodStart = dateStr;
+    periodEnd = dateStr;
+  } else {
+    const { start: weekStart, end: weekEnd, label: weekRange } = getWeekRange(dateStr);
+    const stats = await getWeeklyStats(prog.organization_id, prog.id, weekStart, weekEnd);
+    subject = `[TEST] Weekly Attendance Summary — ${prog.name} — ${weekRange}`;
+    html = buildWeeklyHtml({ orgName, orgColor, programName: prog.name, weekRange, stats, dashboardUrl });
+    periodStart = weekStart;
+    periodEnd = weekEnd;
+  }
+
+  const result = await sendOneReport({
+    sg, orgId: prog.organization_id, programId: prog.id, programName: prog.name, orgName,
+    recipientEmail, subject, html, reportType, periodStart, periodEnd, skipDupCheck: true,
+  });
+
+  return { ok: result.status === "sent", sendgridMessageId: result.sendgridMessageId, error: result.error };
 }
 
 // ── Cron scheduler ────────────────────────────────────────────────────────────
 
 export function startAttendanceReportCron(): void {
+  // Log SendGrid status on startup
+  checkSendGridConfigured().then(({ configured, fromEmail }) => {
+    if (configured) {
+      console.log(`[AttendanceReportCron] SendGrid configured — from: ${fromEmail}`);
+    } else {
+      console.warn("[AttendanceReportCron] SendGrid NOT configured — reports will be skipped until configured");
+    }
+  }).catch(() => {});
+
   setInterval(() => {
     try {
       const { hour, minute, day, dateStr } = getNYDatetime();
@@ -444,11 +599,11 @@ export function startAttendanceReportCron(): void {
         const isWeekday = day >= 1 && day <= 5;
         const isFriday = day === 5;
         if (isWeekday) {
-          console.log(`[AttendanceReportCron] Firing daily reports for ${dateStr}`);
+          console.log(`[AttendanceReportCron] ⏰ Scheduled trigger — daily reports for ${dateStr}`);
           sendDailyReports(dateStr).catch(console.error);
         }
         if (isFriday) {
-          console.log(`[AttendanceReportCron] Firing weekly reports for ${dateStr}`);
+          console.log(`[AttendanceReportCron] ⏰ Scheduled trigger — weekly reports for ${dateStr}`);
           sendWeeklyReports(dateStr).catch(console.error);
         }
       }
@@ -456,5 +611,6 @@ export function startAttendanceReportCron(): void {
       console.error("[AttendanceReportCron] tick error:", e);
     }
   }, 60_000);
-  console.log("[AttendanceReportCron] Started — daily Mon–Fri 5 PM ET, weekly Fri 5 PM ET");
+
+  console.log("[AttendanceReportCron] Attendance report scheduler registered — daily Mon–Fri 5 PM ET, weekly Fri 5 PM ET");
 }

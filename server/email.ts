@@ -147,7 +147,7 @@ async function writeEmailIntegrationLog(params: {
   }
 }
 
-async function getCredentials() {
+export async function getCredentials() {
   // 1. Direct env var override — highest priority
   if (process.env.SENDGRID_API_KEY) {
     return {

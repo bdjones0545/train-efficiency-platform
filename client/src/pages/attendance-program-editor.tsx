@@ -78,6 +78,7 @@ export default function AttendanceProgramEditorPage() {
   const [customEmail, setCustomEmail] = useState("");
   const [customName, setCustomName] = useState("");
   const [testSending, setTestSending] = useState<string | null>(null);
+  const [bulkTestSending, setBulkTestSending] = useState<"daily" | "weekly" | null>(null);
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/attendance-programs", programId, "config"],
@@ -107,6 +108,16 @@ export default function AttendanceProgramEditorPage() {
     queryFn: async () => {
       const r = await fetch(`/api/attendance-programs/${programId}/report-recipients`);
       if (!r.ok) return { recipients: [] };
+      return r.json();
+    },
+    enabled: !!programId,
+  });
+
+  const { data: sgStatus } = useQuery<{ configured: boolean; fromEmail?: string }>({
+    queryKey: ["/api/attendance-programs", programId, "reports/sendgrid-status"],
+    queryFn: async () => {
+      const r = await fetch(`/api/attendance-programs/${programId}/reports/sendgrid-status`);
+      if (!r.ok) return { configured: false };
       return r.json();
     },
     enabled: !!programId,
@@ -307,7 +318,8 @@ export default function AttendanceProgramEditorPage() {
       });
       const result = await r.json();
       if (result.ok) {
-        toast({ title: "Test email sent", description: `${reportType === "daily" ? "Daily" : "Weekly"} report sent to ${recipientEmail}` });
+        const mid = result.sendgridMessageId ? ` (ID: ${result.sendgridMessageId})` : "";
+        toast({ title: "Test email sent", description: `${reportType === "daily" ? "Daily" : "Weekly"} report sent to ${recipientEmail}${mid}` });
       } else {
         toast({ title: "Send failed", description: result.error || "Unknown error", variant: "destructive" });
       }
@@ -315,6 +327,37 @@ export default function AttendanceProgramEditorPage() {
       toast({ title: "Error", description: "Failed to send test email", variant: "destructive" });
     } finally {
       setTestSending(null);
+    }
+  };
+
+  const sendBulkTestReport = async (reportType: "daily" | "weekly") => {
+    setBulkTestSending(reportType);
+    try {
+      const r = await fetch(`/api/attendance-programs/${programId}/reports/send-test-${reportType}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const result = await r.json();
+      if (!result.sendgridConfigured) {
+        toast({ title: "SendGrid not configured", description: "SendGrid is not configured in this environment.", variant: "destructive" });
+        return;
+      }
+      const sent = (result.recipients || []).filter((x: any) => x.status === "sent").length;
+      const failed = (result.recipients || []).filter((x: any) => x.status === "failed").length;
+      if (failed > 0 && sent === 0) {
+        const firstErr = result.recipients.find((x: any) => x.error)?.error || result.error || "Unknown error";
+        toast({ title: "All sends failed", description: firstErr, variant: "destructive" });
+      } else if (failed > 0) {
+        toast({ title: `Sent ${sent}, failed ${failed}`, description: "Some recipients failed — check email history for errors.", variant: "destructive" });
+      } else if (sent === 0) {
+        toast({ title: "No recipients", description: result.error || "No active recipients with this report type enabled.", variant: "destructive" });
+      } else {
+        toast({ title: `Test ${reportType} sent to ${sent} recipient${sent === 1 ? "" : "s"}`, description: "Check inboxes and SendGrid Activity Feed to confirm delivery." });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to send test reports", variant: "destructive" });
+    } finally {
+      setBulkTestSending(null);
     }
   };
 
@@ -549,12 +592,23 @@ export default function AttendanceProgramEditorPage() {
         {/* Coach Reports Tab */}
         <TabsContent value="reports" className="space-y-4 pt-4">
 
+          {/* SendGrid not configured warning */}
+          {sgStatus && !sgStatus.configured && (
+            <div className="flex items-start gap-3 rounded-lg border border-yellow-500/40 bg-yellow-500/10 p-3 text-sm text-yellow-700 dark:text-yellow-400">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <div>
+                <p className="font-semibold">SendGrid is not configured in this environment.</p>
+                <p className="text-xs opacity-80 mt-0.5">Automated reports and test emails will not send until SendGrid is connected. Check the SendGrid integration in your Replit settings.</p>
+              </div>
+            </div>
+          )}
+
           {/* Schedule info */}
           <Card className="bg-muted/30 border-muted">
             <CardContent className="p-4">
               <div className="flex items-start gap-3">
                 <Clock className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
-                <div className="space-y-1.5 text-sm">
+                <div className="space-y-1.5 text-sm flex-1">
                   <p className="font-medium">Automatic Report Schedule</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted-foreground">
                     <div className="flex items-center gap-2">
@@ -567,6 +621,15 @@ export default function AttendanceProgramEditorPage() {
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground">Reports include check-in totals, athlete list, sport breakdown, and reward highlights.</p>
+                  <p className="text-xs text-muted-foreground">Verify delivery through the recipient's inbox or SendGrid Activity Feed — emails sent via SendGrid do not appear in Gmail Sent.</p>
+                  <div className="flex gap-2 pt-1">
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkTestSending === "daily" || !sgStatus?.configured} onClick={() => sendBulkTestReport("daily")} data-testid="button-send-test-daily-all">
+                      {bulkTestSending === "daily" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Send Test Daily Report
+                    </Button>
+                    <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" disabled={bulkTestSending === "weekly" || !sgStatus?.configured} onClick={() => sendBulkTestReport("weekly")} data-testid="button-send-test-weekly-all">
+                      {bulkTestSending === "weekly" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Send Test Weekly Report
+                    </Button>
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -713,18 +776,34 @@ export default function AttendanceProgramEditorPage() {
                   </div>
                   {/* Last sent info */}
                   {(r.lastDailySent || r.lastWeeklySent) && (
-                    <div className="flex gap-4 text-[10px] text-muted-foreground">
+                    <div className="space-y-1">
                       {r.lastDailySent && (
-                        <span className={r.lastDailySent.status === "sent" ? "text-green-500" : "text-red-400"}>
-                          Daily last sent: {new Date(r.lastDailySent.sent_at).toLocaleDateString()}
-                          {r.lastDailySent.status !== "sent" && <AlertCircle className="inline h-2.5 w-2.5 ml-1" />}
-                        </span>
+                        <div className="text-[10px]">
+                          <span className={r.lastDailySent.status === "sent" ? "text-green-500" : "text-red-400"}>
+                            {r.lastDailySent.status === "sent" ? "✓" : "✗"} Daily last sent: {new Date(r.lastDailySent.sent_at).toLocaleString()}
+                            {r.lastDailySent.sendgrid_message_id && <span className="text-muted-foreground ml-1">(ID: {r.lastDailySent.sendgrid_message_id})</span>}
+                          </span>
+                          {r.lastDailySent.status !== "sent" && r.lastDailySent.error_message && (
+                            <div className="mt-0.5 flex items-start gap-1 text-red-400">
+                              <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                              <span className="break-all">{r.lastDailySent.error_message}</span>
+                            </div>
+                          )}
+                        </div>
                       )}
                       {r.lastWeeklySent && (
-                        <span className={r.lastWeeklySent.status === "sent" ? "text-green-500" : "text-red-400"}>
-                          Weekly last sent: {new Date(r.lastWeeklySent.sent_at).toLocaleDateString()}
-                          {r.lastWeeklySent.status !== "sent" && <AlertCircle className="inline h-2.5 w-2.5 ml-1" />}
-                        </span>
+                        <div className="text-[10px]">
+                          <span className={r.lastWeeklySent.status === "sent" ? "text-green-500" : "text-red-400"}>
+                            {r.lastWeeklySent.status === "sent" ? "✓" : "✗"} Weekly last sent: {new Date(r.lastWeeklySent.sent_at).toLocaleString()}
+                            {r.lastWeeklySent.sendgrid_message_id && <span className="text-muted-foreground ml-1">(ID: {r.lastWeeklySent.sendgrid_message_id})</span>}
+                          </span>
+                          {r.lastWeeklySent.status !== "sent" && r.lastWeeklySent.error_message && (
+                            <div className="mt-0.5 flex items-start gap-1 text-red-400">
+                              <AlertCircle className="h-2.5 w-2.5 mt-0.5 shrink-0" />
+                              <span className="break-all">{r.lastWeeklySent.error_message}</span>
+                            </div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
