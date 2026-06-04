@@ -1,0 +1,328 @@
+Build a new Program Type called Attendance Tracker inside the Programs section.
+
+Goal:
+Allow organizations to create QR-code based attendance programs that track athlete participation, reward loyalty, generate leads, and automate communication.
+
+=================================================
+PROGRAM CREATION
+
+Add a new program type:
+
+* Scheduling Program
+* PR Tracker
+* Workout Builder
+* Lead Capture Program
+* Attendance Tracker ← NEW
+
+Attendance Tracker should be configurable from the same Program Tools area.
+
+=================================================
+ATTENDANCE TRACKER BUILDER
+
+Create a builder interface with the following sections:
+
+Basic Settings
+
+* Program Name
+* Program Description
+* Location
+* Active / Inactive
+* Start Date
+* End Date
+
+=================================================
+ATHLETE INFORMATION FIELDS
+
+Admins can configure which fields athletes must complete when checking in.
+
+Default available fields:
+
+* First Name
+* Last Name
+* Email
+* Phone
+* Sport
+* Position
+* School
+* Graduation Year
+* Team
+* Age
+
+For each field allow:
+
+* Required
+* Optional
+* Hidden
+
+Admin can add/remove fields.
+
+Store configuration per attendance program.
+
+=================================================
+REWARDS BUILDER
+
+Create a reward milestone system.
+
+Examples:
+
+5 Visits → EST Sticker
+10 Visits → Water Bottle
+15 Visits → Free T-Shirt
+25 Visits → Free Session
+50 Visits → Hoodie
+
+Each reward tier should support:
+
+* Visit Count Required
+* Reward Name
+* Reward Description
+* Active / Inactive
+
+Display athlete progress toward the next reward.
+
+=================================================
+QR CODE SYSTEM
+
+Every attendance program automatically generates:
+
+* Unique public URL
+* Unique QR code
+
+Example:
+
+/attendance/blhs-speed
+
+Athlete workflow:
+
+Scan QR
+→ Open attendance page
+→ Complete fields
+→ Submit attendance
+
+No login required.
+
+=================================================
+ATTENDANCE SUBMISSION FLOW
+
+When submitted:
+
+1. Create attendance record
+2. Update athlete attendance count
+3. Calculate reward progress
+4. Trigger confirmation email
+5. Add/update athlete in lead database
+
+If athlete already exists:
+
+* Update attendance history
+* Do not create duplicates
+
+=================================================
+LEAD DATABASE INTEGRATION
+
+Every attendance submission should automatically create or update an athlete lead.
+
+Use existing lead infrastructure.
+
+Map:
+
+Name
+Email
+Phone
+Sport
+Position
+School
+Grad Year
+
+into athlete leads database.
+
+This allows agents and CRM workflows to work with attendees automatically.
+
+=================================================
+AUTOMATED EMAILS
+
+Immediately after attendance submission:
+
+Send confirmation email.
+
+Example:
+
+Subject:
+Attendance Confirmed
+
+Body:
+Thanks for attending BLHS Athletic Performance.
+
+Current Attendance:
+7 Sessions
+
+Next Reward:
+EST Water Bottle
+
+Sessions Remaining:
+3
+
+See you next time.
+
+=================================================
+REWARD EMAILS
+
+Automatically send milestone emails.
+
+Examples:
+
+“You earned an EST Sticker.”
+
+“You are 2 visits away from a Free T-Shirt.”
+
+“You unlocked a Free Session.”
+
+=================================================
+ATTENDANCE DASHBOARD
+
+Create a dedicated dashboard under:
+
+Tools
+→ Attendance Tracker
+
+View Modes:
+
+* Day
+* Week
+* Month
+* Year
+
+Filters:
+
+* Program
+* Sport
+* Position
+* School
+* Reward Status
+
+Columns:
+
+* Name
+* Email
+* Sport
+* Position
+* Attendance Count
+* Last Visit
+* Reward Progress
+* Rewards Earned
+
+=================================================
+ANALYTICS
+
+Dashboard Cards:
+
+* Total Check-Ins
+* Unique Athletes
+* Returning Athletes
+* Average Visits Per Athlete
+* Reward Redemption Rate
+* Conversion Rate
+* Attendance Growth %
+
+Charts:
+
+* Attendance Over Time
+* Top Sports
+* Top Programs
+* Reward Distribution
+
+=================================================
+ATHLETE PROFILE INTEGRATION
+
+Within athlete records display:
+
+* Total Visits
+* Attendance History
+* Rewards Earned
+* Last Check-In
+* Attendance Trend
+
+=================================================
+AI AGENT INTEGRATION
+
+Retention Agent:
+
+Detect:
+
+* Frequent attendee
+* No package purchased
+* Attendance decline
+
+Create recommendations and follow-up opportunities.
+
+Revenue Agent:
+
+Detect:
+
+* High attendance
+* No conversion
+
+Create conversion opportunities.
+
+Scheduling Agent:
+
+Detect:
+
+* Consistent attendance pattern
+
+Recommend:
+
+* Membership
+* Semi-private
+* Team program
+
+=================================================
+DATABASE TABLES
+
+Create:
+
+attendance_programs
+
+attendance_program_fields
+
+attendance_reward_tiers
+
+attendance_qr_codes
+
+attendance_records
+
+attendance_rewards_earned
+
+attendance_email_history
+
+=================================================
+MOBILE REQUIREMENTS
+
+Must be fully mobile responsive.
+
+QR workflow should be optimized for athletes checking in from phones.
+
+Attendance submission should take less than 30 seconds.
+
+=================================================
+IMPLEMENTATION REQUIREMENTS
+
+* Multi-tenant safe
+* Organization scoped
+* Resolve org from authenticated session
+* No cross-org data leakage
+* TypeScript clean
+* Mobile tested
+* Reuse existing lead capture and email infrastructure whenever possible
+
+Deliver:
+
+1. Database schema
+2. Backend routes
+3. Builder UI
+4. QR check-in page
+5. Analytics dashboard
+6. Reward automation system
+7. Email automation integration
+8. Agent integration points
+9. Full TypeScript verification
