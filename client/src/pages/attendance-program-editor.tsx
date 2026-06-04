@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -44,6 +44,7 @@ export default function AttendanceProgramEditorPage() {
   const qc = useQueryClient();
   const { user } = useAuth();
   const [copied, setCopied] = useState(false);
+  const returnAfterSave = useRef(false);
 
   const [config, setConfig] = useState({
     description: "",
@@ -116,6 +117,7 @@ export default function AttendanceProgramEditorPage() {
     onSuccess: () => {
       toast({ title: "Settings saved" });
       qc.invalidateQueries({ queryKey: ["/api/attendance-programs", programId, "config"] });
+      if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/configuration"); }
     },
     onError: () => toast({ title: "Save failed", variant: "destructive" }),
   });
@@ -130,7 +132,10 @@ export default function AttendanceProgramEditorPage() {
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    onSuccess: () => toast({ title: "Fields saved" }),
+    onSuccess: () => {
+      toast({ title: "Fields saved" });
+      if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/configuration"); }
+    },
     onError: () => toast({ title: "Save failed", variant: "destructive" }),
   });
 
@@ -144,7 +149,10 @@ export default function AttendanceProgramEditorPage() {
       if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    onSuccess: () => toast({ title: "Rewards saved" }),
+    onSuccess: () => {
+      toast({ title: "Rewards saved" });
+      if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/configuration"); }
+    },
     onError: () => toast({ title: "Save failed", variant: "destructive" }),
   });
 
@@ -263,10 +271,25 @@ export default function AttendanceProgramEditorPage() {
               </div>
             </CardContent>
           </Card>
-          <Button onClick={() => saveConfigMutation.mutate()} disabled={saveConfigMutation.isPending} data-testid="button-save-settings">
-            {saveConfigMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            Save Settings
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { returnAfterSave.current = false; saveConfigMutation.mutate(); }}
+              disabled={saveConfigMutation.isPending}
+              data-testid="button-save-settings"
+            >
+              {saveConfigMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save
+            </Button>
+            <Button
+              onClick={() => { returnAfterSave.current = true; saveConfigMutation.mutate(); }}
+              disabled={saveConfigMutation.isPending}
+              data-testid="button-save-return-settings"
+            >
+              {saveConfigMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save &amp; Return
+            </Button>
+          </div>
         </TabsContent>
 
         {/* Fields Tab */}
@@ -312,10 +335,25 @@ export default function AttendanceProgramEditorPage() {
               ))}
             </CardContent>
           </Card>
-          <Button onClick={() => saveFieldsMutation.mutate()} disabled={saveFieldsMutation.isPending} data-testid="button-save-fields">
-            {saveFieldsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            Save Fields
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { returnAfterSave.current = false; saveFieldsMutation.mutate(); }}
+              disabled={saveFieldsMutation.isPending}
+              data-testid="button-save-fields"
+            >
+              {saveFieldsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save
+            </Button>
+            <Button
+              onClick={() => { returnAfterSave.current = true; saveFieldsMutation.mutate(); }}
+              disabled={saveFieldsMutation.isPending}
+              data-testid="button-save-return-fields"
+            >
+              {saveFieldsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save &amp; Return
+            </Button>
+          </div>
         </TabsContent>
 
         {/* Rewards Tab */}
@@ -412,10 +450,25 @@ export default function AttendanceProgramEditorPage() {
               </div>
             </CardContent>
           </Card>
-          <Button onClick={() => saveRewardsMutation.mutate()} disabled={saveRewardsMutation.isPending} data-testid="button-save-rewards">
-            {saveRewardsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-            Save Rewards
-          </Button>
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              onClick={() => { returnAfterSave.current = false; saveRewardsMutation.mutate(); }}
+              disabled={saveRewardsMutation.isPending}
+              data-testid="button-save-rewards"
+            >
+              {saveRewardsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save
+            </Button>
+            <Button
+              onClick={() => { returnAfterSave.current = true; saveRewardsMutation.mutate(); }}
+              disabled={saveRewardsMutation.isPending}
+              data-testid="button-save-return-rewards"
+            >
+              {saveRewardsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+              Save &amp; Return
+            </Button>
+          </div>
         </TabsContent>
       </Tabs>
     </div>
