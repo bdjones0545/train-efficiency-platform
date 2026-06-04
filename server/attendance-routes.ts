@@ -122,6 +122,38 @@ async function createTables() {
         created_at TIMESTAMP DEFAULT NOW()
       )
     `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS attendance_report_recipients (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id VARCHAR NOT NULL,
+        attendance_program_id VARCHAR NOT NULL,
+        coach_id VARCHAR,
+        email VARCHAR NOT NULL,
+        name VARCHAR NOT NULL,
+        receive_daily BOOLEAN NOT NULL DEFAULT true,
+        receive_weekly BOOLEAN NOT NULL DEFAULT true,
+        active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP DEFAULT NOW(),
+        updated_at TIMESTAMP DEFAULT NOW(),
+        UNIQUE(attendance_program_id, email)
+      )
+    `);
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS attendance_report_email_history (
+        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+        org_id VARCHAR NOT NULL,
+        attendance_program_id VARCHAR NOT NULL,
+        recipient_email VARCHAR NOT NULL,
+        report_type VARCHAR NOT NULL,
+        period_start DATE,
+        period_end DATE,
+        sent_at TIMESTAMP,
+        status VARCHAR NOT NULL DEFAULT 'sent',
+        sendgrid_message_id VARCHAR,
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      )
+    `);
     console.log("[Attendance] Tables ready");
   } catch (e) {
     console.error("[Attendance] Table creation error:", e);
@@ -823,6 +855,116 @@ export async function registerAttendanceRoutes(app: Express) {
     } catch (e) {
       console.error("[attendance programs list]", e);
       res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // ─── Coach report recipients: GET ────────────────────────────────────────
+  app.get("/api/attendance-programs/:programId/report-recipients", async (req, res) => {
+    try {
+      const { programId } = req.params;
+      const recipients = rows(await db.execute(sql`
+        SELECT id, org_id, attendance_program_id, coach_id, email, name,
+               receive_daily, receive_weekly, active, created_at, updated_at
+        FROM attendance_report_recipients
+        WHERE attendance_program_id = ${programId}
+        ORDER BY created_at ASC
+      `));
+      const history = rows(await db.execute(sql`
+        SELECT recipient_email, report_type, period_start, sent_at, status
+        FROM attendance_report_email_history
+        WHERE attendance_program_id = ${programId}
+        ORDER BY sent_at DESC
+        LIMIT 50
+      `));
+      const lastSent: Record<string, any> = {};
+      for (const h of history) {
+        const key = `${h.recipient_email}:${h.report_type}`;
+        if (!lastSent[key]) lastSent[key] = h;
+      }
+      const recipientsWithHistory = recipients.map((r: any) => ({
+        ...r,
+        lastDailySent: lastSent[`${r.email}:daily`] || null,
+        lastWeeklySent: lastSent[`${r.email}:weekly`] || null,
+      }));
+      res.json({ recipients: recipientsWithHistory });
+    } catch (e) {
+      console.error("[report-recipients GET]", e);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // ─── Coach report recipients: PUT (full replace) ──────────────────────────
+  app.put("/api/attendance-programs/:programId/report-recipients", async (req, res) => {
+    try {
+      const { programId } = req.params;
+      const { recipients, orgId } = req.body as {
+        recipients: Array<{ coachId?: string; email: string; name: string; receiveDaily: boolean; receiveWeekly: boolean; active: boolean }>;
+        orgId: string;
+      };
+      if (!orgId) return res.status(400).json({ error: "orgId required" });
+
+      const incomingEmails = (recipients || []).map(r => r.email);
+      if (incomingEmails.length > 0) {
+        for (const email of incomingEmails) {
+          // will delete below via NOT IN workaround (use delete+insert approach)
+          void email;
+        }
+        // Delete rows whose email is NOT in the incoming list
+        const existingRows = rows(await db.execute(sql`
+          SELECT email FROM attendance_report_recipients WHERE attendance_program_id = ${programId}
+        `));
+        for (const ex of existingRows) {
+          if (!incomingEmails.includes(ex.email)) {
+            await db.execute(sql`
+              DELETE FROM attendance_report_recipients
+              WHERE attendance_program_id = ${programId} AND email = ${ex.email}
+            `);
+          }
+        }
+      } else {
+        await db.execute(sql`
+          DELETE FROM attendance_report_recipients WHERE attendance_program_id = ${programId}
+        `);
+      }
+
+      for (const r of (recipients || [])) {
+        await db.execute(sql`
+          INSERT INTO attendance_report_recipients
+            (org_id, attendance_program_id, coach_id, email, name, receive_daily, receive_weekly, active, updated_at)
+          VALUES (${orgId}, ${programId}, ${r.coachId ?? null}, ${r.email}, ${r.name},
+                  ${r.receiveDaily}, ${r.receiveWeekly}, ${r.active}, NOW())
+          ON CONFLICT (attendance_program_id, email) DO UPDATE SET
+            name = EXCLUDED.name,
+            coach_id = EXCLUDED.coach_id,
+            receive_daily = EXCLUDED.receive_daily,
+            receive_weekly = EXCLUDED.receive_weekly,
+            active = EXCLUDED.active,
+            updated_at = NOW()
+        `);
+      }
+
+      const saved = rows(await db.execute(sql`
+        SELECT * FROM attendance_report_recipients
+        WHERE attendance_program_id = ${programId} ORDER BY created_at ASC
+      `));
+      res.json({ ok: true, recipients: saved });
+    } catch (e) {
+      console.error("[report-recipients PUT]", e);
+      res.status(500).json({ error: "Failed" });
+    }
+  });
+
+  // ─── Send test report ─────────────────────────────────────────────────────
+  app.post("/api/attendance-programs/:programId/report-recipients/send-test", async (req, res) => {
+    try {
+      const { programId } = req.params;
+      const { recipientEmail, reportType = "daily" } = req.body;
+      if (!recipientEmail) return res.status(400).json({ error: "recipientEmail required" });
+      const { sendTestReport } = await import("./attendance-report-cron");
+      const result = await sendTestReport(programId, recipientEmail, reportType);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message || "Failed" });
     }
   });
 

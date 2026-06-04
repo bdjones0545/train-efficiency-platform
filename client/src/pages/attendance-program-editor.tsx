@@ -13,8 +13,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
 import {
-  ArrowLeft, QrCode, Settings, Trophy, Users, Save, Plus, Trash2, GripVertical,
-  ExternalLink, Copy, Check, Loader2
+  ArrowLeft, QrCode, Settings, Trophy, Users, Save, Plus, Trash2,
+  ExternalLink, Copy, Check, Loader2, Mail, UserPlus, Clock, Bell,
+  Send, AlertCircle
 } from "lucide-react";
 
 const DEFAULT_FIELDS = [
@@ -37,6 +38,18 @@ const DEFAULT_REWARDS = [
   { visitCount: 50, rewardName: "Hoodie", rewardDescription: "EST hoodie", active: true },
 ];
 
+type Recipient = {
+  id?: string;
+  coachId?: string;
+  email: string;
+  name: string;
+  receiveDaily: boolean;
+  receiveWeekly: boolean;
+  active: boolean;
+  lastDailySent?: any;
+  lastWeeklySent?: any;
+};
+
 export default function AttendanceProgramEditorPage() {
   const { programId } = useParams<{ programId: string }>();
   const [, navigate] = useLocation();
@@ -58,11 +71,42 @@ export default function AttendanceProgramEditorPage() {
   const [rewards, setRewards] = useState(DEFAULT_REWARDS.map((r, i) => ({ ...r, id: `r${i}` })));
   const [newReward, setNewReward] = useState({ visitCount: "", rewardName: "", rewardDescription: "" });
 
+  // Coach Reports state
+  const [recipients, setRecipients] = useState<Recipient[]>([]);
+  const [addMode, setAddMode] = useState<"coach" | "custom" | null>(null);
+  const [selectedCoachId, setSelectedCoachId] = useState("");
+  const [customEmail, setCustomEmail] = useState("");
+  const [customName, setCustomName] = useState("");
+  const [testSending, setTestSending] = useState<string | null>(null);
+
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/attendance-programs", programId, "config"],
     queryFn: async () => {
       const r = await fetch(`/api/attendance-programs/${programId}/config`);
       if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    enabled: !!programId,
+  });
+
+  const orgId = data?.program?.organization_id || (user as any)?.organizationId || "";
+
+  const { data: coachesData } = useQuery<any[]>({
+    queryKey: ["/api/coaches", orgId],
+    queryFn: async () => {
+      const r = await fetch(`/api/coaches?organizationId=${orgId}`);
+      if (!r.ok) return [];
+      return r.json();
+    },
+    enabled: !!orgId,
+  });
+  const coaches: any[] = coachesData || [];
+
+  const { data: recipientsData } = useQuery<any>({
+    queryKey: ["/api/attendance-programs", programId, "report-recipients"],
+    queryFn: async () => {
+      const r = await fetch(`/api/attendance-programs/${programId}/report-recipients`);
+      if (!r.ok) return { recipients: [] };
       return r.json();
     },
     enabled: !!programId,
@@ -100,9 +144,34 @@ export default function AttendanceProgramEditorPage() {
     }
   }, [data]);
 
-  const orgId = data?.program?.organization_id || user?.organizationId || "";
+  useEffect(() => {
+    if (recipientsData?.recipients) {
+      setRecipients(recipientsData.recipients.map((r: any) => ({
+        id: r.id,
+        coachId: r.coach_id || undefined,
+        email: r.email,
+        name: r.name,
+        receiveDaily: r.receive_daily,
+        receiveWeekly: r.receive_weekly,
+        active: r.active,
+        lastDailySent: r.lastDailySent,
+        lastWeeklySent: r.lastWeeklySent,
+      })));
+    }
+  }, [recipientsData]);
+
   const slug = data?.qr?.public_slug || data?.program?.slug || "";
   const checkinUrl = slug ? `${window.location.origin}/attendance/${slug}` : "";
+
+  const copyUrl = () => {
+    if (checkinUrl) {
+      navigator.clipboard.writeText(checkinUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  // ── Save mutations ──────────────────────────────────────────────────────────
 
   const saveConfigMutation = useMutation({
     mutationFn: async () => {
@@ -117,9 +186,9 @@ export default function AttendanceProgramEditorPage() {
     onSuccess: () => {
       toast({ title: "Settings saved" });
       qc.invalidateQueries({ queryKey: ["/api/attendance-programs", programId, "config"] });
-      if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/configuration"); }
+      if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/attendance-tracker"); }
     },
-    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+    onError: () => toast({ title: "Error", description: "Failed to save settings", variant: "destructive" }),
   });
 
   const saveFieldsMutation = useMutation({
@@ -127,30 +196,23 @@ export default function AttendanceProgramEditorPage() {
       const r = await fetch(`/api/attendance-programs/${programId}/fields`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields }),
+        body: JSON.stringify({ fields: fields.map((f, i) => ({ ...f, displayOrder: i })), organizationId: orgId }),
       });
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        throw new Error(d.error || "Failed to save fields");
-      }
+      if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (res) => {
       toast({ title: "Fields saved" });
-      // Hydrate local state from server response to confirm what was actually persisted
-      if (data.fields && data.fields.length > 0) {
-        setFields(data.fields.map((f: any, i: number) => ({
-          id: f.id || `f${i}`,
-          fieldName: f.field_name,
-          label: f.label,
-          fieldType: f.field_type || "text",
-          visibility: f.visibility || "required",
+      if (res.fields) {
+        setFields(res.fields.map((f: any, i: number) => ({
+          id: f.id, fieldName: f.field_name, label: f.label, fieldType: f.field_type, visibility: f.visibility,
+          displayOrder: f.display_order ?? i,
         })));
       }
       qc.invalidateQueries({ queryKey: ["/api/attendance-programs", programId, "config"] });
-      if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/configuration"); }
+      if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/attendance-tracker"); }
     },
-    onError: (e: any) => toast({ title: e.message || "Save failed", variant: "destructive" }),
+    onError: () => toast({ title: "Error", description: "Failed to save fields", variant: "destructive" }),
   });
 
   const saveRewardsMutation = useMutation({
@@ -158,45 +220,102 @@ export default function AttendanceProgramEditorPage() {
       const r = await fetch(`/api/attendance-programs/${programId}/rewards`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tiers: rewards }),
+        body: JSON.stringify({ tiers: rewards.map(r => ({ id: r.id, visitCount: r.visitCount, rewardName: r.rewardName, rewardDescription: r.rewardDescription, active: r.active })), organizationId: orgId }),
       });
-      if (!r.ok) {
-        const d = await r.json().catch(() => ({}));
-        throw new Error(d.error || "Failed to save rewards");
-      }
+      if (!r.ok) throw new Error("Failed");
       return r.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (res) => {
       toast({ title: "Rewards saved" });
-      // Hydrate local state from server response to confirm what was actually persisted
-      if (data.tiers && data.tiers.length > 0) {
-        setRewards(data.tiers.map((r: any, i: number) => ({
-          id: r.id || `r${i}`,
-          visitCount: r.visit_count,
-          rewardName: r.reward_name,
-          rewardDescription: r.reward_description || "",
-          active: r.active ?? true,
+      if (res.tiers) {
+        setRewards(res.tiers.map((t: any, i: number) => ({
+          id: t.id || `r${i}`, visitCount: t.visit_count, rewardName: t.reward_name,
+          rewardDescription: t.reward_description || "", active: t.active ?? true,
         })));
       }
       qc.invalidateQueries({ queryKey: ["/api/attendance-programs", programId, "config"] });
-      if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/configuration"); }
+      if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/attendance-tracker"); }
     },
-    onError: (e: any) => toast({ title: e.message || "Save failed", variant: "destructive" }),
+    onError: () => toast({ title: "Error", description: "Failed to save rewards", variant: "destructive" }),
   });
 
-  const copyUrl = () => {
-    navigator.clipboard.writeText(checkinUrl);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
+  const saveRecipientsMutation = useMutation({
+    mutationFn: async () => {
+      const r = await fetch(`/api/attendance-programs/${programId}/report-recipients`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipients, orgId }),
+      });
+      if (!r.ok) throw new Error("Failed");
+      return r.json();
+    },
+    onSuccess: (res) => {
+      toast({ title: "Recipients saved" });
+      if (res.recipients) {
+        setRecipients(res.recipients.map((r: any) => ({
+          id: r.id, coachId: r.coach_id || undefined,
+          email: r.email, name: r.name,
+          receiveDaily: r.receive_daily, receiveWeekly: r.receive_weekly, active: r.active,
+        })));
+      }
+      qc.invalidateQueries({ queryKey: ["/api/attendance-programs", programId, "report-recipients"] });
+    },
+    onError: () => toast({ title: "Error", description: "Failed to save recipients", variant: "destructive" }),
+  });
 
   const addReward = () => {
     if (!newReward.visitCount || !newReward.rewardName) return;
-    setRewards(prev => [
-      ...prev,
-      { id: `r${Date.now()}`, visitCount: Number(newReward.visitCount), rewardName: newReward.rewardName, rewardDescription: newReward.rewardDescription, active: true }
-    ].sort((a, b) => Number(a.visitCount) - Number(b.visitCount)));
+    setRewards(prev => [...prev, { ...newReward, visitCount: Number(newReward.visitCount), id: `r${Date.now()}`, active: true }]);
     setNewReward({ visitCount: "", rewardName: "", rewardDescription: "" });
+  };
+
+  const addCoachRecipient = () => {
+    if (!selectedCoachId) return;
+    const coach = coaches.find(c => c.id === selectedCoachId);
+    if (!coach) return;
+    const email = coach.user?.email || "";
+    const name = [coach.user?.firstName, coach.user?.lastName].filter(Boolean).join(" ") || email;
+    if (!email || recipients.some(r => r.email === email)) {
+      toast({ title: "Already added", description: "This coach is already in the list" });
+      return;
+    }
+    setRecipients(prev => [...prev, { coachId: coach.id, email, name, receiveDaily: true, receiveWeekly: true, active: true }]);
+    setSelectedCoachId("");
+    setAddMode(null);
+  };
+
+  const addCustomRecipient = () => {
+    if (!customEmail || !customName) return;
+    if (recipients.some(r => r.email === customEmail)) {
+      toast({ title: "Already added", description: "This email is already in the list" });
+      return;
+    }
+    setRecipients(prev => [...prev, { email: customEmail, name: customName, receiveDaily: true, receiveWeekly: true, active: true }]);
+    setCustomEmail("");
+    setCustomName("");
+    setAddMode(null);
+  };
+
+  const sendTestEmail = async (recipientEmail: string, reportType: "daily" | "weekly") => {
+    const key = `${recipientEmail}:${reportType}`;
+    setTestSending(key);
+    try {
+      const r = await fetch(`/api/attendance-programs/${programId}/report-recipients/send-test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ recipientEmail, reportType }),
+      });
+      const result = await r.json();
+      if (result.ok) {
+        toast({ title: "Test email sent", description: `${reportType === "daily" ? "Daily" : "Weekly"} report sent to ${recipientEmail}` });
+      } else {
+        toast({ title: "Send failed", description: result.error || "Unknown error", variant: "destructive" });
+      }
+    } catch {
+      toast({ title: "Error", description: "Failed to send test email", variant: "destructive" });
+    } finally {
+      setTestSending(null);
+    }
   };
 
   if (isLoading) {
@@ -208,6 +327,10 @@ export default function AttendanceProgramEditorPage() {
   }
 
   const programName = data?.program?.name || "Attendance Tracker";
+
+  const activeRecipients = recipients.filter(r => r.active);
+  const dailyEnabled = activeRecipients.some(r => r.receiveDaily);
+  const weeklyEnabled = activeRecipients.some(r => r.receiveWeekly);
 
   return (
     <div className="max-w-3xl mx-auto space-y-6">
@@ -252,6 +375,9 @@ export default function AttendanceProgramEditorPage() {
           <TabsTrigger value="rewards" className="flex-1" data-testid="tab-rewards">
             <Trophy className="h-3.5 w-3.5 mr-1.5" /> Rewards
           </TabsTrigger>
+          <TabsTrigger value="reports" className="flex-1" data-testid="tab-reports">
+            <Mail className="h-3.5 w-3.5 mr-1.5" /> Coach Reports
+          </TabsTrigger>
         </TabsList>
 
         {/* Settings Tab */}
@@ -277,45 +403,32 @@ export default function AttendanceProgramEditorPage() {
                   value={config.location}
                   onChange={(e) => setConfig(c => ({ ...c, location: e.target.value }))}
                   placeholder="e.g., Main Gym, Field House"
+                  className="h-8 text-sm"
                   data-testid="input-location"
                 />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
                   <Label className="text-xs">Start Date</Label>
-                  <Input type="date" value={config.startDate} onChange={(e) => setConfig(c => ({ ...c, startDate: e.target.value }))} data-testid="input-start-date" />
+                  <Input type="date" value={config.startDate} onChange={(e) => setConfig(c => ({ ...c, startDate: e.target.value }))} className="h-8 text-sm" data-testid="input-start-date" />
                 </div>
                 <div className="space-y-1.5">
                   <Label className="text-xs">End Date</Label>
-                  <Input type="date" value={config.endDate} onChange={(e) => setConfig(c => ({ ...c, endDate: e.target.value }))} data-testid="input-end-date" />
+                  <Input type="date" value={config.endDate} onChange={(e) => setConfig(c => ({ ...c, endDate: e.target.value }))} className="h-8 text-sm" data-testid="input-end-date" />
                 </div>
               </div>
-              <div className="flex items-center justify-between rounded-lg border p-3">
-                <div>
-                  <p className="text-sm font-medium">Program Active</p>
-                  <p className="text-xs text-muted-foreground">Athletes can check in when active</p>
-                </div>
+              <div className="flex items-center gap-3">
                 <Switch checked={config.active} onCheckedChange={(v) => setConfig(c => ({ ...c, active: v }))} data-testid="switch-active" />
+                <Label className="text-sm">{config.active ? "Active — accepting check-ins" : "Inactive — check-ins paused"}</Label>
               </div>
             </CardContent>
           </Card>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => { returnAfterSave.current = false; saveConfigMutation.mutate(); }}
-              disabled={saveConfigMutation.isPending}
-              data-testid="button-save-settings"
-            >
-              {saveConfigMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Save
+            <Button variant="outline" onClick={() => { returnAfterSave.current = false; saveConfigMutation.mutate(); }} disabled={saveConfigMutation.isPending} data-testid="button-save-settings">
+              {saveConfigMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}Save
             </Button>
-            <Button
-              onClick={() => { returnAfterSave.current = true; saveConfigMutation.mutate(); }}
-              disabled={saveConfigMutation.isPending}
-              data-testid="button-save-return-settings"
-            >
-              {saveConfigMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Save &amp; Return
+            <Button onClick={() => { returnAfterSave.current = true; saveConfigMutation.mutate(); }} disabled={saveConfigMutation.isPending} data-testid="button-save-return-settings">
+              {saveConfigMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}Save &amp; Return
             </Button>
           </div>
         </TabsContent>
@@ -324,23 +437,27 @@ export default function AttendanceProgramEditorPage() {
         <TabsContent value="fields" className="space-y-4 pt-4">
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium">Athlete Information Fields</CardTitle>
+              <CardTitle className="text-sm font-medium">Check-In Form Fields</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
-              <p className="text-xs text-muted-foreground">Configure which fields athletes must complete when checking in.</p>
+            <CardContent className="space-y-2">
+              <p className="text-xs text-muted-foreground">Configure what athletes fill out when checking in via QR code.</p>
               {fields.map((field, idx) => (
-                <div key={field.id} className="flex items-center gap-3 rounded-lg border p-3 bg-muted/30" data-testid={`field-row-${field.fieldName}`}>
-                  <GripVertical className="h-4 w-4 text-muted-foreground shrink-0 cursor-grab" />
+                <div key={field.id} className="flex items-center gap-3 rounded-lg border p-2.5" data-testid={`field-row-${idx}`}>
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium">{field.label}</p>
+                    <Input
+                      value={field.label}
+                      onChange={(e) => setFields(prev => prev.map(f => f.id === field.id ? { ...f, label: e.target.value } : f))}
+                      className="h-7 text-sm border-0 p-0 font-medium bg-transparent focus-visible:ring-0"
+                      data-testid={`input-field-label-${idx}`}
+                    />
                     <p className="text-xs text-muted-foreground">{field.fieldName}</p>
                   </div>
                   <Select
                     value={field.visibility}
-                    onValueChange={(v) => setFields(prev => prev.map((f, i) => i === idx ? { ...f, visibility: v } : f))}
-                    data-testid={`select-visibility-${field.fieldName}`}
+                    onValueChange={(v) => setFields(prev => prev.map(f => f.id === field.id ? { ...f, visibility: v } : f))}
+                    data-testid={`select-field-visibility-${idx}`}
                   >
-                    <SelectTrigger className="w-28 h-7 text-xs">
+                    <SelectTrigger className="h-7 w-28 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -349,37 +466,16 @@ export default function AttendanceProgramEditorPage() {
                       <SelectItem value="hidden">Hidden</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Badge
-                    variant="secondary"
-                    className={`text-[10px] shrink-0 ${
-                      field.visibility === "required" ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" :
-                      field.visibility === "optional" ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" :
-                      "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400"
-                    }`}
-                  >
-                    {field.visibility}
-                  </Badge>
                 </div>
               ))}
             </CardContent>
           </Card>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => { returnAfterSave.current = false; saveFieldsMutation.mutate(); }}
-              disabled={saveFieldsMutation.isPending}
-              data-testid="button-save-fields"
-            >
-              {saveFieldsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Save
+            <Button variant="outline" onClick={() => { returnAfterSave.current = false; saveFieldsMutation.mutate(); }} disabled={saveFieldsMutation.isPending} data-testid="button-save-fields">
+              {saveFieldsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}Save
             </Button>
-            <Button
-              onClick={() => { returnAfterSave.current = true; saveFieldsMutation.mutate(); }}
-              disabled={saveFieldsMutation.isPending}
-              data-testid="button-save-return-fields"
-            >
-              {saveFieldsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Save &amp; Return
+            <Button onClick={() => { returnAfterSave.current = true; saveFieldsMutation.mutate(); }} disabled={saveFieldsMutation.isPending} data-testid="button-save-return-fields">
+              {saveFieldsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}Save &amp; Return
             </Button>
           </div>
         </TabsContent>
@@ -415,62 +511,24 @@ export default function AttendanceProgramEditorPage() {
                       />
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Switch
-                        checked={tier.active}
-                        onCheckedChange={(v) => setRewards(prev => prev.map(r => r.id === tier.id ? { ...r, active: v } : r))}
-                        data-testid={`switch-reward-active-${idx}`}
-                      />
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={() => setRewards(prev => prev.filter(r => r.id !== tier.id))}
-                        data-testid={`button-delete-reward-${idx}`}
-                      >
+                      <Switch checked={tier.active} onCheckedChange={(v) => setRewards(prev => prev.map(r => r.id === tier.id ? { ...r, active: v } : r))} data-testid={`switch-reward-active-${idx}`} />
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setRewards(prev => prev.filter(r => r.id !== tier.id))} data-testid={`button-delete-reward-${idx}`}>
                         <Trash2 className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 pl-13">
                     <Label className="text-xs text-muted-foreground w-24 shrink-0">Visits required:</Label>
-                    <Input
-                      type="number"
-                      min="1"
-                      value={tier.visitCount}
-                      onChange={(e) => setRewards(prev => prev.map(r => r.id === tier.id ? { ...r, visitCount: Number(e.target.value) } : r))}
-                      className="h-7 w-20 text-sm"
-                      data-testid={`input-reward-visits-${idx}`}
-                    />
+                    <Input type="number" min="1" value={tier.visitCount} onChange={(e) => setRewards(prev => prev.map(r => r.id === tier.id ? { ...r, visitCount: Number(e.target.value) } : r))} className="h-7 w-20 text-sm" data-testid={`input-reward-visits-${idx}`} />
                   </div>
                 </div>
               ))}
-
               <div className="rounded-lg border border-dashed p-3 space-y-2 bg-muted/20">
                 <p className="text-xs font-medium text-muted-foreground">Add New Reward</p>
                 <div className="grid grid-cols-3 gap-2">
-                  <Input
-                    type="number"
-                    min="1"
-                    placeholder="Visits"
-                    value={newReward.visitCount}
-                    onChange={(e) => setNewReward(r => ({ ...r, visitCount: e.target.value }))}
-                    className="h-8 text-sm"
-                    data-testid="input-new-reward-visits"
-                  />
-                  <Input
-                    placeholder="Reward name"
-                    value={newReward.rewardName}
-                    onChange={(e) => setNewReward(r => ({ ...r, rewardName: e.target.value }))}
-                    className="h-8 text-sm"
-                    data-testid="input-new-reward-name"
-                  />
-                  <Input
-                    placeholder="Description"
-                    value={newReward.rewardDescription}
-                    onChange={(e) => setNewReward(r => ({ ...r, rewardDescription: e.target.value }))}
-                    className="h-8 text-sm"
-                    data-testid="input-new-reward-desc"
-                  />
+                  <Input type="number" min="1" placeholder="Visits" value={newReward.visitCount} onChange={(e) => setNewReward(r => ({ ...r, visitCount: e.target.value }))} className="h-8 text-sm" data-testid="input-new-reward-visits" />
+                  <Input placeholder="Reward name" value={newReward.rewardName} onChange={(e) => setNewReward(r => ({ ...r, rewardName: e.target.value }))} className="h-8 text-sm" data-testid="input-new-reward-name" />
+                  <Input placeholder="Description" value={newReward.rewardDescription} onChange={(e) => setNewReward(r => ({ ...r, rewardDescription: e.target.value }))} className="h-8 text-sm" data-testid="input-new-reward-desc" />
                 </div>
                 <Button size="sm" variant="outline" onClick={addReward} disabled={!newReward.visitCount || !newReward.rewardName} data-testid="button-add-reward">
                   <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Reward
@@ -479,22 +537,205 @@ export default function AttendanceProgramEditorPage() {
             </CardContent>
           </Card>
           <div className="flex gap-2">
-            <Button
-              variant="outline"
-              onClick={() => { returnAfterSave.current = false; saveRewardsMutation.mutate(); }}
-              disabled={saveRewardsMutation.isPending}
-              data-testid="button-save-rewards"
-            >
-              {saveRewardsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Save
+            <Button variant="outline" onClick={() => { returnAfterSave.current = false; saveRewardsMutation.mutate(); }} disabled={saveRewardsMutation.isPending} data-testid="button-save-rewards">
+              {saveRewardsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}Save
             </Button>
-            <Button
-              onClick={() => { returnAfterSave.current = true; saveRewardsMutation.mutate(); }}
-              disabled={saveRewardsMutation.isPending}
-              data-testid="button-save-return-rewards"
-            >
-              {saveRewardsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
-              Save &amp; Return
+            <Button onClick={() => { returnAfterSave.current = true; saveRewardsMutation.mutate(); }} disabled={saveRewardsMutation.isPending} data-testid="button-save-return-rewards">
+              {saveRewardsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}Save &amp; Return
+            </Button>
+          </div>
+        </TabsContent>
+
+        {/* Coach Reports Tab */}
+        <TabsContent value="reports" className="space-y-4 pt-4">
+
+          {/* Schedule info */}
+          <Card className="bg-muted/30 border-muted">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <Clock className="h-4 w-4 text-blue-400 mt-0.5 shrink-0" />
+                <div className="space-y-1.5 text-sm">
+                  <p className="font-medium">Automatic Report Schedule</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-muted-foreground">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-[10px] shrink-0">Daily</Badge>
+                      Monday – Friday at 5:00 PM ET
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-[10px] shrink-0">Weekly</Badge>
+                      Every Friday at 5:00 PM ET
+                    </div>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Reports include check-in totals, athlete list, sport breakdown, and reward highlights.</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Status summary */}
+          {recipients.length > 0 && (
+            <div className="grid grid-cols-3 gap-3">
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <p className="text-xl font-bold text-green-500">{activeRecipients.length}</p>
+                  <p className="text-xs text-muted-foreground">Active Recipients</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <p className={`text-xl font-bold ${dailyEnabled ? "text-green-500" : "text-muted-foreground"}`}>{dailyEnabled ? "On" : "Off"}</p>
+                  <p className="text-xs text-muted-foreground">Daily Reports</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-3 text-center">
+                  <p className={`text-xl font-bold ${weeklyEnabled ? "text-green-500" : "text-muted-foreground"}`}>{weeklyEnabled ? "On" : "Off"}</p>
+                  <p className="text-xs text-muted-foreground">Weekly Reports</p>
+                </CardContent>
+              </Card>
+            </div>
+          )}
+
+          {/* Recipients list */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-medium flex items-center gap-2">
+                  <Bell className="h-4 w-4 text-green-500" /> Report Recipients
+                  {recipients.length > 0 && <Badge variant="secondary" className="text-[10px]">{recipients.length}</Badge>}
+                </CardTitle>
+                <div className="flex gap-1.5">
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={() => setAddMode(addMode === "coach" ? null : "coach")} data-testid="button-add-coach-recipient">
+                    <UserPlus className="h-3.5 w-3.5" /> Add Coach
+                  </Button>
+                  <Button size="sm" variant="outline" className="h-7 text-xs gap-1.5" onClick={() => setAddMode(addMode === "custom" ? null : "custom")} data-testid="button-add-custom-recipient">
+                    <Plus className="h-3.5 w-3.5" /> Custom Email
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {/* Add coach form */}
+              {addMode === "coach" && (
+                <div className="rounded-lg border border-dashed p-3 bg-muted/20 space-y-2">
+                  <p className="text-xs font-medium">Add Coach from Organization</p>
+                  <div className="flex gap-2">
+                    <Select value={selectedCoachId} onValueChange={setSelectedCoachId} data-testid="select-add-coach">
+                      <SelectTrigger className="h-8 text-sm flex-1">
+                        <SelectValue placeholder="Select a coach…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {coaches.filter(c => c.user?.email && !recipients.some(r => r.email === c.user.email)).map(c => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {[c.user?.firstName, c.user?.lastName].filter(Boolean).join(" ") || c.user?.email}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="sm" className="h-8" onClick={addCoachRecipient} disabled={!selectedCoachId} data-testid="button-confirm-add-coach">
+                      Add
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Add custom email form */}
+              {addMode === "custom" && (
+                <div className="rounded-lg border border-dashed p-3 bg-muted/20 space-y-2">
+                  <p className="text-xs font-medium">Add Custom Email Recipient</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <Input placeholder="Full name" value={customName} onChange={e => setCustomName(e.target.value)} className="h-8 text-sm" data-testid="input-custom-name" />
+                    <Input type="email" placeholder="Email address" value={customEmail} onChange={e => setCustomEmail(e.target.value)} className="h-8 text-sm" data-testid="input-custom-email" />
+                  </div>
+                  <Button size="sm" variant="outline" onClick={addCustomRecipient} disabled={!customEmail || !customName} data-testid="button-confirm-add-custom">
+                    <Plus className="h-3.5 w-3.5 mr-1.5" /> Add Recipient
+                  </Button>
+                </div>
+              )}
+
+              {/* Empty state */}
+              {recipients.length === 0 && addMode === null && (
+                <div className="rounded-lg border border-dashed p-8 text-center">
+                  <Mail className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
+                  <p className="text-sm font-medium mb-1">No recipients yet</p>
+                  <p className="text-xs text-muted-foreground">Add coaches or custom emails to receive automated attendance summaries.</p>
+                </div>
+              )}
+
+              {/* Recipient rows */}
+              {recipients.map((r, idx) => (
+                <div key={r.email} className={`rounded-lg border p-3 space-y-2 ${!r.active ? "opacity-50" : ""}`} data-testid={`recipient-row-${idx}`}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-sm font-semibold">{r.name}</p>
+                        {r.coachId && <Badge variant="secondary" className="text-[10px]">Coach</Badge>}
+                        {!r.active && <Badge variant="outline" className="text-[10px] text-muted-foreground">Disabled</Badge>}
+                      </div>
+                      <p className="text-xs text-muted-foreground">{r.email}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Switch
+                        checked={r.active}
+                        onCheckedChange={(v) => setRecipients(prev => prev.map(x => x.email === r.email ? { ...x, active: v } : x))}
+                        data-testid={`switch-recipient-active-${idx}`}
+                      />
+                      <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive hover:text-destructive" onClick={() => setRecipients(prev => prev.filter(x => x.email !== r.email))} data-testid={`button-remove-recipient-${idx}`}>
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={r.receiveDaily}
+                        onCheckedChange={(v) => setRecipients(prev => prev.map(x => x.email === r.email ? { ...x, receiveDaily: v } : x))}
+                        data-testid={`switch-recipient-daily-${idx}`}
+                      />
+                      <span className="text-xs text-muted-foreground">Daily</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        checked={r.receiveWeekly}
+                        onCheckedChange={(v) => setRecipients(prev => prev.map(x => x.email === r.email ? { ...x, receiveWeekly: v } : x))}
+                        data-testid={`switch-recipient-weekly-${idx}`}
+                      />
+                      <span className="text-xs text-muted-foreground">Weekly</span>
+                    </div>
+                    <div className="flex items-center gap-1 ml-auto">
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 text-muted-foreground hover:text-foreground" disabled={testSending === `${r.email}:daily`} onClick={() => sendTestEmail(r.email, "daily")} data-testid={`button-test-daily-${idx}`}>
+                        {testSending === `${r.email}:daily` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Test Daily
+                      </Button>
+                      <Button size="sm" variant="ghost" className="h-6 text-[10px] gap-1 text-muted-foreground hover:text-foreground" disabled={testSending === `${r.email}:weekly`} onClick={() => sendTestEmail(r.email, "weekly")} data-testid={`button-test-weekly-${idx}`}>
+                        {testSending === `${r.email}:weekly` ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Test Weekly
+                      </Button>
+                    </div>
+                  </div>
+                  {/* Last sent info */}
+                  {(r.lastDailySent || r.lastWeeklySent) && (
+                    <div className="flex gap-4 text-[10px] text-muted-foreground">
+                      {r.lastDailySent && (
+                        <span className={r.lastDailySent.status === "sent" ? "text-green-500" : "text-red-400"}>
+                          Daily last sent: {new Date(r.lastDailySent.sent_at).toLocaleDateString()}
+                          {r.lastDailySent.status !== "sent" && <AlertCircle className="inline h-2.5 w-2.5 ml-1" />}
+                        </span>
+                      )}
+                      {r.lastWeeklySent && (
+                        <span className={r.lastWeeklySent.status === "sent" ? "text-green-500" : "text-red-400"}>
+                          Weekly last sent: {new Date(r.lastWeeklySent.sent_at).toLocaleDateString()}
+                          {r.lastWeeklySent.status !== "sent" && <AlertCircle className="inline h-2.5 w-2.5 ml-1" />}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </CardContent>
+          </Card>
+
+          <div className="flex gap-2">
+            <Button onClick={() => saveRecipientsMutation.mutate()} disabled={saveRecipientsMutation.isPending} data-testid="button-save-recipients">
+              {saveRecipientsMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />} Save Recipients
             </Button>
           </div>
         </TabsContent>

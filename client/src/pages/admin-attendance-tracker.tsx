@@ -14,7 +14,7 @@ import {
 import {
   Users, QrCode, Trophy, TrendingUp, BarChart2, Calendar, Star, CheckCircle2,
   Search, ExternalLink, ChevronRight, Activity, Settings, Copy, Check, Loader2,
-  CalendarDays, CalendarCheck
+  CalendarDays, CalendarCheck, Mail, Bell
 } from "lucide-react";
 import QRCode from "react-qr-code";
 
@@ -88,6 +88,22 @@ export default function AdminAttendanceTrackerPage() {
     },
     enabled: !!orgId && !!selectedAthlete,
   });
+
+  // Coach Reports: recipients for first program
+  const firstProgramId = programs[0]?.id;
+  const { data: reportRecipientsData } = useQuery<any>({
+    queryKey: ["/api/attendance-programs", firstProgramId, "report-recipients"],
+    queryFn: async () => {
+      const r = await fetch(`/api/attendance-programs/${firstProgramId}/report-recipients`);
+      if (!r.ok) return { recipients: [] };
+      return r.json();
+    },
+    enabled: !!firstProgramId,
+  });
+  const reportRecipients: any[] = reportRecipientsData?.recipients || [];
+  const activeRecipients = reportRecipients.filter(r => r.active);
+  const dailyEnabled = activeRecipients.some((r: any) => r.receive_daily);
+  const weeklyEnabled = activeRecipients.some((r: any) => r.receive_weekly);
 
   const analytics = analyticsData || {};
   const athletes: any[] = dashData?.athletes || [];
@@ -212,6 +228,51 @@ export default function AdminAttendanceTrackerPage() {
           </Card>
         ))}
       </div>
+
+      {/* Coach Reports Card */}
+      {firstProgramId && (
+        <Card className="border-green-500/20 bg-green-500/5">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="p-2 bg-green-500/10 rounded-lg shrink-0">
+                  <Mail className="h-4 w-4 text-green-500" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-sm font-semibold">Coach Reports</p>
+                    {activeRecipients.length > 0 ? (
+                      <>
+                        <Badge variant="secondary" className="text-[10px] bg-green-500/10 text-green-600 border-green-500/20">
+                          <Bell className="h-2.5 w-2.5 mr-1" />{activeRecipients.length} recipient{activeRecipients.length !== 1 ? "s" : ""}
+                        </Badge>
+                        {dailyEnabled && <Badge variant="outline" className="text-[10px]">Daily</Badge>}
+                        {weeklyEnabled && <Badge variant="outline" className="text-[10px]">Weekly</Badge>}
+                      </>
+                    ) : (
+                      <Badge variant="outline" className="text-[10px] text-muted-foreground">Not configured</Badge>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {activeRecipients.length > 0
+                      ? `Automated summaries sent Mon–Fri 5 PM ET${weeklyEnabled ? " + Fridays weekly" : ""}`
+                      : "Add coaches to receive automated attendance summaries by email"}
+                  </p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                className="text-xs gap-1.5 shrink-0 border-green-500/30 text-green-600 hover:bg-green-500/10"
+                onClick={() => firstProgramId && navigate(`/attendance-programs/${firstProgramId}?tab=reports`)}
+                data-testid="button-configure-reports"
+              >
+                <Settings className="h-3.5 w-3.5" /> Configure
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Empty state: programs exist but no check-ins yet */}
       {hasNoData ? (

@@ -534,6 +534,9 @@ app.use((req, res, next) => {
   const { registerAttendanceRoutes } = await import("./attendance-routes");
   await registerAttendanceRoutes(app);
 
+  const { startAttendanceReportCron } = await import("./attendance-report-cron");
+  startAttendanceReportCron();
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

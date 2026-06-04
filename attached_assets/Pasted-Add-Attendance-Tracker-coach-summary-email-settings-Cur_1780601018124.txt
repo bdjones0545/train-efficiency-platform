@@ -1,0 +1,166 @@
+Add Attendance Tracker coach summary email settings.
+
+Current feature:
+Attendance Tracker has:
+- Dashboard
+- Configure Tracker
+- Settings
+- Fields
+- Rewards
+- SendGrid email integration for check-in/reward emails
+
+New requirement:
+Inside Configure Tracker, add a new section/tab for coach attendance summaries.
+
+Add a new tab:
+
+Settings | Fields | Rewards | Coach Reports
+
+Coach Reports should allow admins to choose which coaches receive automated attendance summaries.
+
+UI requirements:
+1. Add Coach Reports tab inside /attendance-programs/:programId
+2. Show selectable coach list from the organization
+3. Allow adding/removing recipients
+4. Allow custom email recipients if needed
+5. Show recipient name and email
+6. Allow enabling/disabling reports
+
+Report schedule settings:
+- Daily summary: Monday through Friday at 5:00 PM Eastern
+- Weekly summary: Friday at 5:00 PM Eastern
+- Timezone: America/New_York
+
+Default:
+- Daily reports enabled Monday-Friday
+- Weekly report enabled Friday
+- Send time 5:00 PM ET
+
+Daily summary email should include:
+- Program name
+- Date
+- Total check-ins today
+- Unique athletes today
+- New athletes today
+- Returning athletes today
+- List of attendees
+- Sport breakdown
+- Reward progress highlights
+- Rewards earned today
+
+Weekly summary email should include:
+- Program name
+- Week range
+- Total check-ins this week
+- Unique athletes this week
+- New athletes this week
+- Returning athletes this week
+- Top attendees
+- Sport breakdown
+- Attendance by day
+- Rewards earned this week
+- Athletes close to rewards
+- Leads created from attendance
+
+Backend requirements:
+Create table:
+
+attendance_report_recipients
+
+Fields:
+- id
+- org_id
+- attendance_program_id
+- coach_id nullable
+- email
+- name
+- receive_daily boolean default true
+- receive_weekly boolean default true
+- active boolean default true
+- created_at
+- updated_at
+
+Optional table:
+
+attendance_report_email_history
+
+Fields:
+- id
+- org_id
+- attendance_program_id
+- recipient_email
+- report_type daily | weekly
+- period_start
+- period_end
+- sent_at
+- status
+- sendgrid_message_id
+- error_message
+
+API routes:
+GET /api/attendance-programs/:id/report-recipients
+PUT /api/attendance-programs/:id/report-recipients
+
+Cron/job requirements:
+Add scheduled SendGrid reports.
+
+Daily:
+Monday-Friday at 5:00 PM America/New_York
+
+Weekly:
+Friday at 5:00 PM America/New_York
+
+Report jobs must:
+- Resolve active attendance programs
+- Find active report recipients
+- Generate summary from attendance_records
+- Send email through SendGrid
+- Log result in attendance_report_email_history
+- Avoid duplicate sends for same recipient/report_type/period
+
+Important:
+Do not hardcode only one org.
+Must be multi-tenant safe.
+All queries must scope by org_id and attendance_program_id.
+
+Email subject examples:
+
+Daily:
+Attendance Summary — BLHS Athletic — Jun 4
+
+Weekly:
+Weekly Attendance Summary — BLHS Athletic — Jun 1–7
+
+Email body should be clean HTML with:
+- KPI cards
+- Attendee table
+- Reward highlights
+- Link back to Attendance Tracker dashboard
+
+Frontend behavior:
+In Coach Reports tab:
+- Toggle reports on/off
+- Add coach recipient
+- Add custom email
+- Remove recipient
+- Save recipients
+- Show last sent status if available
+
+Also add a small card on the main Attendance Tracker dashboard:
+Coach Reports
+- Daily summaries: On/Off
+- Weekly summaries: On/Off
+- Recipients count
+- Configure button
+
+Testing:
+1. Add a coach recipient
+2. Save
+3. Reload builder
+4. Confirm recipient persists
+5. Trigger test daily report manually if a test endpoint exists
+6. Confirm SendGrid sends email
+7. Confirm report history logs success/failure
+8. Confirm daily job only sends Monday-Friday at 5 PM ET
+9. Confirm weekly job sends Friday at 5 PM ET
+10. Run TypeScript check and build
