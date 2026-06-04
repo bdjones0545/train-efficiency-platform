@@ -713,6 +713,20 @@ export default function AdminAgentCommunicationsPage() {
         {activeTab === "analytics"     && <AnalyticsTab />}
       </div>
 
+      {/* Forward nav → Agent Task Marketplace */}
+      <Link href="/admin/agent-tasks">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-indigo-500/5 hover:from-primary/10 hover:to-indigo-500/10 transition-colors cursor-pointer group" data-testid="nav-agent-tasks">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <CheckSquare className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Agent Task Marketplace &amp; Work Delegation System</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Agents assign, accept, execute, verify, and complete work across departments — with ownership, accountability, deadlines, dependencies, and AI COO workload management.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
+
       {/* Architecture note */}
       <div className="p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-teal-500/5" data-testid="architecture-complete-19-1">
         <div className="flex items-start gap-3">

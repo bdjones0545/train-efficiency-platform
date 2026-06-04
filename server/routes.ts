@@ -27850,5 +27850,137 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to load announcements" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // AGENT TASK MARKETPLACE — Phase 19.2
+  // ═══════════════════════════════════════════════════════════════
+
+  const AGENT_TASKS_SEED = (() => {
+    const now = Date.now();
+    return [
+      { id: "t-1",  title: "Analyze competitor pricing — local football training providers",  description: "Full competitive pricing analysis across the top 5 markets. Include session rates, membership tiers, and package pricing. Source data from public websites only.",              createdByAgent: "Revenue Agent",       assignedToAgent: "Research Agent",   department: "Revenue",     taskType: "research",    priority: "high",     status: "in_progress",       dueDate: new Date(now + 24*3600000).toISOString(),  estimatedEffort: "3h", actualEffort: "1.5h", createdAt: new Date(now - 2*3600000).toISOString(),  startedAt: new Date(now - 1*3600000).toISOString(),  completedAt: null },
+      { id: "t-2",  title: "Recover inactive leads — 30-day re-engagement sequence",          description: "Identify all leads inactive >30 days. Draft personalized re-engagement email for each. Use PAIL data for personalization. Flag for approval before send.",                     createdByAgent: "AI COO",               assignedToAgent: "Email Agent",       department: "Revenue",     taskType: "outreach",    priority: "critical", status: "in_progress",       dueDate: new Date(now + 12*3600000).toISOString(),  estimatedEffort: "2h", actualEffort: "0.5h", createdAt: new Date(now - 3*3600000).toISOString(),  startedAt: new Date(now - 2*3600000).toISOString(),  completedAt: null },
+      { id: "t-3",  title: "Riverside FC partnership outreach — personal approach",            description: "4 automated scheduling attempts have failed. Draft a warm, personal email from the business owner perspective. Do NOT use template language. Value: $8,400/year.",             createdByAgent: "AI COO",               assignedToAgent: "Email Agent",       department: "Partnerships", taskType: "outreach",   priority: "high",     status: "pending_acceptance",dueDate: new Date(now + 48*3600000).toISOString(),  estimatedEffort: "45m",actualEffort: null,   createdAt: new Date(now - 35*60000).toISOString(),   startedAt: null,                                       completedAt: null },
+      { id: "t-4",  title: "Marcus T. schedule optimization — 75-min morning sessions",       description: "PAIL profile updated. Current schedule shows 60-min Tuesday/Thursday at 7 AM. Identify 3 alternative slots with 75-min availability at 6:30 AM and generate proposal.",        createdByAgent: "PAIL Engine",          assignedToAgent: "Scheduling Agent",  department: "Operations",  taskType: "scheduling",  priority: "medium",   status: "accepted",          dueDate: new Date(now + 6*3600000).toISOString(),   estimatedEffort: "30m",actualEffort: null,   createdAt: new Date(now - 25*60000).toISOString(),   startedAt: null,                                       completedAt: null },
+      { id: "t-5",  title: "Q3 pricing strategy proposal — based on competitor research",     description: "Synthesize Research Agent findings into a pricing recommendation. Present 3 scenarios: maintain, increase 10%, increase 18%. Include impact model for each.",                  createdByAgent: "Revenue Agent",        assignedToAgent: "Revenue Agent",     department: "Revenue",     taskType: "analysis",    priority: "high",     status: "blocked",           dueDate: new Date(now + 36*3600000).toISOString(),  estimatedEffort: "2h", actualEffort: null,   createdAt: new Date(now - 1*3600000).toISOString(),  startedAt: null,                                       completedAt: null },
+      { id: "t-6",  title: "Feature dormancy alert — 3 orgs approaching 21-day threshold",   description: "Orgs A, B, C have 2+ unused features for 18 days. Trigger intervention sequence: personalized feature spotlight email + CSM notification. Execute within 6 hours.",           createdByAgent: "Intelligence Engine",  assignedToAgent: "Email Agent",       department: "Customer Success",taskType: "intervention",priority: "critical", status: "completed",         dueDate: new Date(now - 2*3600000).toISOString(),   estimatedEffort: "1h", actualEffort: "45m",  createdAt: new Date(now - 8*3600000).toISOString(),  startedAt: new Date(now - 7*3600000).toISOString(),  completedAt: new Date(now - 5*3600000).toISOString() },
+      { id: "t-7",  title: "Weekly collaboration health report for CEO Heartbeat",             description: "Compile agent communication metrics, handoff completion rates, escalation trends, and collaboration scores into a structured weekly summary for the CEO Heartbeat cycle.",       createdByAgent: "CEO Heartbeat",        assignedToAgent: "Platform Brain",    department: "Intelligence",taskType: "reporting",   priority: "medium",   status: "completed",         dueDate: new Date(now - 1*3600000).toISOString(),   estimatedEffort: "1h", actualEffort: "55m",  createdAt: new Date(now - 6*3600000).toISOString(),  startedAt: new Date(now - 5*3600000).toISOString(),  completedAt: new Date(now - 1*3600000).toISOString() },
+      { id: "t-8",  title: "Lead qualification scoring — refresh all 30-day pipeline",        description: "Re-score all leads in the 30-day pipeline using latest PAIL engagement signals, email open/click data, and scheduling interaction history. Flag any top-10% leads for priority.", createdByAgent: "Revenue Agent",       assignedToAgent: "Intelligence Engine",department: "Revenue",     taskType: "analysis",    priority: "high",     status: "pending_acceptance",dueDate: new Date(now + 18*3600000).toISOString(),  estimatedEffort: "2h", actualEffort: null,   createdAt: new Date(now - 45*60000).toISOString(),   startedAt: null,                                       completedAt: null },
+      { id: "t-9",  title: "Retention campaign — 3 orgs at 85-day mark (expansion window)",  description: "3 orgs are approaching the 85-day expansion trigger window. Create personalized upgrade proposals for each based on their usage patterns and team size.",                       createdByAgent: "Customer Success Agent",assignedToAgent: "Revenue Agent",    department: "Revenue",     taskType: "outreach",    priority: "high",     status: "draft",             dueDate: new Date(now + 72*3600000).toISOString(),  estimatedEffort: "3h", actualEffort: null,   createdAt: new Date(now - 20*60000).toISOString(),   startedAt: null,                                       completedAt: null },
+      { id: "t-10", title: "Platform Engineering backlog review — identify top 3 wins",        description: "Review the full 12-item engineering backlog. Identify the 3 highest-ROI items achievable within 1 sprint. Justify with revenue, retention, and adoption impact scores.",       createdByAgent: "AI COO",               assignedToAgent: "Platform Brain",    department: "Engineering", taskType: "analysis",    priority: "medium",   status: "escalated",         dueDate: new Date(now + 24*3600000).toISOString(),  estimatedEffort: "1.5h",actualEffort: null,  createdAt: new Date(now - 4*3600000).toISOString(),  startedAt: null,                                       completedAt: null },
+      { id: "t-11", title: "Session reminder sequence — 48hr + 2hr automated sends",          description: "Verify the 48-hour and 2-hour session reminder sequences are active for all sessions scheduled in the next 7 days. Confirm delivery and fix any gaps.",                        createdByAgent: "AI COO",               assignedToAgent: "Scheduling Agent",  department: "Operations",  taskType: "verification",priority: "low",      status: "completed",         dueDate: new Date(now - 3*3600000).toISOString(),   estimatedEffort: "30m",actualEffort: "25m",  createdAt: new Date(now - 8*3600000).toISOString(),  startedAt: new Date(now - 5*3600000).toISOString(),  completedAt: new Date(now - 3.5*3600000).toISOString()},
+      { id: "t-12", title: "Bounced email address suppression — clean list",                   description: "Email bounce rate spiked to 8.2%. Identify all bounced addresses from last 30 days. Suppress from all sequences. Rebuild clean send list. Target: below 3% bounce rate.",     createdByAgent: "AI COO",               assignedToAgent: "Email Agent",       department: "Marketing",   taskType: "maintenance", priority: "high",     status: "completed",         dueDate: new Date(now - 4*3600000).toISOString(),   estimatedEffort: "1h", actualEffort: "50m",  createdAt: new Date(now - 7*3600000).toISOString(),  startedAt: new Date(now - 6*3600000).toISOString(),  completedAt: new Date(now - 4.5*3600000).toISOString()},
+    ];
+  })();
+
+  const AGENT_TASK_DEPS = [
+    { id: "dep-1", taskId: "t-5", dependsOnTaskId: "t-1", dependencyType: "blocking",   status: "blocking", blockedTask: "Q3 Pricing Proposal", blockedBy: "Competitor Pricing Research" },
+    { id: "dep-2", taskId: "t-9", dependsOnTaskId: "t-8", dependencyType: "sequential", status: "pending",  blockedTask: "Retention Campaign",   blockedBy: "Lead Qualification Refresh"  },
+    { id: "dep-3", taskId: "t-3", dependsOnTaskId: "t-2", dependencyType: "optional",   status: "resolved", blockedTask: "Riverside FC Outreach", blockedBy: "Lead Recovery Sequence"      },
+  ];
+
+  // GET /api/agent-tasks/tasks
+  app.get("/api/agent-tasks/tasks", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const counts = AGENT_TASKS_SEED.reduce((acc, t) => { acc[t.status] = (acc[t.status] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      res.json({ tasks: AGENT_TASKS_SEED, counts, total: AGENT_TASKS_SEED.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load tasks" }); }
+  });
+
+  // POST /api/agent-tasks/create
+  app.post("/api/agent-tasks/create", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { title, description, createdByAgent, assignedToAgent, department, taskType, priority, dueDate, estimatedEffort } = req.body;
+      if (!title || !assignedToAgent) return res.status(400).json({ message: "title and assignedToAgent required" });
+      res.json({ success: true, task: { id: `t-${Date.now()}`, title, description: description ?? "", createdByAgent: createdByAgent ?? "Human Admin", assignedToAgent, department: department ?? "General", taskType: taskType ?? "general", priority: priority ?? "medium", status: "pending_acceptance", dueDate: dueDate ?? null, estimatedEffort: estimatedEffort ?? null, actualEffort: null, createdAt: new Date().toISOString(), startedAt: null, completedAt: null } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to create task" }); }
+  });
+
+  // POST /api/agent-tasks/accept
+  app.post("/api/agent-tasks/accept", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { taskId } = req.body;
+      if (!taskId) return res.status(400).json({ message: "taskId required" });
+      res.json({ success: true, taskId, status: "accepted", acceptedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to accept task" }); }
+  });
+
+  // POST /api/agent-tasks/reject
+  app.post("/api/agent-tasks/reject", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { taskId, reason } = req.body;
+      if (!taskId) return res.status(400).json({ message: "taskId required" });
+      res.json({ success: true, taskId, status: "rejected", reason: reason ?? "Capacity not available", rejectedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to reject task" }); }
+  });
+
+  // POST /api/agent-tasks/complete
+  app.post("/api/agent-tasks/complete", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { taskId, outcomeSummary, actualEffort } = req.body;
+      if (!taskId) return res.status(400).json({ message: "taskId required" });
+      res.json({ success: true, taskId, status: "completed", outcomeSummary: outcomeSummary ?? "Task completed successfully.", actualEffort: actualEffort ?? "N/A", completedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to complete task" }); }
+  });
+
+  // POST /api/agent-tasks/verify
+  app.post("/api/agent-tasks/verify", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { taskId, qualityScore, timelinessScore, impactScore, approved, notes } = req.body;
+      if (!taskId) return res.status(400).json({ message: "taskId required" });
+      const successScore = Math.round(((qualityScore ?? 85) + (timelinessScore ?? 90) + (impactScore ?? 80)) / 3);
+      res.json({ success: true, taskId, verified: true, approved: approved ?? true, successScore, qualityScore: qualityScore ?? 85, timelinessScore: timelinessScore ?? 90, impactScore: impactScore ?? 80, notes: notes ?? "", verifiedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to verify task" }); }
+  });
+
+  // GET /api/agent-tasks/dependencies
+  app.get("/api/agent-tasks/dependencies", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const criticalPath = ["t-1 → t-5", "t-8 → t-9"];
+      const blockedCount = AGENT_TASK_DEPS.filter(d => d.status === "blocking").length;
+      res.json({ dependencies: AGENT_TASK_DEPS, criticalPath, blockedCount, total: AGENT_TASK_DEPS.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load dependencies" }); }
+  });
+
+  // GET /api/agent-tasks/analytics
+  app.get("/api/agent-tasks/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const completed   = AGENT_TASKS_SEED.filter(t => t.status === "completed");
+      const completionRate = Math.round((completed.length / AGENT_TASKS_SEED.length) * 100);
+      res.json({
+        tasksCreated: AGENT_TASKS_SEED.length, tasksCompleted: completed.length,
+        completionRate, avgCompletionTimeHours: 2.4, slaCompliance: 91,
+        escalationRate: 8.3, blockedTasks: AGENT_TASKS_SEED.filter(t => t.status === "blocked").length,
+        avgVerificationScore: 87,
+        departmentStats: [
+          { department: "Revenue",        created: 5, completed: 2, inProgress: 2, blocked: 1, sla: 88, throughput: 2.1 },
+          { department: "Operations",     created: 2, completed: 2, inProgress: 0, blocked: 0, sla: 97, throughput: 3.4 },
+          { department: "Customer Success",created: 1,completed: 1, inProgress: 0, blocked: 0, sla: 100,throughput: 1.8 },
+          { department: "Marketing",      created: 1, completed: 1, inProgress: 0, blocked: 0, sla: 95, throughput: 2.0 },
+          { department: "Intelligence",   created: 1, completed: 1, inProgress: 0, blocked: 0, sla: 100,throughput: 2.2 },
+          { department: "Engineering",    created: 1, completed: 0, inProgress: 0, blocked: 0, sla: 0,  throughput: 0   },
+          { department: "Partnerships",   created: 1, completed: 0, inProgress: 0, blocked: 0, sla: 0,  throughput: 0   },
+        ],
+        agentProductivity: [
+          { agent: "Email Agent",        tasksCompleted: 2, avgTime: "47m",  successScore: 94, activeNow: 2 },
+          { agent: "Scheduling Agent",   tasksCompleted: 2, avgTime: "27m",  successScore: 97, activeNow: 1 },
+          { agent: "Intelligence Engine",tasksCompleted: 1, avgTime: "45m",  successScore: 91, activeNow: 1 },
+          { agent: "Platform Brain",     tasksCompleted: 1, avgTime: "55m",  successScore: 88, activeNow: 1 },
+          { agent: "Research Agent",     tasksCompleted: 0, avgTime: "—",    successScore: 0,  activeNow: 1 },
+          { agent: "Revenue Agent",      tasksCompleted: 0, avgTime: "—",    successScore: 0,  activeNow: 1 },
+        ],
+        crossDeptHandoffs: 7, generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load analytics" }); }
+  });
+
+  // POST /api/agent-tasks/reassign
+  app.post("/api/agent-tasks/reassign", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { taskId, toAgent, reason } = req.body;
+      if (!taskId || !toAgent) return res.status(400).json({ message: "taskId and toAgent required" });
+      res.json({ success: true, taskId, reassignedTo: toAgent, reason: reason ?? "AI COO workload rebalancing", reassignedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to reassign task" }); }
+  });
+
   return httpServer;
 }
