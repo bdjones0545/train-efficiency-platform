@@ -19938,6 +19938,55 @@ Respond with this exact JSON structure:
     }
   });
 
+  // GET /api/ai-workforce/setup-status — derived multi-table setup check (never trusts client orgId)
+  app.get("/api/ai-workforce/setup-status", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      const { db } = await import("./db");
+      const { orgAiWorkforceSettings, orgAiGovernanceSettings, orgAutomationSettings } = await import("@shared/schema");
+      const { eq, count } = await import("drizzle-orm");
+
+      // Query all three tables in parallel — all scoped to session orgId
+      const [workforceRows, governanceRows, automationRows] = await Promise.all([
+        db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []),
+        db.select({ cnt: count() }).from(orgAiGovernanceSettings).where(eq(orgAiGovernanceSettings.orgId, orgId)).catch(() => [{ cnt: 0 }]),
+        db.select({ cnt: count() }).from(orgAutomationSettings).where(eq(orgAutomationSettings.orgId, orgId)).catch(() => [{ cnt: 0 }]),
+      ]);
+
+      const workforceRecord = workforceRows[0] ?? null;
+      const hasWorkforceRecord = workforceRecord != null;
+      const hasDepartments = hasWorkforceRecord && Array.isArray((workforceRecord as any).enabledDepartments) && (workforceRecord as any).enabledDepartments.length > 0;
+      const hasGovernanceSettings = Number((governanceRows[0] as any)?.cnt ?? 0) > 0;
+      const hasAutomationSettings = Number((automationRows[0] as any)?.cnt ?? 0) > 0;
+      const setupCompleteFlag = !!(workforceRecord as any)?.onboardingCompleted;
+
+      // An org is considered configured if it has workforce + at least one additional signal
+      const derivedConfigured = hasWorkforceRecord && (hasDepartments || hasGovernanceSettings || hasAutomationSettings);
+
+      // Auto-repair: if records clearly exist but flag is false, set it to true
+      if (derivedConfigured && !setupCompleteFlag && hasWorkforceRecord) {
+        await db.update(orgAiWorkforceSettings)
+          .set({ onboardingCompleted: true, onboardingCompletedAt: new Date(), updatedAt: new Date() } as any)
+          .where(eq(orgAiWorkforceSettings.orgId, orgId))
+          .catch(e => console.error("[setup-status] flag repair error:", e));
+      }
+
+      const isConfigured = derivedConfigured || setupCompleteFlag;
+
+      res.json({
+        isConfigured,
+        hasWorkforceRecord,
+        hasDepartments,
+        hasGovernanceSettings,
+        hasAutomationSettings,
+        setupCompleteFlag: isConfigured ? true : setupCompleteFlag,
+      });
+    } catch (e: any) {
+      console.error("[ai-workforce/setup-status] error:", e);
+      res.status(500).json({ message: "Failed to fetch workforce setup status" });
+    }
+  });
+
   // GET /api/workforce/settings — get workforce settings
   app.get("/api/workforce/settings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {

@@ -565,10 +565,31 @@ export default function OnboardingAiWorkforcePage() {
   const [state, setState] = useState<WizardState>(INITIAL_STATE);
   const [preloaded, setPreloaded] = useState(false);
 
+  // Route guard: check derived setup status — never trust a fragile boolean flag alone
+  const { data: setupStatus, isLoading: statusLoading } = useQuery<{
+    isConfigured: boolean;
+    hasWorkforceRecord: boolean;
+    hasDepartments: boolean;
+    hasGovernanceSettings: boolean;
+    hasAutomationSettings: boolean;
+    setupCompleteFlag: boolean;
+  }>({
+    queryKey: ["/api/ai-workforce/setup-status"],
+    staleTime: 0,
+  });
+
+  // Redirect configured orgs away from the wizard to the live dashboard
+  useEffect(() => {
+    if (!statusLoading && setupStatus?.isConfigured) {
+      navigate("/admin/ai-governance");
+    }
+  }, [statusLoading, setupStatus, navigate]);
+
   // Fetch existing configuration — null means first-time setup
   const { data: existingSettings, isLoading: settingsLoading } = useQuery<any | null>({
     queryKey: ["/api/workforce/settings"],
     staleTime: 0,
+    enabled: !statusLoading && !setupStatus?.isConfigured,
   });
 
   const isEditMode = !settingsLoading && existingSettings != null;
@@ -586,6 +607,19 @@ export default function OnboardingAiWorkforcePage() {
     });
     setPreloaded(true);
   }, [existingSettings, settingsLoading, preloaded]);
+
+  // Block rendering until we know whether this org is configured
+  // (prevents a flash of the wizard UI before the redirect fires)
+  if (statusLoading || setupStatus?.isConfigured) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center space-y-3">
+          <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="text-sm text-muted-foreground">Checking workforce status…</p>
+        </div>
+      </div>
+    );
+  }
 
   const toggleGoal = (id: string) => setState(s => ({
     ...s, goals: s.goals.includes(id) ? s.goals.filter(x => x !== id) : [...s.goals, id],
@@ -620,6 +654,7 @@ export default function OnboardingAiWorkforcePage() {
       verificationLog: string[];
     }) => {
       queryClient.invalidateQueries({ queryKey: ["/api/workforce/settings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-workforce/setup-status"] });
       queryClient.invalidateQueries({ queryKey: ["/api/workforce/agents"] });
       queryClient.invalidateQueries({ queryKey: ["/api/workflow-graphs"] });
       queryClient.invalidateQueries({ queryKey: ["/api/governance/settings"] });
