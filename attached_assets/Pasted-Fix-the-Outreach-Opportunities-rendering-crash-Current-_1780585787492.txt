@@ -1,0 +1,111 @@
+Fix the Outreach Opportunities rendering crash.
+
+Current issue:
+Clicking Outreach Opportunities crashes the page with:
+
+a.filter is not a function
+
+The stack trace shows logic equivalent to:
+
+a.filter(l => !l.decisionMakerEmail || l.contactEmail)
+
+This means the Outreach Opportunities page is calling .filter() on a value that is not guaranteed to be an array.
+
+Audit and fix the Outreach Opportunities page/component and its API responses.
+
+Fix requirements:
+
+1. Find the Outreach Opportunities route/page.
+2. Identify the collection used in this expression:
+   .filter(l => !l.decisionMakerEmail || l.contactEmail)
+
+3. Normalize the source collection before any array operations.
+
+Add or reuse a helper:
+
+const asArray = <T,>(value: unknown): T[] =>
+  Array.isArray(value) ? value : [];
+
+Then replace unsafe code like:
+
+const missingDecisionMakers = leads.filter(...)
+
+with:
+
+const safeLeads = asArray<LeadType>(leads);
+
+const missingDecisionMakers = safeLeads.filter(
+  l => !l.decisionMakerEmail || l.contactEmail
+);
+
+4. Audit the whole page for unsafe:
+- .filter()
+- .map()
+- .reduce()
+- .some()
+- .every()
+- .find()
+
+All of these should operate only on normalized arrays.
+
+5. Check the API response shape.
+If the backend returns a structured response like:
+
+{
+  leads: [],
+  opportunities: [],
+  prospects: [],
+  data: []
+}
+
+then normalize correctly:
+
+const opportunities = Array.isArray(response)
+  ? response
+  : Array.isArray(response?.opportunities)
+    ? response.opportunities
+    : Array.isArray(response?.leads)
+      ? response.leads
+      : Array.isArray(response?.prospects)
+        ? response.prospects
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
+
+6. Fix backend response consistency if needed.
+The Outreach Opportunities endpoint should always return predictable array fields.
+
+Example:
+
+{
+  opportunities: [],
+  prospects: [],
+  missingDecisionMakers: [],
+  stats: {}
+}
+
+Never return:
+- null where an array is expected
+- an object where an array is expected
+- inconsistent raw array sometimes / wrapped object other times
+
+7. Add a clean empty state:
+If there are no outreach opportunities, render:
+“No outreach opportunities found yet.”
+Do not crash.
+
+8. Ensure authenticated org scoping:
+- Resolve org from session
+- Query only records for the authenticated org
+- Do not trust client-provided orgId
+- Do not leak outreach data across orgs
+
+9. Run:
+npm run check
+npm run build
+
+10. Test:
+- Open Outreach Opportunities with no records
+- Open with existing prospects/leads
+- Open from mobile sidebar
+- Confirm no page rendering crash

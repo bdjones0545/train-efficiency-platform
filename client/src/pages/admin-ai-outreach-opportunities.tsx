@@ -16,6 +16,17 @@ import {
   Store, ChevronRight, CheckCheck, RefreshCw, Mail, Target, AlertCircle,
 } from "lucide-react";
 
+// ─── Safe fetch + array helpers ────────────────────────────────────────────
+
+async function safeFetch(url: string) {
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+  return res.json();
+}
+
+const asArray = <T,>(value: unknown): T[] =>
+  Array.isArray(value) ? value : [];
+
 // ─── Domain configuration for the Outreach Command Center ──────────────────
 
 const OUTREACH_DOMAINS = [
@@ -118,7 +129,7 @@ type OutreachDomainKey = typeof OUTREACH_DOMAINS[number]["key"];
 function useMessageTypes(domain: string) {
   return useQuery<Array<{ value: string; label: string; goal: string }>>({
     queryKey: ["/api/ai-outreach/config", domain],
-    queryFn: () => fetch(`/api/ai-outreach/config?domain=${domain}`).then((r) => r.json()).then((d: any) => d.messageTypes ?? []),
+    queryFn: () => safeFetch(`/api/ai-outreach/config?domain=${domain}`).then((d: any) => asArray<{ value: string; label: string; goal: string }>(d?.messageTypes)),
     staleTime: 5 * 60 * 1000,
   });
 }
@@ -310,7 +321,8 @@ function BulkGenerateDialog({
   const { data: messageTypes = [] } = useMessageTypes(domain);
   const domainCfg = OUTREACH_DOMAINS.find((d) => d.key === domain);
 
-  const eligible = prospects.filter((p) => p.decisionMakerEmail || p.contactEmail).slice(0, 20);
+  const safeProspects = asArray<any>(prospects);
+  const eligible = safeProspects.filter((p) => p.decisionMakerEmail || p.contactEmail).slice(0, 20);
 
   const mutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/ai-outreach/bulk-generate", {
@@ -452,15 +464,17 @@ function DomainPanel({ domainKey }: { domainKey: string }) {
   const [bulkOpen, setBulkOpen] = useState(false);
   const queryClient = useQueryClient();
 
-  const { data: prospects = [], isLoading } = useQuery<any[]>({
+  const { data: rawProspects, isLoading } = useQuery<any>({
     queryKey: ["/api/ai-outreach/opportunities", domainKey],
-    queryFn: () => fetch(`/api/ai-outreach/opportunities?domain=${domainKey}`).then((r) => r.json()),
+    queryFn: () => safeFetch(`/api/ai-outreach/opportunities?domain=${domainKey}`),
   });
+  const prospects = asArray<any>(rawProspects);
 
-  const { data: recentDrafts = [] } = useQuery<any[]>({
+  const { data: rawRecentDrafts } = useQuery<any>({
     queryKey: ["/api/ai-outreach/recent", domainKey],
-    queryFn: () => fetch(`/api/ai-outreach/recent?domain=${domainKey}`).then((r) => r.json()),
+    queryFn: () => safeFetch(`/api/ai-outreach/recent?domain=${domainKey}`),
   });
+  const recentDrafts = asArray<any>(rawRecentDrafts);
 
   const withEmail = prospects.filter((p) => p.decisionMakerEmail || p.contactEmail);
   const withoutEmail = prospects.filter((p) => !p.decisionMakerEmail && !p.contactEmail);
@@ -600,15 +614,17 @@ function EmploymentPanel() {
   const [addOpen, setAddOpen] = useState(false);
   const [form, setForm] = useState({ firstName: "", lastName: "", email: "", phone: "", roleAppliedFor: "", experienceLevel: "", location: "", source: "", notes: "" });
 
-  const { data: applicants = [], isLoading } = useQuery<any[]>({
+  const { data: rawApplicants, isLoading } = useQuery<any>({
     queryKey: ["/api/employment-applicants"],
-    queryFn: () => fetch("/api/employment-applicants").then((r) => r.json()),
+    queryFn: () => safeFetch("/api/employment-applicants"),
   });
+  const applicants = asArray<any>(rawApplicants);
 
-  const { data: recentDrafts = [] } = useQuery<any[]>({
+  const { data: rawRecentDraftsEmp } = useQuery<any>({
     queryKey: ["/api/ai-outreach/recent", "employment_opportunity"],
-    queryFn: () => fetch(`/api/ai-outreach/recent?domain=employment_opportunity`).then((r) => r.json()),
+    queryFn: () => safeFetch(`/api/ai-outreach/recent?domain=employment_opportunity`),
   });
+  const recentDrafts = asArray<any>(rawRecentDraftsEmp);
 
   const createMutation = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/employment-applicants", data),
@@ -795,16 +811,19 @@ function EmploymentPanel() {
 // ─────────────────────────────────────────────────────────────────────────────
 
 function DomainSummaryCard({ cfg, onSelect }: { cfg: typeof OUTREACH_DOMAINS[number]; onSelect: () => void }) {
-  const { data: prospects = [] } = useQuery<any[]>({
+  const { data: rawSummaryProspects } = useQuery<any>({
     queryKey: ["/api/ai-outreach/opportunities", cfg.key],
-    queryFn: () => fetch(`/api/ai-outreach/opportunities?domain=${cfg.key}`).then((r) => r.json()),
+    queryFn: () => safeFetch(`/api/ai-outreach/opportunities?domain=${cfg.key}`),
     staleTime: 60_000,
   });
-  const { data: recentDrafts = [] } = useQuery<any[]>({
+  const prospects = asArray<any>(rawSummaryProspects);
+
+  const { data: rawSummaryDrafts } = useQuery<any>({
     queryKey: ["/api/ai-outreach/recent", cfg.key],
-    queryFn: () => fetch(`/api/ai-outreach/recent?domain=${cfg.key}`).then((r) => r.json()),
+    queryFn: () => safeFetch(`/api/ai-outreach/recent?domain=${cfg.key}`),
     staleTime: 60_000,
   });
+  const recentDrafts = asArray<any>(rawSummaryDrafts);
 
   const Icon = cfg.icon;
   const withEmail = prospects.filter((p: any) => p.decisionMakerEmail || p.contactEmail).length;
