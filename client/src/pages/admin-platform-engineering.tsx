@@ -983,6 +983,20 @@ export default function AdminPlatformEngineeringPage() {
         {activeTab === "advisor"   && <AdvisorTab />}
       </div>
 
+      {/* Forward nav → Agent Communications Hub */}
+      <Link href="/admin/agent-communications">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-teal-500/5 hover:from-primary/10 hover:to-teal-500/10 transition-colors cursor-pointer group" data-testid="nav-agent-communications">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <MessageSquare className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Agent Communications Hub</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Agents coordinate as a real workforce — messaging, task handoffs, escalations, announcements, and cross-department collaboration with full audit trail.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
+
       {/* Architecture note */}
       <div className="p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-orange-500/5" data-testid="architecture-complete-18">
         <div className="flex items-start gap-3">

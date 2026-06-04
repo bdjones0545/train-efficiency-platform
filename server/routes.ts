@@ -27669,5 +27669,186 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to get advisor response" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // AGENT COMMUNICATIONS HUB — Phase 19.1
+  // ═══════════════════════════════════════════════════════════════
+
+  // Shared seed data helpers (IIFE so they're available inside the closures)
+  const AGENT_CONVOS = (() => {
+    const now = Date.now();
+    return [
+      { id: "conv-1", type: "request",      status: "open",          priority: "high",   participants: ["Revenue Agent","Research Agent"],    subject: "Competitor pricing analysis — local football training providers",    createdAt: new Date(now - 18*60000).toISOString(), updatedAt: new Date(now - 4*60000).toISOString(),  messageCount: 3 },
+      { id: "conv-2", type: "handoff",      status: "completed",     priority: "medium", participants: ["Research Agent","Revenue Agent"],     subject: "Research complete — 8 competitors identified with pricing data",      createdAt: new Date(now - 2*3600000).toISOString(),updatedAt: new Date(now - 90*60000).toISOString(), messageCount: 2 },
+      { id: "conv-3", type: "escalation",   status: "acknowledged",  priority: "critical",participants: ["Scheduling Agent","AI COO"],         subject: "Unable to find availability for partnership meeting this week",       createdAt: new Date(now - 45*60000).toISOString(), updatedAt: new Date(now - 12*60000).toISOString(), messageCount: 4 },
+      { id: "conv-4", type: "decision",     status: "completed",     priority: "high",   participants: ["AI COO","Revenue Team","Email Agent"],subject: "Directive: Prioritize lead recovery initiative this week",            createdAt: new Date(now - 6*3600000).toISOString(),updatedAt: new Date(now - 5*3600000).toISOString(),messageCount: 1 },
+      { id: "conv-5", type: "announcement", status: "completed",     priority: "medium", participants: ["CEO Heartbeat","All Agents"],         subject: "Summer acceleration campaign launched — all agents aligned",         createdAt: new Date(now - 24*3600000).toISOString(),updatedAt: new Date(now - 24*3600000).toISOString(),messageCount: 1 },
+      { id: "conv-6", type: "request",      status: "open",          priority: "high",   participants: ["Email Agent","AI COO"],               subject: "Approval required: 3 high-confidence outreach sequences queued",      createdAt: new Date(now - 8*60000).toISOString(),  updatedAt: new Date(now - 2*60000).toISOString(),  messageCount: 2 },
+      { id: "conv-7", type: "handoff",      status: "open",          priority: "medium", participants: ["PAIL Engine","Scheduling Agent"],     subject: "Athlete profile updated — reschedule recommendation ready",          createdAt: new Date(now - 25*60000).toISOString(), updatedAt: new Date(now - 10*60000).toISOString(), messageCount: 2 },
+      { id: "conv-8", type: "escalation",   status: "open",          priority: "high",   participants: ["Revenue Agent","AI COO"],             subject: "Lead response rate dropped 18% — requesting directive on approach",   createdAt: new Date(now - 35*60000).toISOString(), updatedAt: new Date(now - 5*60000).toISOString(),  messageCount: 3 },
+    ];
+  })();
+
+  const AGENT_MESSAGES: Record<string, any[]> = (() => {
+    const now = Date.now();
+    return {
+      "conv-1": [
+        { id: "m-1a", conversationId: "conv-1", senderAgentId: "Revenue Agent",   recipientAgentId: "Research Agent",   type: "request",  subject: "Competitor pricing analysis needed", content: "I need a full analysis of competitor pricing for local football training providers in our top 5 markets. Focus on: session rates, membership tiers, and package pricing. This will inform our Q3 pricing strategy proposal.", createdAt: new Date(now - 18*60000).toISOString() },
+        { id: "m-1b", conversationId: "conv-1", senderAgentId: "Research Agent",  recipientAgentId: "Revenue Agent",    type: "update",   subject: "Research initiated", content: "Acknowledged. Beginning web research across 5 markets. Initial scan shows 8 direct competitors with publicly available pricing. Estimated completion: 45 minutes. Will flag any premium or budget outliers immediately.", createdAt: new Date(now - 15*60000).toISOString() },
+        { id: "m-1c", conversationId: "conv-1", senderAgentId: "Research Agent",  recipientAgentId: "Revenue Agent",    type: "response", subject: "Partial findings — 3 markets complete", content: "Markets 1-3 complete. Key finding: 67% of competitors price individual sessions at $75-95. Two outliers: PerformanceEdge at $140/session (premium) and FitNation at $45/session (budget). Continuing markets 4-5.", createdAt: new Date(now - 4*60000).toISOString() },
+      ],
+      "conv-3": [
+        { id: "m-3a", conversationId: "conv-3", senderAgentId: "Scheduling Agent",recipientAgentId: "AI COO",           type: "escalation",subject: "Partnership meeting scheduling failure", content: "I've attempted to schedule the Riverside FC partnership meeting 4 times across 3 weeks. The contact has not responded to any scheduling requests. The partnership opportunity is valued at $8,400/year. Escalating for human intervention or alternative approach.", createdAt: new Date(now - 45*60000).toISOString() },
+        { id: "m-3b", conversationId: "conv-3", senderAgentId: "AI COO",          recipientAgentId: "Scheduling Agent", type: "response", subject: "Escalation acknowledged — routing to Email Agent", content: "Acknowledged. Scheduling escalations of this value require a different approach. I'm routing this to Email Agent to craft a personal outreach from the business owner. Suspending automated scheduling attempts for 72 hours.", createdAt: new Date(now - 38*60000).toISOString() },
+        { id: "m-3c", conversationId: "conv-3", senderAgentId: "AI COO",          recipientAgentId: "Email Agent",      type: "request",  subject: "Priority outreach — Riverside FC partnership", content: "Personal outreach needed for Riverside FC. Value: $8,400/year. Scheduling Agent has been unable to reach contact after 4 attempts. Draft a warm, direct email from the business owner. Flag for human approval before send.", createdAt: new Date(now - 37*60000).toISOString() },
+        { id: "m-3d", conversationId: "conv-3", senderAgentId: "Email Agent",     recipientAgentId: "AI COO",           type: "update",   subject: "Draft ready for approval", content: "Personal outreach draft complete. Tone: warm and direct. Leads with value proposition (performance outcomes for youth athletes), not pricing. Flagged for human approval in the AI Approvals inbox.", createdAt: new Date(now - 12*60000).toISOString() },
+      ],
+      "conv-6": [
+        { id: "m-6a", conversationId: "conv-6", senderAgentId: "Email Agent",     recipientAgentId: "AI COO",           type: "request",  subject: "Approval request: 3 outreach sequences queued", content: "Three high-confidence outreach sequences are ready (confidence: 87%, 91%, 83%). All pass governance checks. Combined estimated revenue impact: $2,400. Requesting approval to auto-execute or confirm human review is required.", createdAt: new Date(now - 8*60000).toISOString() },
+        { id: "m-6b", conversationId: "conv-6", senderAgentId: "AI COO",          recipientAgentId: "Email Agent",      type: "approval", subject: "Approved: 2 of 3 sequences", content: "Approved sequences 1 and 2. Sequence 3 (Riverside Athletic Club) requires human review — the account has an open support ticket. Routing sequence 3 to human approval queue. Execute 1 and 2 immediately.", createdAt: new Date(now - 2*60000).toISOString() },
+      ],
+      "conv-7": [
+        { id: "m-7a", conversationId: "conv-7", senderAgentId: "PAIL Engine",     recipientAgentId: "Scheduling Agent", type: "update",   subject: "Athlete memory update — Marcus T.", content: "Marcus T.'s training response profile has been updated based on last 8 sessions. Key finding: optimal session length shifted from 60 to 75 minutes, morning sessions showing 34% better performance outcomes. Recommend reviewing current schedule for alignment.", createdAt: new Date(now - 25*60000).toISOString() },
+        { id: "m-7b", conversationId: "conv-7", senderAgentId: "Scheduling Agent",recipientAgentId: "PAIL Engine",      type: "response", subject: "Schedule review initiated", content: "Acknowledged. Marcus T.'s Tuesday/Thursday schedule is currently 60 min at 7 AM. I've identified 3 alternative slots with 75 min availability at 6:30 AM. Generating reschedule proposal for coach review.", createdAt: new Date(now - 10*60000).toISOString() },
+      ],
+    };
+  })();
+
+  // GET /api/agent-communications/conversations
+  app.get("/api/agent-communications/conversations", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const open        = AGENT_CONVOS.filter(c => c.status === "open");
+      const acknowledged= AGENT_CONVOS.filter(c => c.status === "acknowledged");
+      const completed   = AGENT_CONVOS.filter(c => c.status === "completed");
+      res.json({ conversations: AGENT_CONVOS, open: open.length, acknowledged: acknowledged.length, completed: completed.length, total: AGENT_CONVOS.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load conversations" }); }
+  });
+
+  // GET /api/agent-communications/messages/:conversationId
+  app.get("/api/agent-communications/messages/:conversationId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { conversationId } = req.params;
+      const messages = AGENT_MESSAGES[conversationId] ?? [];
+      const conversation = AGENT_CONVOS.find(c => c.id === conversationId) ?? null;
+      res.json({ conversationId, conversation, messages, messageCount: messages.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load messages" }); }
+  });
+
+  // POST /api/agent-communications/message
+  app.post("/api/agent-communications/message", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { sender, recipient, subject, content, priority } = req.body;
+      if (!sender || !recipient || !content) return res.status(400).json({ message: "sender, recipient, and content required" });
+      res.json({ success: true, messageId: `m-${Date.now()}`, conversationId: `conv-${Date.now()}`, sender, recipient, subject: subject ?? "(no subject)", content, priority: priority ?? "medium", createdAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to send message" }); }
+  });
+
+  // POST /api/agent-communications/handoff
+  app.post("/api/agent-communications/handoff", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { fromAgent, toAgent, taskType, context } = req.body;
+      if (!fromAgent || !toAgent || !taskType) return res.status(400).json({ message: "fromAgent, toAgent, and taskType required" });
+      res.json({ success: true, handoffId: `ho-${Date.now()}`, fromAgent, toAgent, taskType, context: context ?? "", priority: "medium", status: "pending", createdAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to create handoff" }); }
+  });
+
+  // POST /api/agent-communications/escalate
+  app.post("/api/agent-communications/escalate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { sourceAgent, targetManager, reason } = req.body;
+      if (!sourceAgent || !reason) return res.status(400).json({ message: "sourceAgent and reason required" });
+      res.json({ success: true, escalationId: `esc-${Date.now()}`, sourceAgent, targetManager: targetManager ?? "AI COO", reason, status: "open", createdAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to create escalation" }); }
+  });
+
+  // POST /api/agent-communications/announcement
+  app.post("/api/agent-communications/announcement", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { sender, audience, message } = req.body;
+      if (!sender || !message) return res.status(400).json({ message: "sender and message required" });
+      res.json({ success: true, announcementId: `ann-${Date.now()}`, sender, audience: audience ?? "All Agents", message, createdAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to send announcement" }); }
+  });
+
+  // GET /api/agent-communications/metrics
+  app.get("/api/agent-communications/metrics", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      res.json({
+        messagesSent: 142, handoffsCompleted: 38, escalations: 7, escalationRate: 4.9,
+        avgResponseTimeMinutes: 8.4, collaborationScore: 91, activeAgents: 11,
+        topCollaborators: [
+          { agent: "AI COO",          score: 98, messagesIn: 24, messagesOut: 31, handoffs: 12 },
+          { agent: "Email Agent",     score: 94, messagesIn: 28, messagesOut: 19, handoffs: 8  },
+          { agent: "Revenue Agent",   score: 89, messagesIn: 16, messagesOut: 22, handoffs: 7  },
+          { agent: "Research Agent",  score: 86, messagesIn: 14, messagesOut: 18, handoffs: 5  },
+          { agent: "Scheduling Agent",score: 82, messagesIn: 19, messagesOut: 11, handoffs: 6  },
+          { agent: "PAIL Engine",     score: 78, messagesIn: 9,  messagesOut: 12, handoffs: 3  },
+        ],
+        messagesByType: { request: 41, update: 38, response: 34, approval: 17, escalation: 12 },
+        handoffsByStatus: { completed: 31, pending: 5, failed: 2 },
+        weeklyTrend: [
+          { day: "Mon", messages: 24, handoffs: 6 },
+          { day: "Tue", messages: 31, handoffs: 8 },
+          { day: "Wed", messages: 28, handoffs: 7 },
+          { day: "Thu", messages: 19, handoffs: 4 },
+          { day: "Fri", messages: 22, handoffs: 8 },
+          { day: "Sat", messages: 11, handoffs: 3 },
+          { day: "Sun", messages: 7,  handoffs: 2 },
+        ],
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load metrics" }); }
+  });
+
+  // GET /api/agent-communications/handoffs
+  app.get("/api/agent-communications/handoffs", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const now = Date.now();
+      const handoffs = [
+        { id: "ho-1", fromAgent: "Research Agent",  toAgent: "Revenue Agent",    taskType: "Competitive Analysis",      context: "8 competitors identified with pricing data across 5 markets",       priority: "medium",  status: "completed", outcome: "Pricing strategy updated — 12% rate increase approved",             createdAt: new Date(now - 2*3600000).toISOString(),  completedAt: new Date(now - 90*60000).toISOString() },
+        { id: "ho-2", fromAgent: "PAIL Engine",     toAgent: "Scheduling Agent", taskType: "Athlete Schedule Optimization",context: "Marcus T. performance profile updated — optimal session length changed", priority: "medium",  status: "pending",   outcome: null,                                                                createdAt: new Date(now - 25*60000).toISOString(),   completedAt: null },
+        { id: "ho-3", fromAgent: "Email Agent",     toAgent: "Revenue Agent",    taskType: "Lead Qualification Result",  context: "Riverside FC prospect replied — high intent signals detected",        priority: "high",    status: "completed", outcome: "Discovery call scheduled — $8,400 opportunity advanced to pipeline",createdAt: new Date(now - 5*3600000).toISOString(),  completedAt: new Date(now - 4*3600000).toISOString() },
+        { id: "ho-4", fromAgent: "AI COO",          toAgent: "Email Agent",      taskType: "Priority Outreach Request",  context: "Riverside FC — 4 missed scheduling attempts, requires personal approach",priority: "high",  status: "pending",   outcome: null,                                                                createdAt: new Date(now - 37*60000).toISOString(),   completedAt: null },
+        { id: "ho-5", fromAgent: "Revenue Agent",   toAgent: "Research Agent",   taskType: "Market Research Request",    context: "Need competitor pricing data to finalize Q3 proposal",               priority: "high",    status: "pending",   outcome: null,                                                                createdAt: new Date(now - 18*60000).toISOString(),   completedAt: null },
+        { id: "ho-6", fromAgent: "Scheduling Agent",toAgent: "Email Agent",      taskType: "Session Reminder Delegation",context: "Marcus T. session tomorrow 7 AM — 48hr reminder needed",             priority: "low",     status: "completed", outcome: "Reminder sent — delivery confirmed",                               createdAt: new Date(now - 26*3600000).toISOString(), completedAt: new Date(now - 25*3600000).toISOString()},
+        { id: "ho-7", fromAgent: "Intelligence Engine",toAgent: "AI COO",        taskType: "Anomaly Alert",              context: "Retention drop detected — 3 orgs showing 2-week login absence",     priority: "critical",status: "completed", outcome: "Recovery sequences initiated for all 3 orgs",                       createdAt: new Date(now - 8*3600000).toISOString(),  completedAt: new Date(now - 7*3600000).toISOString() },
+        { id: "ho-8", fromAgent: "Autonomy Engine", toAgent: "AI COO",           taskType: "Governance Escalation",      context: "Action confidence 81% — below 85% auto-execute threshold",          priority: "high",    status: "completed", outcome: "Human review requested — admin notified in approval inbox",          createdAt: new Date(now - 4*3600000).toISOString(),  completedAt: new Date(now - 3.5*3600000).toISOString()},
+      ];
+      res.json({ handoffs, completed: handoffs.filter(h => h.status === "completed").length, pending: handoffs.filter(h => h.status === "pending").length, failed: 1, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load handoffs" }); }
+  });
+
+  // GET /api/agent-communications/escalations
+  app.get("/api/agent-communications/escalations", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const now = Date.now();
+      const escalations = [
+        { id: "esc-1", agent: "Scheduling Agent",    escalatedTo: "AI COO", issue: "Partnership meeting scheduling failed after 4 attempts — Riverside FC", status: "acknowledged", resolution: "Routed to Email Agent for personal outreach draft", priority: "critical", createdAt: new Date(now - 45*60000).toISOString(),  resolvedAt: null },
+        { id: "esc-2", agent: "Revenue Agent",       escalatedTo: "AI COO", issue: "Lead response rate dropped 18% below baseline — needs strategic directive", status: "open",         resolution: null,                                                   priority: "high",     createdAt: new Date(now - 35*60000).toISOString(),  resolvedAt: null },
+        { id: "esc-3", agent: "Email Agent",         escalatedTo: "AI COO", issue: "Bounce rate spike to 8.2% — above 5% governance threshold",              status: "resolved",     resolution: "Suppressed 14 stale addresses. Bounce rate back to 3.1%", priority: "high",     createdAt: new Date(now - 6*3600000).toISOString(), resolvedAt: new Date(now - 5*3600000).toISOString() },
+        { id: "esc-4", agent: "Autonomy Engine",     escalatedTo: "Human",  issue: "Auto-execute blocked — 3 actions confidence below threshold",             status: "resolved",     resolution: "Human approved 2 of 3 actions. 1 action rejected.",        priority: "medium",   createdAt: new Date(now - 3*3600000).toISOString(), resolvedAt: new Date(now - 2*3600000).toISOString() },
+        { id: "esc-5", agent: "Intelligence Engine", escalatedTo: "AI COO", issue: "Anomaly: 3 orgs show 14-day login absence — churn risk elevated",         status: "resolved",     resolution: "Recovery sequences initiated. CEO Heartbeat notified.",     priority: "high",     createdAt: new Date(now - 8*3600000).toISOString(), resolvedAt: new Date(now - 7*3600000).toISOString() },
+        { id: "esc-6", agent: "PAIL Engine",         escalatedTo: "AI COO", issue: "Athlete profile divergence detected — 2 conflicting schedule recommendations", status: "resolved",  resolution: "Prioritized PAIL recommendation. Scheduling Agent notified.", priority: "medium",   createdAt: new Date(now - 12*3600000).toISOString(),resolvedAt: new Date(now - 11*3600000).toISOString()},
+        { id: "esc-7", agent: "CEO Heartbeat",       escalatedTo: "Human",  issue: "Revenue metric declined 12% week-over-week — requires strategic review",   status: "open",         resolution: null,                                                   priority: "critical", createdAt: new Date(now - 2*3600000).toISOString(), resolvedAt: null },
+      ];
+      res.json({ escalations, open: escalations.filter(e => e.status === "open").length, acknowledged: escalations.filter(e => e.status === "acknowledged").length, resolved: escalations.filter(e => e.status === "resolved").length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load escalations" }); }
+  });
+
+  // GET /api/agent-communications/announcements
+  app.get("/api/agent-communications/announcements", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const now = Date.now();
+      const announcements = [
+        { id: "ann-1", sender: "CEO Heartbeat",     audience: "All Agents",        subject: "Summer acceleration campaign launched", message: "Q3 summer acceleration campaign is now active. All agents should prioritize lead outreach, session upsells, and partnership acceleration. Revenue targets increased 18% — full workforce alignment required.", priority: "high",   createdAt: new Date(now - 24*3600000).toISOString() },
+        { id: "ann-2", sender: "AI COO",            audience: "Revenue Team",       subject: "Directive: Lead recovery initiative — this week", message: "Lead recovery is the priority this week. Revenue Agent and Email Agent to focus 60% of capacity on the 14 cold leads from the last 30 days. Use PAIL data to personalize each outreach.", priority: "high",   createdAt: new Date(now - 6*3600000).toISOString() },
+        { id: "ann-3", sender: "Platform Brain",    audience: "All Agents",        subject: "Pattern update: feature dormancy → churn in 21 days", message: "New pattern confirmed with 89% confidence: orgs with 2+ unused features for 21 days churn at 61% rate. All agents should flag dormant org accounts for immediate intervention.", priority: "medium", createdAt: new Date(now - 3*3600000).toISOString() },
+        { id: "ann-4", sender: "AI COO",            audience: "Scheduling Agent",   subject: "Scheduling policy update: buffer time increased", message: "Effective immediately, all session scheduling must include a minimum 15-minute buffer between consecutive sessions. Update all recurring blocks and flag any conflicts for review.", priority: "medium", createdAt: new Date(now - 2*3600000).toISOString() },
+        { id: "ann-5", sender: "CEO Heartbeat",     audience: "All Agents",        subject: "Weekly health report: platform confidence 91%", message: "Weekly system health: 91% platform confidence, 142 agent messages this week, 38 handoffs completed, 7 escalations (5 resolved). Collaboration score: 91/100 — best week on record.", priority: "low",    createdAt: new Date(now - 1*3600000).toISOString() },
+        { id: "ann-6", sender: "Engineering Brain", audience: "All Agents",        subject: "Phase 18 deployment: Autonomous Product Loop active", message: "Platform Engineering Center is now live. The autonomous product loop is operational — all agents should surface blockers, usage insights, and customer feedback through the standard escalation channel for inclusion in the engineering backlog.", priority: "medium", createdAt: new Date(now - 45*60000).toISOString() },
+      ];
+      res.json({ announcements, total: announcements.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load announcements" }); }
+  });
+
   return httpServer;
 }

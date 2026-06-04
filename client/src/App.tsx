@@ -87,6 +87,7 @@ import AdminUnifiedCommandPage from "@/pages/admin-unified-command";
 import AdminCustomerSuccessOsPage from "@/pages/admin-customer-success-os";
 import AdminPlatformBrainPage from "@/pages/admin-platform-brain";
 import AdminPlatformEngineeringPage from "@/pages/admin-platform-engineering";
+import AdminAgentCommunicationsPage from "@/pages/admin-agent-communications";
 import AdminProductionReadinessPage from "@/pages/admin-production-readiness";
 import AdminLaunchReadinessPage from "@/pages/admin-launch-readiness";
 import AdminEcosystemHealthPage from "@/pages/admin-ecosystem-health";
@@ -481,6 +482,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/customer-success-os" component={AdminCustomerSuccessOsPage} />
                   <Route path="/admin/platform-brain" component={AdminPlatformBrainPage} />
                   <Route path="/admin/platform-engineering" component={AdminPlatformEngineeringPage} />
+                  <Route path="/admin/agent-communications" component={AdminAgentCommunicationsPage} />
                   <Route path="/admin/production-readiness" component={AdminProductionReadinessPage} />
                   <Route path="/admin/launch-readiness" component={AdminLaunchReadinessPage} />
                   <Route path="/admin/ecosystem-health" component={AdminEcosystemHealthPage} />

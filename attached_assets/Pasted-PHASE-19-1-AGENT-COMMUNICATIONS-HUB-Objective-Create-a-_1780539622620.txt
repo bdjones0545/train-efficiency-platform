@@ -1,0 +1,454 @@
+PHASE 19.1 — AGENT COMMUNICATIONS HUB
+
+Objective
+
+Create a centralized communication system that allows digital employees to communicate, coordinate work, request assistance, escalate issues, transfer tasks, and collaborate across departments.
+
+Core Principle
+
+Current State:
+
+Agents execute independently.
+
+Phase 19.1:
+
+Agents operate as a coordinated workforce.
+
+The goal is to make the AI workforce behave like a real company.
+
+───────────────────────────────────────
+
+1. AGENT COMMUNICATIONS HUB
+    ───────────────────────────────────────
+
+New Route:
+
+/admin/agent-communications
+
+Purpose:
+
+Provide complete visibility into all agent-to-agent communication.
+
+Think:
+
+Slack
++
+Microsoft Teams
++
+Internal AI Workforce Messaging
+
+Displays:
+
+* Conversations
+* Requests
+* Handoffs
+* Escalations
+* Announcements
+* Decisions
+
+───────────────────────────────────────
+2. DATABASE TABLES
+───────────────────────────────────────
+
+agent_conversations
+
+Fields:
+
+* id
+* conversation_type
+* status
+* priority
+* created_at
+* updated_at
+
+conversation_type:
+
+* request
+* handoff
+* escalation
+* decision
+* announcement
+
+status:
+
+* open
+* acknowledged
+* completed
+* archived
+
+───────────────────────────────────────
+
+agent_messages
+
+Fields:
+
+* id
+* conversation_id
+* sender_agent_id
+* recipient_agent_id
+* message_type
+* subject
+* content
+* metadata
+* created_at
+
+message_type:
+
+* request
+* update
+* response
+* approval
+* escalation
+
+───────────────────────────────────────
+
+agent_handoffs
+
+Fields:
+
+* id
+* from_agent_id
+* to_agent_id
+* task_type
+* context
+* priority
+* status
+* outcome
+* created_at
+* completed_at
+
+───────────────────────────────────────
+3. COMMUNICATION TYPES
+───────────────────────────────────────
+
+Request
+
+Example:
+
+Revenue Agent
+→ Research Agent
+
+“Analyze competitor pricing for local football training providers.”
+
+───────────────────────────────────────
+
+Handoff
+
+Example:
+
+Research Agent
+→ Revenue Agent
+
+“Research complete. 8 competitors identified.”
+
+───────────────────────────────────────
+
+Escalation
+
+Example:
+
+Scheduling Agent
+→ AI COO
+
+“Unable to find availability for partnership meeting.”
+
+───────────────────────────────────────
+
+Decision
+
+Example:
+
+AI COO
+→ Revenue Team
+
+“Prioritize lead recovery initiative this week.”
+
+───────────────────────────────────────
+
+Announcement
+
+Example:
+
+CEO Heartbeat
+→ Entire Workforce
+
+“Summer acceleration campaign launched.”
+
+───────────────────────────────────────
+4. BACKEND ENDPOINTS
+───────────────────────────────────────
+
+GET /api/agent-communications/conversations
+
+Returns:
+
+* active conversations
+* status
+* priority
+* participants
+
+───────────────────────────────────────
+
+GET /api/agent-communications/messages/:conversationId
+
+Returns:
+
+full thread history
+
+───────────────────────────────────────
+
+POST /api/agent-communications/message
+
+Create message.
+
+Payload:
+
+* sender
+* recipient
+* subject
+* content
+* priority
+
+───────────────────────────────────────
+
+POST /api/agent-communications/handoff
+
+Create task transfer.
+
+Payload:
+
+* fromAgent
+* toAgent
+* taskType
+* context
+
+───────────────────────────────────────
+
+POST /api/agent-communications/escalate
+
+Escalate to manager.
+
+Payload:
+
+* sourceAgent
+* targetManager
+* reason
+
+───────────────────────────────────────
+
+POST /api/agent-communications/announcement
+
+Broadcast message.
+
+Payload:
+
+* sender
+* audience
+* message
+
+───────────────────────────────────────
+
+GET /api/agent-communications/metrics
+
+Returns:
+
+* messages sent
+* handoffs completed
+* escalations
+* response time
+* collaboration score
+
+───────────────────────────────────────
+5. FRONTEND PAGE
+───────────────────────────────────────
+
+Route:
+
+/admin/agent-communications
+
+Tabs:
+
+Conversations
+Messages
+Handoffs
+Escalations
+Announcements
+Analytics
+
+───────────────────────────────────────
+
+Conversations Tab
+
+Displays:
+
+* Open
+* Acknowledged
+* Completed
+
+Filters:
+
+* Agent
+* Priority
+* Type
+
+───────────────────────────────────────
+
+Messages Tab
+
+Chat-style UI.
+
+Shows:
+
+Sender
+Recipient
+Timestamp
+Message
+
+Conversation thread view.
+
+───────────────────────────────────────
+
+Handoffs Tab
+
+Displays:
+
+From Agent
+To Agent
+Task
+Priority
+Status
+
+Metrics:
+
+* Completed
+* Pending
+* Failed
+
+───────────────────────────────────────
+
+Escalations Tab
+
+Displays:
+
+Issue
+Agent
+Escalated To
+Status
+Resolution
+
+───────────────────────────────────────
+
+Announcements Tab
+
+Displays:
+
+Broadcasts from:
+
+* CEO Heartbeat
+* AI COO
+* Directors
+
+───────────────────────────────────────
+
+Analytics Tab
+
+KPIs:
+
+* Messages Sent
+* Avg Response Time
+* Handoffs Completed
+* Escalation Rate
+* Collaboration Score
+
+───────────────────────────────────────
+6. AI COO INTEGRATION
+───────────────────────────────────────
+
+AI COO becomes communication manager.
+
+Responsibilities:
+
+* Detect blocked work
+* Reassign tasks
+* Resolve escalations
+* Prioritize requests
+* Route messages
+
+AI COO receives:
+
+All escalations.
+
+Can issue:
+
+Workforce-wide directives.
+
+───────────────────────────────────────
+7. COMMAND CENTER INTEGRATION
+───────────────────────────────────────
+
+Add:
+
+Communications Widget
+
+Displays:
+
+* Open Conversations
+* Pending Handoffs
+* Escalations
+* Workforce Announcements
+
+Visible from:
+
+/admin/command-center
+
+───────────────────────────────────────
+8. WORKFORCE OS INTEGRATION
+───────────────────────────────────────
+
+Each digital employee profile gains:
+
+Communication Metrics
+
+Displays:
+
+* Messages Sent
+* Messages Received
+* Handoffs Completed
+* Escalations
+* Collaboration Score
+
+───────────────────────────────────────
+9. SUCCESS CRITERIA
+───────────────────────────────────────
+
+✓ Agent Communications Hub
+
+✓ Conversation Management
+
+✓ Messaging System
+
+✓ Task Handoffs
+
+✓ Escalation Routing
+
+✓ Workforce Announcements
+
+✓ Collaboration Analytics
+
+✓ AI COO Integration
+
+✓ Command Center Integration
+
+✓ Workforce OS Integration
+
+✓ Mobile Responsive
+
+✓ Zero TypeScript Errors
+
+✓ Full Audit Trail
+
+✓ Enterprise Workforce Collaboration
+
+Outcome:
+
+Digital employees no longer operate as isolated agents. They become a coordinated workforce capable of communication, collaboration, delegation, escalation, and organizational alignment.
