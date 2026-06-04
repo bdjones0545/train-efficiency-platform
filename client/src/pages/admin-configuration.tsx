@@ -1979,7 +1979,7 @@ export default function AdminConfigurationPage() {
       if (simpleProgramType === "lead_capture") {
         navigate(`/lead-capture/programs/${data.id}?funnelType=${selectedFunnelType}`);
       } else if (simpleProgramType === "attendance_tracker") {
-        navigate(`/attendance-programs/${data.id}`);
+        navigate(`/admin/attendance-tracker`);
       }
     },
     onError: (error: Error) => {
@@ -3812,6 +3812,9 @@ export default function AdminConfigurationPage() {
                           </>
                         ) : p.type === "attendance_tracker" ? (
                           <>
+                            <Button size="sm" variant="ghost" className="h-7 text-blue-500 hover:text-blue-600" onClick={() => navigate(`/admin/attendance-tracker`)} data-testid={`button-dashboard-program-${p.id}`}>
+                              <BarChart2 className="h-3.5 w-3.5" />
+                            </Button>
                             <Button size="sm" variant="ghost" className="h-7 text-green-600 hover:text-green-700" onClick={() => navigate(`/attendance-programs/${p.id}`)} data-testid={`button-configure-program-${p.id}`}>
                               <Settings className="h-3.5 w-3.5" />
                             </Button>

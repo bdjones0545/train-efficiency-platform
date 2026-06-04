@@ -1,0 +1,124 @@
+Update Attendance Tracker navigation and default view.
+
+Current issue:
+When admins access Attendance Tracker, the app focuses on the builder/configuration page. That is useful for setup, but it should not be the primary operational view.
+
+Expected behavior:
+The main Attendance Tracker tab/sidebar item should open the operational dashboard by default.
+
+Primary route:
+PROGRAM TOOLS → Attendance Tracker
+
+should route to:
+
+/admin/attendance-tracker
+
+not:
+
+/attendance-programs/:programId
+
+The Attendance Tracker dashboard should be the main view.
+
+Dashboard should show:
+- Total Check-ins
+- Unique Athletes
+- Check-ins Today
+- Check-ins This Week
+- Check-ins This Month
+- Rewards Earned
+- Recent Attendees
+- Athletes close to rewards
+- Attendance trend chart
+- Athlete attendance table
+
+Table columns:
+- Athlete Name
+- Email
+- Sport
+- Position
+- School
+- Program
+- Total Check-ins
+- Last Check-in
+- Reward Progress
+- Rewards Earned
+
+Filters:
+- Program
+- Day
+- Week
+- Month
+- Year
+- Sport
+- School
+- Reward Status
+
+Clicking an athlete row should open a detail panel with:
+- Athlete info
+- Visit history
+- Rewards earned
+- Email history
+- Linked lead record
+
+Configuration should become secondary.
+
+Add a clear button in the dashboard header:
+
+Configure Tracker
+
+This should route to:
+
+/attendance-programs/:programId
+
+or, if multiple attendance programs exist, open a selector first.
+
+Program card behavior:
+- Attendance Tracker card click = open /admin/attendance-tracker
+- Gear icon = configure tracker
+- QR icon = open QR code/share modal
+- External icon = open public check-in page
+
+Builder page:
+Keep the existing Settings / Fields / Rewards builder, but add:
+- View Attendance Dashboard button
+- Save
+- Save & Return
+
+Sidebar behavior:
+Under PROGRAM TOOLS:
+Attendance Tracker should appear as a normal operational tool.
+Clicking it should always open /admin/attendance-tracker.
+
+If no attendance records exist yet:
+Show empty state:
+“No attendance records yet. Share the QR code to start collecting check-ins.”
+
+Include:
+- Copy check-in link
+- Open QR modal
+- Configure Tracker
+
+Backend:
+Use existing endpoints:
+- GET /api/attendance/dashboard
+- GET /api/attendance/analytics
+- GET /api/attendance/athlete-history
+- GET /api/attendance/programs
+
+Make sure all routes:
+- Resolve org from authenticated session
+- Scope records by org
+- Never trust client-provided orgId
+- Never leak data across orgs
+
+Testing:
+1. Click Attendance Tracker in sidebar
+2. Confirm it opens /admin/attendance-tracker
+3. Confirm dashboard loads
+4. Confirm empty state works
+5. Confirm Configure Tracker opens builder
+6. Confirm Save & Return goes back to dashboard
+7. Confirm QR modal works
+8. Confirm public check-in still works
+9. Confirm attendee records appear after check-in
+10. Run TypeScript check and build

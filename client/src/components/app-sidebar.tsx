@@ -1236,7 +1236,7 @@ export function AppSidebar() {
         url: p.type === "lead_capture"
           ? `/lead-capture/programs/${p.id}`
           : p.type === "attendance_tracker"
-          ? `/attendance-programs/${p.id}`
+          ? `/admin/attendance-tracker`
           : `/org/${orgSlug}/programs/${p.slug}`,
         icon: p.type === "pr_tracker" ? BarChart2
           : p.type === "lead_capture" ? Zap

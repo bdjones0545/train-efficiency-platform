@@ -733,15 +733,29 @@ export async function registerAttendanceRoutes(app: Express) {
       const lastMonth = Number(growth?.last_month || 0);
       const growthPct = lastMonth > 0 ? Math.round(((thisMonth - lastMonth) / lastMonth) * 100) : (thisMonth > 0 ? 100 : 0);
 
+      // Today / week / month breakdown
+      const periodCounts = row0(await db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE DATE(created_at) = CURRENT_DATE) AS today,
+          COUNT(*) FILTER (WHERE created_at >= date_trunc('week', NOW())) AS this_week,
+          COUNT(*) FILTER (WHERE created_at >= date_trunc('month', NOW())) AS this_month
+        FROM attendance_records
+        WHERE organization_id = ${orgId} ${pFilter}
+      `));
+
       res.json({
         totalCheckIns: Number(totals?.total_checkins || 0),
         uniqueAthletes: Number(totals?.unique_athletes || 0),
         returningAthletes: Number(returningFixed?.returning_athletes || 0),
         avgVisitsPerAthlete: Number(avgVisits?.avg_visits || 0),
+        rewardsEarned: Number(rewardEarned?.earned || 0),
         rewardRedemptionRate: totalTierSlots?.total > 0
           ? Math.round((Number(rewardEarned?.earned || 0) / Number(totalTierSlots.total)) * 100)
           : 0,
         attendanceGrowthPct: growthPct,
+        todayCheckIns: Number(periodCounts?.today || 0),
+        weekCheckIns: Number(periodCounts?.this_week || 0),
+        monthCheckIns: Number(periodCounts?.this_month || 0),
         overTime: overTime.map(r => ({ date: r.date, checkins: Number(r.checkins) })),
         topSports: topSports.map(r => ({ sport: r.sport, count: Number(r.count) })),
         topPrograms: topPrograms.map(r => ({ name: r.name, checkins: Number(r.checkins) })),

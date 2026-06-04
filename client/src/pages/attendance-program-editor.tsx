@@ -212,8 +212,8 @@ export default function AttendanceProgramEditorPage() {
   return (
     <div className="max-w-3xl mx-auto space-y-6">
       <div className="flex items-center gap-3">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/admin/configuration")} data-testid="button-back">
-          <ArrowLeft className="h-4 w-4 mr-1" /> Back
+        <Button variant="ghost" size="sm" onClick={() => navigate("/admin/attendance-tracker")} data-testid="button-back">
+          <ArrowLeft className="h-4 w-4 mr-1" /> Dashboard
         </Button>
         <div className="flex-1">
           <h1 className="text-xl font-semibold">{programName}</h1>
