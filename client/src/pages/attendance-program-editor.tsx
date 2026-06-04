@@ -127,16 +127,30 @@ export default function AttendanceProgramEditorPage() {
       const r = await fetch(`/api/attendance-programs/${programId}/fields`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields, organizationId: orgId }),
+        body: JSON.stringify({ fields }),
       });
-      if (!r.ok) throw new Error("Failed");
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to save fields");
+      }
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({ title: "Fields saved" });
+      // Hydrate local state from server response to confirm what was actually persisted
+      if (data.fields && data.fields.length > 0) {
+        setFields(data.fields.map((f: any, i: number) => ({
+          id: f.id || `f${i}`,
+          fieldName: f.field_name,
+          label: f.label,
+          fieldType: f.field_type || "text",
+          visibility: f.visibility || "required",
+        })));
+      }
+      qc.invalidateQueries({ queryKey: ["/api/attendance-programs", programId, "config"] });
       if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/configuration"); }
     },
-    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+    onError: (e: any) => toast({ title: e.message || "Save failed", variant: "destructive" }),
   });
 
   const saveRewardsMutation = useMutation({
@@ -144,16 +158,30 @@ export default function AttendanceProgramEditorPage() {
       const r = await fetch(`/api/attendance-programs/${programId}/rewards`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tiers: rewards, organizationId: orgId }),
+        body: JSON.stringify({ tiers: rewards }),
       });
-      if (!r.ok) throw new Error("Failed");
+      if (!r.ok) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error || "Failed to save rewards");
+      }
       return r.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({ title: "Rewards saved" });
+      // Hydrate local state from server response to confirm what was actually persisted
+      if (data.tiers && data.tiers.length > 0) {
+        setRewards(data.tiers.map((r: any, i: number) => ({
+          id: r.id || `r${i}`,
+          visitCount: r.visit_count,
+          rewardName: r.reward_name,
+          rewardDescription: r.reward_description || "",
+          active: r.active ?? true,
+        })));
+      }
+      qc.invalidateQueries({ queryKey: ["/api/attendance-programs", programId, "config"] });
       if (returnAfterSave.current) { returnAfterSave.current = false; navigate("/admin/configuration"); }
     },
-    onError: () => toast({ title: "Save failed", variant: "destructive" }),
+    onError: (e: any) => toast({ title: e.message || "Save failed", variant: "destructive" }),
   });
 
   const copyUrl = () => {
@@ -364,7 +392,7 @@ export default function AttendanceProgramEditorPage() {
             </CardHeader>
             <CardContent className="space-y-3">
               <p className="text-xs text-muted-foreground">Athletes earn rewards when they hit these visit milestones. Emails are sent automatically.</p>
-              {rewards.sort((a, b) => Number(a.visitCount) - Number(b.visitCount)).map((tier, idx) => (
+              {[...rewards].sort((a, b) => Number(a.visitCount) - Number(b.visitCount)).map((tier, idx) => (
                 <div key={tier.id} className="rounded-lg border p-3 space-y-2" data-testid={`reward-tier-${idx}`}>
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-full bg-muted flex items-center justify-center text-sm font-bold shrink-0">
@@ -373,14 +401,14 @@ export default function AttendanceProgramEditorPage() {
                     <div className="flex-1 min-w-0">
                       <Input
                         value={tier.rewardName}
-                        onChange={(e) => setRewards(prev => prev.map((r, i) => i === idx ? { ...r, rewardName: e.target.value } : r))}
+                        onChange={(e) => setRewards(prev => prev.map(r => r.id === tier.id ? { ...r, rewardName: e.target.value } : r))}
                         className="h-7 text-sm border-0 p-0 font-medium bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
                         placeholder="Reward name"
                         data-testid={`input-reward-name-${idx}`}
                       />
                       <Input
                         value={tier.rewardDescription}
-                        onChange={(e) => setRewards(prev => prev.map((r, i) => i === idx ? { ...r, rewardDescription: e.target.value } : r))}
+                        onChange={(e) => setRewards(prev => prev.map(r => r.id === tier.id ? { ...r, rewardDescription: e.target.value } : r))}
                         className="h-6 text-xs border-0 p-0 text-muted-foreground bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
                         placeholder="Description (optional)"
                         data-testid={`input-reward-desc-${idx}`}
@@ -389,14 +417,14 @@ export default function AttendanceProgramEditorPage() {
                     <div className="flex items-center gap-2 shrink-0">
                       <Switch
                         checked={tier.active}
-                        onCheckedChange={(v) => setRewards(prev => prev.map((r, i) => i === idx ? { ...r, active: v } : r))}
+                        onCheckedChange={(v) => setRewards(prev => prev.map(r => r.id === tier.id ? { ...r, active: v } : r))}
                         data-testid={`switch-reward-active-${idx}`}
                       />
                       <Button
                         size="icon"
                         variant="ghost"
                         className="h-7 w-7 text-destructive hover:text-destructive"
-                        onClick={() => setRewards(prev => prev.filter((_, i) => i !== idx))}
+                        onClick={() => setRewards(prev => prev.filter(r => r.id !== tier.id))}
                         data-testid={`button-delete-reward-${idx}`}
                       >
                         <Trash2 className="h-3.5 w-3.5" />
@@ -409,7 +437,7 @@ export default function AttendanceProgramEditorPage() {
                       type="number"
                       min="1"
                       value={tier.visitCount}
-                      onChange={(e) => setRewards(prev => prev.map((r, i) => i === idx ? { ...r, visitCount: Number(e.target.value) } : r))}
+                      onChange={(e) => setRewards(prev => prev.map(r => r.id === tier.id ? { ...r, visitCount: Number(e.target.value) } : r))}
                       className="h-7 w-20 text-sm"
                       data-testid={`input-reward-visits-${idx}`}
                     />

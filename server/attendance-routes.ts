@@ -333,7 +333,16 @@ export async function registerAttendanceRoutes(app: Express) {
   app.put("/api/attendance-programs/:programId/fields", async (req, res) => {
     try {
       const { programId } = req.params;
-      const { fields, organizationId } = req.body;
+      const { fields } = req.body;
+      if (!Array.isArray(fields)) return res.status(400).json({ error: "fields must be an array" });
+
+      // Always resolve orgId from the program — never trust the request body
+      const prog = row0(await db.execute(sql`
+        SELECT organization_id FROM athletic_programs WHERE id = ${programId}
+      `));
+      if (!prog) return res.status(404).json({ error: "Program not found" });
+      const organizationId = prog.organization_id;
+
       await db.execute(sql`DELETE FROM attendance_program_fields WHERE program_id = ${programId}`);
       for (let i = 0; i < fields.length; i++) {
         const f = fields[i];
@@ -342,10 +351,14 @@ export async function registerAttendanceRoutes(app: Express) {
           VALUES (${organizationId}, ${programId}, ${f.fieldName}, ${f.label}, ${f.fieldType || "text"}, ${f.visibility || "required"}, ${i})
         `);
       }
-      res.json({ ok: true });
+
+      const saved = rows(await db.execute(sql`
+        SELECT * FROM attendance_program_fields WHERE program_id = ${programId} ORDER BY display_order ASC
+      `));
+      res.json({ ok: true, fields: saved });
     } catch (e) {
       console.error("[attendance fields]", e);
-      res.status(500).json({ error: "Failed" });
+      res.status(500).json({ error: "Failed to save fields" });
     }
   });
 
@@ -353,18 +366,31 @@ export async function registerAttendanceRoutes(app: Express) {
   app.put("/api/attendance-programs/:programId/rewards", async (req, res) => {
     try {
       const { programId } = req.params;
-      const { tiers, organizationId } = req.body;
+      const { tiers } = req.body;
+      if (!Array.isArray(tiers)) return res.status(400).json({ error: "tiers must be an array" });
+
+      // Always resolve orgId from the program — never trust the request body
+      const prog = row0(await db.execute(sql`
+        SELECT organization_id FROM athletic_programs WHERE id = ${programId}
+      `));
+      if (!prog) return res.status(404).json({ error: "Program not found" });
+      const organizationId = prog.organization_id;
+
       await db.execute(sql`DELETE FROM attendance_reward_tiers WHERE program_id = ${programId}`);
       for (const t of tiers) {
         await db.execute(sql`
           INSERT INTO attendance_reward_tiers (organization_id, program_id, visit_count, reward_name, reward_description, active)
-          VALUES (${organizationId}, ${programId}, ${t.visitCount}, ${t.rewardName}, ${t.rewardDescription ?? null}, ${t.active ?? true})
+          VALUES (${organizationId}, ${programId}, ${Number(t.visitCount)}, ${t.rewardName}, ${t.rewardDescription ?? null}, ${t.active ?? true})
         `);
       }
-      res.json({ ok: true });
+
+      const saved = rows(await db.execute(sql`
+        SELECT * FROM attendance_reward_tiers WHERE program_id = ${programId} ORDER BY visit_count ASC
+      `));
+      res.json({ ok: true, tiers: saved });
     } catch (e) {
       console.error("[attendance rewards]", e);
-      res.status(500).json({ error: "Failed" });
+      res.status(500).json({ error: "Failed to save rewards" });
     }
   });
 

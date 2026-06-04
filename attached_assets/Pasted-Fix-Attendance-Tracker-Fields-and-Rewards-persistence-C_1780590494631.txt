@@ -1,0 +1,90 @@
+Fix Attendance Tracker Fields and Rewards persistence.
+
+Current issue:
+In /attendance-programs/:programId:
+
+- Settings save correctly
+- Fields changes appear in the UI but do not persist after leaving/reloading
+- Rewards changes appear in the UI but do not persist after leaving/reloading
+
+Expected:
+Any change to field visibility/required status and reward milestones should save to the database and reload correctly.
+
+Audit:
+client attendance program builder page
+server/attendance-routes.ts
+attendance_program_fields
+attendance_reward_tiers
+
+Fix requirements:
+
+1. Fields tab
+- Confirm field dropdown changes update local state
+- Add a visible "Save Fields" button if one does not exist
+- On save, call:
+  PUT /api/attendance-programs/:id/fields
+- Send full normalized field config array:
+  fieldKey
+  label
+  type
+  status: required | optional | hidden
+  displayOrder
+- Backend should delete/replace or upsert fields for that programId and orgId
+- Refetch config after save
+- Show success toast only after API success
+
+2. Rewards tab
+- Confirm reward edits update local state
+- Add a visible "Save Rewards" button if one does not exist
+- On save, call:
+  PUT /api/attendance-programs/:id/rewards
+- Send full normalized reward tier array:
+  visitsRequired
+  rewardName
+  rewardDescription
+  active
+  displayOrder
+- Backend should delete/replace or upsert rewards for that programId and orgId
+- Refetch config after save
+- Show success toast only after API success
+
+3. Backend validation
+- Resolve org from authenticated session
+- Verify program belongs to session org
+- Never trust client-provided orgId
+- Return updated fields/rewards after save
+
+4. Query/cache
+- Invalidate/refetch attendance program config after mutation:
+  /api/attendance-programs/:id/config
+  /api/attendance/checkin/:slug
+- Make sure stale React Query cache is not showing old values
+
+5. Public check-in page
+- Confirm /attendance/:slug uses saved field config
+- Required fields should match admin settings
+- Hidden fields should not render
+
+6. Reward logic
+- Confirm saved reward tiers are used during check-in
+- Inactive rewards should not trigger emails
+- Updated visit thresholds should apply immediately
+
+7. Tests
+- Change Sport from Optional to Required
+- Save Fields
+- Reload page
+- Confirm Sport remains Required
+- Open public check-in page
+- Confirm Sport is required
+
+- Change 15 visits reward to Free T-Shirt
+- Save Rewards
+- Reload page
+- Confirm reward persists
+- Submit test check-in
+- Confirm next reward logic uses saved tier
+
+8. Run:
+npm run check
+npm run build
