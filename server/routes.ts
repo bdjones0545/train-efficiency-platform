@@ -2274,8 +2274,54 @@ export async function registerRoutes(
   app.get("/api/bookings", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const bookingsList = await storage.getBookings(userId);
-      res.json(bookingsList);
+
+      const [primaryBookings, participantBookings] = await Promise.all([
+        storage.getBookings(userId),
+        storage.getParticipantBookings(userId),
+      ]);
+
+      const seen = new Set(primaryBookings.map((b: any) => b.id));
+      const merged: any[] = [...primaryBookings];
+      for (const b of participantBookings) {
+        if (!seen.has(b.id)) {
+          merged.push({ ...b, _joinedAsParticipant: true });
+          seen.add(b.id);
+        }
+      }
+
+      const enriched = await Promise.all(
+        merged.map(async (booking: any) => {
+          const participants = booking.maxParticipants
+            ? await storage.getBookingParticipants(booking.id)
+            : [];
+          const participantCount = participants.length;
+          const spotsRemaining =
+            booking.maxParticipants != null
+              ? booking.maxParticipants - participantCount
+              : null;
+          const userIsParticipant =
+            booking._joinedAsParticipant ||
+            participants.some((p: any) => p.userId === userId);
+          const svcSessionType = (booking.service as any)?.sessionType;
+          const sessionType =
+            svcSessionType ||
+            (booking.maxParticipants ? "GROUP" : "1_ON_1");
+          const priceCents = (booking.service as any)?.priceCents ?? 0;
+          const isFree = priceCents === 0;
+          const { _joinedAsParticipant, ...rest } = booking;
+          return {
+            ...rest,
+            participantCount,
+            spotsRemaining,
+            userIsParticipant,
+            sessionType,
+            priceCents,
+            isFree,
+          };
+        })
+      );
+
+      res.json(enriched);
     } catch (error) {
       console.error("Error fetching bookings:", error);
       res.status(500).json({ message: "Failed to fetch bookings" });

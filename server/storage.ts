@@ -196,6 +196,7 @@ export interface IStorage {
   deleteAvailabilityBlock(id: string): Promise<void>;
 
   getBookings(clientId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]>;
+  getParticipantBookings(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]>;
   getCoachBookings(coachId: string): Promise<(Booking & { service?: Service; client?: User })[]>;
   getCoachCompletedBookings(coachId: string): Promise<(Booking & { service?: Service; client?: User })[]>;
   getAllBookings(): Promise<(Booking & { service?: Service; client?: User })[]>;
@@ -795,6 +796,23 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
       .leftJoin(users, eq(coachProfiles.userId, users.id))
       .where(eq(bookings.clientId, clientId))
+      .orderBy(desc(bookings.startAt));
+    return result.map(r => ({
+      ...r.bookings,
+      service: r.services || undefined,
+      coach: r.coach_profiles ? { ...r.coach_profiles, user: r.users! } : undefined,
+    }));
+  }
+
+  async getParticipantBookings(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]> {
+    const result = await db
+      .select()
+      .from(bookingParticipants)
+      .innerJoin(bookings, eq(bookingParticipants.bookingId, bookings.id))
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .leftJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
+      .leftJoin(users, eq(coachProfiles.userId, users.id))
+      .where(eq(bookingParticipants.userId, userId))
       .orderBy(desc(bookings.startAt));
     return result.map(r => ({
       ...r.bookings,
