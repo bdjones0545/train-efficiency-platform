@@ -1,0 +1,154 @@
+Fix user Bookings page to include all session types.
+
+Current issue:
+For users/athletes, the Bookings page only shows one-on-one sessions. It does not show semi-private sessions, team training sessions, group sessions, open group sessions, or scheduling program sessions.
+
+Expected:
+Users should see every session type they are eligible to book or join.
+
+Audit:
+- User Bookings page
+- Booking availability API
+- Session query/filter logic
+- Program/session type mapping
+- Capacity logic
+
+Fix requirements:
+
+1. Identify the endpoint used by the user Bookings page.
+Likely candidates:
+- GET /api/bookings
+- GET /api/availability
+- GET /api/sessions
+- GET /api/public/schedule
+- GET /api/programs/:id/sessions
+
+2. Remove one-on-one-only filtering.
+Look for filters like:
+- session.type === "private"
+- serviceType === "one_on_one"
+- capacity === 1
+- isPrivate === true
+- programType !== "scheduling"
+- bookingType === "individual"
+
+Replace with support for:
+- one_on_one
+- semi_private
+- group
+- team_training
+- open_group
+- scheduling_program
+
+3. Display session type clearly on user-facing cards.
+
+Each card should show:
+- Session name
+- Session type
+- Date/time
+- Coach
+- Location
+- Sport
+- Age range
+- Skill level
+- Capacity
+- Spots remaining
+- Price/free badge if applicable
+
+4. Semi-private behavior:
+Users should be able to join if:
+- session is active
+- session is not full
+- user meets eligibility if restrictions exist
+
+Show:
+“3 of 6 spots filled”
+“Join Session”
+
+5. Team training behavior:
+Users should see team training sessions if:
+- public/open enrollment is enabled
+- they are assigned to the team
+- they have a valid join code
+- or the session is available to their org portal
+
+Show:
+- Team name
+- Sport
+- Location
+- Age/skill eligibility
+- Spots remaining
+
+6. Open group sessions:
+Show on the Bookings page calendar/list.
+Users can join directly if spots are available.
+
+7. Calendar/list views:
+Bookings page should allow:
+- Day
+- Week
+- Month
+- List
+
+Sessions should appear on the correct date/time regardless of type.
+
+8. Capacity logic:
+Do not treat every booking as capacity 1.
+Use:
+- maxParticipants
+- currentParticipants
+- team capacity
+- waitlist if available
+
+9. Backend response should return normalized session objects.
+
+Example:
+
+{
+  id,
+  title,
+  sessionType,
+  programType,
+  coachName,
+  location,
+  startsAt,
+  endsAt,
+  sport,
+  ageRange,
+  skillLevel,
+  capacity,
+  bookedCount,
+  spotsRemaining,
+  userCanBook,
+  userIsBooked,
+  priceCents,
+  isFree
+}
+
+10. Frontend should not assume only private sessions.
+Audit all:
+- .filter()
+- .map()
+- display labels
+- booking button logic
+
+11. Multi-tenant safety:
+- Resolve org from session or public org slug
+- Query only sessions for that org
+- Do not leak sessions across organizations
+
+12. Test cases:
+- One-on-one session appears
+- Semi-private session appears
+- Team training session appears
+- Open group session appears
+- Full session shows full/waitlist
+- User can join semi-private
+- User can join open group
+- Assigned team athlete sees team session
+- Non-eligible athlete does not see restricted session
+- Mobile view works
+
+13. Run:
+npm run check
+npm run build
