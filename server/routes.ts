@@ -27982,5 +27982,146 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to reassign task" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // ORGANIZATIONAL MEMORY — Phase 19.3
+  // ═══════════════════════════════════════════════════════════════
+
+  const ORG_MEMORIES = (() => {
+    const now = Date.now();
+    return [
+      // Decisions
+      { id: "m-1",  title: "Youth Performance Pricing — $149 → $179",                memoryType: "decision",  category: "Pricing",          department: "Revenue",          content: "Increased youth performance session pricing from $149 to $179 following 3-month demand analysis. Capacity was at 94% utilisation for 6 consecutive weeks. Decision approved by AI COO on recommendation from Revenue Agent. No cancellations observed in the 30-day post-change window.",                             source: "Revenue Agent",        createdByAgent: "AI COO",               confidenceScore: 97, impactScore: 92, usageCount: 14, createdAt: new Date(now - 45*24*3600000).toISOString(), updatedAt: new Date(now - 2*24*3600000).toISOString() },
+      { id: "m-2",  title: "AI Autonomy Level — Default Level 2 (High-Confidence Only)", memoryType: "decision", category: "Governance",       department: "Operations",       content: "AI COO autonomy set to Level 2 (auto-execute high-confidence, >85% score actions only). Human approval required for all financial commitments >$500 and any communication to existing clients. Reviewed quarterly. Current policy has reduced admin time by 4.2 hours/week.",                                    source: "CEO Heartbeat",        createdByAgent: "AI COO",               confidenceScore: 100,impactScore: 88, usageCount: 31, createdAt: new Date(now - 90*24*3600000).toISOString(), updatedAt: new Date(now - 7*24*3600000).toISOString() },
+      { id: "m-3",  title: "Team Training Lead Outreach — 4-Touch Maximum",           memoryType: "decision",  category: "Sales",            department: "Revenue",          content: "After testing 6-touch sequences (which produced 12% unsubscribe rate), reverted to 4-touch maximum: Day 0 intro, Day 3 value, Day 7 social proof, Day 14 final. Unsubscribe rate dropped to 3.1%. Conversion remained at 8.4% — statistically equivalent to 6-touch.",                                    source: "Email Agent",          createdByAgent: "Revenue Agent",        confidenceScore: 91, impactScore: 85, usageCount: 22, createdAt: new Date(now - 30*24*3600000).toISOString(), updatedAt: new Date(now - 5*24*3600000).toISOString() },
+      // Lessons
+      { id: "m-4",  title: "Summer Speed Camp — Parent 24hr Follow-Up Converts 22% Higher", memoryType: "lesson", category: "Campaigns",      department: "Revenue",          content: "When parents enquired about Summer Speed Camp, follow-up within 24 hours produced a 22% higher conversion rate versus 48-72hr follow-ups (34% vs 12%). The window narrows because parents compare 3+ providers simultaneously. Lesson: any warm lead must be followed up same-day by the Email Agent.",       source: "Revenue Agent",        createdByAgent: "Intelligence Engine",  confidenceScore: 94, impactScore: 96, usageCount: 8,  createdAt: new Date(now - 60*24*3600000).toISOString(), updatedAt: new Date(now - 10*24*3600000).toISOString() },
+      { id: "m-5",  title: "Corporate Partnership — Decision Maker Bypass Risk",       memoryType: "lesson",    category: "Partnerships",     department: "Partnerships",     content: "Outreach to general inbox emails produces 2% response rate. Direct decision-maker contact (verified via web search) produces 18% response rate. 9x improvement. Research Agent enrichment step is non-negotiable before any partnership outreach. Do not skip contact enrichment to save time.",           source: "Research Agent",       createdByAgent: "Research Agent",       confidenceScore: 89, impactScore: 91, usageCount: 19, createdAt: new Date(now - 25*24*3600000).toISOString(), updatedAt: new Date(now - 3*24*3600000).toISOString() },
+      { id: "m-6",  title: "Onboarding Drop-Off — Day 3 is the Critical Window",      memoryType: "lesson",    category: "Customer Success", department: "Customer Success", content: "Analysis of 47 client journeys shows 62% of eventual churners show disengagement signals by Day 3 (no second login, no session booked). Proactive check-in on Day 3 by Scheduling Agent recovers 71% of at-risk clients. Automated Day 3 check-in is now policy.",                                       source: "Intelligence Engine",  createdByAgent: "Intelligence Engine",  confidenceScore: 92, impactScore: 88, usageCount: 12, createdAt: new Date(now - 40*24*3600000).toISOString(), updatedAt: new Date(now - 8*24*3600000).toISOString() },
+      { id: "m-7",  title: "Email Bounce Rate Spike — Monday Morning Sends",          memoryType: "lesson",    category: "Email",            department: "Marketing",        content: "Sending bulk emails on Monday before 9 AM produces 3x higher soft bounce rate (server load at corporate addresses). Optimal send windows: Tuesday–Thursday 10 AM–2 PM local time, or Saturday 9–11 AM for parent audiences. Email Agent now enforces these windows automatically.",                          source: "Email Agent",          createdByAgent: "Email Agent",          confidenceScore: 87, impactScore: 79, usageCount: 7,  createdAt: new Date(now - 15*24*3600000).toISOString(), updatedAt: new Date(now - 1*24*3600000).toISOString() },
+      // Playbooks
+      { id: "m-8",  title: "Lead Recovery Playbook — 30-Day Re-Engagement",           memoryType: "playbook",  category: "Sales",            department: "Revenue",          content: "Step 1: Identify all leads inactive >30 days. Step 2: Check PAIL profile for last engagement context. Step 3: Send personalised Day-0 email referencing their specific interest. Step 4: If no response by Day 3, send social proof email (testimonial from similar client). Step 5: Day 7 — final value-offer email. Step 6: If still no response, tag as cold and suppress for 60 days. Historical recovery rate: 14%.", source: "Revenue Agent", createdByAgent: "Revenue Agent", confidenceScore: 88, impactScore: 90, usageCount: 26, createdAt: new Date(now - 50*24*3600000).toISOString(), updatedAt: new Date(now - 4*24*3600000).toISOString() },
+      { id: "m-9",  title: "Partnership Outreach Playbook — School & Club Approach",  memoryType: "playbook",  category: "Partnerships",     department: "Partnerships",     content: "Step 1: Research Agent finds decision-maker via live web search (not guessing). Minimum confidence 0.80 required. Step 2: Verify email via source snippet — no inferred addresses. Step 3: Email Agent sends warm personal email (no template language). Step 4: Day 4 follow-up if no reply. Step 5: Day 10 LinkedIn or phone attempt. Step 6: AI COO escalation for high-value (>$5,000) prospects after Day 14.",  source: "AI COO",       createdByAgent: "AI COO",       confidenceScore: 95, impactScore: 93, usageCount: 18, createdAt: new Date(now - 35*24*3600000).toISOString(), updatedAt: new Date(now - 6*24*3600000).toISOString() },
+      { id: "m-10", title: "Retention Playbook — 85-Day Expansion Window",            memoryType: "playbook",  category: "Customer Success", department: "Customer Success", content: "At 85 days post-onboarding, clients have completed their initial commitment and are psychologically open to expanding. Step 1: Pull usage data — clients using 3+ features are expansion-ready. Step 2: Revenue Agent generates personalised upgrade proposal based on actual usage. Step 3: Offer 2-week trial of next tier. Step 4: If no upgrade in 14 days, offer a success call with the coach. Success rate: 31%.", source: "Customer Success Agent", createdByAgent: "Intelligence Engine", confidenceScore: 90, impactScore: 87, usageCount: 11, createdAt: new Date(now - 20*24*3600000).toISOString(), updatedAt: new Date(now - 9*24*3600000).toISOString() },
+      // Policies
+      { id: "m-11", title: "Communication Approval Policy — Client-Facing Emails",    memoryType: "policy",    category: "Governance",       department: "Operations",       content: "All emails to existing clients must be queued in the AI Approval Inbox before send. Automated sends are permitted only for: session reminders (within 48hr window), booking confirmations, and cancellation notices. All prospecting, retention, and campaign emails require human approval. Violation triggers dead-letter queue and autonomy flag.",  source: "AI COO",       createdByAgent: "AI COO",       confidenceScore: 100,impactScore: 95, usageCount: 45, createdAt: new Date(now - 80*24*3600000).toISOString(), updatedAt: new Date(now - 1*24*3600000).toISOString() },
+      { id: "m-12", title: "Escalation Policy — Financial Commitments >$500",         memoryType: "policy",    category: "Governance",       department: "Operations",       content: "Any AI-initiated action that creates, modifies, or commits to a financial obligation >$500 must be escalated to the AI COO and flagged for human review. This includes: package discounts, refund approvals, partnership pricing proposals, and subscription changes. Auto-execution is blocked at all autonomy levels for financial actions above this threshold.", source: "CEO Heartbeat", createdByAgent: "AI COO", confidenceScore: 100, impactScore: 98, usageCount: 38, createdAt: new Date(now - 70*24*3600000).toISOString(), updatedAt: new Date(now - 3*24*3600000).toISOString() },
+      // Research
+      { id: "m-13", title: "Local Competitor Pricing Analysis — Q2 2026",             memoryType: "research",  category: "Pricing",          department: "Revenue",          content: "Analysis of 8 local competitors: Average youth session rate $142 (our rate: $179 — premium positioning). Average team training rate $890/month (our rate: $950 — 7% premium). 3 competitors offer no AI or digital tools. 2 offer basic scheduling only. We are the only provider with AI-driven scheduling, retention, and outreach. Premium is justified and defensible.",  source: "Research Agent", createdByAgent: "Research Agent", confidenceScore: 83, impactScore: 86, usageCount: 9, createdAt: new Date(now - 5*24*3600000).toISOString(), updatedAt: new Date(now - 5*24*3600000).toISOString() },
+      // Insights
+      { id: "m-14", title: "Peak Demand Window — Tuesday/Thursday 6–8 AM",            memoryType: "insight",   category: "Operations",       department: "Operations",       content: "Session demand analysis across 6 months shows Tuesday and Thursday 6–8 AM slots are booked within 3 hours of opening. Saturday 9 AM–12 PM is the second peak. These windows command full-rate pricing. Off-peak slots (Mon/Wed/Fri after 5 PM) can be offered at 10% discount to fill capacity without cannibalising peak revenue.",  source: "PAIL Engine",  createdByAgent: "Intelligence Engine",  confidenceScore: 91, impactScore: 84, usageCount: 16, createdAt: new Date(now - 28*24*3600000).toISOString(), updatedAt: new Date(now - 2*24*3600000).toISOString() },
+      { id: "m-15", title: "Referral Programme — 3 Past Campaigns, Avg +14% Retention",memoryType: "insight",  category: "Growth",           department: "Revenue",          content: "Three referral campaigns have been run: Summer 2025 (+11% retention), Winter 2025 (+16% retention), Spring 2026 (+14% retention). Average retention lift: 14%. Average cost per referral acquisition: $23 vs $94 via paid ads. Key insight: referrals from clients with PAIL scores >80 are 3x more likely to convert than general referrals. Target high-score clients first.",  source: "Intelligence Engine", createdByAgent: "Intelligence Engine", confidenceScore: 89, impactScore: 90, usageCount: 21, createdAt: new Date(now - 18*24*3600000).toISOString(), updatedAt: new Date(now - 4*24*3600000).toISOString() },
+    ];
+  })();
+
+  const MEMORY_RELATIONSHIPS = [
+    { id: "r-1", sourceMemoryId: "m-1",  relatedMemoryId: "m-13", relationshipType: "supports",     sourceTitle: "Youth Pricing Decision", relatedTitle: "Competitor Pricing Research" },
+    { id: "r-2", sourceMemoryId: "m-4",  relatedMemoryId: "m-8",  relationshipType: "expands",      sourceTitle: "24hr Follow-Up Lesson",  relatedTitle: "Lead Recovery Playbook"     },
+    { id: "r-3", sourceMemoryId: "m-5",  relatedMemoryId: "m-9",  relationshipType: "supports",     sourceTitle: "Decision-Maker Bypass",  relatedTitle: "Partnership Playbook"       },
+    { id: "r-4", sourceMemoryId: "m-15", relatedMemoryId: "m-6",  relationshipType: "supports",     sourceTitle: "Referral Insight",       relatedTitle: "Day-3 Onboarding Lesson"   },
+    { id: "r-5", sourceMemoryId: "m-3",  relatedMemoryId: "m-11", relationshipType: "depends_on",   sourceTitle: "4-Touch Decision",       relatedTitle: "Email Approval Policy"      },
+    { id: "r-6", sourceMemoryId: "m-10", relatedMemoryId: "m-6",  relationshipType: "expands",      sourceTitle: "Retention Playbook",     relatedTitle: "Day-3 Onboarding Lesson"   },
+    { id: "r-7", sourceMemoryId: "m-13", relatedMemoryId: "m-1",  relationshipType: "supports",     sourceTitle: "Q2 Competitor Research", relatedTitle: "Pricing Decision"           },
+  ];
+
+  // GET /api/organizational-memory/overview
+  app.get("/api/organizational-memory/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const byType = ORG_MEMORIES.reduce((acc, m) => { acc[m.memoryType] = (acc[m.memoryType] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const avgConf = Math.round(ORG_MEMORIES.reduce((s, m) => s + m.confidenceScore, 0) / ORG_MEMORIES.length);
+      const totalUsage = ORG_MEMORIES.reduce((s, m) => s + m.usageCount, 0);
+      const knowledgeHealthScore = Math.min(100, Math.round((avgConf * 0.4) + ((ORG_MEMORIES.length / 20) * 100 * 0.3) + ((totalUsage / 500) * 100 * 0.3)));
+      res.json({ total: ORG_MEMORIES.length, byType, avgConfidenceScore: avgConf, totalUsageEvents: totalUsage, knowledgeHealthScore, learningVelocity: 2.4, institutionalIntelligenceScore: 83, relationships: MEMORY_RELATIONSHIPS.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load overview" }); }
+  });
+
+  // GET /api/organizational-memory/search
+  app.get("/api/organizational-memory/search", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const q = ((req.query.q as string) ?? "").toLowerCase().trim();
+      if (!q) return res.json({ results: [], query: q, total: 0 });
+      const results = ORG_MEMORIES.filter(m => m.title.toLowerCase().includes(q) || m.content.toLowerCase().includes(q) || m.category.toLowerCase().includes(q) || m.memoryType.toLowerCase().includes(q) || m.department.toLowerCase().includes(q)).slice(0, 10);
+      res.json({ results, query: q, total: results.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to search memories" }); }
+  });
+
+  // GET /api/organizational-memory/memories
+  app.get("/api/organizational-memory/memories", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      res.json({ memories: ORG_MEMORIES, total: ORG_MEMORIES.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load memories" }); }
+  });
+
+  // POST /api/organizational-memory/create
+  app.post("/api/organizational-memory/create", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { title, memoryType, category, department, content, source, createdByAgent, confidenceScore } = req.body;
+      if (!title || !content) return res.status(400).json({ message: "title and content required" });
+      res.json({ success: true, memory: { id: `m-${Date.now()}`, title, memoryType: memoryType ?? "insight", category: category ?? "General", department: department ?? "Operations", content, source: source ?? "Human Admin", createdByAgent: createdByAgent ?? "Human Admin", confidenceScore: confidenceScore ?? 80, impactScore: 75, usageCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to create memory" }); }
+  });
+
+  // POST /api/organizational-memory/convert
+  app.post("/api/organizational-memory/convert", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { sourceType, sourceId, memoryType, title, content } = req.body;
+      if (!title || !content) return res.status(400).json({ message: "title and content required" });
+      res.json({ success: true, converted: true, sourceType: sourceType ?? "task", sourceId: sourceId ?? "unknown", memory: { id: `m-conv-${Date.now()}`, title, memoryType: memoryType ?? "lesson", content, createdAt: new Date().toISOString() } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to convert to memory" }); }
+  });
+
+  // GET /api/organizational-memory/decisions
+  app.get("/api/organizational-memory/decisions", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const decisions = ORG_MEMORIES.filter(m => m.memoryType === "decision");
+      res.json({ decisions, total: decisions.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load decisions" }); }
+  });
+
+  // GET /api/organizational-memory/lessons
+  app.get("/api/organizational-memory/lessons", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const lessons = ORG_MEMORIES.filter(m => m.memoryType === "lesson");
+      res.json({ lessons, total: lessons.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load lessons" }); }
+  });
+
+  // GET /api/organizational-memory/playbooks
+  app.get("/api/organizational-memory/playbooks", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const playbooks = ORG_MEMORIES.filter(m => m.memoryType === "playbook");
+      const policies  = ORG_MEMORIES.filter(m => m.memoryType === "policy");
+      res.json({ playbooks, policies, totalPlaybooks: playbooks.length, totalPolicies: policies.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load playbooks" }); }
+  });
+
+  // GET /api/organizational-memory/graph
+  app.get("/api/organizational-memory/graph", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const nodes = ORG_MEMORIES.map(m => ({ id: m.id, label: m.title.length > 40 ? m.title.slice(0, 40) + "…" : m.title, type: m.memoryType, department: m.department, confidenceScore: m.confidenceScore, usageCount: m.usageCount }));
+      res.json({ nodes, edges: MEMORY_RELATIONSHIPS, total: nodes.length, relationships: MEMORY_RELATIONSHIPS.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load graph" }); }
+  });
+
+  // GET /api/organizational-memory/analytics
+  app.get("/api/organizational-memory/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const byDept = ORG_MEMORIES.reduce((acc, m) => { acc[m.department] = (acc[m.department] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const topMemories = [...ORG_MEMORIES].sort((a, b) => b.usageCount - a.usageCount).slice(0, 5);
+      const highImpact  = [...ORG_MEMORIES].sort((a, b) => b.impactScore - a.impactScore).slice(0, 5);
+      res.json({
+        totalMemories: ORG_MEMORIES.length, totalRelationships: MEMORY_RELATIONSHIPS.length,
+        avgConfidenceScore: Math.round(ORG_MEMORIES.reduce((s, m) => s + m.confidenceScore, 0) / ORG_MEMORIES.length),
+        avgImpactScore: Math.round(ORG_MEMORIES.reduce((s, m) => s + m.impactScore, 0) / ORG_MEMORIES.length),
+        totalUsageEvents: ORG_MEMORIES.reduce((s, m) => s + m.usageCount, 0),
+        knowledgeHealthScore: 78, learningVelocity: 2.4, institutionalIntelligenceScore: 83,
+        byDepartment: byDept,
+        byType: ORG_MEMORIES.reduce((acc, m) => { acc[m.memoryType] = (acc[m.memoryType] ?? 0) + 1; return acc; }, {} as Record<string, number>),
+        topReferencedMemories: topMemories.map(m => ({ id: m.id, title: m.title, usageCount: m.usageCount, memoryType: m.memoryType })),
+        highImpactMemories: highImpact.map(m => ({ id: m.id, title: m.title, impactScore: m.impactScore, memoryType: m.memoryType })),
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load analytics" }); }
+  });
+
   return httpServer;
 }

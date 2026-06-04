@@ -601,6 +601,20 @@ export default function AdminAgentTasksPage() {
         </>}
       </div>
 
+      {/* Forward nav → Organizational Memory */}
+      <Link href="/admin/organizational-memory">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-violet-500/5 hover:from-primary/10 hover:to-violet-500/10 transition-colors cursor-pointer group" data-testid="nav-organizational-memory">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <Brain className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Shared Organizational Memory &amp; Knowledge Network</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Decisions, lessons, playbooks, policies, and research — the institutional memory that makes every agent smarter over time.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
+
       {/* Architecture note */}
       <div className="p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-indigo-500/5" data-testid="architecture-complete-19-2">
         <div className="flex items-start gap-3">
