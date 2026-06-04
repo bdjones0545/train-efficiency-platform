@@ -1,0 +1,65 @@
+Fix the AI Workforce Setup Wizard state bug.
+
+Current issue:
+For an organization that has already completed AI Workforce setup, the left sidebar still shows “AI Workforce Setup Wizard.” When clicked, it routes back into the setup wizard at step 1/8 instead of treating the workforce as configured.
+
+Expected behavior:
+If the organization already has AI workforce configuration data, the sidebar should not show “AI Workforce Setup Wizard.” It should show “AI Workforce” or “AI Governance,” and clicking it should route to the active AI Workforce/Governance dashboard.
+
+Audit and fix the following:
+
+1. Find the sidebar/navigation component that renders “AI Workforce Setup Wizard.”
+2. Find the condition used to decide whether setup is complete.
+3. Do not rely only on a fragile boolean flag.
+4. Add a derived setup-complete check based on actual org workforce records.
+
+Setup should be considered complete if the org has meaningful workforce configuration, such as:
+- AI agents exist for the org
+- AI departments exist for the org
+- governance/autonomy settings exist
+- organization AI workforce status is initialized/configured
+
+Use the existing schema names from the codebase.
+
+Fix requirements:
+- If setup is complete, hide the setup wizard CTA.
+- Replace it with a normal navigation item labeled “AI Workforce” or “AI Governance.”
+- Route configured orgs to the AI Governance/Workforce dashboard, not onboarding.
+- Only show the setup wizard if the org truly has no AI workforce configuration.
+- If a completion flag exists but is false while workforce records exist, automatically repair/sync the flag.
+- Ensure this is scoped by the authenticated organization ID only.
+- Do not leak or read workforce data across organizations.
+
+Also fix the wizard route guard:
+- When visiting the setup wizard URL directly, check whether the current org is already configured.
+- If configured, redirect to the AI Workforce/Governance dashboard.
+- If not configured, allow setup to continue.
+
+Add backend support if needed:
+Create or update an endpoint like:
+
+GET /api/ai-workforce/setup-status
+
+It should return:
+{
+  isConfigured: boolean,
+  hasAgents: boolean,
+  hasDepartments: boolean,
+  hasGovernanceSettings: boolean,
+  setupCompleteFlag: boolean
+}
+
+The endpoint must:
+- Resolve org from authenticated session
+- Never trust client-provided orgId
+- Query only records where org_id = session org id
+- Optionally repair the org setup flag if records exist but the flag is false
+
+Then update the frontend sidebar and wizard page to use this endpoint.
+
+After the fix:
+- Run TypeScript check
+- Test mobile sidebar
+- Confirm the wizard CTA disappears for configured orgs
+- Confirm direct navigation to the wizard redirects configured orgs
+- Confirm fresh/unconfigured orgs still see the wizard
