@@ -1,0 +1,166 @@
+Upgrade Gmail Conversations approval workflow.
+
+Current issue:
+The Action Queue shows approval cards such as:
+
+propose
+draft:followup72h
+
+but the user cannot inspect the generated email before approving or rejecting it.
+
+Approval mode is currently blind.
+
+Required redesign:
+
+1. Clicking an Action Queue card should open a full Approval Review Drawer/Modal.
+
+Display:
+
+- Action type
+- Agent name
+- Workflow name
+- Risk level
+- Generated timestamp
+- Trigger source
+- Confidence score
+
+2. Show Trigger Context
+
+Examples:
+
+Lead submitted form
+No reply after 72 hours
+Missed appointment
+Abandoned application
+Client inactivity
+
+Display the actual trigger data used by the agent.
+
+3. Show Recipient Details
+
+- Name
+- Email
+- Lead status
+- Pipeline stage
+- Program interest
+- Last interaction date
+
+4. Show Draft Email Preview
+
+Section:
+SUBJECT
+
+[subject text]
+
+Section:
+EMAIL BODY
+
+[full generated email]
+
+Render exactly what will be sent.
+
+5. Allow Editing Before Approval
+
+Editable fields:
+
+- Subject
+- Body
+
+User can modify the email before approving.
+
+6. Add Approval Actions
+
+Approve & Send
+Approve & Schedule
+Save Draft
+Reject
+Request Regeneration
+
+7. Add Feedback System
+
+When rejecting or regenerating:
+
+Capture:
+
+- Too aggressive
+- Too long
+- Wrong tone
+- Wrong timing
+- Wrong offer
+- Wrong recipient
+- Custom feedback
+
+Store feedback for agent learning/evaluation.
+
+8. Add Explainability Panel
+
+Why did the agent generate this?
+
+Display:
+
+Trigger:
+No reply after 72 hours
+
+Rule:
+Recovery Follow-up Sequence
+
+Reasoning:
+Lead showed interest but has not responded.
+
+Confidence:
+92%
+
+Risk:
+Low
+
+9. Agent Learning Audit
+
+Track:
+
+approval_rate
+edit_rate
+rejection_rate
+regeneration_rate
+
+per workflow and per agent.
+
+10. Mobile-first design
+
+Current cards are difficult to inspect on mobile.
+
+Action Queue cards should:
+
+Show recipient
+Show email subject
+Show preview snippet
+
+Example:
+
+Miracle Colson
+Follow-up: Are you still interested?
+"Just checking in regarding..."
+
+instead of:
+
+draft:followup72h
+
+11. Governance Integration
+
+Approving an action should create an immutable audit log:
+
+who approved
+what changed
+final email sent
+timestamp
+
+12. Future-ready
+
+Design the review modal so it can support:
+
+Emails
+SMS
+Calendar invites
+CRM updates
+Task creation
+
+using the same governance workflow.

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -12,12 +12,15 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { Separator } from "@/components/ui/separator";
 import {
   CheckCheck, X, Edit3, RefreshCw, Clock, TrendingUp, ChevronDown,
   ChevronRight, Globe, Archive, Brain, Zap, AlertTriangle, Users,
   Building2, GraduationCap, Briefcase, BarChart3, Mail,
   TrendingDown, DollarSign, Award, Target, MessageSquare, CalendarCheck,
   FileSignature, UserCheck, BarChart2, ShieldCheck, Send, Ban,
+  Eye, User, Info, Sparkles, ExternalLink, ChevronLeft,
 } from "lucide-react";
 
 // ─── Domain Configuration ─────────────────────────────────────────────────────
@@ -66,6 +69,36 @@ const DOMAIN_GROUP_TO_API: Record<string, string[]> = {
   orgs: ["organization_outreach", "business_outreach", "corporate_wellness", "facility_partnership"],
   employment: ["employment_opportunity"],
 };
+
+// ─── Trigger + Action labels ──────────────────────────────────────────────────
+
+const TRIGGER_LABELS: Record<string, string> = {
+  form_submission: "Lead submitted form",
+  no_reply_72h: "No reply after 72 hours",
+  no_reply_48h: "No reply after 48 hours",
+  no_reply_24h: "No reply after 24 hours",
+  no_reply_7d: "No reply after 7 days",
+  missed_appointment: "Missed appointment",
+  abandoned_application: "Abandoned application",
+  client_inactivity: "Client inactivity",
+  followup: "Scheduled follow-up",
+  manual: "Manual generation",
+  inbound_reply: "Reply received",
+  recovery: "Recovery sequence",
+  renewal: "Renewal reminder",
+  re_engagement: "Re-engagement",
+};
+
+function prettyActionType(actionType: string): string {
+  const t = (actionType ?? "").replace(/^propose_draft:/, "").replace(/[_-]/g, " ");
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
+function prettyRecipient(email: string | null | undefined): string {
+  if (!email) return "Unknown recipient";
+  const local = email.split("@")[0].replace(/[._-]/g, " ");
+  return local.replace(/\b\w/g, (c) => c.toUpperCase());
+}
 
 // ─── Array safety helper ──────────────────────────────────────────────────────
 // Guards against API error objects (e.g. { message: "Not authorized" }) being
@@ -331,12 +364,508 @@ function RegenerateDialog({
   );
 }
 
-// ─── Proposal Card ────────────────────────────────────────────────────────────
+// ─── Approval Review Drawer ───────────────────────────────────────────────────
+
+type DrawerMode = "view" | "reject" | "regen";
+
+function ApprovalReviewDrawer({
+  proposalId,
+  open,
+  onClose,
+  onRefresh,
+}: {
+  proposalId: string;
+  open: boolean;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  const { toast } = useToast();
+  const [mode, setMode] = useState<DrawerMode>("view");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectChips, setRejectChips] = useState<string[]>([]);
+  const [regenFeedback, setRegenFeedback] = useState("");
+  const [regenChips, setRegenChips] = useState<string[]>([]);
+  const [regenResult, setRegenResult] = useState<{ subject: string; body: string } | null>(null);
+
+  const { data: detail, isLoading } = useQuery<any>({
+    queryKey: ["/api/ai-approvals/detail", proposalId],
+    queryFn: () => safeFetch(`/api/ai-approvals/${proposalId}`),
+    enabled: open && !!proposalId,
+  });
+
+  const proposal = detail?.proposal;
+  const lead = detail?.lead;
+  const resultData = (proposal?.result && typeof proposal.result === "object") ? proposal.result as any : {};
+
+  useEffect(() => {
+    if (proposal) {
+      setSubject(proposal.subject ?? "");
+      setBody(proposal.bodyPreview ?? "");
+    }
+  }, [proposal?.id]);
+
+  useEffect(() => {
+    if (!open) {
+      setMode("view");
+      setIsEditing(false);
+      setRejectReason("");
+      setRejectChips([]);
+      setRegenFeedback("");
+      setRegenChips([]);
+      setRegenResult(null);
+    }
+  }, [open]);
+
+  const approveMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposalId}/approve`, isEditing ? { subject, body } : {}),
+    onSuccess: () => {
+      toast({ title: "Sent!", description: `Email delivered to ${proposal?.recipientEmail}` });
+      onRefresh(); onClose();
+    },
+    onError: (e: any) => toast({ title: "Send failed", description: e.message, variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposalId}/reject`, {
+      reason: rejectReason,
+      feedbackTags: rejectChips,
+      coachingFeedbackText: rejectReason,
+    }),
+    onSuccess: () => {
+      toast({ title: "Draft rejected", description: "Feedback saved for AI learning." });
+      onRefresh(); onClose();
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const regenMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposalId}/regenerate`, {
+      feedbackText: [regenFeedback, ...regenChips].filter(Boolean).join(". "),
+    }),
+    onSuccess: (data: any) => setRegenResult({ subject: data.subject, body: data.body }),
+    onError: (e: any) => toast({ title: "Regeneration failed", description: e.message, variant: "destructive" }),
+  });
+
+  const useRegenMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposalId}/approve`, {
+      subject: regenResult?.subject,
+      body: regenResult?.body,
+    }),
+    onSuccess: () => {
+      toast({ title: "Revised draft sent!" });
+      onRefresh(); onClose();
+    },
+    onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const toggleRejectChip = (chip: string) =>
+    setRejectChips((p) => p.includes(chip) ? p.filter((c) => c !== chip) : [...p, chip]);
+  const toggleRegenChip = (chip: string) =>
+    setRegenChips((p) => p.includes(chip) ? p.filter((c) => c !== chip) : [...p, chip]);
+
+  const riskColor = proposal?.riskLevel === "low" ? "text-green-600 dark:text-green-400"
+    : proposal?.riskLevel === "high" ? "text-red-600 dark:text-red-400"
+    : "text-yellow-600 dark:text-yellow-400";
+
+  const domain = proposal?.communicationDomain ?? "athlete_lead";
+  const domainLabel = DOMAIN_LABELS[domain] ?? domain;
+  const domainClass = DOMAIN_BADGE_CLASS[domain] ?? "bg-gray-100 text-gray-800";
+  const isBlocked = proposal?.status === "blocked";
+  const isAutoEligible = resultData.autoExecuteEligible === true;
+  const triggerLabel = TRIGGER_LABELS[resultData.triggerType ?? ""] ?? resultData.triggerType ?? null;
+  const confidence = resultData.confidence != null ? Math.round(Number(resultData.confidence) * 100) : null;
+
+  const recipientName = lead?.name ?? prettyRecipient(proposal?.recipientEmail);
+
+  return (
+    <Sheet open={open} onOpenChange={onClose}>
+      <SheetContent side="right" className="w-full sm:max-w-2xl flex flex-col p-0 gap-0">
+        {/* Header */}
+        <SheetHeader className="px-5 py-4 border-b shrink-0">
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <SheetTitle className="text-base flex items-center gap-2">
+              <Mail className="w-4 h-4 text-primary" />
+              Review AI Draft
+            </SheetTitle>
+            <div className="flex items-center gap-2 flex-wrap">
+              {isAutoEligible && (
+                <span className="flex items-center gap-1 text-xs font-semibold text-green-700 dark:text-green-300 bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 px-2 py-0.5 rounded-full">
+                  <ShieldCheck className="w-3 h-3" /> Policy Approved
+                </span>
+              )}
+              {isBlocked && (
+                <span className="flex items-center gap-1 text-xs font-semibold text-red-700 dark:text-red-400 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 px-2 py-0.5 rounded-full">
+                  <Ban className="w-3 h-3" /> Blocked
+                </span>
+              )}
+              <span className={`text-xs font-semibold uppercase ${riskColor}`} data-testid="drawer-risk-label">
+                {proposal?.riskLevel ?? "medium"} risk
+              </span>
+            </div>
+          </div>
+          {proposal && (
+            <div className="flex items-center gap-2 flex-wrap mt-1">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${domainClass}`}>{domainLabel}</span>
+              <Badge variant="outline" className="text-xs">{prettyActionType(proposal.actionType)}</Badge>
+              {proposal.createdByAgent && (
+                <span className="text-xs text-muted-foreground">by {proposal.createdByAgent}</span>
+              )}
+              <span className="text-xs text-muted-foreground ml-auto flex items-center gap-1">
+                <Clock className="w-3 h-3" />
+                {proposal.createdAt ? new Date(proposal.createdAt).toLocaleString() : "—"}
+              </span>
+            </div>
+          )}
+        </SheetHeader>
+
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-20">
+              <RefreshCw className="w-6 h-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : !proposal ? (
+            <p className="text-center text-muted-foreground py-12">Failed to load proposal.</p>
+          ) : (
+            <>
+              {/* ── Explainability Panel ── */}
+              {(triggerLabel || resultData.workflowName || resultData.reasoning || confidence != null) && (
+                <div className="rounded-lg border bg-muted/30 p-4 space-y-2.5">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                    <Info className="w-3.5 h-3.5" /> Why did the agent generate this?
+                  </p>
+                  {triggerLabel && (
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="text-muted-foreground w-24 shrink-0">Trigger</span>
+                      <span className="font-medium">{triggerLabel}</span>
+                    </div>
+                  )}
+                  {(resultData.workflowName || resultData.ruleName) && (
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="text-muted-foreground w-24 shrink-0">Rule</span>
+                      <span className="font-medium">{resultData.workflowName ?? resultData.ruleName}</span>
+                    </div>
+                  )}
+                  {resultData.reasoning && (
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="text-muted-foreground w-24 shrink-0 mt-0.5">Reasoning</span>
+                      <span className="text-muted-foreground leading-relaxed">{resultData.reasoning}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground pt-1">
+                    {confidence != null && (
+                      <span>
+                        Confidence: <span className={`font-semibold ${confidence >= 80 ? "text-green-600" : confidence >= 60 ? "text-yellow-600" : "text-red-600"}`}>{confidence}%</span>
+                      </span>
+                    )}
+                    <span className={`font-semibold uppercase ${riskColor}`}>
+                      {proposal.riskLevel ?? "medium"} risk
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Recipient Details ── */}
+              <div className="rounded-lg border p-4 space-y-2">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                  <User className="w-3.5 h-3.5" /> Recipient
+                </p>
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0">
+                    {recipientName.charAt(0).toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm" data-testid="drawer-recipient-name">{recipientName}</p>
+                    <p className="text-xs text-muted-foreground truncate">{proposal.recipientEmail}</p>
+                  </div>
+                </div>
+                {lead && (
+                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2">
+                    {lead.organization && (
+                      <div className="col-span-2">
+                        <span className="text-xs text-muted-foreground">Organization: </span>
+                        <span className="text-xs font-medium">{lead.organization}</span>
+                      </div>
+                    )}
+                    {lead.pipelineStage && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">Stage: </span>
+                        <span className="text-xs font-medium capitalize">{lead.pipelineStage.replace(/_/g, " ")}</span>
+                      </div>
+                    )}
+                    {(lead.bookingStatus ?? lead.outreachStatus) && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">Status: </span>
+                        <span className="text-xs font-medium capitalize">{(lead.bookingStatus ?? lead.outreachStatus ?? "").replace(/_/g, " ")}</span>
+                      </div>
+                    )}
+                    {lead.sport && lead.sport !== "unknown" && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">Sport: </span>
+                        <span className="text-xs font-medium capitalize">{lead.sport}</span>
+                      </div>
+                    )}
+                    {lead.temperature && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">Temperature: </span>
+                        <span className={`text-xs font-semibold capitalize ${lead.temperature === "hot" ? "text-red-600" : lead.temperature === "warm" ? "text-orange-500" : "text-blue-500"}`}>{lead.temperature}</span>
+                      </div>
+                    )}
+                    {lead.lastInteractionAt && (
+                      <div className="col-span-2">
+                        <span className="text-xs text-muted-foreground">Last interaction: </span>
+                        <span className="text-xs font-medium">{new Date(lead.lastInteractionAt).toLocaleDateString()}</span>
+                      </div>
+                    )}
+                    {lead.followUpCount != null && lead.followUpCount > 0 && (
+                      <div>
+                        <span className="text-xs text-muted-foreground">Follow-ups sent: </span>
+                        <span className="text-xs font-medium">{lead.followUpCount}</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* ── Email Preview / Editor ── */}
+              {mode === "view" && (
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <Mail className="w-3.5 h-3.5" /> Email Draft
+                    </p>
+                    <button
+                      className="text-xs text-primary underline flex items-center gap-1"
+                      onClick={() => setIsEditing((e) => !e)}
+                      data-testid="button-toggle-edit"
+                    >
+                      <Edit3 className="w-3 h-3" />
+                      {isEditing ? "Cancel editing" : "Edit before sending"}
+                    </button>
+                  </div>
+
+                  {/* Subject */}
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium mb-1">SUBJECT</p>
+                    {isEditing ? (
+                      <Input
+                        data-testid="drawer-input-subject"
+                        value={subject}
+                        onChange={(e) => setSubject(e.target.value)}
+                        className="text-sm font-medium"
+                      />
+                    ) : (
+                      <p className="text-sm font-semibold bg-muted/30 rounded px-3 py-2 border" data-testid="drawer-text-subject">
+                        {subject || "(No subject)"}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Body */}
+                  <div>
+                    <p className="text-xs text-muted-foreground font-medium mb-1">EMAIL BODY</p>
+                    {isEditing ? (
+                      <Textarea
+                        data-testid="drawer-textarea-body"
+                        value={body}
+                        onChange={(e) => setBody(e.target.value)}
+                        className="min-h-[280px] text-sm font-mono leading-relaxed"
+                      />
+                    ) : (
+                      <div className="bg-muted/30 rounded border px-3 py-3">
+                        <pre className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans" data-testid="drawer-text-body">
+                          {body || "No content"}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* ── Reject Flow ── */}
+              {mode === "reject" && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setMode("view")} className="text-muted-foreground hover:text-foreground">
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <p className="text-sm font-semibold">Reject & Coach the AI</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Your feedback trains the agent to generate better drafts in the future.
+                  </p>
+                  <Textarea
+                    data-testid="drawer-textarea-reject-reason"
+                    value={rejectReason}
+                    onChange={(e) => setRejectReason(e.target.value)}
+                    placeholder="What should the AI do differently? e.g. 'Make it shorter, mention the sport, end with a question.'"
+                    className="min-h-[80px] text-sm"
+                  />
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5">Quick tags (optional)</p>
+                    <FeedbackChips selected={rejectChips} onToggle={toggleRejectChip} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── Regen Flow ── */}
+              {mode === "regen" && !regenResult && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setMode("view")} className="text-muted-foreground hover:text-foreground">
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <p className="text-sm font-semibold">Regenerate with Feedback</p>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Describe what to improve. The AI will rewrite using your feedback and past learning rules.
+                  </p>
+                  <Textarea
+                    data-testid="drawer-textarea-regen-feedback"
+                    value={regenFeedback}
+                    onChange={(e) => setRegenFeedback(e.target.value)}
+                    placeholder="E.g. 'Make it shorter and more personal. End with a direct question.'"
+                    className="min-h-[80px] text-sm"
+                  />
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5">Quick tags</p>
+                    <FeedbackChips selected={regenChips} onToggle={toggleRegenChip} />
+                  </div>
+                </div>
+              )}
+
+              {/* ── Regen Result Preview ── */}
+              {mode === "regen" && regenResult && (
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <button onClick={() => setRegenResult(null)} className="text-muted-foreground hover:text-foreground">
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <p className="text-sm font-semibold">Revised Draft</p>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-xs text-muted-foreground font-medium mb-1">Original</p>
+                      <div className="rounded-md bg-muted p-3 space-y-1 h-full">
+                        <p className="text-xs font-medium">{proposal.subject}</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-6">{proposal.bodyPreview}</p>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-medium text-green-600 mb-1">Revised</p>
+                      <div className="rounded-md bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 p-3 space-y-1">
+                        <p className="text-xs font-medium">{regenResult.subject}</p>
+                        <p className="text-xs text-muted-foreground leading-relaxed line-clamp-6">{regenResult.body}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Sticky Footer */}
+        {proposal && !isBlocked && (
+          <div className="border-t px-5 py-4 shrink-0 bg-background">
+            {mode === "view" && (
+              <div className="flex items-center gap-2 flex-wrap">
+                <Button
+                  data-testid="drawer-button-approve"
+                  size="sm"
+                  onClick={() => approveMutation.mutate()}
+                  disabled={approveMutation.isPending || (isEditing && (!subject.trim() || !body.trim()))}
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                >
+                  {approveMutation.isPending
+                    ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Sending…</>
+                    : isEditing
+                    ? <><Send className="w-3.5 h-3.5 mr-1.5" />Edit & Send</>
+                    : <><CheckCheck className="w-3.5 h-3.5 mr-1.5" />Approve & Send</>}
+                </Button>
+                <Button
+                  data-testid="drawer-button-regen"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setMode("regen")}
+                >
+                  <Sparkles className="w-3.5 h-3.5 mr-1.5" />Regenerate
+                </Button>
+                <Button
+                  data-testid="drawer-button-reject"
+                  size="sm"
+                  variant="ghost"
+                  className="text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/20"
+                  onClick={() => setMode("reject")}
+                >
+                  <X className="w-3.5 h-3.5 mr-1.5" />Reject
+                </Button>
+              </div>
+            )}
+
+            {mode === "reject" && (
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setMode("view")}>Cancel</Button>
+                <Button
+                  data-testid="drawer-button-confirm-reject"
+                  variant="destructive"
+                  size="sm"
+                  onClick={() => rejectMutation.mutate()}
+                  disabled={rejectMutation.isPending || (!rejectReason.trim() && rejectChips.length === 0)}
+                >
+                  {rejectMutation.isPending ? "Rejecting…" : "Confirm Reject"}
+                </Button>
+              </div>
+            )}
+
+            {mode === "regen" && !regenResult && (
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setMode("view")}>Cancel</Button>
+                <Button
+                  data-testid="drawer-button-confirm-regen"
+                  size="sm"
+                  onClick={() => regenMutation.mutate()}
+                  disabled={regenMutation.isPending || (!regenFeedback.trim() && regenChips.length === 0)}
+                >
+                  {regenMutation.isPending
+                    ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Regenerating…</>
+                    : <><Sparkles className="w-3.5 h-3.5 mr-1.5" />Regenerate</>}
+                </Button>
+              </div>
+            )}
+
+            {mode === "regen" && regenResult && (
+              <div className="flex items-center gap-2">
+                <Button variant="outline" size="sm" onClick={() => setRegenResult(null)}>Try again</Button>
+                <Button
+                  data-testid="drawer-button-use-revised"
+                  size="sm"
+                  className="bg-green-600 hover:bg-green-700 text-white"
+                  onClick={() => useRegenMutation.mutate()}
+                  disabled={useRegenMutation.isPending}
+                >
+                  {useRegenMutation.isPending
+                    ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Sending…</>
+                    : <><CheckCheck className="w-3.5 h-3.5 mr-1.5" />Use Revised & Send</>}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+// ─── Proposal Card (mobile-first) ─────────────────────────────────────────────
 
 function ProposalCard({ proposal, onRefresh }: { proposal: any; onRefresh: () => void }) {
-  const [showReject, setShowReject] = useState(false);
-  const [showEdit, setShowEdit] = useState(false);
-  const [showRegen, setShowRegen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const { toast } = useToast();
 
   const domain = proposal.communicationDomain ?? "athlete_lead";
@@ -349,15 +878,13 @@ function ProposalCard({ proposal, onRefresh }: { proposal: any; onRefresh: () =>
 
   const approveMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposal.id}/approve`, {}),
-    onSuccess: () => { toast({ title: isAutoEligible ? "Sent!" : "Sent!" }); onRefresh(); },
-    onError: (e: any) => {
-      toast({ title: "Error", description: e.message, variant: "destructive" });
-    },
+    onSuccess: () => { toast({ title: "Sent!" }); onRefresh(); },
+    onError: (e: any) => toast({ title: "Send failed", description: e.message, variant: "destructive" }),
   });
 
   const riskColor =
-    proposal.riskLevel === "low" ? "text-green-600" :
-    proposal.riskLevel === "high" ? "text-red-600" : "text-yellow-600";
+    proposal.riskLevel === "low" ? "text-green-600 dark:text-green-400" :
+    proposal.riskLevel === "high" ? "text-red-600 dark:text-red-400" : "text-yellow-600 dark:text-yellow-400";
 
   const cardBorder = isAutoEligible
     ? "border-green-200 dark:border-green-800 ring-1 ring-green-200 dark:ring-green-800"
@@ -365,134 +892,100 @@ function ProposalCard({ proposal, onRefresh }: { proposal: any; onRefresh: () =>
     ? "border-red-200 dark:border-red-900 opacity-75"
     : "";
 
+  const recipientDisplay = prettyRecipient(proposal.recipientEmail);
+
   return (
     <>
-      <Card data-testid={`card-proposal-${proposal.id}`} className={`group hover:shadow-md transition-shadow ${cardBorder}`}>
-        <CardContent className="p-4 space-y-3">
-          {/* Auto-eligible badge */}
-          {isAutoEligible && (
-            <div
-              data-testid={`badge-auto-eligible-${proposal.id}`}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 w-fit"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-green-600" />
-              <span className="text-xs font-semibold text-green-700 dark:text-green-300">Policy Approved</span>
-              <span className="text-xs text-green-600 dark:text-green-400">· Passed Governance Checks</span>
-            </div>
-          )}
-          {/* Blocked badge */}
-          {isBlocked && (
-            <div
-              data-testid={`badge-blocked-${proposal.id}`}
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 w-fit"
-            >
-              <Ban className="w-3.5 h-3.5 text-red-500" />
-              <span className="text-xs font-semibold text-red-700 dark:text-red-400">Blocked by Policy</span>
-              {proposal.errorMessage && (
-                <span className="text-xs text-red-500 dark:text-red-400 ml-1">· {proposal.errorMessage}</span>
+      <Card
+        data-testid={`card-proposal-${proposal.id}`}
+        className={`hover:shadow-md transition-shadow cursor-pointer ${cardBorder}`}
+        onClick={() => setDrawerOpen(true)}
+      >
+        <CardContent className="p-4 space-y-2.5">
+          {/* Status badges row */}
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${domainClass}`} data-testid={`badge-domain-${proposal.id}`}>
+                {domainLabel}
+              </span>
+              {isAutoEligible && (
+                <span
+                  data-testid={`badge-auto-eligible-${proposal.id}`}
+                  className="flex items-center gap-1 text-xs font-medium text-green-700 dark:text-green-300"
+                >
+                  <ShieldCheck className="w-3 h-3" /> Policy Approved
+                </span>
+              )}
+              {isBlocked && (
+                <span
+                  data-testid={`badge-blocked-${proposal.id}`}
+                  className="flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400"
+                >
+                  <Ban className="w-3 h-3" /> Blocked
+                </span>
               )}
             </div>
-          )}
-
-          <div className="flex items-start justify-between gap-2">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap mb-1">
-                <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${domainClass}`} data-testid={`badge-domain-${proposal.id}`}>
-                  {domainLabel}
-                </span>
-                <Badge variant="outline" className="text-xs">
-                  {proposal.actionType?.replace("propose_draft:", "") ?? "message"}
-                </Badge>
-                <span className={`text-xs font-medium ${riskColor}`} data-testid={`text-risk-${proposal.id}`}>
-                  {proposal.riskLevel?.toUpperCase() ?? "MEDIUM"} RISK
-                </span>
-              </div>
-              <p className="font-medium text-sm truncate" data-testid={`text-subject-${proposal.id}`}>
-                {proposal.subject ?? "(No subject)"}
-              </p>
-              <p className="text-xs text-muted-foreground">{proposal.recipientEmail}</p>
-            </div>
-            <div className="text-xs text-muted-foreground whitespace-nowrap flex items-center gap-1">
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
               <Clock className="w-3 h-3" />
               {proposal.createdAt ? new Date(proposal.createdAt).toLocaleDateString() : "—"}
-            </div>
+            </span>
           </div>
 
-          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3 bg-muted/30 rounded p-2" data-testid={`text-body-${proposal.id}`}>
+          {/* Recipient + subject */}
+          <div>
+            <div className="flex items-center gap-1.5">
+              <p className="font-semibold text-sm" data-testid={`text-recipient-${proposal.id}`}>{recipientDisplay}</p>
+              <span className={`text-xs font-medium ${riskColor}`} data-testid={`text-risk-${proposal.id}`}>
+                · {proposal.riskLevel?.toUpperCase() ?? "MEDIUM"} RISK
+              </span>
+            </div>
+            <p className="text-sm font-medium truncate text-foreground/80 mt-0.5" data-testid={`text-subject-${proposal.id}`}>
+              {proposal.subject ?? "(No subject)"}
+            </p>
+          </div>
+
+          {/* Body snippet */}
+          <p
+            className="text-xs text-muted-foreground leading-relaxed line-clamp-2"
+            data-testid={`text-body-${proposal.id}`}
+          >
             {proposal.bodyPreview ?? "No content"}
           </p>
 
-          {!isBlocked && (
-            <div className="flex items-center gap-2 flex-wrap pt-1">
-              {isAutoEligible ? (
-                <>
-                  <Button
-                    data-testid={`button-send-now-${proposal.id}`}
-                    size="sm"
-                    onClick={() => approveMutation.mutate()}
-                    disabled={approveMutation.isPending}
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    <Send className="w-3.5 h-3.5 mr-1" />
-                    {approveMutation.isPending ? "Sending…" : "Send Now"}
-                  </Button>
-                  <Button
-                    data-testid={`button-review-first-${proposal.id}`}
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setShowEdit(true)}
-                  >
-                    <Edit3 className="w-3.5 h-3.5 mr-1" /> Review First
-                  </Button>
-                  <Button
-                    data-testid={`button-reject-${proposal.id}`}
-                    size="sm" variant="ghost"
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    onClick={() => setShowReject(true)}
-                  >
-                    <X className="w-3.5 h-3.5 mr-1" /> Reject
-                  </Button>
-                </>
-              ) : (
-                <>
-                  <Button
-                    data-testid={`button-approve-${proposal.id}`}
-                    size="sm"
-                    onClick={() => approveMutation.mutate()}
-                    disabled={approveMutation.isPending}
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    <CheckCheck className="w-3.5 h-3.5 mr-1" />
-                    {approveMutation.isPending ? "Sending…" : "Approve & Send"}
-                  </Button>
-                  <Button data-testid={`button-edit-${proposal.id}`} size="sm" variant="outline" onClick={() => setShowEdit(true)}>
-                    <Edit3 className="w-3.5 h-3.5 mr-1" /> Edit
-                  </Button>
-                  <Button data-testid={`button-regen-${proposal.id}`} size="sm" variant="outline" onClick={() => setShowRegen(true)}>
-                    <RefreshCw className="w-3.5 h-3.5 mr-1" /> Regenerate
-                  </Button>
-                  <Button
-                    data-testid={`button-reject-${proposal.id}`}
-                    size="sm" variant="ghost"
-                    className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                    onClick={() => setShowReject(true)}
-                  >
-                    <X className="w-3.5 h-3.5 mr-1" /> Reject
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
+          {/* Actions */}
+          <div className="flex items-center gap-2 flex-wrap pt-0.5" onClick={(e) => e.stopPropagation()}>
+            <Button
+              data-testid={`button-review-${proposal.id}`}
+              size="sm"
+              variant="outline"
+              className="h-7 text-xs"
+              onClick={(e) => { e.stopPropagation(); setDrawerOpen(true); }}
+            >
+              <Eye className="w-3 h-3 mr-1" />Review
+            </Button>
+            {!isBlocked && (
+              <Button
+                data-testid={`button-approve-${proposal.id}`}
+                size="sm"
+                className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white"
+                onClick={(e) => { e.stopPropagation(); approveMutation.mutate(); }}
+                disabled={approveMutation.isPending}
+              >
+                {approveMutation.isPending
+                  ? <><RefreshCw className="w-3 h-3 mr-1 animate-spin" />Sending…</>
+                  : <><CheckCheck className="w-3 h-3 mr-1" />{isAutoEligible ? "Send Now" : "Approve & Send"}</>}
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
 
-      <RejectDialog proposalId={proposal.id} open={showReject} onClose={() => setShowReject(false)} onDone={onRefresh} />
-      {showEdit && (
-        <EditSendDialog proposal={proposal} open={showEdit} onClose={() => setShowEdit(false)} onDone={onRefresh} />
-      )}
-      {showRegen && (
-        <RegenerateDialog proposal={proposal} open={showRegen} onClose={() => setShowRegen(false)} onDone={onRefresh} />
-      )}
+      <ApprovalReviewDrawer
+        proposalId={proposal.id}
+        open={drawerOpen}
+        onClose={() => setDrawerOpen(false)}
+        onRefresh={onRefresh}
+      />
     </>
   );
 }

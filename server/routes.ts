@@ -22654,6 +22654,70 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
+  // GET /api/ai-approvals/:id — fetch full proposal detail with lead enrichment
+  app.get("/api/ai-approvals/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const { id } = req.params;
+      const [proposal] = await db.select().from(gmailAgentActions)
+        .where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId)))
+        .limit(1);
+      if (!proposal) return res.status(404).json({ message: "Not found" });
+
+      let lead: Record<string, any> | null = null;
+      try {
+        const { leadCaptureSubmissions, leadIntelligenceProfiles, teamTrainingProspects } = await import("@shared/schema");
+        if (proposal.leadId) {
+          const [sub] = await db.select().from(leadCaptureSubmissions)
+            .where(and(eq(leadCaptureSubmissions.id, proposal.leadId), eq(leadCaptureSubmissions.orgId, orgId)))
+            .limit(1);
+          if (sub) {
+            const [intel] = await db.select().from(leadIntelligenceProfiles)
+              .where(eq(leadIntelligenceProfiles.submissionId, sub.id))
+              .limit(1).catch(() => [] as any[]);
+            lead = {
+              name: sub.athleteName ?? sub.parentName ?? null,
+              email: sub.email,
+              sport: sub.sport,
+              grade: sub.grade,
+              school: sub.school,
+              bookingStatus: sub.bookingStatus,
+              pipelineStage: intel?.pipelineStage ?? sub.bookingStatus ?? null,
+              leadScore: intel?.leadScore ?? null,
+              temperature: intel?.temperature ?? null,
+              followUpStage: intel?.followUpStage ?? null,
+              lastInteractionAt: intel?.lastInteractionAt ?? sub.lastFollowUpAt ?? null,
+              followUpCount: sub.followUpCount ?? 0,
+            };
+          }
+        }
+        if (!lead && proposal.dealId) {
+          const [prospect] = await db.select().from(teamTrainingProspects)
+            .where(and(eq(teamTrainingProspects.id, proposal.dealId), eq(teamTrainingProspects.orgId, orgId)))
+            .limit(1);
+          if (prospect) {
+            lead = {
+              name: prospect.decisionMakerName || prospect.contactName || prospect.prospectName || null,
+              email: prospect.decisionMakerEmail || prospect.contactEmail || null,
+              organization: prospect.prospectName,
+              sport: prospect.sport !== "unknown" ? prospect.sport : null,
+              city: prospect.city !== "unknown" ? prospect.city : null,
+              state: prospect.state !== "unknown" ? prospect.state : null,
+              outreachStatus: prospect.outreachStatus,
+              lastContactedAt: prospect.lastContactedAt,
+              contactQuality: prospect.contactQuality,
+            };
+          }
+        }
+      } catch (_) {}
+
+      res.json({ proposal, lead });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to load proposal" });
+    }
+  });
+
   app.post("/api/ai-approvals/:id/approve", isAuthenticated, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
