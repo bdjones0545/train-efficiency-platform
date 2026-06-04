@@ -74,6 +74,7 @@ import {
   Rocket,
   UserCheck,
   CheckCheck,
+  QrCode,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -1228,12 +1229,19 @@ export function AppSidebar() {
   const activeAthleticPrograms = athleticProgramsSidebar?.filter((p: any) => p.active && (p.type === "scheduling" || !p.type)) || [];
 
   const orgSlug = (organization as any)?.slug || "";
-  const activeProgramTools = athleticProgramsSidebar?.filter((p: any) => p.active && (p.type === "pr_tracker" || p.type === "workout_builder" || p.type === "lead_capture")) || [];
+  const activeProgramTools = athleticProgramsSidebar?.filter((p: any) => p.active && (p.type === "pr_tracker" || p.type === "workout_builder" || p.type === "lead_capture" || p.type === "attendance_tracker")) || [];
   const programToolItems: NavItem[] = orgSlug
     ? activeProgramTools.map((p: any) => ({
         title: p.name,
-        url: p.type === "lead_capture" ? `/lead-capture/programs/${p.id}` : `/org/${orgSlug}/programs/${p.slug}`,
-        icon: p.type === "pr_tracker" ? BarChart2 : p.type === "lead_capture" ? Zap : ClipboardList,
+        url: p.type === "lead_capture"
+          ? `/lead-capture/programs/${p.id}`
+          : p.type === "attendance_tracker"
+          ? `/attendance-programs/${p.id}`
+          : `/org/${orgSlug}/programs/${p.slug}`,
+        icon: p.type === "pr_tracker" ? BarChart2
+          : p.type === "lead_capture" ? Zap
+          : p.type === "attendance_tracker" ? QrCode
+          : ClipboardList,
         testId: `nav-program-tool-${p.id}`,
       }))
     : [];
