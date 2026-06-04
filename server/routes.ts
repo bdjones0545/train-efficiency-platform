@@ -28123,5 +28123,274 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to load analytics" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // ORGANIZATIONAL PROCEDURES & SOP — Phase 19.4
+  // ═══════════════════════════════════════════════════════════════
+
+  const PROCEDURES_SEED = (() => {
+    const now = Date.now();
+    return [
+      {
+        id: "sop-1", title: "Lead Qualification & Scoring SOP", department: "Revenue", procedureType: "sales",
+        description: "Standard procedure for evaluating and scoring inbound leads before assigning to Email Agent outreach sequences. Ensures only qualified prospects enter the active pipeline.",
+        version: "2.1", status: "active", createdBy: "Revenue Agent", approvedBy: "AI COO",
+        complianceScore: 94, executionCount: 47, avgCompletionTime: "18m", roi: "+$14,200/mo",
+        createdAt: new Date(now - 60*24*3600000).toISOString(), updatedAt: new Date(now - 3*24*3600000).toISOString(),
+        steps: [
+          { stepNumber: 1, title: "Check lead source and context",     instructions: "Verify lead source tag (website, referral, paid, partnership). Check PAIL profile if existing contact.",            required: true,  verificationMethod: "Source tag present in CRM" },
+          { stepNumber: 2, title: "Score lead using PAIL criteria",    instructions: "Apply PAIL scoring: engagement signals 40%, demographic fit 30%, intent signals 30%. Minimum score 60 to proceed.", required: true,  verificationMethod: "PAIL score ≥60 confirmed" },
+          { stepNumber: 3, title: "Assign sequence tier",              instructions: "Score 60-74: nurture sequence. Score 75-89: standard outreach. Score 90+: priority outreach with 24hr SLA.",          required: true,  verificationMethod: "Sequence tag applied in Email Agent" },
+          { stepNumber: 4, title: "Log qualification decision",        instructions: "Record qualification reason, score, assigned sequence, and assigned agent in the lead record.",                        required: true,  verificationMethod: "CRM log entry timestamp present" },
+          { stepNumber: 5, title: "Notify Revenue Agent",              instructions: "If score 90+, send immediate notification to Revenue Agent for personal review within 2 hours.",                       required: false, verificationMethod: "Notification sent timestamp" },
+        ],
+      },
+      {
+        id: "sop-2", title: "Partnership Outreach SOP", department: "Partnerships", procedureType: "sales",
+        description: "End-to-end procedure for researching, contacting, and following up with potential partnership organisations including schools, clubs, and corporate clients.",
+        version: "3.0", status: "active", createdBy: "AI COO", approvedBy: "AI COO",
+        complianceScore: 91, executionCount: 31, avgCompletionTime: "2.5h", roi: "+$8,400/mo",
+        createdAt: new Date(now - 45*24*3600000).toISOString(), updatedAt: new Date(now - 1*24*3600000).toISOString(),
+        steps: [
+          { stepNumber: 1, title: "Research organisation",             instructions: "Use Research Agent web search to identify organisation type, size, team count, and current training setup.",            required: true,  verificationMethod: "Research report saved to lead record" },
+          { stepNumber: 2, title: "Identify decision maker",           instructions: "Find name, title, and direct email of decision maker. Minimum confidence score 0.80 required. No guessing.",          required: true,  verificationMethod: "Contact confidence ≥0.80 confirmed" },
+          { stepNumber: 3, title: "Draft personalised email",          instructions: "Email Agent drafts warm, personal email referencing the specific organisation. No template language. Sent to AI Approval Inbox.", required: true, verificationMethod: "Draft in approval inbox" },
+          { stepNumber: 4, title: "Admin approval & send",             instructions: "Human admin reviews and approves. If approved, Email Agent sends. If rejected, revise and resubmit.",                  required: true,  verificationMethod: "Send timestamp logged" },
+          { stepNumber: 5, title: "Day-4 follow-up",                  instructions: "If no reply by Day 4, Email Agent sends one follow-up with social proof (testimonial or case study).",                 required: true,  verificationMethod: "Follow-up send timestamp" },
+          { stepNumber: 6, title: "Day-10 escalation",                instructions: "If still no response, escalate to AI COO for reassessment. High-value (>$5k/yr) prospects flagged for phone outreach.", required: false, verificationMethod: "Escalation event logged" },
+          { stepNumber: 7, title: "Log outcome",                       instructions: "Record final outcome: interested, not interested, meeting booked, no response. Update pipeline stage accordingly.",      required: true,  verificationMethod: "Pipeline status updated" },
+        ],
+      },
+      {
+        id: "sop-3", title: "Client Onboarding SOP", department: "Customer Success", procedureType: "customer_success",
+        description: "Complete new client onboarding procedure from signed contract to first completed session. Designed to maximise Day-3 engagement and prevent early churn.",
+        version: "1.4", status: "active", createdBy: "Customer Success Agent", approvedBy: "AI COO",
+        complianceScore: 97, executionCount: 28, avgCompletionTime: "72h", roi: "+22% retention",
+        createdAt: new Date(now - 30*24*3600000).toISOString(), updatedAt: new Date(now - 5*24*3600000).toISOString(),
+        steps: [
+          { stepNumber: 1, title: "Send welcome sequence (Day 0)",     instructions: "Automated welcome email + platform access credentials sent within 1 hour of contract signing.",                         required: true,  verificationMethod: "Welcome email delivery confirmed" },
+          { stepNumber: 2, title: "Book first session (Day 0–1)",      instructions: "Scheduling Agent reaches out to book first session within 24 hours. Use PAIL preferred time slots if available.",       required: true,  verificationMethod: "Session booking confirmed" },
+          { stepNumber: 3, title: "Day-1 check-in",                   instructions: "Customer Success Agent sends personalised check-in confirming platform access, session booking, and answering questions.", required: true,  verificationMethod: "Check-in sent + response logged" },
+          { stepNumber: 4, title: "Day-3 engagement check",            instructions: "Critical window. Verify client has logged in ≥2 times. If not, trigger immediate proactive check-in call/message.",     required: true,  verificationMethod: "Login count ≥2 OR intervention logged" },
+          { stepNumber: 5, title: "First session completed",           instructions: "Confirm session attendance. Send post-session survey. Log PAIL session outcome data.",                                    required: true,  verificationMethod: "Session attendance marked + survey sent" },
+          { stepNumber: 6, title: "Day-7 onboarding complete",         instructions: "Send onboarding completion message. Introduce next features. Set 30-day check-in reminder.",                             required: true,  verificationMethod: "Completion message sent" },
+        ],
+      },
+      {
+        id: "sop-4", title: "Campaign Launch SOP", department: "Marketing", procedureType: "marketing",
+        description: "Step-by-step procedure for planning, approving, launching, and measuring any email or outreach campaign. Ensures consistent execution and prevents unauthorised sends.",
+        version: "1.1", status: "active", createdBy: "Email Agent", approvedBy: "AI COO",
+        complianceScore: 88, executionCount: 14, avgCompletionTime: "48h", roi: "+11% conversion",
+        createdAt: new Date(now - 20*24*3600000).toISOString(), updatedAt: new Date(now - 7*24*3600000).toISOString(),
+        steps: [
+          { stepNumber: 1, title: "Define campaign objective",          instructions: "State specific goal: lead recovery, retention, expansion, referral, or new acquisition. Attach success metric.",         required: true,  verificationMethod: "Objective + metric documented" },
+          { stepNumber: 2, title: "Build audience segment",             instructions: "Intelligence Engine generates audience list based on objective. Verify list quality — no bounced/suppressed addresses.", required: true,  verificationMethod: "Audience list validated" },
+          { stepNumber: 3, title: "Draft email sequence",               instructions: "Email Agent drafts all sequence emails. Check: personalisation, no template language, Tuesday–Thursday 10AM–2PM send window.", required: true, verificationMethod: "All drafts in approval inbox" },
+          { stepNumber: 4, title: "Compliance check",                   instructions: "Verify: no existing clients in prospect list, bounce rate <3%, unsubscribe link present, GDPR compliance.",            required: true,  verificationMethod: "Compliance checklist signed off" },
+          { stepNumber: 5, title: "Admin approval",                     instructions: "Human admin reviews all emails, audience, and timing. Approve or reject. No campaign launches without approval.",        required: true,  verificationMethod: "Approval timestamp logged" },
+          { stepNumber: 6, title: "Launch & monitor",                   instructions: "Email Agent launches sequence. Monitor open rate, click rate, reply rate. Alert if bounce rate exceeds 3%.",            required: true,  verificationMethod: "Launch + monitoring active" },
+          { stepNumber: 7, title: "Post-campaign analysis",             instructions: "After campaign ends, Intelligence Engine generates outcome report. Log lessons and update Organisational Memory.",        required: true,  verificationMethod: "Report saved to Org Memory" },
+        ],
+      },
+      {
+        id: "sop-5", title: "Scheduling Capacity Management SOP", department: "Operations", procedureType: "operations",
+        description: "Procedure for monitoring coach availability, managing booking capacity, and preventing over-scheduling across all coaches and session types.",
+        version: "1.0", status: "active", createdBy: "Scheduling Agent", approvedBy: "AI COO",
+        complianceScore: 99, executionCount: 84, avgCompletionTime: "5m", roi: "97% capacity",
+        createdAt: new Date(now - 15*24*3600000).toISOString(), updatedAt: new Date(now - 2*24*3600000).toISOString(),
+        steps: [
+          { stepNumber: 1, title: "Daily capacity check (6 AM)",        instructions: "Scheduling Agent checks all coach calendars for the next 7 days. Flag any coach at >85% capacity.",                     required: true,  verificationMethod: "Capacity report generated" },
+          { stepNumber: 2, title: "Peak window protection",             instructions: "Ensure Tuesday/Thursday 6–8 AM and Saturday 9 AM–12 PM slots are never auto-released below 20% buffer.",               required: true,  verificationMethod: "Buffer slots confirmed" },
+          { stepNumber: 3, title: "Waitlist management",                instructions: "For fully booked slots, add client to waitlist. Auto-notify within 2 hours if a slot opens.",                            required: true,  verificationMethod: "Waitlist entries logged" },
+          { stepNumber: 4, title: "Off-peak optimisation",              instructions: "For slots <40% capacity for 48+ hours, trigger 10% discount offer to relevant segment (off-peak interested clients).",   required: false, verificationMethod: "Discount offer sent" },
+        ],
+      },
+      {
+        id: "sop-6", title: "AI Approval & Governance SOP", department: "Operations", procedureType: "governance",
+        description: "Governing procedure for all AI-initiated actions that require human oversight. Defines approval tiers, SLAs, and escalation paths.",
+        version: "2.0", status: "active", createdBy: "CEO Heartbeat", approvedBy: "AI COO",
+        complianceScore: 100, executionCount: 203, avgCompletionTime: "4.2h", roi: "Zero violations",
+        createdAt: new Date(now - 80*24*3600000).toISOString(), updatedAt: new Date(now - 4*24*3600000).toISOString(),
+        steps: [
+          { stepNumber: 1, title: "Action generated by AI agent",       instructions: "Any AI agent creates an action (email, outreach, financial, communication). Action enters pending queue.",               required: true,  verificationMethod: "Action logged with agent ID + timestamp" },
+          { stepNumber: 2, title: "Autonomous execution check",         instructions: "Autonomy Engine evaluates: confidence ≥85%, not financial >$500, not existing client comm. If all pass: auto-execute.", required: true,  verificationMethod: "Policy check logged with result" },
+          { stepNumber: 3, title: "Human review (if required)",         instructions: "Actions that fail autonomy check appear in AI Approval Inbox. Human admin reviews within 24-hour SLA.",                   required: true,  verificationMethod: "Review timestamp within 24h" },
+          { stepNumber: 4, title: "Approve or reject",                  instructions: "If approved: action executes immediately. If rejected: action moves to dead-letter queue with reason.",                  required: true,  verificationMethod: "Decision timestamp + outcome logged" },
+          { stepNumber: 5, title: "Outcome tracking",                   instructions: "Revenue Outcome Engine tracks result of every approved action. Feeds back into agent confidence scoring.",                required: true,  verificationMethod: "Outcome event logged within 7 days" },
+        ],
+      },
+      {
+        id: "sop-7", title: "Lead Recovery SOP", department: "Revenue", procedureType: "sales",
+        description: "Procedure for re-engaging leads that have gone inactive for 30+ days. Derived from the Lead Recovery Playbook in Organisational Memory.",
+        version: "1.2", status: "active", createdBy: "Revenue Agent", approvedBy: "Revenue Agent",
+        complianceScore: 86, executionCount: 19, avgCompletionTime: "14 days", roi: "14% recovery",
+        createdAt: new Date(now - 50*24*3600000).toISOString(), updatedAt: new Date(now - 6*24*3600000).toISOString(),
+        steps: [
+          { stepNumber: 1, title: "Identify inactive leads",            instructions: "Intelligence Engine surfaces all leads with no engagement activity for ≥30 days. Export list for review.",               required: true,  verificationMethod: "Inactive list generated" },
+          { stepNumber: 2, title: "PAIL context check",                 instructions: "For each lead, retrieve PAIL profile — last interest area, preferred format, previous objections.",                       required: true,  verificationMethod: "PAIL data attached to lead record" },
+          { stepNumber: 3, title: "Personalised Day-0 email",           instructions: "Email Agent crafts personalised email referencing lead's specific interest. No generic language. Approval required.",      required: true,  verificationMethod: "Approved email sent" },
+          { stepNumber: 4, title: "Day-3 social proof follow-up",       instructions: "If no response by Day 3, send testimonial from a similar client type (parent, club, corporate).",                         required: true,  verificationMethod: "Follow-up sent on Day 3" },
+          { stepNumber: 5, title: "Day-7 final value offer",            instructions: "Final email — specific value offer (free trial session, consultation, or report). Clear call to action.",                 required: true,  verificationMethod: "Final email sent" },
+          { stepNumber: 6, title: "Suppress or convert",               instructions: "No response after Day 7: suppress for 60 days and tag as cold. Response at any stage: move to active pipeline.",          required: true,  verificationMethod: "Lead status updated" },
+        ],
+      },
+      {
+        id: "sop-8", title: "Retention & Expansion SOP", department: "Customer Success", procedureType: "customer_success",
+        description: "Procedure for maximising client lifetime value through proactive retention interventions and timely expansion proposals at the 85-day trigger point.",
+        version: "1.0", status: "active", createdBy: "Customer Success Agent", approvedBy: "AI COO",
+        complianceScore: 93, executionCount: 11, avgCompletionTime: "30 days", roi: "31% upgrade",
+        createdAt: new Date(now - 18*24*3600000).toISOString(), updatedAt: new Date(now - 9*24*3600000).toISOString(),
+        steps: [
+          { stepNumber: 1, title: "30-day usage review",                instructions: "At Day 30, Intelligence Engine scores feature adoption: sessions booked, PAIL active, payments connected. Flag low adopters.", required: true, verificationMethod: "Usage report generated" },
+          { stepNumber: 2, title: "Low adopter intervention (if needed)", instructions: "Clients using <2 features at Day 30: Scheduling Agent books proactive coaching call. CSM notified.", required: false, verificationMethod: "Intervention logged" },
+          { stepNumber: 3, title: "Day-60 feature spotlight",            instructions: "All clients receive personalised feature spotlight email highlighting features relevant to their usage pattern.", required: true, verificationMethod: "Email sent + open tracked" },
+          { stepNumber: 4, title: "Day-85 expansion proposal",           instructions: "Revenue Agent generates personalised upgrade proposal for clients using 3+ features. Present 2-week trial of next tier.", required: true, verificationMethod: "Proposal sent and tracked" },
+          { stepNumber: 5, title: "Day-99 decision follow-up",           instructions: "If no upgrade decision in 14 days, Customer Success Agent books success call to address objections.", required: false, verificationMethod: "Call booked or outcome logged" },
+        ],
+      },
+    ];
+  })();
+
+  const SOP_VERSIONS = [
+    { id: "v-1", procedureId: "sop-1", versionNumber: "1.0", changeSummary: "Initial qualification SOP — manual scoring only", reasonForChange: "Launch", performanceImpact: "Baseline 68% compliance", createdAt: new Date(Date.now() - 90*24*3600000).toISOString() },
+    { id: "v-2", procedureId: "sop-1", versionNumber: "2.0", changeSummary: "Integrated PAIL scoring — automated threshold gating", reasonForChange: "Manual scoring was inconsistent across agents", performanceImpact: "+19% compliance, +11% conversion rate", createdAt: new Date(Date.now() - 30*24*3600000).toISOString() },
+    { id: "v-3", procedureId: "sop-1", versionNumber: "2.1", changeSummary: "Added 90+ score priority notification step", reasonForChange: "High-score leads were sitting in standard queue", performanceImpact: "+8% same-day response on priority leads", createdAt: new Date(Date.now() - 3*24*3600000).toISOString() },
+    { id: "v-4", procedureId: "sop-2", versionNumber: "1.0", changeSummary: "Initial partnership outreach process", reasonForChange: "Launch", performanceImpact: "Baseline 3% response rate (general inbox)", createdAt: new Date(Date.now() - 80*24*3600000).toISOString() },
+    { id: "v-5", procedureId: "sop-2", versionNumber: "2.0", changeSummary: "Mandatory decision-maker research before outreach", reasonForChange: "General inbox emails producing 2% response rate only", performanceImpact: "+16% response rate (decision-maker direct)", createdAt: new Date(Date.now() - 40*24*3600000).toISOString() },
+    { id: "v-6", procedureId: "sop-2", versionNumber: "3.0", changeSummary: "Added Day-10 escalation and high-value (>$5k) fast-track", reasonForChange: "High-value prospects were aging in pipeline without follow-up", performanceImpact: "+$8,400/mo from recovered high-value prospects", createdAt: new Date(Date.now() - 1*24*3600000).toISOString() },
+    { id: "v-7", procedureId: "sop-6", versionNumber: "1.0", changeSummary: "Manual approval for all AI actions", reasonForChange: "Launch governance requirement", performanceImpact: "100% approval coverage, 6.1h avg review time", createdAt: new Date(Date.now() - 120*24*3600000).toISOString() },
+    { id: "v-8", procedureId: "sop-6", versionNumber: "2.0", changeSummary: "Added autonomy engine — auto-execute if confidence ≥85%", reasonForChange: "Admin review bottleneck causing 6hr delays on routine actions", performanceImpact: "4.2h avg review time, -4.2h admin/week, zero violations", createdAt: new Date(Date.now() - 7*24*3600000).toISOString() },
+  ];
+
+  const SOP_EXECUTIONS = (() => {
+    const now = Date.now();
+    return [
+      { id: "ex-1", procedureId: "sop-5", procedureTitle: "Scheduling Capacity Management SOP", agentId: "Scheduling Agent", executionStatus: "completed", complianceScore: 100, startedAt: new Date(now - 6*3600000).toISOString(), completedAt: new Date(now - 5.9*3600000).toISOString(), stepsCompleted: 4, totalSteps: 4 },
+      { id: "ex-2", procedureId: "sop-6", procedureTitle: "AI Approval & Governance SOP",       agentId: "AI COO",            executionStatus: "completed", complianceScore: 100, startedAt: new Date(now - 4*3600000).toISOString(), completedAt: new Date(now - 3.5*3600000).toISOString(), stepsCompleted: 5, totalSteps: 5 },
+      { id: "ex-3", procedureId: "sop-2", procedureTitle: "Partnership Outreach SOP",           agentId: "Email Agent",       executionStatus: "in_progress",complianceScore: 71, startedAt: new Date(now - 2*3600000).toISOString(), completedAt: null, stepsCompleted: 5, totalSteps: 7 },
+      { id: "ex-4", procedureId: "sop-1", procedureTitle: "Lead Qualification SOP",             agentId: "Revenue Agent",     executionStatus: "completed", complianceScore: 94, startedAt: new Date(now - 1.5*3600000).toISOString(), completedAt: new Date(now - 1.2*3600000).toISOString(), stepsCompleted: 5, totalSteps: 5 },
+      { id: "ex-5", procedureId: "sop-7", procedureTitle: "Lead Recovery SOP",                  agentId: "Email Agent",       executionStatus: "in_progress",complianceScore: 83, startedAt: new Date(now - 30*60000).toISOString(), completedAt: null, stepsCompleted: 3, totalSteps: 6 },
+      { id: "ex-6", procedureId: "sop-3", procedureTitle: "Client Onboarding SOP",             agentId: "Customer Success Agent", executionStatus: "completed", complianceScore: 97, startedAt: new Date(now - 8*3600000).toISOString(), completedAt: new Date(now - 2*3600000).toISOString(), stepsCompleted: 6, totalSteps: 6 },
+    ];
+  })();
+
+  // GET /api/procedures/overview
+  app.get("/api/procedures/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const active = PROCEDURES_SEED.filter(p => p.status === "active").length;
+      const avgCompliance = Math.round(PROCEDURES_SEED.reduce((s, p) => s + p.complianceScore, 0) / PROCEDURES_SEED.length);
+      const totalExecutions = PROCEDURES_SEED.reduce((s, p) => s + p.executionCount, 0);
+      const topRoi = PROCEDURES_SEED.sort((a, b) => b.executionCount - a.executionCount)[0];
+      const depts = [...new Set(PROCEDURES_SEED.map(p => p.department))];
+      res.json({ total: PROCEDURES_SEED.length, active, avgComplianceScore: avgCompliance, totalExecutions, departmentCoverage: depts.length, topRoiSop: { title: topRoi.title, roi: topRoi.roi }, needsReview: PROCEDURES_SEED.filter(p => p.complianceScore < 90).length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load overview" }); }
+  });
+
+  // GET /api/procedures/library
+  app.get("/api/procedures/library", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      res.json({ procedures: PROCEDURES_SEED, total: PROCEDURES_SEED.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load library" }); }
+  });
+
+  // GET /api/procedures/compliance
+  app.get("/api/procedures/compliance", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const byDept = PROCEDURES_SEED.reduce((acc, p) => {
+        if (!acc[p.department]) acc[p.department] = { total: 0, totalScore: 0 };
+        acc[p.department].total++;
+        acc[p.department].totalScore += p.complianceScore;
+        return acc;
+      }, {} as Record<string, { total: number; totalScore: number }>);
+      const deptCompliance = Object.entries(byDept).map(([dept, data]) => ({ department: dept, avgCompliance: Math.round(data.totalScore / data.total), sopCount: data.total }));
+      const agentCompliance = [
+        { agent: "Scheduling Agent", avgCompliance: 99, executions: 84, fullyCompliant: 82 },
+        { agent: "AI COO",           avgCompliance: 100,executions: 203,fullyCompliant: 203 },
+        { agent: "Email Agent",      avgCompliance: 87, executions: 64, fullyCompliant: 54 },
+        { agent: "Customer Success Agent", avgCompliance: 95, executions: 39, fullyCompliant: 37 },
+        { agent: "Revenue Agent",    avgCompliance: 90, executions: 66, fullyCompliant: 57 },
+        { agent: "Research Agent",   avgCompliance: 91, executions: 31, fullyCompliant: 28 },
+      ];
+      const orgAvg = Math.round(PROCEDURES_SEED.reduce((s, p) => s + p.complianceScore, 0) / PROCEDURES_SEED.length);
+      res.json({ orgComplianceScore: orgAvg, departmentCompliance: deptCompliance, agentCompliance, fullyCompliant: 5, partialCompliant: 2, nonCompliant: 1, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load compliance" }); }
+  });
+
+  // GET /api/procedures/versions
+  app.get("/api/procedures/versions", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const withVersions = PROCEDURES_SEED.map(p => ({ id: p.id, title: p.title, department: p.department, currentVersion: p.version, versions: SOP_VERSIONS.filter(v => v.procedureId === p.id) })).filter(p => p.versions.length > 0);
+      res.json({ procedures: withVersions, totalVersionEvents: SOP_VERSIONS.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load versions" }); }
+  });
+
+  // GET /api/procedures/analytics
+  app.get("/api/procedures/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const sorted = [...PROCEDURES_SEED].sort((a, b) => b.executionCount - a.executionCount);
+      res.json({
+        totalProcedures: PROCEDURES_SEED.length,
+        activeProcedures: PROCEDURES_SEED.filter(p => p.status === "active").length,
+        avgComplianceScore: Math.round(PROCEDURES_SEED.reduce((s, p) => s + p.complianceScore, 0) / PROCEDURES_SEED.length),
+        totalExecutions: PROCEDURES_SEED.reduce((s, p) => s + p.executionCount, 0),
+        mostUsedSops: sorted.slice(0, 5).map(p => ({ id: p.id, title: p.title, executionCount: p.executionCount, complianceScore: p.complianceScore })),
+        highestRoiSops: [...PROCEDURES_SEED].filter(p => p.roi).slice(0, 5).map(p => ({ id: p.id, title: p.title, roi: p.roi, department: p.department })),
+        needsReview: PROCEDURES_SEED.filter(p => p.complianceScore < 90),
+        byDepartment: PROCEDURES_SEED.reduce((acc, p) => { acc[p.department] = (acc[p.department] ?? 0) + 1; return acc; }, {} as Record<string, number>),
+        recentExecutions: SOP_EXECUTIONS.slice(0, 6),
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load analytics" }); }
+  });
+
+  // POST /api/procedures/create
+  app.post("/api/procedures/create", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { title, department, procedureType, description, steps } = req.body;
+      if (!title || !department) return res.status(400).json({ message: "title and department required" });
+      res.json({ success: true, procedure: { id: `sop-${Date.now()}`, title, department, procedureType: procedureType ?? "operations", description: description ?? "", version: "1.0", status: "draft", createdBy: "Human Admin", approvedBy: null, complianceScore: 0, executionCount: 0, avgCompletionTime: "—", roi: "—", steps: steps ?? [], createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to create SOP" }); }
+  });
+
+  // POST /api/procedures/convert
+  app.post("/api/procedures/convert", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { sourceType, sourceId, sourceTitle, department } = req.body;
+      if (!sourceTitle) return res.status(400).json({ message: "sourceTitle required" });
+      res.json({ success: true, converted: true, procedure: { id: `sop-conv-${Date.now()}`, title: `${sourceTitle} — SOP`, department: department ?? "Operations", version: "1.0", status: "draft", sourceType: sourceType ?? "memory", sourceId: sourceId ?? "unknown", createdAt: new Date().toISOString() } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to convert to SOP" }); }
+  });
+
+  // POST /api/procedures/execute
+  app.post("/api/procedures/execute", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { procedureId, agentId } = req.body;
+      if (!procedureId) return res.status(400).json({ message: "procedureId required" });
+      const proc = PROCEDURES_SEED.find(p => p.id === procedureId);
+      res.json({ success: true, execution: { id: `ex-${Date.now()}`, procedureId, procedureTitle: proc?.title ?? "Unknown SOP", agentId: agentId ?? "Human Admin", executionStatus: "in_progress", complianceScore: 0, stepsCompleted: 0, totalSteps: proc?.steps?.length ?? 0, startedAt: new Date().toISOString() } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to start execution" }); }
+  });
+
+  // POST /api/procedures/verify
+  app.post("/api/procedures/verify", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { executionId, complianceScore, approved, notes } = req.body;
+      if (!executionId) return res.status(400).json({ message: "executionId required" });
+      res.json({ success: true, executionId, approved: approved ?? true, complianceScore: complianceScore ?? 95, notes: notes ?? "", verifiedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to verify execution" }); }
+  });
+
+  // POST /api/procedures/update-version
+  app.post("/api/procedures/update-version", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { procedureId, changeSummary, reasonForChange, performanceImpact } = req.body;
+      if (!procedureId || !changeSummary) return res.status(400).json({ message: "procedureId and changeSummary required" });
+      const proc = PROCEDURES_SEED.find(p => p.id === procedureId);
+      const currentVersion = proc?.version ?? "1.0";
+      const [maj, min] = currentVersion.split(".").map(Number);
+      const newVersion = `${maj}.${min + 1}`;
+      res.json({ success: true, procedureId, previousVersion: currentVersion, newVersion, changeSummary, reasonForChange: reasonForChange ?? "", performanceImpact: performanceImpact ?? "", createdAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to update version" }); }
+  });
+
   return httpServer;
 }

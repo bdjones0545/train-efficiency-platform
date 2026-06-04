@@ -757,6 +757,20 @@ export default function AdminOrgMemoryPage() {
         {activeTab === "analytics"  && <AnalyticsTab />}
       </div>
 
+      {/* Forward nav → SOP Operating System */}
+      <Link href="/admin/procedures">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-orange-500/5 hover:from-primary/10 hover:to-orange-500/10 transition-colors cursor-pointer group" data-testid="nav-procedures">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <ClipboardList className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Organizational Procedures &amp; SOP Operating System</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Transform knowledge into executable standards — SOPs, checklists, compliance tracking, and version control for every department procedure.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
+
       {/* Architecture note */}
       <div className="p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-violet-500/5" data-testid="architecture-complete-19-3">
         <div className="flex items-start gap-3">
