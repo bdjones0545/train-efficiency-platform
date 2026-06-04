@@ -28392,5 +28392,147 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to update version" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // GOVERNANCE & DECISION MANAGEMENT — Phase 19.5
+  // ═══════════════════════════════════════════════════════════════
+
+  const GOV_DECISIONS = (() => {
+    const now = Date.now();
+    return [
+      { id: "gd-1",  title: "Youth Performance Pricing Increase — $149 → $179",          decisionType: "financial",   status: "measured",       proposedBy: "Revenue Agent",     reviewedBy: "AI COO",   approvedBy: "AI COO",   priority: "high",   riskLevel: "low",    expectedImpact: "+10% revenue from youth cohort",                             actualImpact: "+18% revenue, zero cancellations in 30 days",        confidenceScore: 97, roi: "+$4,200/mo",  successScore: 94, createdAt: new Date(now - 90*24*3600000).toISOString(), implementedAt: new Date(now - 45*24*3600000).toISOString(), closedAt: null,      lessonsLearned: "Demand-led pricing works when capacity utilisation exceeds 90% for 6+ weeks." },
+      { id: "gd-2",  title: "AI Autonomy Engine — Enable Level 2 Auto-Execution",         decisionType: "platform",    status: "implemented",    proposedBy: "AI COO",            reviewedBy: "CEO",      approvedBy: "CEO",      priority: "critical",riskLevel: "medium", expectedImpact: "-4 hrs/week admin burden, no increase in errors",            actualImpact: "-4.2 hrs/week, zero governance violations",          confidenceScore: 94, roi: "-",           successScore: 91, createdAt: new Date(now - 75*24*3600000).toISOString(), implementedAt: new Date(now - 30*24*3600000).toISOString(), closedAt: null,      lessonsLearned: "Auto-execution at confidence ≥85% is safe with dead-letter queue as backstop." },
+      { id: "gd-3",  title: "Hire Second Performance Coach — Q3 Capacity Expansion",      decisionType: "workforce",   status: "approved",       proposedBy: "Scheduling Agent",  reviewedBy: "AI COO",   approvedBy: "CEO",      priority: "high",   riskLevel: "medium", expectedImpact: "+40% session capacity, enable peak demand satisfaction",     actualImpact: null,                                                 confidenceScore: 82, roi: "+$6,800/mo",  successScore: null, createdAt: new Date(now - 20*24*3600000).toISOString(), implementedAt: null, closedAt: null, lessonsLearned: null },
+      { id: "gd-4",  title: "4-Touch Outreach Policy — Replace 6-Touch Sequence",         decisionType: "operational", status: "implemented",    proposedBy: "Email Agent",       reviewedBy: "Revenue Agent", approvedBy: "AI COO", priority: "medium", riskLevel: "low", expectedImpact: "-50% unsubscribe rate, maintain conversion",               actualImpact: "-62% unsubscribes (12%→3.1%), conversion maintained at 8.4%", confidenceScore: 91, roi: "+3.1% retention", successScore: 97, createdAt: new Date(now - 60*24*3600000).toISOString(), implementedAt: new Date(now - 25*24*3600000).toISOString(), closedAt: null, lessonsLearned: "Fewer touches with higher relevance outperform volume-based sequences." },
+      { id: "gd-5",  title: "Partnership Outreach — Decision-Maker Mandate",              decisionType: "policy",      status: "implemented",    proposedBy: "Research Agent",    reviewedBy: "AI COO",   approvedBy: "AI COO",   priority: "medium", riskLevel: "low",    expectedImpact: "+15% partnership response rate",                             actualImpact: "+16% response rate (vs 2% general inbox)",           confidenceScore: 89, roi: "+$8,400/mo",  successScore: 93, createdAt: new Date(now - 45*24*3600000).toISOString(), implementedAt: new Date(now - 20*24*3600000).toISOString(), closedAt: null,      lessonsLearned: "Research before outreach is non-negotiable. 9x improvement vs cold inbox." },
+      { id: "gd-6",  title: "PAIL — Deploy Athlete Intelligence Layer",                   decisionType: "platform",    status: "implemented",    proposedBy: "AI COO",            reviewedBy: "CEO",      approvedBy: "CEO",      priority: "critical",riskLevel: "low",    expectedImpact: "Personalised scheduling increases client LTV by 15%",         actualImpact: "+17% LTV, +22% session rebooking rate",              confidenceScore: 96, roi: "+$3,100/mo",  successScore: 96, createdAt: new Date(now - 80*24*3600000).toISOString(), implementedAt: new Date(now - 50*24*3600000).toISOString(), closedAt: null,      lessonsLearned: "AI memory of individual athlete goals and preferences significantly outperforms generic scheduling." },
+      { id: "gd-7",  title: "Introduce Referral Programme — Q2 2026 Launch",              decisionType: "strategic",   status: "measured",       proposedBy: "Intelligence Engine",reviewedBy: "Revenue Agent", approvedBy: "CEO", priority: "high",   riskLevel: "low",    expectedImpact: "+12% new client acquisition, -30% CAC",              actualImpact: "+14% acquisition, CAC $23 vs $94 paid ads",          confidenceScore: 88, roi: "-75% CAC",    successScore: 90, createdAt: new Date(now - 55*24*3600000).toISOString(), implementedAt: new Date(now - 18*24*3600000).toISOString(), closedAt: null,      lessonsLearned: "PAIL score >80 clients generate 3x more quality referrals." },
+      { id: "gd-8",  title: "Day-3 Onboarding Check — Mandatory Intervention Protocol",   decisionType: "operational", status: "implemented",    proposedBy: "Customer Success Agent",reviewedBy:"AI COO",  approvedBy: "AI COO",   priority: "high",   riskLevel: "low",    expectedImpact: "Recover 60% of at-risk Day-3 clients",                        actualImpact: "71% of at-risk clients recovered at Day 3",           confidenceScore: 92, roi: "+$2,800/mo",  successScore: 95, createdAt: new Date(now - 40*24*3600000).toISOString(), implementedAt: new Date(now - 15*24*3600000).toISOString(), closedAt: null,      lessonsLearned: "Early intervention at Day 3 is 5x cheaper than re-acquisition after churn." },
+      { id: "gd-9",  title: "Expand to Corporate Wellness Vertical",                       decisionType: "strategic",   status: "under_review",   proposedBy: "AI COO",            reviewedBy: null,       approvedBy: null,       priority: "critical",riskLevel: "high",   expectedImpact: "+35% TAM, +$15,000/mo revenue potential",                    actualImpact: null,                                                 confidenceScore: 71, roi: null,          successScore: null, createdAt: new Date(now - 5*24*3600000).toISOString(), implementedAt: null, closedAt: null, lessonsLearned: null },
+      { id: "gd-10", title: "Automate Session Confirmation — Remove Manual Step",          decisionType: "operational", status: "proposed",       proposedBy: "Scheduling Agent",  reviewedBy: null,       approvedBy: null,       priority: "medium", riskLevel: "low",    expectedImpact: "-2 hrs/week admin, 100% confirmation rate",                  actualImpact: null,                                                 confidenceScore: 88, roi: "+1.8h/wk",    successScore: null, createdAt: new Date(now - 2*24*3600000).toISOString(), implementedAt: null, closedAt: null, lessonsLearned: null },
+      { id: "gd-11", title: "Acquire HR & Payroll Integration Partner",                    decisionType: "financial",   status: "proposed",       proposedBy: "AI COO",            reviewedBy: null,       approvedBy: null,       priority: "medium", riskLevel: "medium", expectedImpact: "Expand platform to full business OS, +25% enterprise deal value", actualImpact: null,                                            confidenceScore: 74, roi: null,          successScore: null, createdAt: new Date(now - 1*24*3600000).toISOString(), implementedAt: null, closedAt: null, lessonsLearned: null },
+      { id: "gd-12", title: "White-Label Platform Pricing — Partner Tier Launch",          decisionType: "strategic",   status: "under_review",   proposedBy: "Revenue Agent",     reviewedBy: "AI COO",   approvedBy: null,       priority: "high",   riskLevel: "medium", expectedImpact: "+$25,000/mo ARR from partner resellers within 6 months",     actualImpact: null,                                                 confidenceScore: 77, roi: null,          successScore: null, createdAt: new Date(now - 3*24*3600000).toISOString(), implementedAt: null, closedAt: null, lessonsLearned: null },
+    ];
+  })();
+
+  const GOV_POLICIES = [
+    { id: "gp-1",  title: "Financial Commitment Threshold",          category: "Finance",      description: "Any financial commitment or discount exceeding $500 requires human approval. AI agents are blocked from auto-executing financial actions above this threshold at all autonomy levels.", approvalRequired: "Human Admin", riskThreshold: "medium", active: true,  version: "2.0" },
+    { id: "gp-2",  title: "New Agent Deployment Policy",             category: "Platform",     description: "Deploying a new AI agent or expanding an existing agent's scope requires AI COO review and CEO approval. Includes sandbox testing for minimum 48 hours before production.", approvalRequired: "CEO",          riskThreshold: "high",   active: true,  version: "1.1" },
+    { id: "gp-3",  title: "Autonomy Level Escalation Policy",        category: "Governance",   description: "Increasing AI autonomy from any level requires explicit review showing: zero violations at current level for 30+ days, compliance score ≥95%, and CEO sign-off.", approvalRequired: "CEO",          riskThreshold: "high",   active: true,  version: "1.2" },
+    { id: "gp-4",  title: "Client Communication Approval Policy",    category: "Communications","description": "All emails to existing clients must pass through the AI Approval Inbox before send. Automated sends permitted only for: session reminders (48hr window), booking confirmations, and cancellation notices.", approvalRequired: "Human Admin", riskThreshold: "medium", active: true,  version: "3.0" },
+    { id: "gp-5",  title: "Strategic Decision Review Policy",        category: "Strategy",     description: "Any decision with revenue impact >$5,000/mo or changing market positioning requires executive review before implementation. AI COO prepares briefing. CEO has 48hr review window.", approvalRequired: "CEO",         riskThreshold: "high",   active: true,  version: "1.0" },
+    { id: "gp-6",  title: "Partnership Agreement Policy",            category: "Partnerships", description: "Partnership agreements with financial obligations >$1,000 or exclusivity clauses require AI COO risk assessment and CEO approval. Legal review recommended for multi-year agreements.", approvalRequired: "CEO",          riskThreshold: "high",   active: true,  version: "1.0" },
+    { id: "gp-7",  title: "Workforce Decision Policy",               category: "HR",           description: "Hiring, contract changes, and role expansions require AI COO recommendation with supporting data (capacity analysis, revenue justification) before CEO approval.", approvalRequired: "CEO",          riskThreshold: "medium", active: true,  version: "1.0" },
+    { id: "gp-8",  title: "Data Retention & Privacy Policy",         category: "Compliance",   description: "Client data is retained for a maximum of 36 months post-contract end. All AI agents are restricted from accessing data outside their functional scope. Breaches trigger CEO Heartbeat alert.", approvalRequired: "AI COO",       riskThreshold: "critical","active": true,  version: "1.0" },
+  ];
+
+  const GOV_REVIEWS = [
+    { id: "gr-1", decisionId: "gd-1",  reviewer: "AI COO",           recommendation: "approve", rationale: "Demand analysis confirms sustained 94% capacity. Pricing increase is defensible and unlikely to trigger churn based on 6-week cohort data.", riskScore: 18, createdAt: new Date(Date.now() - 88*24*3600000).toISOString() },
+    { id: "gr-2", decisionId: "gd-2",  reviewer: "AI COO",           recommendation: "approve", rationale: "Level 2 autonomy with dead-letter failsafe poses minimal risk. Expected admin hour savings are material. Recommend 30-day monitoring with weekly compliance reports.", riskScore: 34, createdAt: new Date(Date.now() - 72*24*3600000).toISOString() },
+    { id: "gr-3", decisionId: "gd-2",  reviewer: "CEO",              recommendation: "approve", rationale: "Comfortable with Level 2 given the financial threshold gate. Will review again at 30 days.", riskScore: 28, createdAt: new Date(Date.now() - 70*24*3600000).toISOString() },
+    { id: "gr-4", decisionId: "gd-9",  reviewer: "AI COO",           recommendation: "escalate", rationale: "Corporate wellness is a significant vertical expansion requiring new service design, pricing model, and potentially new coach recruitment. Risk is high but upside is material. Recommending CEO strategic review before any resource commitment.", riskScore: 72, createdAt: new Date(Date.now() - 3*24*3600000).toISOString() },
+    { id: "gr-5", decisionId: "gd-12", reviewer: "AI COO",           recommendation: "approve", rationale: "White-label partner tier is a natural extension of existing multi-tenancy architecture. Pricing model is well-validated. Risk is medium — primarily around partner support overhead. Recommend launching with 3 pilot partners.", riskScore: 41, createdAt: new Date(Date.now() - 1*24*3600000).toISOString() },
+  ];
+
+  // GET /api/governance/overview
+  app.get("/api/governance/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const queue = GOV_DECISIONS.filter(d => ["proposed", "under_review"].includes(d.status));
+      const implemented = GOV_DECISIONS.filter(d => ["implemented", "measured", "closed"].includes(d.status));
+      const successScores = implemented.filter(d => d.successScore != null).map(d => d.successScore as number);
+      const avgSuccess = successScores.length ? Math.round(successScores.reduce((s, v) => s + v, 0) / successScores.length) : 0;
+      const highRisk = GOV_DECISIONS.filter(d => d.riskLevel === "high" || d.riskLevel === "critical");
+      const allApproved = GOV_DECISIONS.filter(d => d.status !== "proposed" && d.status !== "under_review");
+      res.json({ totalDecisions: GOV_DECISIONS.length, approvalQueue: queue.length, activeDecisions: GOV_DECISIONS.filter(d => d.status === "approved" || d.status === "implemented").length, highRiskReviews: highRisk.length, avgApprovalTimeDays: 1.8, decisionSuccessRate: avgSuccess, governanceComplianceScore: 97, totalPolicies: GOV_POLICIES.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load overview" }); }
+  });
+
+  // GET /api/governance/decisions
+  app.get("/api/governance/decisions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const type   = req.query.type   as string | undefined;
+      let decisions = [...GOV_DECISIONS];
+      if (status) decisions = decisions.filter(d => d.status === status);
+      if (type)   decisions = decisions.filter(d => d.decisionType === type);
+      res.json({ decisions, total: decisions.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load decisions" }); }
+  });
+
+  // GET /api/governance/policies
+  app.get("/api/governance/policies", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      res.json({ policies: GOV_POLICIES, total: GOV_POLICIES.length, activeCount: GOV_POLICIES.filter(p => p.active).length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load policies" }); }
+  });
+
+  // GET /api/governance/risk
+  app.get("/api/governance/risk", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const openDecisions = GOV_DECISIONS.filter(d => ["proposed", "under_review", "approved"].includes(d.status));
+      const withRisk = openDecisions.map(d => ({ id: d.id, title: d.title, decisionType: d.decisionType, riskLevel: d.riskLevel, status: d.status, proposedBy: d.proposedBy, confidenceScore: d.confidenceScore, reviews: GOV_REVIEWS.filter(r => r.decisionId === d.id) }));
+      const byRisk = { critical: withRisk.filter(d => d.riskLevel === "critical").length, high: withRisk.filter(d => d.riskLevel === "high").length, medium: withRisk.filter(d => d.riskLevel === "medium").length, low: withRisk.filter(d => d.riskLevel === "low").length };
+      res.json({ openDecisions: withRisk, byRisk, reviews: GOV_REVIEWS, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load risk data" }); }
+  });
+
+  // GET /api/governance/analytics
+  app.get("/api/governance/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const byStatus = GOV_DECISIONS.reduce((acc, d) => { acc[d.status] = (acc[d.status] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const byType   = GOV_DECISIONS.reduce((acc, d) => { acc[d.decisionType] = (acc[d.decisionType] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const byRisk   = GOV_DECISIONS.reduce((acc, d) => { acc[d.riskLevel] = (acc[d.riskLevel] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const measured = GOV_DECISIONS.filter(d => d.successScore != null);
+      const avgSuccess = measured.length ? Math.round(measured.reduce((s, d) => s + (d.successScore ?? 0), 0) / measured.length) : 0;
+      const topRoi = GOV_DECISIONS.filter(d => d.roi).slice(0, 5).map(d => ({ id: d.id, title: d.title, roi: d.roi, successScore: d.successScore, decisionType: d.decisionType }));
+      const highImpact = GOV_DECISIONS.filter(d => d.successScore != null).sort((a, b) => (b.successScore ?? 0) - (a.successScore ?? 0)).slice(0, 5);
+      res.json({ totalDecisions: GOV_DECISIONS.length, byStatus, byType, byRisk, avgSuccessScore: avgSuccess, governanceComplianceScore: 97, avgApprovalTimeDays: 1.8, topRoiDecisions: topRoi, highImpactDecisions: highImpact.map(d => ({ id: d.id, title: d.title, successScore: d.successScore, roi: d.roi, decisionType: d.decisionType })), generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load analytics" }); }
+  });
+
+  // POST /api/governance/propose
+  app.post("/api/governance/propose", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { title, decisionType, proposedBy, priority, riskLevel, expectedImpact, confidenceScore } = req.body;
+      if (!title || !decisionType) return res.status(400).json({ message: "title and decisionType required" });
+      res.json({ success: true, decision: { id: `gd-${Date.now()}`, title, decisionType, status: "proposed", proposedBy: proposedBy ?? "Human Admin", reviewedBy: null, approvedBy: null, priority: priority ?? "medium", riskLevel: riskLevel ?? "low", expectedImpact: expectedImpact ?? "", actualImpact: null, confidenceScore: confidenceScore ?? 80, roi: null, successScore: null, createdAt: new Date().toISOString(), implementedAt: null, closedAt: null, lessonsLearned: null } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to propose decision" }); }
+  });
+
+  // POST /api/governance/review
+  app.post("/api/governance/review", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { decisionId, reviewer, recommendation, rationale, riskScore } = req.body;
+      if (!decisionId || !recommendation) return res.status(400).json({ message: "decisionId and recommendation required" });
+      res.json({ success: true, review: { id: `gr-${Date.now()}`, decisionId, reviewer: reviewer ?? "Human Admin", recommendation, rationale: rationale ?? "", riskScore: riskScore ?? 50, createdAt: new Date().toISOString() } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to submit review" }); }
+  });
+
+  // POST /api/governance/approve
+  app.post("/api/governance/approve", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { decisionId, approvedBy, notes } = req.body;
+      if (!decisionId) return res.status(400).json({ message: "decisionId required" });
+      res.json({ success: true, decisionId, status: "approved", approvedBy: approvedBy ?? "CEO", notes: notes ?? "", approvedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to approve decision" }); }
+  });
+
+  // POST /api/governance/reject
+  app.post("/api/governance/reject", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { decisionId, rejectedBy, reason } = req.body;
+      if (!decisionId) return res.status(400).json({ message: "decisionId required" });
+      res.json({ success: true, decisionId, status: "rejected", rejectedBy: rejectedBy ?? "CEO", reason: reason ?? "", rejectedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to reject decision" }); }
+  });
+
+  // POST /api/governance/close
+  app.post("/api/governance/close", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { decisionId, actualImpact, roi, successScore, lessonsLearned } = req.body;
+      if (!decisionId) return res.status(400).json({ message: "decisionId required" });
+      res.json({ success: true, decisionId, status: "closed", actualImpact: actualImpact ?? "", roi: roi ?? null, successScore: successScore ?? null, lessonsLearned: lessonsLearned ?? "", closedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to close decision" }); }
+  });
+
   return httpServer;
 }

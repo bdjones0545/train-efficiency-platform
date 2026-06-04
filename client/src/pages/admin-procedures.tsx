@@ -852,6 +852,20 @@ export default function AdminProceduresPage() {
         {activeTab === "analytics"  && <AnalyticsTab />}
       </div>
 
+      {/* Forward nav → Governance Center */}
+      <Link href="/admin/governance">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-rose-500/5 hover:from-primary/10 hover:to-rose-500/10 transition-colors cursor-pointer group" data-testid="nav-governance">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <Shield className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Organizational Governance &amp; Decision Management</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Strategic, financial, and operational decisions — proposed, reviewed, approved, measured, and archived through a formal governance framework.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
+
       {/* Architecture note */}
       <div className="p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-orange-500/5" data-testid="architecture-complete-19-4">
         <div className="flex items-start gap-3">
