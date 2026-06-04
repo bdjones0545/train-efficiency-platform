@@ -63,6 +63,7 @@ import {
   Webhook,
   Copy,
   BookOpen,
+  QrCode,
 } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -1405,7 +1406,7 @@ export default function AdminConfigurationPage() {
   const [showFunnelTypeModal, setShowFunnelTypeModal] = useState(false);
   const [selectedFunnelType, setSelectedFunnelType] = useState<"athlete_application" | "team_training" | "employment_opportunity">("athlete_application");
   const [addingSimpleProgram, setAddingSimpleProgram] = useState(false);
-  const [simpleProgramType, setSimpleProgramType] = useState<"pr_tracker" | "workout_builder" | "lead_capture">("pr_tracker");
+  const [simpleProgramType, setSimpleProgramType] = useState<"pr_tracker" | "workout_builder" | "lead_capture" | "attendance_tracker">("pr_tracker");
   const [newSimpleProgramName, setNewSimpleProgramName] = useState("");
   const [newSimpleProgramSlug, setNewSimpleProgramSlug] = useState("");
 
@@ -1973,6 +1974,8 @@ export default function AdminConfigurationPage() {
       setNewSimpleProgramSlug("");
       if (simpleProgramType === "lead_capture") {
         navigate(`/lead-capture/programs/${data.id}?funnelType=${selectedFunnelType}`);
+      } else if (simpleProgramType === "attendance_tracker") {
+        navigate(`/attendance-programs/${data.id}`);
       }
     },
     onError: (error: Error) => {
@@ -3453,14 +3456,15 @@ export default function AdminConfigurationPage() {
               </DialogHeader>
               <div className="space-y-3 pt-2">
                 {[
-                  { type: "scheduling", label: "Scheduling Program", desc: "Create a bookable training schedule for teams or groups.", icon: <CalendarCheck className="h-5 w-5" /> },
-                  { type: "pr_tracker", label: "PR Tracker", desc: "Let athletes log and track personal records.", icon: <BarChart2 className="h-5 w-5" /> },
-                  { type: "workout_builder", label: "Workout Builder", desc: "Create structured workouts athletes can access.", icon: <Hammer className="h-5 w-5" /> },
-                  { type: "lead_capture", label: "Lead Capture Program", desc: "Create high-converting athlete application funnels and paid-ad landing pages.", icon: <Zap className="h-5 w-5" />, badge: "NEW" },
+                  { type: "scheduling", label: "Scheduling Program", desc: "Create a bookable training schedule for teams or groups.", icon: <CalendarCheck className="h-5 w-5" />, color: "" },
+                  { type: "pr_tracker", label: "PR Tracker", desc: "Let athletes log and track personal records.", icon: <BarChart2 className="h-5 w-5" />, color: "" },
+                  { type: "workout_builder", label: "Workout Builder", desc: "Create structured workouts athletes can access.", icon: <Hammer className="h-5 w-5" />, color: "" },
+                  { type: "lead_capture", label: "Lead Capture Program", desc: "Create high-converting athlete application funnels and paid-ad landing pages.", icon: <Zap className="h-5 w-5" />, badge: "B2C", color: "border-orange-500/40 bg-orange-50/40 dark:bg-orange-950/20" },
+                  { type: "attendance_tracker", label: "Attendance Tracker", desc: "QR-code check-in, reward milestones, and athlete retention automation.", icon: <QrCode className="h-5 w-5" />, badge: "NEW", color: "border-green-500/40 bg-green-50/40 dark:bg-green-950/20" },
                 ].map((opt) => (
                   <button
                     key={opt.type}
-                    className={`w-full flex items-start gap-3 rounded-lg border p-4 text-left hover:bg-muted transition-colors ${opt.type === "lead_capture" ? "border-orange-500/40 bg-orange-50/40 dark:bg-orange-950/20 hover:bg-orange-50 dark:hover:bg-orange-950/30" : ""}`}
+                    className={`w-full flex items-start gap-3 rounded-lg border p-4 text-left hover:bg-muted transition-colors ${opt.color || ""}`}
                     onClick={() => {
                       setShowProgramTypeModal(false);
                       if (opt.type === "scheduling") {
@@ -3471,7 +3475,7 @@ export default function AdminConfigurationPage() {
                         setNewSimpleProgramSlug("");
                         setShowFunnelTypeModal(true);
                       } else {
-                        setSimpleProgramType(opt.type as "pr_tracker" | "workout_builder");
+                        setSimpleProgramType(opt.type as "pr_tracker" | "workout_builder" | "attendance_tracker");
                         setNewSimpleProgramName("");
                         setNewSimpleProgramSlug("");
                         setAddingSimpleProgram(true);
@@ -3479,12 +3483,12 @@ export default function AdminConfigurationPage() {
                     }}
                     data-testid={`button-select-type-${opt.type}`}
                   >
-                    <span className={`mt-0.5 ${opt.type === "lead_capture" ? "text-orange-500" : "text-muted-foreground"}`}>{opt.icon}</span>
+                    <span className={`mt-0.5 ${opt.type === "lead_capture" ? "text-orange-500" : opt.type === "attendance_tracker" ? "text-green-500" : "text-muted-foreground"}`}>{opt.icon}</span>
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <p className="text-sm font-semibold">{opt.label}</p>
                         {"badge" in opt && opt.badge && (
-                          <span className="text-[10px] font-bold bg-orange-500 text-white px-1.5 py-0.5 rounded-full tracking-wide">{opt.badge}</span>
+                          <span className={`text-[10px] font-bold text-white px-1.5 py-0.5 rounded-full tracking-wide ${opt.type === "attendance_tracker" ? "bg-green-500" : "bg-orange-500"}`}>{opt.badge}</span>
                         )}
                       </div>
                       <p className="text-xs text-muted-foreground">{opt.desc}</p>
@@ -3776,6 +3780,7 @@ export default function AdminConfigurationPage() {
                             if (t === "pr_tracker") return <Badge className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 border-0" data-testid={`badge-type-${p.id}`}>PR Tracker</Badge>;
                             if (t === "workout_builder") return <Badge className="text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 border-0" data-testid={`badge-type-${p.id}`}>Workout Builder</Badge>;
                             if (t === "lead_capture") return <Badge className="text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300 border-0 flex items-center gap-1" data-testid={`badge-type-${p.id}`}><Zap className="h-2.5 w-2.5" />Lead Capture</Badge>;
+                            if (t === "attendance_tracker") return <Badge className="text-xs bg-green-100 text-green-800 dark:bg-green-900/60 dark:text-green-300 border-0 flex items-center gap-1" data-testid={`badge-type-${p.id}`}><QrCode className="h-2.5 w-2.5" />Attendance Tracker</Badge>;
                             return <Badge className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 border-0" data-testid={`badge-type-${p.id}`}>Scheduling Program</Badge>;
                           })()}
                           {!p.active && <Badge variant="secondary" className="text-xs">Inactive</Badge>}
@@ -3799,6 +3804,15 @@ export default function AdminConfigurationPage() {
                             </Button>
                             <Button size="sm" variant="ghost" className="h-7 text-muted-foreground hover:text-foreground" onClick={() => window.open(`/apply/${orgData?.slug}/${p.slug}`, "_blank")} data-testid={`button-open-program-${p.id}`}>
                               <ExternalLink className="h-3.5 w-3.5" />
+                            </Button>
+                          </>
+                        ) : p.type === "attendance_tracker" ? (
+                          <>
+                            <Button size="sm" variant="ghost" className="h-7 text-green-600 hover:text-green-700" onClick={() => navigate(`/attendance-programs/${p.id}`)} data-testid={`button-configure-program-${p.id}`}>
+                              <Settings className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-muted-foreground hover:text-foreground" onClick={() => window.open(`/attendance/${p.slug}`, "_blank")} data-testid={`button-open-program-${p.id}`}>
+                              <QrCode className="h-3.5 w-3.5" />
                             </Button>
                           </>
                         ) : (
@@ -3837,6 +3851,13 @@ export default function AdminConfigurationPage() {
                     )}
                     {p.type === "workout_builder" && (
                       <p className="text-xs text-muted-foreground">Create structured workouts athletes can access. Click the link icon to open.</p>
+                    )}
+                    {p.type === "attendance_tracker" && (
+                      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+                        <QrCode className="h-3 w-3 text-green-500" />
+                        QR check-in at <span className="font-mono text-green-600">/attendance/{p.slug}</span>
+                        <span className="text-muted-foreground/60">— Click the QR icon to preview the check-in page.</span>
+                      </p>
                     )}
                     {p.type === "lead_capture" && (
                       <LeadCaptureStats programId={p.id} orgSlug={orgData?.slug} programSlug={p.slug} />

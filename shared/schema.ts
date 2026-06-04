@@ -5014,3 +5014,124 @@ export const stripeWebhookEvents = pgTable("stripe_webhook_events", {
 export const insertStripeWebhookEventSchema = createInsertSchema(stripeWebhookEvents).omit({ id: true, receivedAt: true });
 export type StripeWebhookEvent = typeof stripeWebhookEvents.$inferSelect;
 export type InsertStripeWebhookEvent = z.infer<typeof insertStripeWebhookEventSchema>;
+
+// ── Attendance Tracker ────────────────────────────────────────────────────────
+
+export const attendancePrograms = pgTable("attendance_programs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull().unique(),
+  description: text("description"),
+  location: varchar("location"),
+  startDate: varchar("start_date"),
+  endDate: varchar("end_date"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertAttendanceProgramSchema = createInsertSchema(attendancePrograms).omit({ id: true, createdAt: true, updatedAt: true });
+export type AttendanceProgram = typeof attendancePrograms.$inferSelect;
+export type InsertAttendanceProgram = z.infer<typeof insertAttendanceProgramSchema>;
+
+export const attendanceProgramFields = pgTable("attendance_program_fields", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  fieldName: varchar("field_name").notNull(),
+  label: varchar("label").notNull(),
+  fieldType: varchar("field_type").notNull().default("text"),
+  visibility: varchar("visibility").notNull().default("required"),
+  displayOrder: integer("display_order").notNull().default(0),
+  options: jsonb("options").default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAttendanceProgramFieldSchema = createInsertSchema(attendanceProgramFields).omit({ id: true, createdAt: true });
+export type AttendanceProgramField = typeof attendanceProgramFields.$inferSelect;
+export type InsertAttendanceProgramField = z.infer<typeof insertAttendanceProgramFieldSchema>;
+
+export const attendanceRewardTiers = pgTable("attendance_reward_tiers", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  visitCount: integer("visit_count").notNull(),
+  rewardName: varchar("reward_name").notNull(),
+  rewardDescription: text("reward_description"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAttendanceRewardTierSchema = createInsertSchema(attendanceRewardTiers).omit({ id: true, createdAt: true });
+export type AttendanceRewardTier = typeof attendanceRewardTiers.$inferSelect;
+export type InsertAttendanceRewardTier = z.infer<typeof insertAttendanceRewardTierSchema>;
+
+export const attendanceQrCodes = pgTable("attendance_qr_codes", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull().unique(),
+  publicSlug: varchar("public_slug").notNull().unique(),
+  qrCodeUrl: text("qr_code_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAttendanceQrCodeSchema = createInsertSchema(attendanceQrCodes).omit({ id: true, createdAt: true });
+export type AttendanceQrCode = typeof attendanceQrCodes.$inferSelect;
+export type InsertAttendanceQrCode = z.infer<typeof insertAttendanceQrCodeSchema>;
+
+export const attendanceRecords = pgTable("attendance_records", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  athleteEmail: varchar("athlete_email").notNull(),
+  athleteFirstName: varchar("athlete_first_name"),
+  athleteLastName: varchar("athlete_last_name"),
+  phone: varchar("phone"),
+  sport: varchar("sport"),
+  position: varchar("position"),
+  school: varchar("school"),
+  gradYear: varchar("grad_year"),
+  team: varchar("team"),
+  age: varchar("age"),
+  extraFields: jsonb("extra_fields").default(sql`'{}'::jsonb`),
+  visitNumber: integer("visit_number").notNull().default(1),
+  leadId: varchar("lead_id"),
+  ipAddress: varchar("ip_address"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAttendanceRecordSchema = createInsertSchema(attendanceRecords).omit({ id: true, createdAt: true });
+export type AttendanceRecord = typeof attendanceRecords.$inferSelect;
+export type InsertAttendanceRecord = z.infer<typeof insertAttendanceRecordSchema>;
+
+export const attendanceRewardsEarned = pgTable("attendance_rewards_earned", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  tierId: varchar("tier_id").notNull(),
+  athleteEmail: varchar("athlete_email").notNull(),
+  visitCountAtEarned: integer("visit_count_at_earned").notNull(),
+  notificationSentAt: timestamp("notification_sent_at"),
+  redeemedAt: timestamp("redeemed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAttendanceRewardsEarnedSchema = createInsertSchema(attendanceRewardsEarned).omit({ id: true, createdAt: true });
+export type AttendanceRewardsEarned = typeof attendanceRewardsEarned.$inferSelect;
+export type InsertAttendanceRewardsEarned = z.infer<typeof insertAttendanceRewardsEarnedSchema>;
+
+export const attendanceEmailHistory = pgTable("attendance_email_history", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  organizationId: varchar("organization_id").notNull(),
+  programId: varchar("program_id").notNull(),
+  athleteEmail: varchar("athlete_email").notNull(),
+  emailType: varchar("email_type").notNull(),
+  subject: varchar("subject"),
+  status: varchar("status").notNull().default("sent"),
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertAttendanceEmailHistorySchema = createInsertSchema(attendanceEmailHistory).omit({ id: true, createdAt: true });
+export type AttendanceEmailHistory = typeof attendanceEmailHistory.$inferSelect;
+export type InsertAttendanceEmailHistory = z.infer<typeof insertAttendanceEmailHistorySchema>;

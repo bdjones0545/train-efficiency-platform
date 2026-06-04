@@ -180,6 +180,9 @@ import AdminCoachCapacityPage from "@/pages/admin-coach-capacity";
 import AdminSchedulingCommandCenterPage from "@/pages/admin-scheduling-command-center";
 import AdminSchedulingOpportunityInboxPage from "@/pages/admin-scheduling-opportunity-inbox";
 import AdminSchedulingCopilotPage from "@/pages/admin-scheduling-copilot";
+import AttendanceCheckinPage from "@/pages/attendance-checkin";
+import AttendanceProgramEditorPage from "@/pages/attendance-program-editor";
+import AdminAttendanceTrackerPage from "@/pages/admin-attendance-tracker";
 
 interface SubscriptionStatus {
   status: string;
@@ -408,6 +411,9 @@ function AuthenticatedLayout() {
                   <Route path="/sessions" component={OpenSessionsPage} />
                   <Route path="/org/:slug" component={OrgLandingPage} />
                   <Route path="/apply/:orgSlug/:programSlug" component={LeadCaptureLandingPage} />
+                  <Route path="/attendance/:slug" component={AttendanceCheckinPage} />
+                  <Route path="/attendance-programs/:programId" component={AttendanceProgramEditorPage} />
+                  <Route path="/admin/attendance-tracker" component={AdminAttendanceTrackerPage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
                   <Route path="/bookings" component={MyBookingsPage} />
                   <Route path="/settings" component={SettingsPage} />
@@ -561,6 +567,7 @@ function PublicLayout() {
       <Route path="/sessions" component={OpenSessionsPublicPage} />
       <Route path="/org/:slug" component={OrgLandingPage} />
       <Route path="/apply/:orgSlug/:programSlug" component={LeadCaptureLandingPage} />
+      <Route path="/attendance/:slug" component={AttendanceCheckinPage} />
       <Route path="/athletic" component={AthleticSchedulingPage} />
       <Route path="/efficiencystrength" component={EfficiencyStrengthPage} />
       <Route path="/subscribe/:planId" component={SubscribePage} />
