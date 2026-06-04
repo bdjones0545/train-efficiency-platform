@@ -67,6 +67,21 @@ const DOMAIN_GROUP_TO_API: Record<string, string[]> = {
   employment: ["employment_opportunity"],
 };
 
+// ─── Array safety helper ──────────────────────────────────────────────────────
+// Guards against API error objects (e.g. { message: "Not authorized" }) being
+// passed to array methods. The ?? [] pattern doesn't help here because ?? only
+// replaces null/undefined — a truthy error object slips through and crashes .filter()
+const asArray = <T,>(value: unknown): T[] =>
+  Array.isArray(value) ? (value as T[]) : [];
+
+// Safe fetch wrapper — throws on HTTP errors so TanStack Query treats them as
+// errors (data stays undefined) rather than returning the error JSON as data.
+async function safeFetch(url: string): Promise<unknown> {
+  const res = await fetch(url, { credentials: "include" });
+  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
+  return res.json();
+}
+
 // ─── Feedback Chips ───────────────────────────────────────────────────────────
 
 const FEEDBACK_CHIPS = [
@@ -487,9 +502,9 @@ function ProposalCard({ proposal, onRefresh }: { proposal: any; onRefresh: () =>
 function MetricsBar({ domain }: { domain: string }) {
   const { data: metrics } = useQuery<any>({
     queryKey: ["/api/ai-approvals/metrics", domain],
-    queryFn: () => fetch(`/api/ai-approvals/metrics?domain=${domain}`).then((r) => r.json()),
+    queryFn: () => safeFetch(`/api/ai-approvals/metrics?domain=${domain}`),
   });
-  if (!metrics) return null;
+  if (!metrics || typeof metrics !== "object" || Array.isArray(metrics)) return null;
 
   const autoEligibleCount = metrics.autoEligible ?? 0;
 
@@ -550,11 +565,11 @@ function AutonomyPanel({ activeDomainTab }: { activeDomainTab: string }) {
 
   const { data: autonomyData } = useQuery<any[]>({
     queryKey: ["/api/ai-approvals/autonomy"],
-    queryFn: () => fetch("/api/ai-approvals/autonomy").then((r) => r.json()),
+    queryFn: () => safeFetch("/api/ai-approvals/autonomy"),
   });
 
   const allowedDomains = activeDomainTab !== "all" ? (DOMAIN_GROUP_TO_API[activeDomainTab] ?? null) : null;
-  const displayData = (autonomyData ?? []).filter((d) => !allowedDomains || allowedDomains.includes(d.domain));
+  const displayData = asArray<any>(autonomyData).filter((d) => !allowedDomains || allowedDomains.includes(d.domain));
 
   const promoteMutation = useMutation({
     mutationFn: ({ domain, level }: { domain: string; level: number }) =>
@@ -675,10 +690,10 @@ function LearningDashboard({ activeDomainTab }: { activeDomainTab: string }) {
   });
 
   const allowedApiDomains = activeDomainTab !== "all" ? (DOMAIN_GROUP_TO_API[activeDomainTab] ?? null) : null;
-  const visibleDomains = (dashboard ?? []).filter((d) => !allowedApiDomains || allowedApiDomains.includes(d.domain));
+  const visibleDomains = asArray<any>(dashboard).filter((d) => !allowedApiDomains || allowedApiDomains.includes(d.domain));
   const activeEntry = visibleDomains.find((d) => d.domain === activeLearningDomain) ?? visibleDomains[0];
 
-  const totalRules = (dashboard ?? []).reduce((s, d) => s + (d.rulesCount ?? 0), 0);
+  const totalRules = asArray<any>(dashboard).reduce((s: number, d: any) => s + (d.rulesCount ?? 0), 0);
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
@@ -852,10 +867,12 @@ function ProposalsPanel({ domain }: { domain: string }) {
   const { toast } = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const { data: proposals = [], isLoading } = useQuery<any[]>({
+  const { data: rawProposals, isLoading } = useQuery<any>({
     queryKey: ["/api/ai-approvals", domain],
-    queryFn: () => fetch(`/api/ai-approvals?domain=${domain}`).then((r) => r.json()),
+    queryFn: () => safeFetch(`/api/ai-approvals?domain=${domain}`),
   });
+  // Normalize: API always returns an array, but guard against error objects
+  const proposals = asArray<any>(rawProposals);
 
   const invalidate = () => {
     queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals"] });
@@ -1061,15 +1078,17 @@ function OutcomesPanel({ activeDomainTab }: { activeDomainTab: string }) {
 
   const { data: dashboard } = useQuery<any>({
     queryKey: ["/api/outcomes/dashboard"],
-    queryFn: () => fetch("/api/outcomes/dashboard").then((r) => r.json()),
+    queryFn: () => safeFetch("/api/outcomes/dashboard"),
     enabled: open,
   });
 
-  const { data: sentMessages = [] } = useQuery<any[]>({
+  const { data: rawSentMessages } = useQuery<any>({
     queryKey: ["/api/outcomes/sent", activeDomainTab],
-    queryFn: () => fetch(`/api/outcomes/sent?domain=${activeDomainTab}`).then((r) => r.json()),
+    queryFn: () => safeFetch(`/api/outcomes/sent?domain=${activeDomainTab}`),
     enabled: open,
   });
+  // Normalize: API returns an array, but guard against error objects or undefined
+  const sentMessages = asArray<any>(rawSentMessages);
 
   const updateMutation = useMutation({
     mutationFn: ({ id, outcomeStatus, revenueCents }: { id: string; outcomeStatus: string; revenueCents?: number }) =>
@@ -1085,12 +1104,12 @@ function OutcomesPanel({ activeDomainTab }: { activeDomainTab: string }) {
   const allowedDomains = activeDomainTab !== "all" ? (DOMAIN_GROUP_TO_API[activeDomainTab] ?? null) : null;
   const overall = dashboard?.overall;
 
-  const byDomain = (dashboard?.byDomain ?? []).filter((d: any) =>
+  const byDomain = asArray<any>(dashboard?.byDomain).filter((d: any) =>
     !allowedDomains || allowedDomains.includes(d.domain),
   );
 
   const displayMessages = allowedDomains
-    ? sentMessages.filter((m) => allowedDomains.includes(m.communicationDomain ?? ""))
+    ? sentMessages.filter((m: any) => allowedDomains.includes(m.communicationDomain ?? ""))
     : sentMessages;
 
   const fmtRevenue = (cents: number) =>
