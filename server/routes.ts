@@ -28525,6 +28525,167 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to reject decision" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // ORGANIZATIONAL STRUCTURE — Phase 19.6
+  // ═══════════════════════════════════════════════════════════════
+
+  const ORG_DEPARTMENTS = [
+    { id: "dept-revenue",    name: "Revenue",          description: "Pipeline, lead qualification, outreach, and revenue generation.",                              head: "Revenue Director",         status: "active", capacity: 5, utilization: 92, kpis: ["Pipeline Value","Conversion Rate","Monthly Recurring Revenue"], memberCount: 3, color: "emerald" },
+    { id: "dept-ops",        name: "Operations",       description: "Scheduling, workflow orchestration, capacity management, and SLA compliance.",                 head: "Operations Director",      status: "active", capacity: 6, utilization: 88, kpis: ["Session Utilization","SLA Compliance","Throughput"], memberCount: 3, color: "blue" },
+    { id: "dept-marketing",  name: "Marketing",        description: "Content creation, lead generation, campaign management, and brand growth.",                    head: "Marketing Director",       status: "active", capacity: 4, utilization: 74, kpis: ["Leads Generated","CAC","Engagement Rate"], memberCount: 3, color: "violet" },
+    { id: "dept-cs",         name: "Customer Success", description: "Onboarding, retention, expansion, and client health management.",                             head: "CS Director",              status: "active", capacity: 4, utilization: 83, kpis: ["NPS","Churn Rate","LTV"], memberCount: 2, color: "cyan" },
+    { id: "dept-finance",    name: "Finance",          description: "Revenue tracking, cost management, ROI reporting, and financial governance.",                  head: "Finance Director",         status: "active", capacity: 3, utilization: 68, kpis: ["MRR","Gross Margin","CAC Payback"], memberCount: 1, color: "amber" },
+    { id: "dept-partners",   name: "Partnerships",     description: "Partner identification, outreach, negotiation, and relationship management.",                  head: "Partnerships Director",    status: "active", capacity: 3, utilization: 91, kpis: ["Active Partners","Referral Revenue","Outreach Response Rate"], memberCount: 2, color: "rose" },
+    { id: "dept-product",    name: "Product",          description: "Platform development priorities, AI agent roadmap, and integration strategy.",                 head: "Product Director",         status: "growing", capacity: 3, utilization: 60, kpis: ["Feature Velocity","Agent Uptime","Integration Count"], memberCount: 1, color: "teal" },
+    { id: "dept-governance", name: "Governance",       description: "Decision management, policy enforcement, risk assessment, and compliance oversight.",          head: "Governance Director",      status: "active", capacity: 2, utilization: 79, kpis: ["Compliance Score","Decision Velocity","Policy Coverage"], memberCount: 1, color: "slate" },
+  ];
+
+  const ORG_ROLES = [
+    { id: "role-ceo",        title: "CEO Heartbeat",          departmentId: null,             reportsTo: null,              authorityLevel: "Enterprise", responsibilityScope: "Ultimate organizational authority, strategic vision, and final approval on all critical decisions." },
+    { id: "role-coo",        title: "AI COO",                 departmentId: null,             reportsTo: "role-ceo",        authorityLevel: "Executive",  responsibilityScope: "Cross-functional operations oversight, governance management, and AI workforce coordination." },
+    { id: "role-rev-dir",    title: "Revenue Director",       departmentId: "dept-revenue",   reportsTo: "role-coo",        authorityLevel: "Director",   responsibilityScope: "Revenue strategy, pipeline management, pricing authority, and team performance." },
+    { id: "role-ops-dir",    title: "Operations Director",    departmentId: "dept-ops",       reportsTo: "role-coo",        authorityLevel: "Director",   responsibilityScope: "Operational excellence, scheduling systems, workflow automation, and SLA ownership." },
+    { id: "role-mkt-dir",    title: "Marketing Director",     departmentId: "dept-marketing", reportsTo: "role-coo",        authorityLevel: "Director",   responsibilityScope: "Lead generation strategy, brand positioning, campaign execution, and CAC optimization." },
+    { id: "role-cs-dir",     title: "CS Director",            departmentId: "dept-cs",        reportsTo: "role-coo",        authorityLevel: "Director",   responsibilityScope: "Client retention, onboarding quality, NPS ownership, and expansion revenue." },
+    { id: "role-fin-dir",    title: "Finance Director",       departmentId: "dept-finance",   reportsTo: "role-coo",        authorityLevel: "Director",   responsibilityScope: "Financial reporting, cost governance, ROI tracking, and budget approval up to $5,000." },
+    { id: "role-part-dir",   title: "Partnerships Director",  departmentId: "dept-partners",  reportsTo: "role-coo",        authorityLevel: "Director",   responsibilityScope: "Partnership pipeline, outreach authority, agreement negotiation, and referral network." },
+    { id: "role-prod-dir",   title: "Product Director",       departmentId: "dept-product",   reportsTo: "role-coo",        authorityLevel: "Director",   responsibilityScope: "Platform roadmap, agent deployment decisions, and integration prioritization." },
+    { id: "role-gov-dir",    title: "Governance Director",    departmentId: "dept-governance",reportsTo: "role-coo",        authorityLevel: "Director",   responsibilityScope: "Policy enforcement, risk assessment, decision audit, and compliance monitoring." },
+    { id: "role-rev-agent",  title: "Revenue Agent",          departmentId: "dept-revenue",   reportsTo: "role-rev-dir",    authorityLevel: "Contributor","responsibilityScope": "Lead qualification, outreach sequencing, and conversion optimization." },
+    { id: "role-research",   title: "Research Agent",         departmentId: "dept-revenue",   reportsTo: "role-rev-dir",    authorityLevel: "Contributor","responsibilityScope": "Decision-maker identification, contact enrichment, and intelligence gathering." },
+    { id: "role-scheduling", title: "Scheduling Agent",       departmentId: "dept-ops",       reportsTo: "role-ops-dir",    authorityLevel: "Contributor","responsibilityScope": "Session booking, capacity allocation, and coach-client matching." },
+    { id: "role-email",      title: "Email Agent",            departmentId: "dept-marketing", reportsTo: "role-mkt-dir",    authorityLevel: "Contributor","responsibilityScope": "Outreach sequencing, follow-up timing, and deliverability management." },
+    { id: "role-cs-agent",   title: "Customer Success Agent", departmentId: "dept-cs",        reportsTo: "role-cs-dir",     authorityLevel: "Contributor","responsibilityScope": "Onboarding execution, check-in cadence, retention interventions, and satisfaction tracking." },
+    { id: "role-part-agent", title: "Partnership Agent",      departmentId: "dept-partners",  reportsTo: "role-part-dir",   authorityLevel: "Contributor","responsibilityScope": "Partner prospecting, initial outreach, and relationship warm-up." },
+  ];
+
+  const ORG_RESPONSIBILITIES = [
+    { id: "resp-1",  responsibility: "Lead Qualification & Recovery",     ownerDepartment: "Revenue",          ownerRole: "Revenue Agent",          secondaryOwner: "Research Agent",         criticality: "critical", status: "active" },
+    { id: "resp-2",  responsibility: "Client Onboarding (Days 1–14)",     ownerDepartment: "Customer Success", ownerRole: "CS Director",            secondaryOwner: "CS Agent",               criticality: "critical", status: "active" },
+    { id: "resp-3",  responsibility: "Session Scheduling & Capacity",     ownerDepartment: "Operations",       ownerRole: "Scheduling Agent",       secondaryOwner: "Operations Director",    criticality: "critical", status: "active" },
+    { id: "resp-4",  responsibility: "Email Outreach & Sequences",        ownerDepartment: "Marketing",        ownerRole: "Email Agent",            secondaryOwner: "Revenue Agent",          criticality: "high",     status: "active" },
+    { id: "resp-5",  responsibility: "Partnership Identification",        ownerDepartment: "Partnerships",     ownerRole: "Research Agent",         secondaryOwner: "Partnership Agent",      criticality: "high",     status: "active" },
+    { id: "resp-6",  responsibility: "Governance Policy Enforcement",     ownerDepartment: "Governance",       ownerRole: "Governance Director",    secondaryOwner: "AI COO",                 criticality: "critical", status: "active" },
+    { id: "resp-7",  responsibility: "Revenue Reporting & ROI Tracking",  ownerDepartment: "Finance",          ownerRole: "Finance Director",       secondaryOwner: "Revenue Director",       criticality: "high",     status: "active" },
+    { id: "resp-8",  responsibility: "Client Retention & Churn Defense",  ownerDepartment: "Customer Success", ownerRole: "CS Director",            secondaryOwner: "Revenue Director",       criticality: "critical", status: "active" },
+    { id: "resp-9",  responsibility: "Platform Agent Deployment",         ownerDepartment: "Product",          ownerRole: "Product Director",       secondaryOwner: "AI COO",                 criticality: "high",     status: "active" },
+    { id: "resp-10", responsibility: "Referral Programme Management",     ownerDepartment: "Revenue",          ownerRole: "Revenue Director",       secondaryOwner: "CS Director",            criticality: "medium",   status: "active" },
+    { id: "resp-11", responsibility: "Campaign Strategy & Execution",     ownerDepartment: "Marketing",        ownerRole: "Marketing Director",     secondaryOwner: "Email Agent",            criticality: "medium",   status: "active" },
+    { id: "resp-12", responsibility: "SLA Compliance & Audit",            ownerDepartment: "Operations",       ownerRole: "Operations Director",    secondaryOwner: "Governance Director",    criticality: "high",     status: "active" },
+  ];
+
+  const DECISION_RIGHTS = [
+    { id: "dr-1",  decisionCategory: "Pricing Changes",           proposeRole: "Revenue Director",     reviewRole: "Finance Director",      approveRole: "AI COO",        executeRole: "Revenue Agent" },
+    { id: "dr-2",  decisionCategory: "New Agent Deployment",      proposeRole: "Department Director",  reviewRole: "Governance Director",   approveRole: "AI COO",        executeRole: "Workforce OS" },
+    { id: "dr-3",  decisionCategory: "Autonomy Level Increase",   proposeRole: "AI COO",               reviewRole: "Governance Director",   approveRole: "CEO Heartbeat", executeRole: "AI COO" },
+    { id: "dr-4",  decisionCategory: "Partnership Agreements",    proposeRole: "Partnerships Director",reviewRole: "Finance Director",      approveRole: "CEO Heartbeat", executeRole: "Partnership Agent" },
+    { id: "dr-5",  decisionCategory: "Client Pricing Exceptions", proposeRole: "CS Director",          reviewRole: "Revenue Director",      approveRole: "AI COO",        executeRole: "CS Agent" },
+    { id: "dr-6",  decisionCategory: "Hiring & Role Expansion",   proposeRole: "Department Director",  reviewRole: "Finance Director",      approveRole: "CEO Heartbeat", executeRole: "Operations Director" },
+    { id: "dr-7",  decisionCategory: "SOP Creation & Revision",   proposeRole: "Department Director",  reviewRole: "Governance Director",   approveRole: "AI COO",        executeRole: "Operations Director" },
+    { id: "dr-8",  decisionCategory: "Financial Commitments",     proposeRole: "Any Director",         reviewRole: "Finance Director",      approveRole: "CEO Heartbeat", executeRole: "Finance Director" },
+    { id: "dr-9",  decisionCategory: "Strategic Initiatives",     proposeRole: "AI COO",               reviewRole: "All Directors",         approveRole: "CEO Heartbeat", executeRole: "AI COO" },
+    { id: "dr-10", decisionCategory: "Integration Additions",     proposeRole: "Product Director",     reviewRole: "Finance Director",      approveRole: "AI COO",        executeRole: "Product Director" },
+  ];
+
+  const ORG_COLLABORATION = [
+    { pair: "Revenue ↔ Marketing",         handoffs: 34, avgResponseHours: 2.1, escalations: 1, collaborationScore: 91, bottleneck: false },
+    { pair: "Operations ↔ Revenue",        handoffs: 28, avgResponseHours: 1.4, escalations: 0, collaborationScore: 96, bottleneck: false },
+    { pair: "Customer Success ↔ Revenue",  handoffs: 19, avgResponseHours: 3.2, escalations: 2, collaborationScore: 84, bottleneck: false },
+    { pair: "Marketing ↔ Customer Success",handoffs: 11, avgResponseHours: 4.8, escalations: 1, collaborationScore: 77, bottleneck: true  },
+    { pair: "Finance ↔ Governance",        handoffs: 16, avgResponseHours: 5.2, escalations: 3, collaborationScore: 72, bottleneck: true  },
+    { pair: "Partnerships ↔ Revenue",      handoffs: 22, avgResponseHours: 2.6, escalations: 0, collaborationScore: 89, bottleneck: false },
+    { pair: "Product ↔ Operations",        handoffs: 8,  avgResponseHours: 6.1, escalations: 2, collaborationScore: 68, bottleneck: true  },
+    { pair: "Governance ↔ All Depts",      handoffs: 41, avgResponseHours: 3.7, escalations: 4, collaborationScore: 81, bottleneck: false },
+  ];
+
+  // GET /api/organization/overview
+  app.get("/api/organization/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const avgUtil = Math.round(ORG_DEPARTMENTS.reduce((s, d) => s + d.utilization, 0) / ORG_DEPARTMENTS.length);
+      const avgCollab = Math.round(ORG_COLLABORATION.reduce((s, c) => s + c.collaborationScore, 0) / ORG_COLLABORATION.length);
+      const bottlenecks = ORG_COLLABORATION.filter(c => c.bottleneck).length;
+      res.json({ totalDepartments: ORG_DEPARTMENTS.length, totalRoles: ORG_ROLES.length, totalResponsibilities: ORG_RESPONSIBILITIES.length, totalDecisionRights: DECISION_RIGHTS.length, avgUtilization: avgUtil, collaborationScore: avgCollab, bottlenecks, orgMaturityScore: 87, orgEfficiencyScore: 91, enterpriseReadinessScore: 83, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load overview" }); }
+  });
+
+  // GET /api/organization/departments
+  app.get("/api/organization/departments", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const depts = ORG_DEPARTMENTS.map(d => ({ ...d, roles: ORG_ROLES.filter(r => r.departmentId === d.id), responsibilities: ORG_RESPONSIBILITIES.filter(r => r.ownerDepartment === d.name).length }));
+      res.json({ departments: depts, total: depts.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load departments" }); }
+  });
+
+  // GET /api/organization/org-chart
+  app.get("/api/organization/org-chart", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const buildTree = (roleId: string | null): any[] => ORG_ROLES.filter(r => r.reportsTo === roleId).map(r => ({ ...r, reports: buildTree(r.id), department: ORG_DEPARTMENTS.find(d => d.id === r.departmentId)?.name ?? null }));
+      res.json({ tree: buildTree(null), roles: ORG_ROLES, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to build org chart" }); }
+  });
+
+  // GET /api/organization/responsibilities
+  app.get("/api/organization/responsibilities", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const byDept = ORG_RESPONSIBILITIES.reduce((acc, r) => { acc[r.ownerDepartment] = (acc[r.ownerDepartment] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const byCriticality = ORG_RESPONSIBILITIES.reduce((acc, r) => { acc[r.criticality] = (acc[r.criticality] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      res.json({ responsibilities: ORG_RESPONSIBILITIES, total: ORG_RESPONSIBILITIES.length, byDepartment: byDept, byCriticality, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load responsibilities" }); }
+  });
+
+  // GET /api/organization/decision-rights
+  app.get("/api/organization/decision-rights", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      res.json({ decisionRights: DECISION_RIGHTS, total: DECISION_RIGHTS.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load decision rights" }); }
+  });
+
+  // GET /api/organization/capacity
+  app.get("/api/organization/capacity", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const capacity = ORG_DEPARTMENTS.map(d => ({ id: d.id, name: d.name, head: d.head, capacity: d.capacity, utilization: d.utilization, memberCount: d.memberCount, backlog: d.utilization > 90 ? Math.round((d.utilization - 90) / 5) : 0, openRoles: d.utilization > 85 ? 1 : 0, riskLevel: d.utilization >= 95 ? "critical" : d.utilization >= 88 ? "high" : d.utilization >= 75 ? "medium" : "low", expansionReady: d.utilization < 70, hiringNeeded: d.utilization > 88 }));
+      const atRisk = capacity.filter(d => d.riskLevel === "high" || d.riskLevel === "critical").length;
+      res.json({ departments: capacity, avgUtilization: Math.round(capacity.reduce((s, d) => s + d.utilization, 0) / capacity.length), atRisk, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load capacity data" }); }
+  });
+
+  // GET /api/organization/collaboration
+  app.get("/api/organization/collaboration", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const avgScore = Math.round(ORG_COLLABORATION.reduce((s, c) => s + c.collaborationScore, 0) / ORG_COLLABORATION.length);
+      const bottlenecks = ORG_COLLABORATION.filter(c => c.bottleneck);
+      res.json({ pairs: ORG_COLLABORATION, avgCollaborationScore: avgScore, bottleneckCount: bottlenecks.length, bottlenecks, totalHandoffs: ORG_COLLABORATION.reduce((s, c) => s + c.handoffs, 0), totalEscalations: ORG_COLLABORATION.reduce((s, c) => s + c.escalations, 0), generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load collaboration data" }); }
+  });
+
+  // GET /api/organization/analytics
+  app.get("/api/organization/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const utilByDept  = ORG_DEPARTMENTS.map(d => ({ name: d.name, utilization: d.utilization, memberCount: d.memberCount }));
+      const respCoverage = (ORG_RESPONSIBILITIES.filter(r => r.secondaryOwner).length / ORG_RESPONSIBILITIES.length) * 100;
+      const avgCollab    = Math.round(ORG_COLLABORATION.reduce((s, c) => s + c.collaborationScore, 0) / ORG_COLLABORATION.length);
+      res.json({ orgMaturityScore: 87, orgEfficiencyScore: 91, enterpriseReadinessScore: 83, avgUtilization: Math.round(ORG_DEPARTMENTS.reduce((s, d) => s + d.utilization, 0) / ORG_DEPARTMENTS.length), responsibilityCoveragePercent: Math.round(respCoverage), avgCollaborationScore: avgCollab, decisionVelocityDays: 1.8, spanOfControl: 8, utilizationByDepartment: utilByDept, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load analytics" }); }
+  });
+
+  // POST /api/organization/create-department
+  app.post("/api/organization/create-department", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { name, description, head, capacity } = req.body;
+      if (!name) return res.status(400).json({ message: "name required" });
+      res.json({ success: true, department: { id: `dept-${Date.now()}`, name, description: description ?? "", head: head ?? "Unassigned", status: "active", capacity: capacity ?? 3, utilization: 0, memberCount: 0, createdAt: new Date().toISOString() } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to create department" }); }
+  });
+
+  // POST /api/organization/assign-responsibility
+  app.post("/api/organization/assign-responsibility", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { responsibility, ownerDepartment, ownerRole, secondaryOwner, criticality } = req.body;
+      if (!responsibility || !ownerDepartment) return res.status(400).json({ message: "responsibility and ownerDepartment required" });
+      res.json({ success: true, entry: { id: `resp-${Date.now()}`, responsibility, ownerDepartment, ownerRole: ownerRole ?? "", secondaryOwner: secondaryOwner ?? null, criticality: criticality ?? "medium", status: "active", createdAt: new Date().toISOString() } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to assign responsibility" }); }
+  });
+
   // POST /api/governance/close
   app.post("/api/governance/close", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {

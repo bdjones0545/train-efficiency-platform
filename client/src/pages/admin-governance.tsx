@@ -10,7 +10,7 @@ import {
   ArrowLeft, Shield, ChevronRight, Layers, RefreshCw, Plus,
   X, CheckCircle, AlertTriangle, BarChart3, TrendingUp,
   Clock, Star, Activity, Users, CheckSquare, XCircle,
-  ChevronDown, ChevronUp, FileText, Gavel, Scale,
+  ChevronDown, ChevronUp, FileText, Gavel, Scale, Building2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -870,6 +870,20 @@ export default function AdminGovernancePage() {
         {activeTab === "impact"    && <ImpactTab />}
         {activeTab === "analytics" && <AnalyticsTab />}
       </div>
+
+      {/* Forward nav → Organization Center */}
+      <Link href="/admin/organization">
+        <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-blue-500/5 hover:from-primary/10 hover:to-blue-500/10 transition-colors cursor-pointer group" data-testid="nav-organization">
+          <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+            <Building2 className="h-5 w-5 text-primary" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">Organizational Structure &amp; Department Operating System</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Departments, reporting structures, decision rights, responsibility matrix, and capacity planning — the formal architecture of the digital enterprise.</p>
+          </div>
+          <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+        </div>
+      </Link>
 
       {/* Architecture note */}
       <div className="p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-rose-500/5" data-testid="architecture-complete-19-5">

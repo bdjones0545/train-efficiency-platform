@@ -1,0 +1,579 @@
+PHASE 19.6 — ORGANIZATIONAL STRUCTURE & DEPARTMENT OPERATING SYSTEM
+
+Objective
+
+Establish the formal organizational architecture of the digital company by defining departments, reporting structures, ownership, authority, decision rights, accountability maps, and interdepartmental coordination.
+
+Core Principle
+
+Phase 19.1:
+Communication
+
+Phase 19.2:
+Accountability
+
+Phase 19.3:
+Knowledge
+
+Phase 19.4:
+Standardization
+
+Phase 19.5:
+Governance
+
+Phase 19.6:
+Organization
+
+Governance defines how decisions are made.
+
+Organization defines who is responsible for making them.
+
+The goal is to transform the AI workforce into a formally structured digital enterprise.
+
+───────────────────────────────────────
+
+1. ORGANIZATION CENTER
+    ───────────────────────────────────────
+
+New Route:
+
+/admin/organization
+
+Purpose:
+
+Central operating system for organizational structure.
+
+Manages:
+
+* Departments
+* Teams
+* Reporting Relationships
+* Responsibilities
+* Decision Rights
+* Authority Chains
+* Capacity Planning
+
+Think:
+
+Org Chart
++
+Workday
++
+Workforce Architecture
++
+Enterprise Operating Model
+
+───────────────────────────────────────
+2. DATABASE TABLES
+───────────────────────────────────────
+
+organizational_departments
+
+Fields:
+
+* id
+* name
+* description
+* department_head
+* status
+* capacity
+* utilization
+* created_at
+
+Departments:
+
+* Revenue
+* Operations
+* Marketing
+* Customer Success
+* Finance
+* Partnerships
+* Product
+* Governance
+
+───────────────────────────────────────
+
+organizational_roles
+
+Fields:
+
+* id
+* title
+* department_id
+* reports_to
+* authority_level
+* responsibility_scope
+
+Authority Levels:
+
+* Contributor
+* Manager
+* Director
+* Executive
+* Enterprise
+
+───────────────────────────────────────
+
+responsibility_registry
+
+Fields:
+
+* id
+* responsibility
+* owner_department
+* owner_role
+* secondary_owner
+* criticality
+
+───────────────────────────────────────
+
+decision_rights_matrix
+
+Fields:
+
+* id
+* decision_category
+* propose_role
+* review_role
+* approve_role
+* execute_role
+
+───────────────────────────────────────
+3. DEPARTMENT REGISTRY
+───────────────────────────────────────
+
+Purpose:
+
+Formalize departments.
+
+Examples:
+
+Revenue Department
+
+Head:
+Revenue Director
+
+Members:
+
+* Revenue Agent
+* Research Agent
+* Lead Recovery Agent
+
+KPIs:
+
+* Pipeline
+* Revenue
+* Conversion
+
+───────────────────────────────────────
+
+Operations Department
+
+Head:
+Operations Director
+
+Members:
+
+* Scheduling Agent
+* Workflow Agent
+* Capacity Agent
+
+KPIs:
+
+* Utilization
+* SLA Compliance
+* Throughput
+
+───────────────────────────────────────
+
+Marketing Department
+
+Head:
+Marketing Director
+
+Members:
+
+* Content Agent
+* Growth Agent
+* Campaign Agent
+
+KPIs:
+
+* Leads
+* CAC
+* Engagement
+
+───────────────────────────────────────
+4. REPORTING STRUCTURE ENGINE
+───────────────────────────────────────
+
+Purpose:
+
+Define formal authority hierarchy.
+
+Example:
+
+CEO Heartbeat
+│
+├── AI COO
+│
+├── Revenue Director
+│   ├── Revenue Agent
+│   ├── Research Agent
+│
+├── Operations Director
+│   ├── Scheduling Agent
+│   ├── Workflow Agent
+│
+├── Marketing Director
+│   ├── Growth Agent
+│   ├── Content Agent
+│
+├── Customer Success Director
+│
+├── Finance Director
+│
+└── Governance Director
+
+Displays:
+
+* Direct Reports
+* Span of Control
+* Org Depth
+* Authority Levels
+
+───────────────────────────────────────
+5. RESPONSIBILITY MATRIX
+───────────────────────────────────────
+
+Purpose:
+
+Eliminate ownership ambiguity.
+
+Examples:
+
+Lead Recovery
+
+Owner:
+Revenue Department
+
+────────────────────
+
+Client Retention
+
+Owner:
+Customer Success Department
+
+────────────────────
+
+Scheduling
+
+Owner:
+Operations Department
+
+────────────────────
+
+Partnership Development
+
+Owner:
+Partnership Department
+
+Track:
+
+* Owner
+* Backup Owner
+* Status
+* Criticality
+
+───────────────────────────────────────
+6. DECISION RIGHTS MATRIX
+───────────────────────────────────────
+
+Purpose:
+
+Define authority.
+
+Examples:
+
+Pricing Changes
+
+Propose:
+Revenue Director
+
+Review:
+Finance Director
+
+Approve:
+AI COO
+
+Execute:
+Revenue Team
+
+────────────────────
+
+New Agent Creation
+
+Propose:
+Department Director
+
+Review:
+Governance Director
+
+Approve:
+AI COO
+
+Execute:
+Workforce OS
+
+────────────────────
+
+Autonomy Increase
+
+Review:
+Governance Director
+
+Approve:
+CEO Heartbeat
+
+───────────────────────────────────────
+7. CAPACITY & WORKLOAD PLANNING
+───────────────────────────────────────
+
+Purpose:
+
+Department-level workforce planning.
+
+Metrics:
+
+* Capacity
+* Utilization
+* Throughput
+* Backlog
+* Open Roles
+
+Displays:
+
+Capacity Risk
+
+Hiring Need
+
+Expansion Readiness
+
+───────────────────────────────────────
+8. CROSS-DEPARTMENT COORDINATION
+───────────────────────────────────────
+
+Purpose:
+
+Measure organizational collaboration.
+
+Track:
+
+Revenue ↔ Marketing
+
+Marketing ↔ Customer Success
+
+Operations ↔ Revenue
+
+Finance ↔ Governance
+
+Metrics:
+
+* Handoffs
+* Response Time
+* Escalations
+* Collaboration Score
+
+Displays:
+
+Interdepartmental Network
+
+Bottlenecks
+
+Coordination Risk
+
+───────────────────────────────────────
+9. ORGANIZATIONAL ANALYTICS
+───────────────────────────────────────
+
+Metrics:
+
+* Department Performance
+* Organizational Health
+* Responsibility Coverage
+* Decision Velocity
+* Span of Control
+* Capacity Utilization
+* Collaboration Score
+
+Scores:
+
+Organizational Maturity
+
+Organizational Efficiency
+
+Enterprise Readiness
+
+───────────────────────────────────────
+10. BACKEND ENDPOINTS
+───────────────────────────────────────
+
+GET /api/organization/overview
+
+Organization KPIs
+
+───────────────────────────────────────
+
+GET /api/organization/departments
+
+Department registry
+
+───────────────────────────────────────
+
+GET /api/organization/org-chart
+
+Reporting hierarchy
+
+───────────────────────────────────────
+
+GET /api/organization/responsibilities
+
+Responsibility matrix
+
+───────────────────────────────────────
+
+GET /api/organization/decision-rights
+
+Decision rights matrix
+
+───────────────────────────────────────
+
+GET /api/organization/capacity
+
+Capacity planning
+
+───────────────────────────────────────
+
+GET /api/organization/collaboration
+
+Cross-department analytics
+
+───────────────────────────────────────
+
+GET /api/organization/analytics
+
+Organizational performance
+
+───────────────────────────────────────
+
+POST /api/organization/create-department
+
+Create department
+
+───────────────────────────────────────
+
+POST /api/organization/assign-responsibility
+
+Assign ownership
+
+───────────────────────────────────────
+11. FRONTEND PAGE
+───────────────────────────────────────
+
+Route:
+
+/admin/organization
+
+Tabs:
+
+Overview
+Departments
+Org Chart
+Responsibilities
+Decision Rights
+Capacity Planning
+Collaboration
+Analytics
+
+Overview KPIs:
+
+* Departments
+* Active Roles
+* Organizational Health
+* Responsibility Coverage
+* Collaboration Score
+* Enterprise Readiness
+
+───────────────────────────────────────
+12. INTEGRATIONS
+───────────────────────────────────────
+
+Workforce OS
+
+Departments become first-class entities.
+
+───────────────────────────────────────
+
+Governance Center
+
+Decision rights enforced automatically.
+
+───────────────────────────────────────
+
+Task Marketplace
+
+Tasks inherit department ownership.
+
+───────────────────────────────────────
+
+Agent Communications
+
+Communication tracked by department.
+
+───────────────────────────────────────
+
+Organizational Memory
+
+Knowledge categorized by department.
+
+───────────────────────────────────────
+
+AI COO
+
+Operates as enterprise manager across departments.
+
+───────────────────────────────────────
+13. SUCCESS CRITERIA
+───────────────────────────────────────
+
+✓ Department Registry
+
+✓ Reporting Structure Engine
+
+✓ Responsibility Matrix
+
+✓ Decision Rights Matrix
+
+✓ Capacity Planning
+
+✓ Cross-Department Coordination
+
+✓ Organizational Analytics
+
+✓ Governance Integration
+
+✓ Workforce OS Integration
+
+✓ Communications Integration
+
+✓ Mobile Responsive
+
+✓ Zero TypeScript Errors
+
+✓ Full Audit Trail
+
+✓ Enterprise Organizational Architecture
+
+Outcome:
+
+The digital workforce evolves from a governed organization into a formally structured enterprise with defined departments, reporting relationships, ownership, authority, accountability, and organizational operating rules. The AI company now knows not only how decisions are made, but who is responsible for making them.
