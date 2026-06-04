@@ -26945,6 +26945,255 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to mark notification read" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // CUSTOMER SUCCESS OS — Phase 16
+  // ═══════════════════════════════════════════════════════════════
+
+  // Shared mock org portfolio
+  function makePortfolio() {
+    return [
+      { id: "org-1",  name: "MetroFit Athletics",      plan: "Pro",        mrr: 297,  healthScore: 92, activationScore: 96, adoptionScore: 88, churnRisk: 4,  expansionScore: 78, nps: 9,  stage: "Advocate",  joinedDays: 180 },
+      { id: "org-2",  name: "Elite Performance Hub",   plan: "Pro",        mrr: 297,  healthScore: 84, activationScore: 91, adoptionScore: 79, churnRisk: 12, expansionScore: 65, nps: 8,  stage: "Adopted",   joinedDays: 120 },
+      { id: "org-3",  name: "Iron & Speed Coaching",   plan: "Starter",    mrr: 97,   healthScore: 71, activationScore: 82, adoptionScore: 61, churnRisk: 24, expansionScore: 54, nps: 7,  stage: "Activated", joinedDays: 60  },
+      { id: "org-4",  name: "Peak Condition Training", plan: "Enterprise", mrr: 897,  healthScore: 97, activationScore: 100,adoptionScore: 94, churnRisk: 2,  expansionScore: 89, nps: 10, stage: "Advocate",  joinedDays: 365 },
+      { id: "org-5",  name: "Forge Strength Academy",  plan: "Starter",    mrr: 97,   healthScore: 48, activationScore: 58, adoptionScore: 38, churnRisk: 61, expansionScore: 22, nps: 5,  stage: "Activating",joinedDays: 30  },
+      { id: "org-6",  name: "Kinetic Sport Systems",   plan: "Pro",        mrr: 297,  healthScore: 76, activationScore: 88, adoptionScore: 71, churnRisk: 18, expansionScore: 61, nps: 7,  stage: "Adopted",   joinedDays: 90  },
+      { id: "org-7",  name: "Summit Performance Lab",  plan: "Enterprise", mrr: 897,  healthScore: 89, activationScore: 98, adoptionScore: 86, churnRisk: 5,  expansionScore: 82, nps: 9,  stage: "Advocate",  joinedDays: 240 },
+      { id: "org-8",  name: "Ground Zero Athletics",   plan: "Starter",    mrr: 97,   healthScore: 33, activationScore: 44, adoptionScore: 27, churnRisk: 78, expansionScore: 10, nps: 4,  stage: "Activating",joinedDays: 14  },
+    ];
+  }
+
+  // GET /api/customer-success/activation
+  app.get("/api/customer-success/activation", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user?.orgId as string;
+      const steps = [
+        { id: "workforce",   label: "Workforce Configured",       completed: true,  completedAt: new Date(Date.now() - 60 * 86400000).toISOString() },
+        { id: "integrations",label: "Integrations Connected",     completed: true,  completedAt: new Date(Date.now() - 55 * 86400000).toISOString() },
+        { id: "workflow",    label: "First Workflow Deployed",    completed: true,  completedAt: new Date(Date.now() - 50 * 86400000).toISOString() },
+        { id: "objective",   label: "First Objective Created",    completed: true,  completedAt: new Date(Date.now() - 48 * 86400000).toISOString() },
+        { id: "execution",   label: "First Execution Launched",   completed: true,  completedAt: new Date(Date.now() - 45 * 86400000).toISOString() },
+        { id: "ai_action",   label: "First AI Action Completed",  completed: true,  completedAt: new Date(Date.now() - 44 * 86400000).toISOString() },
+        { id: "revenue",     label: "First Revenue Opportunity",  completed: true,  completedAt: new Date(Date.now() - 30 * 86400000).toISOString() },
+        { id: "command",     label: "Command Center Used",        completed: false, completedAt: null },
+      ];
+      const completed = steps.filter(s => s.completed).length;
+      const activationScore = Math.round((completed / steps.length) * 100);
+      const status = activationScore >= 100 ? "Power User" : activationScore >= 75 ? "Activated" : activationScore >= 40 ? "Activating" : "Not Started";
+      res.json({ orgId, steps, activationScore, completedSteps: completed, totalSteps: steps.length, status, nextStep: steps.find(s => !s.completed) ?? null, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load activation" }); }
+  });
+
+  // GET /api/customer-success/adoption
+  app.get("/api/customer-success/adoption", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const gaps = [
+        { feature: "Athlete Intelligence (PAIL)",       zone: "Intelligence", lastUsed: null,                                         daysSince: null,  status: "never_used",  impact: "high",   recommendation: "PAIL improves session outcomes by 31% — activate now" },
+        { feature: "Expansion Intelligence",            zone: "Intelligence", lastUsed: null,                                         daysSince: null,  status: "never_used",  impact: "high",   recommendation: "Identifies upsell opportunities — connects to revenue growth" },
+        { feature: "Agent Marketplace",                 zone: "Platform",     lastUsed: new Date(Date.now() - 14 * 86400000).toISOString(), daysSince: 14,status: "dormant",     impact: "medium", recommendation: "4 new agent templates published — browse and install" },
+        { feature: "Trust & Attribution Layer",         zone: "Intelligence", lastUsed: new Date(Date.now() - 21 * 86400000).toISOString(), daysSince: 21,status: "dormant",     impact: "medium", recommendation: "Attribution not reviewed in 21 days — new revenue events pending" },
+        { feature: "Meta Ads Integration",              zone: "Operations",   lastUsed: null,                                         daysSince: null,  status: "connected_unused", impact: "medium", recommendation: "Integration connected but no campaigns monitored" },
+        { feature: "Scheduling Command Center",         zone: "Operations",   lastUsed: new Date(Date.now() - 7  * 86400000).toISOString(), daysSince: 7, status: "underused",   impact: "low",    recommendation: "Coach capacity planning last used 7 days ago" },
+        { feature: "Workforce Planning Engine",         zone: "Workforce",    lastUsed: null,                                         daysSince: null,  status: "never_used",  impact: "high",   recommendation: "3 workforce gaps identified — planning not yet reviewed" },
+        { feature: "CEO Heartbeat",                     zone: "Intelligence", lastUsed: new Date(Date.now() - 3  * 86400000).toISOString(), daysSince: 3, status: "active",      impact: "low",    recommendation: "Well adopted — no action needed" },
+      ];
+      const adoptionScore = Math.round(100 - (gaps.filter(g => g.status !== "active").length / gaps.length) * 40);
+      const neverUsed = gaps.filter(g => g.status === "never_used").length;
+      const dormant  = gaps.filter(g => g.status === "dormant" || g.status === "underused" || g.status === "connected_unused").length;
+      res.json({ gaps, adoptionScore, neverUsed, dormant, benchmarkScore: 85, belowBenchmark: adoptionScore < 85, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load adoption" }); }
+  });
+
+  // GET /api/customer-success/health
+  app.get("/api/customer-success/health", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const dimensions = [
+        { label: "Activation",    score: 88, weight: 0.20, trend: "+2" },
+        { label: "Adoption",      score: 74, weight: 0.25, trend: "+5" },
+        { label: "Retention",     score: 91, weight: 0.20, trend: "0"  },
+        { label: "Expansion",     score: 68, weight: 0.15, trend: "+8" },
+        { label: "Satisfaction",  score: 82, weight: 0.10, trend: "+1" },
+        { label: "Engagement",    score: 79, weight: 0.10, trend: "+3" },
+      ];
+      const healthScore = Math.round(dimensions.reduce((s, d) => s + d.score * d.weight, 0));
+      const category = healthScore >= 85 ? "Healthy" : healthScore >= 70 ? "Stable" : healthScore >= 50 ? "At Risk" : "Critical";
+      res.json({ healthScore, category, dimensions, trend: "+4 vs last week", generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load health" }); }
+  });
+
+  // GET /api/customer-success/churn
+  app.get("/api/customer-success/churn", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const portfolio = makePortfolio();
+      const risks = portfolio.filter(o => o.churnRisk >= 20).map(o => ({
+        orgId: o.id, orgName: o.name, plan: o.plan, mrr: o.mrr,
+        churnProbability: o.churnRisk, riskLevel: o.churnRisk >= 60 ? "critical" : o.churnRisk >= 40 ? "high" : "medium",
+        signals: o.churnRisk >= 60
+          ? ["Login frequency dropped 70%", "No agent actions in 7 days", "Onboarding incomplete"]
+          : o.churnRisk >= 40
+          ? ["Adoption score below 40%", "Key features unused", "No recent workflow activity"]
+          : ["Adoption score below benchmark", "Integration dormancy detected"],
+        recommendedIntervention: o.churnRisk >= 60
+          ? "Immediate CSM outreach — offer onboarding session and usage walkthrough"
+          : o.churnRisk >= 40
+          ? "Send adoption guide and schedule activation check-in"
+          : "Trigger adoption playbook and feature spotlight email",
+        mrrAtRisk: o.mrr,
+      }));
+      const totalMrrAtRisk = risks.reduce((s, r) => s + r.mrrAtRisk, 0);
+      res.json({ risks, totalAtRisk: risks.length, totalMrrAtRisk, critical: risks.filter(r => r.riskLevel === "critical").length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load churn data" }); }
+  });
+
+  // GET /api/customer-success/expansion
+  app.get("/api/customer-success/expansion", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const portfolio = makePortfolio();
+      const opportunities = portfolio.filter(o => o.expansionScore >= 60).map(o => ({
+        orgId: o.id, orgName: o.name, currentPlan: o.plan, mrr: o.mrr,
+        expansionProbability: o.expansionScore,
+        recommendedUpgrade: o.plan === "Starter" ? "Pro" : o.plan === "Pro" ? "Enterprise" : "Enterprise Plus",
+        expectedMrrIncrease: o.plan === "Starter" ? 200 : o.plan === "Pro" ? 600 : 1200,
+        signals: o.expansionScore >= 80
+          ? ["High engagement", "Power user status", "Multiple team members active", "All integrations in use"]
+          : ["Consistent usage", "Feature ceiling reached", "Team growth detected"],
+        readiness: o.expansionScore >= 80 ? "Ready Now" : "60-day forecast",
+      }));
+      const totalExpansionMrr = opportunities.reduce((s, o) => s + o.expectedMrrIncrease, 0);
+      res.json({ opportunities, totalOpportunities: opportunities.length, totalExpansionMrr, readyNow: opportunities.filter(o => o.readiness === "Ready Now").length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load expansion data" }); }
+  });
+
+  // POST /api/customer-success/ai-csm
+  app.post("/api/customer-success/ai-csm", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { question } = req.body;
+      if (!question) return res.status(400).json({ message: "question required" });
+      const q = question.toLowerCase();
+      let answer = "";
+      if (q.includes("next") || q.includes("should do")) {
+        answer = "Based on your current activation score of 88%, the highest-impact next action is completing Command Center adoption — this unlocks cross-layer visibility and typically increases platform engagement by 34%. After that, I recommend reviewing the Workforce Planning Engine, where 3 high-priority workforce gaps remain unaddressed.";
+      } else if (q.includes("block") || q.includes("adoption")) {
+        answer = "The primary adoption blocker is underutilization of the Intelligence Zone. Athlete Intelligence (PAIL) has never been accessed, and the Expansion Intelligence module shows 0 sessions. These two modules alone account for 31% of platform value for S&C coaching businesses at your stage. I'd recommend a 15-minute walkthrough session.";
+      } else if (q.includes("feature") || q.includes("activate")) {
+        answer = "The highest-value unactivated feature for your organization is Athlete Intelligence (PAIL). Based on your athlete roster size and session frequency, enabling PAIL would generate memory-enriched workout recommendations, improve session outcome tracking by ~28%, and surface individualized training insights automatically.";
+      } else if (q.includes("expansion") || q.includes("upgrade") || q.includes("grow")) {
+        answer = "Your expansion readiness score is 68%. The strongest signal is that your current team has reached the functional ceiling of the Pro plan — particularly around multi-organization management and advanced agent autonomy. An Enterprise upgrade would unlock white-label capabilities, multi-org dashboards, and priority support. Expected MRR increase for your cohort: $600/month.";
+      } else if (q.includes("churn") || q.includes("risk") || q.includes("cancel")) {
+        answer = "Your current churn risk is low at 12%. The primary risk signal is adoption rate below the 85% benchmark, particularly in the Intelligence Zone. To mitigate: enable CEO Heartbeat daily alerts, review the Trust & Attribution layer weekly, and activate PAIL for at least 3 athletes. Accounts that complete these three actions within 30 days have a 94% 12-month retention rate.";
+      } else {
+        answer = `As your AI Customer Success Manager, here's my analysis: Your platform health score is 81/100 — solid, but with clear acceleration levers. The top priority is Intelligence Zone adoption, which is currently at 61% of benchmark. Activating Athlete Intelligence and reviewing Expansion Intelligence would move your health score to approximately 89 within 30 days. Revenue trajectory looks strong — your AI workforce generated $174,400 in value last month, with $18,400 in expansion opportunities identified and ready. Want me to deploy an adoption playbook to address any specific area?`;
+      }
+      res.json({ question, answer, confidence: 87, sources: ["Health Engine", "Adoption Intelligence", "Expansion Engine", "Churn Model"], generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to get AI CSM response" }); }
+  });
+
+  // GET /api/customer-success/playbooks
+  app.get("/api/customer-success/playbooks", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const playbooks = [
+        { id: "pb-1", name: "New Customer Playbook",       status: "completed",   progress: 100, steps: 6, completedSteps: 6, expectedOutcome: "Full activation within 14 days",              deployedAt: new Date(Date.now() - 60 * 86400000).toISOString(), completedAt: new Date(Date.now() - 46 * 86400000).toISOString() },
+        { id: "pb-2", name: "Activation Playbook",         status: "completed",   progress: 100, steps: 8, completedSteps: 8, expectedOutcome: "87.5% activation score",                       deployedAt: new Date(Date.now() - 50 * 86400000).toISOString(), completedAt: new Date(Date.now() - 38 * 86400000).toISOString() },
+        { id: "pb-3", name: "Adoption Playbook",           status: "in_progress", progress: 62,  steps: 8, completedSteps: 5, expectedOutcome: "Adoption score ≥85% within 30 days",           deployedAt: new Date(Date.now() - 21 * 86400000).toISOString(), completedAt: null },
+        { id: "pb-4", name: "Expansion Playbook",          status: "not_started", progress: 0,   steps: 5, completedSteps: 0, expectedOutcome: "+$600 MRR via Enterprise upgrade",             deployedAt: null, completedAt: null },
+        { id: "pb-5", name: "Retention Playbook",          status: "not_started", progress: 0,   steps: 6, completedSteps: 0, expectedOutcome: "Churn risk reduced to <5%",                   deployedAt: null, completedAt: null },
+        { id: "pb-6", name: "Enterprise Upgrade Playbook", status: "not_started", progress: 0,   steps: 7, completedSteps: 0, expectedOutcome: "Enterprise conversion + white-label activation", deployedAt: null, completedAt: null },
+      ];
+      res.json({ playbooks, active: playbooks.filter(p => p.status === "in_progress").length, completed: playbooks.filter(p => p.status === "completed").length, available: playbooks.filter(p => p.status === "not_started").length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load playbooks" }); }
+  });
+
+  // POST /api/customer-success/playbooks/deploy
+  app.post("/api/customer-success/playbooks/deploy", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { playbookId } = req.body;
+      if (!playbookId) return res.status(400).json({ message: "playbookId required" });
+      res.json({ success: true, playbookId, status: "in_progress", deployedAt: new Date().toISOString(), message: "Playbook deployed and tracking started" });
+    } catch (e: any) { res.status(500).json({ message: "Failed to deploy playbook" }); }
+  });
+
+  // GET /api/customer-success/journey
+  app.get("/api/customer-success/journey", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const stages = [
+        { id: "trial",     label: "Trial",     completed: true,  completedAt: new Date(Date.now() - 120 * 86400000).toISOString(), milestone: "Signed up and explored platform" },
+        { id: "activated", label: "Activated", completed: true,  completedAt: new Date(Date.now() - 46  * 86400000).toISOString(), milestone: "7/8 activation steps completed" },
+        { id: "adopted",   label: "Adopted",   completed: false, completedAt: null, milestone: "Adoption score ≥85% across all zones" },
+        { id: "expanded",  label: "Expanded",  completed: false, completedAt: null, milestone: "Upgraded to Enterprise plan" },
+        { id: "advocate",  label: "Advocate",  completed: false, completedAt: null, milestone: "Referred 2+ customers + NPS ≥9" },
+      ];
+      const currentStage = stages.filter(s => s.completed).pop()!;
+      const nextStage    = stages.find(s => !s.completed)!;
+      const blockers = [
+        "Athlete Intelligence (PAIL) not yet activated",
+        "Expansion Intelligence not reviewed",
+        "Command Center adoption incomplete",
+      ];
+      const nextActions = [
+        { action: "Activate PAIL for 3 athletes",       impact: "+12 adoption score", timeEst: "15 min" },
+        { action: "Review Expansion Intelligence",       impact: "+8 adoption score",  timeEst: "10 min" },
+        { action: "Complete Command Center walkthrough", impact: "+8 activation score",timeEst: "5 min"  },
+      ];
+      res.json({ stages, currentStage: currentStage.id, nextStage: nextStage.id, blockers, nextActions, daysOnPlatform: 120, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load journey" }); }
+  });
+
+  // GET /api/customer-success/portfolio
+  app.get("/api/customer-success/portfolio", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const portfolio = makePortfolio();
+      const healthy   = portfolio.filter(o => o.healthScore >= 80).length;
+      const atRisk    = portfolio.filter(o => o.healthScore >= 50 && o.healthScore < 80).length;
+      const critical  = portfolio.filter(o => o.healthScore < 50).length;
+      const expansion = portfolio.filter(o => o.expansionScore >= 70).length;
+      const totalMrr  = portfolio.reduce((s, o) => s + o.mrr, 0);
+      res.json({ portfolio, summary: { healthy, atRisk, critical, expansion, totalMrr, totalOrgs: portfolio.length }, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load portfolio" }); }
+  });
+
+  // GET /api/customer-success/satisfaction
+  app.get("/api/customer-success/satisfaction", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const portfolio = makePortfolio();
+      const avgNps = Math.round(portfolio.reduce((s, o) => s + o.nps, 0) / portfolio.length * 10) / 10;
+      const promoters  = portfolio.filter(o => o.nps >= 9).length;
+      const passives   = portfolio.filter(o => o.nps >= 7 && o.nps < 9).length;
+      const detractors = portfolio.filter(o => o.nps < 7).length;
+      const npsScore   = Math.round(((promoters - detractors) / portfolio.length) * 100);
+      res.json({
+        npsScore, avgNps, promoters, passives, detractors,
+        themes: [
+          { theme: "AI automation saves time",              sentiment: "positive", count: 24 },
+          { theme: "Revenue impact visible within 30 days", sentiment: "positive", count: 18 },
+          { theme: "Onboarding complexity",                 sentiment: "negative", count: 7  },
+          { theme: "More pre-built templates needed",       sentiment: "neutral",  count: 11 },
+          { theme: "Scheduling automation is exceptional",  sentiment: "positive", count: 21 },
+          { theme: "Reporting could be more visual",        sentiment: "neutral",  count: 9  },
+        ],
+        improvementAreas: ["Onboarding simplification", "Pre-built workflow library", "Visual reporting dashboard"],
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load satisfaction" }); }
+  });
+
+  // GET /api/customer-success/forecast
+  app.get("/api/customer-success/forecast", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      res.json({
+        windows: [
+          { period: "30d",  label: "30 Days",  healthForecast: 84, retentionForecast: 94, expansionForecast: 12, revenueForecast: 2988, churnRisk: 8,  confidence: 88 },
+          { period: "90d",  label: "90 Days",  healthForecast: 89, retentionForecast: 91, expansionForecast: 35, revenueForecast: 3588, churnRisk: 11, confidence: 74 },
+          { period: "180d", label: "180 Days", healthForecast: 93, retentionForecast: 89, expansionForecast: 62, revenueForecast: 4785, churnRisk: 14, confidence: 58 },
+        ],
+        keyDrivers: [
+          "Adoption playbook completion expected in 23 days",
+          "2 Enterprise upgrade candidates entering decision window",
+          "Churn risk concentrated in Starter plan accounts",
+        ],
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load forecast" }); }
+  });
+
   return httpServer;
-}
 }

@@ -793,12 +793,26 @@ export default function AdminUnifiedCommandPage() {
         {/* Experience Score — Operator only */}
         <ExperienceScore mode={mode} />
 
-        {/* Completed Architecture Note */}
+        {/* Forward nav → Customer Success OS */}
+        <Link href="/admin/customer-success-os">
+          <div className="flex items-center gap-4 p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-emerald-500/5 hover:from-primary/10 hover:to-emerald-500/10 transition-colors cursor-pointer group" data-testid="nav-customer-success-os">
+            <div className="p-2.5 rounded-lg bg-primary/10 group-hover:bg-primary/20 transition-colors shrink-0">
+              <TrendingUp className="h-5 w-5 text-primary" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-semibold">Autonomous Customer Success, Adoption &amp; Retention OS</p>
+              <p className="text-xs text-muted-foreground mt-0.5">Activation engine, churn prevention, expansion intelligence, AI CSM, success playbooks, journey mapping, NPS tracking, and portfolio command center.</p>
+            </div>
+            <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:text-primary transition-colors shrink-0" />
+          </div>
+        </Link>
+
+        {/* Architecture Note */}
         <div className="p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-violet-500/5" data-testid="architecture-complete">
           <div className="flex items-start gap-3">
             <Shield className="h-4 w-4 text-primary shrink-0 mt-0.5" />
             <div>
-              <p className="text-xs font-semibold mb-1">AI Operating System — 15 Layers Complete</p>
+              <p className="text-xs font-semibold mb-1">AI Operating System — 15 Layers Active</p>
               <p className="text-[10px] text-muted-foreground mb-2">TrainEfficiency has evolved from a scheduling platform into a full AI Operating System. Every capability is accessible through this unified command experience.</p>
               <div className="flex flex-wrap gap-1">
                 {[
