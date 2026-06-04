@@ -800,6 +800,15 @@ export async function registerAttendanceRoutes(app: Express) {
     try {
       const { orgId } = req.query as Record<string, string>;
       if (!orgId) return res.status(400).json({ error: "orgId required" });
+
+      // Debug: check what types exist for this org
+      const allTypes = rows(await db.execute(sql`
+        SELECT type, COUNT(*) AS cnt FROM athletic_programs
+        WHERE organization_id = ${orgId}
+        GROUP BY type ORDER BY cnt DESC
+      `));
+      console.log(`[AttendancePrograms] orgId=${orgId} types:`, JSON.stringify(allTypes));
+
       const programs = rows(await db.execute(sql`
         SELECT ap.*, atp.active AS tracker_active, atp.location, atp.description,
                aqr.public_slug
@@ -809,6 +818,7 @@ export async function registerAttendanceRoutes(app: Express) {
         WHERE ap.organization_id = ${orgId} AND ap.type = 'attendance_tracker'
         ORDER BY ap.created_at DESC
       `));
+      console.log(`[AttendancePrograms] found ${programs.length} attendance_tracker programs, ids:`, programs.map((p: any) => p.id));
       res.json(programs);
     } catch (e) {
       console.error("[attendance programs list]", e);

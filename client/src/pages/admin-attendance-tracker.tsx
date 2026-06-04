@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
-import { useAuth } from "@/hooks/use-auth";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,9 +21,15 @@ import QRCode from "react-qr-code";
 const COLORS = ["#16a34a", "#2563eb", "#d97706", "#dc2626", "#7c3aed", "#0891b2", "#be185d", "#059669"];
 
 export default function AdminAttendanceTrackerPage() {
-  const { user } = useAuth();
   const [, navigate] = useLocation();
-  const orgId = (user as any)?.organizationId || "";
+
+  const { data: profile } = useQuery<{ organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = profile?.organizationId || "";
+
+  // Debug: log orgId and programs count to help verify data source
+  console.log("[AttendanceDashboard] orgId:", orgId);
   const [view, setView] = useState("all");
   const [selectedProgram, setSelectedProgram] = useState("all");
   const [search, setSearch] = useState("");
@@ -37,10 +42,14 @@ export default function AdminAttendanceTrackerPage() {
     queryFn: async () => {
       const r = await fetch(`/api/attendance/programs?orgId=${orgId}`);
       if (!r.ok) return [];
-      return r.json();
+      const data = await r.json();
+      console.log("[AttendanceDashboard] programs count:", data.length, "ids:", data.map((p: any) => p.id));
+      return data;
     },
     enabled: !!orgId,
   });
+
+  const profileLoading = !profile;
 
   const programIdFilter = selectedProgram !== "all" ? selectedProgram : "";
 
@@ -117,7 +126,9 @@ export default function AdminAttendanceTrackerPage() {
   ];
 
   // ── Loading ───────────────────────────────────────────────────────────────
-  if (programsLoading) {
+  // Wait for profile AND programs query to finish — profileLoading prevents
+  // false empty-state while /api/profile is still in-flight (orgId = "")
+  if (profileLoading || programsLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -126,7 +137,7 @@ export default function AdminAttendanceTrackerPage() {
   }
 
   // ── Empty state: no programs at all ──────────────────────────────────────
-  if (!programsLoading && programs.length === 0) {
+  if (programs.length === 0) {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
