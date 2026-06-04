@@ -1,0 +1,102 @@
+Fix Attendance QR check-in page field rendering.
+
+Current issue:
+When opening /attendance/:slug from Preview or QR scan, the page shows the attendance landing screen and Check In button, but it does not render the configured form fields.
+
+When pressing Check In, it shows validation like "Email is required", which proves the field config is loaded, but the input fields are hidden/not rendered.
+
+Expected behavior:
+The public attendance page should display all configured non-hidden fields before submission.
+
+Required fix:
+
+1. Audit public attendance page:
+   /attendance/:slug
+
+2. Confirm it fetches:
+   GET /api/attendance/checkin/:slug
+
+3. Normalize field config:
+   - required fields render
+   - optional fields render
+   - hidden fields do not render
+
+4. Before the Check In button, render dynamic inputs for every field where status !== "hidden".
+
+Example fields:
+- First Name
+- Last Name
+- Email
+- Phone
+- Sport
+
+5. Ensure field names match backend keys:
+   first_name
+   last_name
+   email
+   phone
+   sport
+   position
+   school
+   grad_year
+
+6. Fix the validation/render mismatch:
+   If validation checks email, the Email input must be visible.
+
+7. Likely bug to look for:
+   The component may be filtering fields incorrectly, such as:
+
+   fields.filter(f => f.visible)
+
+   while backend returns:
+
+   status: "required" | "optional" | "hidden"
+
+   Replace with:
+
+   const visibleFields = fields.filter(f => f.status !== "hidden");
+
+8. Also check for mismatched properties:
+   frontend expecting:
+   f.visibility
+
+   backend returning:
+   f.status
+
+   or frontend expecting:
+   f.required
+
+   backend returning:
+   status: "required"
+
+9. Render proper input types:
+   email → email input
+   phone → tel input
+   grad_year → number/select
+   all others → text input
+
+10. Button behavior:
+   - Do not validate until user submits
+   - If required field is empty, show inline error next to that field
+   - Do not show global "Email is required" without showing the email field
+
+11. Mobile design:
+   Inputs should be full width
+   Large tap targets
+   Submit button below fields
+
+12. Test:
+   - Set First Name, Last Name, Email required
+   - Set Phone and Sport optional
+   - Set Position hidden
+   - Open /attendance/:slug
+   - Confirm all required/optional fields render
+   - Confirm hidden field does not render
+   - Submit successfully
+   - Confirm attendance record is created
+   - Confirm email sends
+   - Confirm reward progress appears
+
+Run:
+npm run check
+npm run build

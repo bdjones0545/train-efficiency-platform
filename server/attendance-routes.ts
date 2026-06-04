@@ -411,9 +411,22 @@ export async function registerAttendanceRoutes(app: Express) {
       `));
       if (config && !config.active) return res.status(404).json({ error: "Program is not active" });
 
-      const fields = rows(await db.execute(sql`
+      let fields = rows(await db.execute(sql`
         SELECT * FROM attendance_program_fields WHERE program_id = ${qr.program_id} AND visibility != 'hidden' ORDER BY display_order ASC
       `));
+
+      // If no field config has been saved yet, return sensible defaults so
+      // the check-in form always has at least name + email visible.
+      if (fields.length === 0) {
+        fields = [
+          { id: "default-0", field_name: "first_name", label: "First Name", field_type: "text", visibility: "required", display_order: 0 },
+          { id: "default-1", field_name: "last_name",  label: "Last Name",  field_type: "text", visibility: "required", display_order: 1 },
+          { id: "default-2", field_name: "email",      label: "Email",      field_type: "email", visibility: "required", display_order: 2 },
+          { id: "default-3", field_name: "phone",      label: "Phone",      field_type: "phone", visibility: "optional", display_order: 3 },
+          { id: "default-4", field_name: "sport",      label: "Sport",      field_type: "text",  visibility: "optional", display_order: 4 },
+        ];
+      }
+
       const rewards = rows(await db.execute(sql`
         SELECT * FROM attendance_reward_tiers WHERE program_id = ${qr.program_id} AND active = true ORDER BY visit_count ASC
       `));
