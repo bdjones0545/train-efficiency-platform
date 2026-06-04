@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import QRCode from "react-qr-code";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1419,6 +1420,9 @@ export default function AdminConfigurationPage() {
   const [editProgramStartHour, setEditProgramStartHour] = useState("16");
   const [editProgramEndHour, setEditProgramEndHour] = useState("20");
   const [editProgramActive, setEditProgramActive] = useState(true);
+
+  const [qrModalProgram, setQrModalProgram] = useState<{ name: string; slug: string; url: string } | null>(null);
+  const [qrCopied, setQrCopied] = useState(false);
 
   const [schedulesProgramId, setSchedulesProgramId] = useState<string | null>(null);
   const [addingSchedule, setAddingSchedule] = useState(false);
@@ -3811,8 +3815,15 @@ export default function AdminConfigurationPage() {
                             <Button size="sm" variant="ghost" className="h-7 text-green-600 hover:text-green-700" onClick={() => navigate(`/attendance-programs/${p.id}`)} data-testid={`button-configure-program-${p.id}`}>
                               <Settings className="h-3.5 w-3.5" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-7 text-muted-foreground hover:text-foreground" onClick={() => window.open(`/attendance/${p.slug}`, "_blank")} data-testid={`button-open-program-${p.id}`}>
+                            <Button
+                              size="sm" variant="ghost" className="h-7 text-green-500 hover:text-green-600"
+                              onClick={() => setQrModalProgram({ name: p.name, slug: p.slug, url: `${window.location.origin}/attendance/${p.slug}` })}
+                              data-testid={`button-qr-program-${p.id}`}
+                            >
                               <QrCode className="h-3.5 w-3.5" />
+                            </Button>
+                            <Button size="sm" variant="ghost" className="h-7 text-muted-foreground hover:text-foreground" onClick={() => window.open(`/attendance/${p.slug}`, "_blank")} data-testid={`button-open-program-${p.id}`}>
+                              <ExternalLink className="h-3.5 w-3.5" />
                             </Button>
                           </>
                         ) : (
@@ -4009,6 +4020,84 @@ export default function AdminConfigurationPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Attendance Tracker QR Modal */}
+      <Dialog open={!!qrModalProgram} onOpenChange={(open) => { if (!open) { setQrModalProgram(null); setQrCopied(false); } }}>
+        <DialogContent className="max-w-sm w-full" data-testid="dialog-qr-modal">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <QrCode className="h-4 w-4 text-green-500" />
+              {qrModalProgram?.name || "Attendance Check-In"}
+            </DialogTitle>
+          </DialogHeader>
+          {qrModalProgram && (
+            <div className="space-y-4">
+              <div className="flex justify-center p-4 bg-white rounded-xl border">
+                <QRCode
+                  id="attendance-qr-svg"
+                  value={qrModalProgram.url}
+                  size={200}
+                  level="M"
+                />
+              </div>
+
+              <div className="rounded-lg border bg-muted/40 px-3 py-2">
+                <p className="text-[10px] text-muted-foreground mb-0.5 uppercase tracking-wider">Check-In URL</p>
+                <p className="text-xs font-mono text-foreground break-all">{qrModalProgram.url}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  data-testid="button-qr-copy"
+                  onClick={() => {
+                    navigator.clipboard.writeText(qrModalProgram.url);
+                    setQrCopied(true);
+                    setTimeout(() => setQrCopied(false), 2000);
+                  }}
+                >
+                  {qrCopied ? <><Check className="h-3.5 w-3.5 mr-1.5 text-green-500" />Copied!</> : <><Copy className="h-3.5 w-3.5 mr-1.5" />Copy Link</>}
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full"
+                  data-testid="button-qr-download"
+                  onClick={() => {
+                    const svg = document.getElementById("attendance-qr-svg");
+                    if (!svg) return;
+                    const svgData = new XMLSerializer().serializeToString(svg);
+                    const svgBlob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+                    const url = URL.createObjectURL(svgBlob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `${qrModalProgram.slug}-qr.svg`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  }}
+                >
+                  <ExternalLink className="h-3.5 w-3.5 mr-1.5" />Download
+                </Button>
+              </div>
+
+              <Button
+                className="w-full"
+                size="sm"
+                data-testid="button-qr-open-public"
+                onClick={() => window.open(qrModalProgram.url, "_blank")}
+              >
+                <ExternalLink className="h-3.5 w-3.5 mr-1.5" />Open Check-In Page
+              </Button>
+
+              <p className="text-center text-[11px] text-muted-foreground">
+                Print or display this QR code so athletes can scan and check in.
+              </p>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
