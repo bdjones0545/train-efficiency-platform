@@ -28677,6 +28677,170 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to create department" }); }
   });
 
+  // ═══════════════════════════════════════════════════════════════
+  // STRATEGY CENTER — Phase 20
+  // ═══════════════════════════════════════════════════════════════
+
+  const STRATEGY_OBJECTIVES = [
+    { id: "obj-1", title: "Increase Total Revenue by 25%",                 theme: "Growth",         owner: "Revenue Director",      department: "Revenue",          priority: "critical", deadline: "2026-12-31", progress: 68, forecast: 78, confidence: 82, status: "on_track",  description: "Drive 25% YoY revenue growth through a combination of pricing optimisation, partner expansion, and improved conversion." },
+    { id: "obj-2", title: "Expand White-Label Partner Base to 5 Partners", theme: "Expansion",      owner: "Partnerships Director", department: "Partnerships",     priority: "high",     deadline: "2026-09-30", progress: 40, forecast: 55, confidence: 71, status: "at_risk",   description: "Sign, onboard, and activate 5 white-label partners generating minimum $5k ARR each." },
+    { id: "obj-3", title: "Reduce Monthly Churn Below 5%",                 theme: "Retention",      owner: "CS Director",           department: "Customer Success", priority: "critical", deadline: "2026-08-31", progress: 73, forecast: 82, confidence: 88, status: "on_track",  description: "Bring churn from 6.2% to sub-5% through proactive interventions, improved onboarding, and retention SOPs." },
+    { id: "obj-4", title: "Increase AI Agent Productivity by 30%",         theme: "Efficiency",     owner: "AI COO",                department: "Operations",       priority: "high",     deadline: "2026-10-31", progress: 81, forecast: 92, confidence: 91, status: "ahead",     description: "Improve agent throughput, auto-execution rates, and reduce human review burden by 30% vs baseline." },
+    { id: "obj-5", title: "Improve Day-1 Client Activation Rate to 90%",  theme: "Activation",     owner: "CS Director",           department: "Customer Success", priority: "high",     deadline: "2026-07-31", progress: 55, forecast: 65, confidence: 74, status: "at_risk",   description: "Ensure 90% of new clients complete their first session booking and onboarding checklist within 24 hours of signup." },
+  ];
+
+  const STRATEGY_KEY_RESULTS = [
+    // Obj 1 — Revenue
+    { id: "kr-1-1",  objectiveId: "obj-1", title: "Generate 500 qualified leads",              target: 500,    current: 340,   unit: "leads",        owner: "Revenue Agent",      status: "on_track" },
+    { id: "kr-1-2",  objectiveId: "obj-1", title: "Book 100 discovery meetings",               target: 100,    current: 68,    unit: "meetings",     owner: "Revenue Agent",      status: "on_track" },
+    { id: "kr-1-3",  objectiveId: "obj-1", title: "Close 30 partnership deals",               target: 30,     current: 12,    unit: "deals",        owner: "Partnerships Director", status: "at_risk" },
+    { id: "kr-1-4",  objectiveId: "obj-1", title: "Grow MRR by $20,000",                      target: 20000,  current: 13600, unit: "USD",          owner: "Finance Director",   status: "on_track" },
+    // Obj 2 — Expansion
+    { id: "kr-2-1",  objectiveId: "obj-2", title: "Sign 5 white-label pilot partners",        target: 5,      current: 2,     unit: "partners",     owner: "Partnerships Director", status: "at_risk" },
+    { id: "kr-2-2",  objectiveId: "obj-2", title: "Publish 3 partner case studies",           target: 3,      current: 1,     unit: "case studies", owner: "Marketing Director", status: "at_risk" },
+    { id: "kr-2-3",  objectiveId: "obj-2", title: "Generate $15,000 white-label revenue",     target: 15000,  current: 6000,  unit: "USD",          owner: "Revenue Director",   status: "at_risk" },
+    { id: "kr-2-4",  objectiveId: "obj-2", title: "Achieve partner NPS above 70",             target: 70,     current: 74,    unit: "NPS",          owner: "CS Director",        status: "achieved" },
+    // Obj 3 — Retention
+    { id: "kr-3-1",  objectiveId: "obj-3", title: "Bring churn rate below 5%",                target: 5,      current: 6.2,   unit: "%",            owner: "CS Director",        status: "at_risk" },
+    { id: "kr-3-2",  objectiveId: "obj-3", title: "Day-3 interventions — 100% coverage",      target: 100,    current: 91,    unit: "%",            owner: "CS Agent",           status: "on_track" },
+    { id: "kr-3-3",  objectiveId: "obj-3", title: "Average client health score above 80",     target: 80,     current: 78,    unit: "score",        owner: "CS Director",        status: "on_track" },
+    { id: "kr-3-4",  objectiveId: "obj-3", title: "Expansion revenue up 20%",                 target: 20,     current: 14,    unit: "%",            owner: "Revenue Director",   status: "on_track" },
+    // Obj 4 — Efficiency
+    { id: "kr-4-1",  objectiveId: "obj-4", title: "Approval inbox resolved same-day (>82%)",  target: 82,     current: 84,    unit: "%",            owner: "AI COO",             status: "achieved" },
+    { id: "kr-4-2",  objectiveId: "obj-4", title: "Auto-execution rate above 40%",            target: 40,     current: 38,    unit: "%",            owner: "AI COO",             status: "on_track" },
+    { id: "kr-4-3",  objectiveId: "obj-4", title: "Agent action throughput +30% vs baseline", target: 30,     current: 22,    unit: "%",            owner: "Operations Director",status: "on_track" },
+    { id: "kr-4-4",  objectiveId: "obj-4", title: "Zero governance policy violations",        target: 0,      current: 0,     unit: "violations",   owner: "Governance Director",status: "achieved" },
+    // Obj 5 — Activation
+    { id: "kr-5-1",  objectiveId: "obj-5", title: "Day-1 activation rate reach 90%",          target: 90,     current: 74,    unit: "%",            owner: "CS Director",        status: "at_risk" },
+    { id: "kr-5-2",  objectiveId: "obj-5", title: "Onboarding checklist completion 100%",     target: 100,    current: 89,    unit: "%",            owner: "CS Agent",           status: "on_track" },
+    { id: "kr-5-3",  objectiveId: "obj-5", title: "First session booked within 48 hours",     target: 100,    current: 81,    unit: "%",            owner: "Scheduling Agent",   status: "on_track" },
+  ];
+
+  const STRATEGY_INITIATIVES = [
+    { id: "init-1", title: "Summer Growth Initiative",           objectiveIds: ["obj-1","obj-2"], departments: ["Revenue","Marketing","Partnerships"], status: "active",    progress: 62, lead: "Revenue Director",      deadline: "2026-08-31", description: "Aggressive outreach, referral activation, and partnership close campaign targeting $8k MRR in 90 days.", taskCount: 18, completedTasks: 11 },
+    { id: "init-2", title: "Referral Programme Expansion",       objectiveIds: ["obj-1"],         departments: ["Revenue","Customer Success"],         status: "active",    progress: 71, lead: "CS Director",           deadline: "2026-07-31", description: "Scale the referral programme from 14 to 40 active referrers using PAIL >80 segmentation.", taskCount: 9,  completedTasks: 6  },
+    { id: "init-3", title: "White-Label Partner Tier Launch",    objectiveIds: ["obj-2"],         departments: ["Partnerships","Product","Finance"],   status: "active",    progress: 38, lead: "Partnerships Director", deadline: "2026-09-30", description: "Build, price, and launch a white-label reseller tier with 3 pilot partners and dedicated onboarding.", taskCount: 14, completedTasks: 5  },
+    { id: "init-4", title: "AI Governance & Autonomy Upgrade",   objectiveIds: ["obj-4"],         departments: ["Operations","Governance","Product"],  status: "completed", progress: 100,lead: "AI COO",               deadline: "2026-05-31", description: "Deploy Level 2 auto-execution, dead-letter queue, governance policy engine, and audit trail.", taskCount: 12, completedTasks: 12 },
+    { id: "init-5", title: "Client Success Transformation",      objectiveIds: ["obj-3","obj-5"], departments: ["Customer Success","Operations"],      status: "active",    progress: 59, lead: "CS Director",           deadline: "2026-08-31", description: "Day-3 intervention protocol, PAIL-driven personalisation, and 90-day retention SOP rollout.", taskCount: 11, completedTasks: 6  },
+  ];
+
+  const DEPT_SCORECARDS = [
+    { department: "Revenue",          head: "Revenue Director",      score: 84, metrics: [{ name: "Pipeline Value",    actual: "$94k",  target: "$120k", status: "on_track" },{ name: "Lead Conversion", actual: "8.4%",  target: "10%",  status: "on_track" },{ name: "MRR Growth",       actual: "$13.6k",target: "$20k",  status: "on_track" }], alignmentScore: 91 },
+    { department: "Operations",       head: "Operations Director",   score: 93, metrics: [{ name: "Session Utilization",actual: "92%",  target: "88%",  status: "exceeded" },{ name: "SLA Compliance",  actual: "99.1%", target: "98%",  status: "exceeded" },{ name: "Throughput",       actual: "+22%",  target: "+30%",  status: "on_track" }], alignmentScore: 96 },
+    { department: "Marketing",        head: "Marketing Director",    score: 71, metrics: [{ name: "Leads Generated",   actual: 340,    target: 500,    status: "on_track" },{ name: "CAC",             actual: "$23",   target: "<$30", status: "exceeded" },{ name: "Engagement Rate",  actual: "4.2%",  target: "5%",    status: "at_risk"  }], alignmentScore: 78 },
+    { department: "Customer Success", head: "CS Director",           score: 79, metrics: [{ name: "Churn Rate",        actual: "6.2%", target: "<5%",  status: "at_risk"  },{ name: "NPS",             actual: 74,      target: 70,     status: "exceeded" },{ name: "Activation Rate",  actual: "74%",   target: "90%",   status: "at_risk"  }], alignmentScore: 83 },
+    { department: "Finance",          head: "Finance Director",      score: 88, metrics: [{ name: "MRR",               actual: "$41k", target: "$40k", status: "exceeded" },{ name: "Gross Margin",    actual: "71%",   target: "68%",  status: "exceeded" },{ name: "CAC Payback",      actual: "3.1mo", target: "<4mo",  status: "exceeded" }], alignmentScore: 92 },
+    { department: "Partnerships",     head: "Partnerships Director", score: 68, metrics: [{ name: "Active Partners",   actual: 2,      target: 5,      status: "at_risk"  },{ name: "Response Rate",   actual: "18%",   target: "15%",  status: "exceeded" },{ name: "Referral Revenue", actual: "$6k",   target: "$15k",  status: "at_risk"  }], alignmentScore: 74 },
+    { department: "Product",          head: "Product Director",      score: 82, metrics: [{ name: "Feature Velocity",  actual: "4/mo", target: "3/mo", status: "exceeded" },{ name: "Agent Uptime",    actual: "99.7%", target: "99.5%",status: "exceeded" },{ name: "Integration Count",actual: 7,       target: 8,       status: "on_track" }], alignmentScore: 87 },
+    { department: "Governance",       head: "Governance Director",   score: 97, metrics: [{ name: "Compliance Score",  actual: "97%",  target: "95%",  status: "exceeded" },{ name: "Decision Velocity",actual: "1.8d",  target: "<2d",  status: "exceeded" },{ name: "Policy Coverage",  actual: "8/8",   target: "8",     status: "exceeded" }], alignmentScore: 98 },
+  ];
+
+  const ALIGNMENT_MAP = STRATEGY_OBJECTIVES.map(obj => ({
+    objectiveId: obj.id,
+    objectiveTitle: obj.title,
+    theme: obj.theme,
+    department: obj.department,
+    initiatives: STRATEGY_INITIATIVES.filter(i => i.objectiveIds.includes(obj.id)).map(i => ({ id: i.id, title: i.title, progress: i.progress, status: i.status })),
+    keyResults: STRATEGY_KEY_RESULTS.filter(kr => kr.objectiveId === obj.id).length,
+    alignmentScore: obj.progress,
+  }));
+
+  // GET /api/strategy/overview
+  app.get("/api/strategy/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const onTrack = STRATEGY_OBJECTIVES.filter(o => o.status === "on_track" || o.status === "ahead").length;
+      const atRisk  = STRATEGY_OBJECTIVES.filter(o => o.status === "at_risk").length;
+      const avgProgress = Math.round(STRATEGY_OBJECTIVES.reduce((s, o) => s + o.progress, 0) / STRATEGY_OBJECTIVES.length);
+      const avgAlignment = Math.round(DEPT_SCORECARDS.reduce((s, d) => s + d.alignmentScore, 0) / DEPT_SCORECARDS.length);
+      const achievedKRs  = STRATEGY_KEY_RESULTS.filter(k => k.status === "achieved").length;
+      res.json({ totalObjectives: STRATEGY_OBJECTIVES.length, onTrack, atRisk, ahead: STRATEGY_OBJECTIVES.filter(o => o.status === "ahead").length, avgProgress, strategicAlignmentScore: avgAlignment, totalKeyResults: STRATEGY_KEY_RESULTS.length, achievedKeyResults: achievedKRs, totalInitiatives: STRATEGY_INITIATIVES.length, activeInitiatives: STRATEGY_INITIATIVES.filter(i => i.status === "active").length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load overview" }); }
+  });
+
+  // GET /api/strategy/objectives
+  app.get("/api/strategy/objectives", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const objectives = STRATEGY_OBJECTIVES.map(o => ({ ...o, keyResults: STRATEGY_KEY_RESULTS.filter(kr => kr.objectiveId === o.id), initiatives: STRATEGY_INITIATIVES.filter(i => i.objectiveIds.includes(o.id)).map(i => ({ id: i.id, title: i.title, progress: i.progress, status: i.status })) }));
+      res.json({ objectives, total: objectives.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load objectives" }); }
+  });
+
+  // GET /api/strategy/key-results
+  app.get("/api/strategy/key-results", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const objectiveId = req.query.objectiveId as string | undefined;
+      let krs = [...STRATEGY_KEY_RESULTS];
+      if (objectiveId) krs = krs.filter(kr => kr.objectiveId === objectiveId);
+      const byStatus = krs.reduce((acc, kr) => { acc[kr.status] = (acc[kr.status] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      res.json({ keyResults: krs, total: krs.length, byStatus, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load key results" }); }
+  });
+
+  // GET /api/strategy/initiatives
+  app.get("/api/strategy/initiatives", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const initiatives = STRATEGY_INITIATIVES.map(i => ({ ...i, linkedObjectives: STRATEGY_OBJECTIVES.filter(o => i.objectiveIds.includes(o.id)).map(o => ({ id: o.id, title: o.title, theme: o.theme })) }));
+      res.json({ initiatives, total: initiatives.length, active: initiatives.filter(i => i.status === "active").length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load initiatives" }); }
+  });
+
+  // GET /api/strategy/scorecards
+  app.get("/api/strategy/scorecards", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const avgScore = Math.round(DEPT_SCORECARDS.reduce((s, d) => s + d.score, 0) / DEPT_SCORECARDS.length);
+      res.json({ scorecards: DEPT_SCORECARDS, avgScore, topDepartment: [...DEPT_SCORECARDS].sort((a, b) => b.score - a.score)[0]?.department, lowestDepartment: [...DEPT_SCORECARDS].sort((a, b) => a.score - b.score)[0]?.department, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load scorecards" }); }
+  });
+
+  // GET /api/strategy/alignment
+  app.get("/api/strategy/alignment", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const avgAlignment = Math.round(DEPT_SCORECARDS.reduce((s, d) => s + d.alignmentScore, 0) / DEPT_SCORECARDS.length);
+      const deptAlignment = DEPT_SCORECARDS.map(d => ({ department: d.department, alignmentScore: d.alignmentScore, score: d.score }));
+      res.json({ alignmentMap: ALIGNMENT_MAP, strategicAlignmentScore: avgAlignment, departmentAlignment: deptAlignment, misaligned: deptAlignment.filter(d => d.alignmentScore < 80), generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load alignment data" }); }
+  });
+
+  // GET /api/strategy/forecasting
+  app.get("/api/strategy/forecasting", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const forecasts = STRATEGY_OBJECTIVES.map(o => ({ id: o.id, title: o.title, owner: o.owner, deadline: o.deadline, currentProgress: o.progress, forecastedProgress: o.forecast, confidence: o.confidence, status: o.status, theme: o.theme, gap: o.forecast - o.progress, onTimeProb: o.status === "ahead" ? 95 : o.status === "on_track" ? 78 : 45, aiRecommendation: o.status === "at_risk" ? `Allocate additional resources to ${o.department}. Current trajectory misses deadline by ~3 weeks.` : o.status === "ahead" ? "Trajectory is strong — consider stretching the target or re-allocating surplus capacity." : "On track — maintain current execution cadence and review at mid-deadline checkpoint." }));
+      res.json({ forecasts, avgForecastedProgress: Math.round(forecasts.reduce((s, f) => s + f.forecastedProgress, 0) / forecasts.length), atRiskCount: forecasts.filter(f => f.status === "at_risk").length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load forecasting data" }); }
+  });
+
+  // GET /api/strategy/analytics
+  app.get("/api/strategy/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+    try {
+      const byTheme   = STRATEGY_OBJECTIVES.reduce((acc, o) => { acc[o.theme] = (acc[o.theme] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const byStatus  = STRATEGY_OBJECTIVES.reduce((acc, o) => { acc[o.status] = (acc[o.status] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const krByStatus= STRATEGY_KEY_RESULTS.reduce((acc, k) => { acc[k.status] = (acc[k.status] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const initByStatus = STRATEGY_INITIATIVES.reduce((acc, i) => { acc[i.status] = (acc[i.status] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const avgDeptScore = Math.round(DEPT_SCORECARDS.reduce((s, d) => s + d.score, 0) / DEPT_SCORECARDS.length);
+      const avgAlignment = Math.round(DEPT_SCORECARDS.reduce((s, d) => s + d.alignmentScore, 0) / DEPT_SCORECARDS.length);
+      res.json({ totalObjectives: STRATEGY_OBJECTIVES.length, totalKeyResults: STRATEGY_KEY_RESULTS.length, totalInitiatives: STRATEGY_INITIATIVES.length, byTheme, byStatus, krByStatus, initiativesByStatus: initByStatus, avgObjectiveProgress: Math.round(STRATEGY_OBJECTIVES.reduce((s, o) => s + o.progress, 0) / STRATEGY_OBJECTIVES.length), avgDepartmentScore: avgDeptScore, strategicAlignmentScore: avgAlignment, initiativeCompletionRate: Math.round((STRATEGY_INITIATIVES.filter(i => i.status === "completed").length / STRATEGY_INITIATIVES.length) * 100), generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load analytics" }); }
+  });
+
+  // POST /api/strategy/create-objective
+  app.post("/api/strategy/create-objective", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { title, theme, owner, department, priority, deadline, description } = req.body;
+      if (!title) return res.status(400).json({ message: "title required" });
+      res.json({ success: true, objective: { id: `obj-${Date.now()}`, title, theme: theme ?? "Growth", owner: owner ?? "AI COO", department: department ?? "Operations", priority: priority ?? "medium", deadline: deadline ?? "", progress: 0, forecast: 0, confidence: 80, status: "on_track", description: description ?? "", createdAt: new Date().toISOString() } });
+    } catch (e: any) { res.status(500).json({ message: "Failed to create objective" }); }
+  });
+
+  // POST /api/strategy/update-progress
+  app.post("/api/strategy/update-progress", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { objectiveId, progress, notes } = req.body;
+      if (!objectiveId) return res.status(400).json({ message: "objectiveId required" });
+      const status = (progress ?? 0) >= 100 ? "achieved" : (progress ?? 0) >= 80 ? "on_track" : "at_risk";
+      res.json({ success: true, objectiveId, progress: progress ?? 0, status, notes: notes ?? "", updatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to update progress" }); }
+  });
+
   // POST /api/organization/assign-responsibility
   app.post("/api/organization/assign-responsibility", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
