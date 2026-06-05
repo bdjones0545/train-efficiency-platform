@@ -1,0 +1,143 @@
+Cross-reference working booking emails against broken Attendance Tracker report emails.
+
+Current issue:
+Booking emails send successfully through SendGrid, but Attendance Tracker coach report test says sent and no email arrives.
+
+Goal:
+Make Attendance Tracker report emails use the exact same working SendGrid service/configuration as booking emails.
+
+Audit:
+
+1. Find the working booking email code path.
+Search for:
+- “New Session Booked”
+- “Session Confirmed”
+- “Recurring Sessions Confirmed”
+- sendSessionConfirmation
+- sendBookingEmail
+- sendgrid
+- sgMail.send
+
+2. Identify:
+- SendGrid import
+- API key initialization
+- verified from email
+- reply-to handling
+- template/html structure
+- error handling
+- logging
+- environment variable names
+
+3. Find Attendance Tracker report email code path.
+Search for:
+- sendAttendanceReport
+- attendance_report_email_history
+- test-daily
+- test-weekly
+- Coach Reports
+- Send Test Daily Report
+
+4. Compare both paths.
+
+Check for differences:
+- wrong SendGrid API key env var
+- missing sgMail.setApiKey()
+- wrong/from unverified sender
+- invalid recipient formatting
+- function returning success before await send completes
+- swallowed SendGrid errors
+- test endpoint not actually calling SendGrid
+- email history logging success before delivery attempt
+- malformed payload
+- no text/html body
+- no active recipients after filtering
+- wrong org/program ID
+- wrong table query
+
+5. Refactor Attendance Tracker reports to use the same email helper/service used by booking emails.
+
+Example:
+If bookings use:
+
+sendEmail({
+  to,
+  from,
+  subject,
+  html,
+  text
+})
+
+then attendance reports should call that exact helper.
+
+Do not create a separate SendGrid client unless necessary.
+
+6. Fix the test endpoint.
+
+POST /api/attendance-programs/:id/reports/send-test-daily
+
+must:
+- Resolve org from session
+- Load active recipients
+- Generate report HTML/text
+- Await the actual SendGrid send call
+- Only return success after SendGrid returns 2xx
+- Return per-recipient result:
+  {
+    email,
+    status: "sent" | "failed",
+    sendgridStatusCode,
+    sendgridMessageId,
+    error
+  }
+
+7. Fix logging.
+
+attendance_report_email_history should log:
+- attempted
+- sent
+- failed
+- recipient_email
+- report_type
+- sendgrid_status_code
+- sendgrid_message_id
+- error_message
+
+Do not log sent unless SendGrid accepted the message.
+
+8. Add UI feedback.
+
+After test send, show:
+- Sent to X recipients
+- Failed Y recipients
+- Error details if any
+
+9. Add temporary debug logs.
+
+Log:
+- report recipients count
+- recipient emails
+- SendGrid sender email
+- subject
+- SendGrid response status
+- SendGrid error body if failed
+
+10. Verify from email.
+
+Use the same verified sender as booking emails.
+
+If booking emails use:
+from: verifiedSender
+
+attendance reports must use the same.
+
+11. Test:
+- Send booking email still works
+- Send attendance test daily report
+- Confirm email arrives
+- Confirm SendGrid Activity Feed shows event
+- Confirm attendance_report_email_history row says sent
+- Confirm failed sends show real error
+
+Run:
+npm run check
+npm run build
