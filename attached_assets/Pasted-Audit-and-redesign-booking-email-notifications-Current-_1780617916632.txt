@@ -1,0 +1,147 @@
+Audit and redesign booking email notifications.
+
+Current issue:
+
+Creating or modifying recurring semi-private sessions generates excessive emails.
+
+Example sequence:
+
+- New Session Booked
+- Session Confirmed
+- Recurring Sessions Created
+- Recurring Sessions Confirmed
+- Session Rescheduled
+- Multiple duplicates for recurring instances
+
+Users are receiving several emails for a single action.
+
+Goal:
+
+Reduce notifications to meaningful events only.
+
+Audit:
+
+1. Find every booking email trigger.
+2. Find every recurring-session email trigger.
+3. Find every confirmation email trigger.
+4. Find every reschedule email trigger.
+5. Identify duplicate notifications generated from the same action.
+
+Expected behavior:
+
+SEMI-PRIVATE BOOKINGS
+
+When an athlete joins:
+
+Send ONLY:
+- Session Confirmation
+
+Do NOT send:
+- New Session Booked
+- Recurring Sessions Created
+- Recurring Sessions Confirmed
+
+unless admin notification settings explicitly require it.
+
+RECURRING BOOKINGS
+
+When athlete books recurring sessions:
+
+Send ONE email:
+
+Subject:
+Recurring Sessions Confirmed
+
+Include:
+- First session date
+- Recurrence pattern
+- Total sessions created
+- Location
+- Coach
+- Calendar summary
+
+Do NOT send separate emails for every occurrence.
+
+RESCHEDULES
+
+If multiple recurring sessions are rescheduled together:
+
+Send ONE summary email:
+
+Subject:
+Recurring Sessions Updated
+
+Include:
+- Sessions affected
+- Old dates
+- New dates
+
+Do NOT send one email per session.
+
+CANCELLATIONS
+
+Send one cancellation summary email.
+
+ADMIN NOTIFICATIONS
+
+Create notification preferences:
+
+Booking Notifications:
+☐ New Booking
+☐ Recurring Booking Created
+☐ Session Rescheduled
+☐ Session Cancelled
+
+Athlete Notifications:
+☐ Confirmation
+☐ Reminder
+☐ Reschedule
+☐ Cancellation
+
+DEDUPLICATION
+
+Add notification deduplication:
+
+Key:
+org_id
+user_id
+booking_id
+event_type
+
+Prevent identical notifications within:
+15 minutes
+
+EMAIL CONSOLIDATION
+
+If one action creates:
+- booking
+- confirmation
+- recurring creation
+
+combine into one email.
+
+LOGGING
+
+Add notification audit entries:
+
+event
+recipient
+template
+reason_sent
+source_action
+
+so duplicates can be identified.
+
+TEST
+
+Book recurring semi-private.
+
+Expected result:
+
+Athlete receives:
+1 email
+
+Admin receives:
+0-1 emails depending on settings
+
+Not 4-6 emails.
