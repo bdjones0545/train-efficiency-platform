@@ -271,7 +271,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "book_session",
-      description: "Book a session for the current user. Use the two-call handshake: first call with confirmed: false to get a pendingActionId, present the summary to the user, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId.",
+      description: "Book a session for the current user. Use the two-call handshake: first call with confirmed: false to get a pendingActionId, present the summary to the user, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId. If you plan to immediately follow this with create_confirmed_recurring_sessions, set skipConfirmationEmail: true so the athlete only receives one consolidated recurring-sessions email instead of both a single confirmation and a recurring summary.",
       parameters: {
         type: "object",
         properties: {
@@ -281,6 +281,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           endAt: { type: "string", description: "Session end time in ISO 8601 format" },
           confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the user confirms." },
           pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
+          skipConfirmationEmail: { type: "boolean", description: "Set to true when this session is the anchor for a recurring series you are about to create via create_confirmed_recurring_sessions. Prevents the individual per-session confirmation email — the recurring summary email will cover all sessions." },
         },
         required: ["coachId", "serviceId", "startAt", "endAt", "confirmed"],
       },
@@ -374,7 +375,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "coach_create_session",
-      description: "Create a session for a client (coach/admin only). Can specify an existing client by ID or create a walk-in by name. Use the two-call handshake: first call with confirmed: false to get a pendingActionId, restate all details to the coach, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId.",
+      description: "Create a session for a client (coach/admin only). Can specify an existing client by ID or create a walk-in by name. Use the two-call handshake: first call with confirmed: false to get a pendingActionId, restate all details to the coach, then call again with confirmed: true and the pendingActionId after they confirm. Never invent a pendingActionId. If you plan to immediately follow this with create_confirmed_recurring_sessions, set skipConfirmationEmail: true so the client only receives one consolidated recurring-sessions email instead of both a single confirmation and a recurring summary.",
       parameters: {
         type: "object",
         properties: {
@@ -387,6 +388,7 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
           location: { type: "string", description: "Session location (optional)" },
           confirmed: { type: "boolean", description: "Set to false on the first call to preview and get a pendingActionId. Set to true on the second call only after the coach confirms." },
           pendingActionId: { type: "string", description: "Required when confirmed is true. Must be the exact pendingActionId returned by the previous call with confirmed: false. Never invent this value." },
+          skipConfirmationEmail: { type: "boolean", description: "Set to true when this session is the anchor for a recurring series you are about to create via create_confirmed_recurring_sessions. Prevents the individual per-session confirmation email — the recurring summary email will cover all sessions." },
         },
         required: ["coachId", "serviceId", "startAt", "confirmed"],
       },
@@ -1391,53 +1393,58 @@ async function executeTool(
         });
 
         // Send confirmation emails to client and coach (non-blocking)
-        (async () => {
-          try {
-            const [clientUser, coachProfile, orgBranding] = await Promise.all([
-              storage.getUser(userId),
-              storage.getCoachProfile(coachId),
-              getOrgBranding(organizationId),
-            ]);
-            const tz = (coachProfile as any)?.timezone || "America/New_York";
-            const coachName = coachProfile?.user
-              ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
-              : "Your Coach";
-            const clientName = clientUser
-              ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
-              : "A client";
+        // Skip if skipConfirmationEmail is set — caller will send a recurring summary instead.
+        if (!args.skipConfirmationEmail) {
+          (async () => {
+            try {
+              const [clientUser, coachProfile, orgBranding] = await Promise.all([
+                storage.getUser(userId),
+                storage.getCoachProfile(coachId),
+                getOrgBranding(organizationId),
+              ]);
+              const tz = (coachProfile as any)?.timezone || "America/New_York";
+              const coachName = coachProfile?.user
+                ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+                : "Your Coach";
+              const clientName = clientUser
+                ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+                : "A client";
 
-            if (clientUser?.email) {
-              sendBookingConfirmationToClient(
-                clientUser.email,
-                clientUser.firstName || "there",
-                coachName,
-                service.name,
-                start,
-                end,
-                undefined,
-                tz,
-                orgBranding
-              ).catch(() => {});
-            }
+              if (clientUser?.email) {
+                sendBookingConfirmationToClient(
+                  clientUser.email,
+                  clientUser.firstName || "there",
+                  coachName,
+                  service.name,
+                  start,
+                  end,
+                  undefined,
+                  tz,
+                  orgBranding
+                ).catch(() => {});
+              }
 
-            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
-            if (coachEmail) {
-              sendBookingNotificationToCoach(
-                coachEmail,
-                coachProfile?.user?.firstName || "Coach",
-                clientName,
-                service.name,
-                start,
-                end,
-                undefined,
-                tz,
-                orgBranding
-              ).catch(() => {});
+              const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+              if (coachEmail) {
+                sendBookingNotificationToCoach(
+                  coachEmail,
+                  coachProfile?.user?.firstName || "Coach",
+                  clientName,
+                  service.name,
+                  start,
+                  end,
+                  undefined,
+                  tz,
+                  orgBranding
+                ).catch(() => {});
+              }
+            } catch (err) {
+              console.error("[book_session] Email notification error:", err);
             }
-          } catch (err) {
-            console.error("[book_session] Email notification error:", err);
-          }
-        })();
+          })();
+        } else {
+          console.log(`[book_session] Skipping confirmation email (skipConfirmationEmail=true) — recurring summary will cover all sessions`);
+        }
 
         return JSON.stringify({ success: true, bookingId: booking.id, message: "Session booked successfully!" });
       }
@@ -1784,53 +1791,58 @@ async function executeTool(
         });
 
         // Send confirmation emails to client and coach (non-blocking)
-        (async () => {
-          try {
-            const [clientUser, coachProfile, orgBranding] = await Promise.all([
-              storage.getUser(resolvedClientId),
-              storage.getCoachProfile(coachId),
-              getOrgBranding(organizationId),
-            ]);
-            const tz = (coachProfile as any)?.timezone || "America/New_York";
-            const coachName = coachProfile?.user
-              ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
-              : "Your Coach";
-            const clientName = clientUser
-              ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
-              : "A client";
+        // Skip if skipConfirmationEmail is set — caller will send a recurring summary instead.
+        if (!args.skipConfirmationEmail) {
+          (async () => {
+            try {
+              const [clientUser, coachProfile, orgBranding] = await Promise.all([
+                storage.getUser(resolvedClientId),
+                storage.getCoachProfile(coachId),
+                getOrgBranding(organizationId),
+              ]);
+              const tz = (coachProfile as any)?.timezone || "America/New_York";
+              const coachName = coachProfile?.user
+                ? `${coachProfile.user.firstName ?? ""} ${coachProfile.user.lastName ?? ""}`.trim()
+                : "Your Coach";
+              const clientName = clientUser
+                ? `${clientUser.firstName ?? ""} ${clientUser.lastName ?? ""}`.trim()
+                : "A client";
 
-            if (clientUser?.email) {
-              sendBookingConfirmationToClient(
-                clientUser.email,
-                clientUser.firstName || "there",
-                coachName,
-                service.name,
-                start,
-                end,
-                location || undefined,
-                tz,
-                orgBranding
-              ).catch(() => {});
-            }
+              if (clientUser?.email) {
+                sendBookingConfirmationToClient(
+                  clientUser.email,
+                  clientUser.firstName || "there",
+                  coachName,
+                  service.name,
+                  start,
+                  end,
+                  location || undefined,
+                  tz,
+                  orgBranding
+                ).catch(() => {});
+              }
 
-            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
-            if (coachEmail) {
-              sendBookingNotificationToCoach(
-                coachEmail,
-                coachProfile?.user?.firstName || "Coach",
-                clientName,
-                service.name,
-                start,
-                end,
-                location || undefined,
-                tz,
-                orgBranding
-              ).catch(() => {});
+              const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+              if (coachEmail) {
+                sendBookingNotificationToCoach(
+                  coachEmail,
+                  coachProfile?.user?.firstName || "Coach",
+                  clientName,
+                  service.name,
+                  start,
+                  end,
+                  location || undefined,
+                  tz,
+                  orgBranding
+                ).catch(() => {});
+              }
+            } catch (err) {
+              console.error("[coach_create_session] Email notification error:", err);
             }
-          } catch (err) {
-            console.error("[coach_create_session] Email notification error:", err);
-          }
-        })();
+          })();
+        } else {
+          console.log(`[coach_create_session] Skipping confirmation email (skipConfirmationEmail=true) — recurring summary will cover all sessions`);
+        }
 
         return JSON.stringify({ success: true, bookingId: booking.id, message: "Session created successfully!" });
       }

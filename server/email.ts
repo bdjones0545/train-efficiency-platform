@@ -30,6 +30,55 @@ export interface EmailLogContext {
   bookingId?: string;
   agentActionId?: string;
   recipientUserId?: string;
+  reasonSent?: string;
+  sourceAction?: string;
+}
+
+// ── Notification Deduplication Cache ─────────────────────────────────────────
+// Prevents identical notification type+recipient combos within a rolling window.
+
+const DEDUP_TTL_MS = 15 * 60 * 1000; // 15 minutes
+const _dedupCache = new Map<string, number>(); // key → timestamp of last send
+
+function _dedupKey(to: string, type: string): string {
+  return `${to}:${type}`;
+}
+
+function _isDeduped(to: string, type: string): boolean {
+  const key = _dedupKey(to, type);
+  const ts = _dedupCache.get(key);
+  if (ts === undefined) return false;
+  if (Date.now() - ts > DEDUP_TTL_MS) {
+    _dedupCache.delete(key);
+    return false;
+  }
+  return true;
+}
+
+function _markDeduped(to: string, type: string): void {
+  _dedupCache.set(_dedupKey(to, type), Date.now());
+  // Prune cache entries older than 2× TTL
+  const cutoff = Date.now() - DEDUP_TTL_MS * 2;
+  for (const [k, ts] of _dedupCache.entries()) {
+    if (ts < cutoff) _dedupCache.delete(k);
+  }
+}
+
+/**
+ * Proactively suppress a booking_confirmation email for `email` within the
+ * dedup window. Call this after sending a recurring-sessions email so the
+ * individual per-session confirmation that may fire shortly after is blocked.
+ */
+export function suppressBookingConfirmation(email: string): void {
+  _markDeduped(email, 'booking_confirmation');
+}
+
+/**
+ * Suppress any notification type for an email address for the dedup window.
+ * Useful for preventing coach "New Session Booked" spam during recurring creation.
+ */
+export function suppressNotificationType(email: string, type: string): void {
+  _markDeduped(email, type);
 }
 
 const DEFAULT_NOTIFICATION_PREFS: Record<string, boolean> = {
@@ -239,6 +288,31 @@ export async function getUncachableSendGridClient() {
 
 async function sendEmail(to: string, subject: string, html: string, senderName?: string, logCtx?: EmailLogContext, replyTo?: string) {
   let finalHtml = html;
+  const emailType = logCtx?.type || 'unknown';
+
+  // ── Deduplication check ────────────────────────────────────────────────────
+  if (_isDeduped(to, emailType)) {
+    console.log(`[Email] Deduped "${subject}" to ${to} (type=${emailType}, window=${DEDUP_TTL_MS / 60000}min)`);
+    if (logCtx?.orgId) {
+      storage.createCommunicationLog({
+        orgId: logCtx.orgId,
+        userId: logCtx.userId,
+        coachId: logCtx.coachId,
+        bookingId: logCtx.bookingId,
+        agentActionId: logCtx.agentActionId,
+        type: emailType,
+        channel: 'email',
+        recipientEmail: to,
+        subject,
+        status: 'deduped',
+        provider: 'sendgrid',
+        errorMessage: `Suppressed: duplicate ${emailType} within ${DEDUP_TTL_MS / 60000} minutes`,
+      } as any).catch(() => {});
+    }
+    return;
+  }
+  // Mark this type as sent for this recipient so subsequent duplicates are blocked
+  _markDeduped(to, emailType);
 
   if (logCtx?.recipientUserId) {
     try {
@@ -1186,6 +1260,10 @@ export async function sendRecurringSessionsCreatedEmailToClient(
     ${para("You can view all of your upcoming sessions by logging in to your account. See you on the schedule!")}
   `, org);
   await sendEmail(clientEmail, subject, html, b.name, logCtx);
+  // Suppress the individual per-session booking_confirmation that may fire
+  // shortly after (e.g. when the source booking was created immediately before
+  // the recurring clone). This prevents the athlete receiving two emails.
+  suppressBookingConfirmation(clientEmail);
 }
 
 export async function sendRecurringSessionsCreatedEmailToCoach(

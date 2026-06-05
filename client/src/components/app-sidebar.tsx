@@ -75,6 +75,7 @@ import {
   UserCheck,
   CheckCheck,
   QrCode,
+  Bell,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -1331,6 +1332,7 @@ export function AppSidebar() {
               { title: "Stripe", url: "/admin/stripe", icon: CreditCard, testId: "nav-stripe" },
               { title: "Subscription", url: "/admin/subscription", icon: Sparkles, testId: "nav-subscription" },
               { title: "Options", url: "/admin/configuration", icon: Settings, testId: "nav-options" },
+              { title: "Notifications", url: "/admin/notification-settings", icon: Bell, testId: "nav-notification-settings" },
             ],
           } as NavSection,
         ]

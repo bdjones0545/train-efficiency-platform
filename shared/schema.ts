@@ -5135,3 +5135,34 @@ export const attendanceEmailHistory = pgTable("attendance_email_history", {
 export const insertAttendanceEmailHistorySchema = createInsertSchema(attendanceEmailHistory).omit({ id: true, createdAt: true });
 export type AttendanceEmailHistory = typeof attendanceEmailHistory.$inferSelect;
 export type InsertAttendanceEmailHistory = z.infer<typeof insertAttendanceEmailHistorySchema>;
+
+// ─── Org Email Notification Settings ─────────────────────────────────────────
+// Controls which booking-related emails the platform sends for each org.
+
+export const orgEmailNotificationSettings = pgTable("org_email_notification_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull().unique(),
+
+  // Athlete (client) notification toggles
+  athleteBookingConfirmation: boolean("athlete_booking_confirmation").notNull().default(true),
+  athleteRecurringConfirmation: boolean("athlete_recurring_confirmation").notNull().default(true),
+  athleteReschedule: boolean("athlete_reschedule").notNull().default(true),
+  athleteCancellation: boolean("athlete_cancellation").notNull().default(true),
+  athleteReminder: boolean("athlete_reminder").notNull().default(true),
+
+  // Admin / coach notification toggles
+  adminNewBooking: boolean("admin_new_booking").notNull().default(true),
+  adminRecurringBooking: boolean("admin_recurring_booking").notNull().default(false),
+  adminReschedule: boolean("admin_reschedule").notNull().default(true),
+  adminCancellation: boolean("admin_cancellation").notNull().default(true),
+
+  // Deduplication window in minutes (default 15)
+  dedupWindowMinutes: integer("dedup_window_minutes").notNull().default(15),
+
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export const insertOrgEmailNotificationSettingsSchema = createInsertSchema(orgEmailNotificationSettings).omit({ id: true, createdAt: true, updatedAt: true });
+export type OrgEmailNotificationSettings = typeof orgEmailNotificationSettings.$inferSelect;
+export type InsertOrgEmailNotificationSettings = z.infer<typeof insertOrgEmailNotificationSettingsSchema>;

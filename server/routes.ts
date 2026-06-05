@@ -11,7 +11,7 @@ import express from "express";
 import { addDays, startOfWeek, format, parseISO, addMinutes, setHours, setMinutes } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
-import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, sendBookingCancellationEmailToClient, sendBookingCancellationEmailToCoach, sendBookingRescheduleEmailToClient, sendBookingRescheduleEmailToCoach, sendRecurringSessionsCreatedEmailToClient, sendRecurringSessionsCreatedEmailToCoach, type OrgBranding, type EmailLogContext } from "./email";
+import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, sendBookingCancellationEmailToClient, sendBookingCancellationEmailToCoach, sendBookingRescheduleEmailToClient, sendBookingRescheduleEmailToCoach, sendRecurringSessionsCreatedEmailToClient, sendRecurringSessionsCreatedEmailToCoach, suppressBookingConfirmation, suppressNotificationType, type OrgBranding, type EmailLogContext } from "./email";
 import { sendSms, normalizePhone, smsBookingConfirmation, smsCancellation, smsReschedule } from "./sms";
 import crypto from "crypto";
 import Stripe from "stripe";
@@ -2857,11 +2857,19 @@ export async function registerRoutes(
             const lastSessionAt = new Date(sortedCreated[sortedCreated.length - 1].startAt);
             const location = (sourceBooking as any).location || undefined;
 
+            // Suppress any per-session booking_confirmation that may have fired
+            // when the source booking was created — the recurring summary covers all sessions.
+            if (clientUser?.email) suppressBookingConfirmation(clientUser.email);
+            // Suppress coach "New Session Booked" notification — the recurring summary replaces it.
+            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
+            if (coachEmail) suppressNotificationType(coachEmail, 'booking_notification');
+
             const recurringLogCtx: EmailLogContext | undefined = orgId ? {
                 orgId,
                 type: "recurring",
                 userId: clientUser?.id,
                 recipientUserId: clientUser?.id,
+                sourceAction: "clone_bookings",
               } : undefined;
             if (clientUser?.email) {
               sendRecurringSessionsCreatedEmailToClient(
@@ -2881,7 +2889,6 @@ export async function registerRoutes(
               console.log("[POST /api/coach/bookings/clone] Skipping client recurring email — no email on file");
             }
 
-            const coachEmail = (coachProfile as any)?.email || coachProfile?.user?.email;
             if (coachEmail) {
               sendRecurringSessionsCreatedEmailToCoach(
                 coachEmail,
