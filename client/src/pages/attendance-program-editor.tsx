@@ -79,6 +79,7 @@ export default function AttendanceProgramEditorPage() {
   const [customName, setCustomName] = useState("");
   const [testSending, setTestSending] = useState<string | null>(null);
   const [bulkTestSending, setBulkTestSending] = useState<"daily" | "weekly" | null>(null);
+  const [lastBulkResult, setLastBulkResult] = useState<{ reportType: string; recipients: any[]; error?: string } | null>(null);
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/attendance-programs", programId, "config"],
@@ -332,6 +333,7 @@ export default function AttendanceProgramEditorPage() {
 
   const sendBulkTestReport = async (reportType: "daily" | "weekly") => {
     setBulkTestSending(reportType);
+    setLastBulkResult(null);
     try {
       const r = await fetch(`/api/attendance-programs/${programId}/reports/send-test-${reportType}`, {
         method: "POST",
@@ -339,23 +341,29 @@ export default function AttendanceProgramEditorPage() {
       });
       const result = await r.json();
       if (!result.sendgridConfigured) {
-        toast({ title: "SendGrid not configured", description: "SendGrid is not configured in this environment.", variant: "destructive" });
+        const errDetail = result.error || "SendGrid is not configured in this environment.";
+        setLastBulkResult({ reportType, recipients: [], error: errDetail });
+        toast({ title: "SendGrid not configured", description: errDetail, variant: "destructive" });
         return;
       }
-      const sent = (result.recipients || []).filter((x: any) => x.status === "sent").length;
-      const failed = (result.recipients || []).filter((x: any) => x.status === "failed").length;
+      const recips: any[] = result.recipients || [];
+      setLastBulkResult({ reportType, recipients: recips, error: result.error });
+      const sent = recips.filter((x: any) => x.status === "sent").length;
+      const failed = recips.filter((x: any) => x.status === "failed").length;
       if (failed > 0 && sent === 0) {
-        const firstErr = result.recipients.find((x: any) => x.error)?.error || result.error || "Unknown error";
+        const firstErr = recips.find((x: any) => x.error)?.error || result.error || "Unknown error";
         toast({ title: "All sends failed", description: firstErr, variant: "destructive" });
       } else if (failed > 0) {
-        toast({ title: `Sent ${sent}, failed ${failed}`, description: "Some recipients failed — check email history for errors.", variant: "destructive" });
+        toast({ title: `Sent ${sent}, failed ${failed}`, description: "Some recipients failed — see details below.", variant: "destructive" });
       } else if (sent === 0) {
         toast({ title: "No recipients", description: result.error || "No active recipients with this report type enabled.", variant: "destructive" });
       } else {
         toast({ title: `Test ${reportType} sent to ${sent} recipient${sent === 1 ? "" : "s"}`, description: "Check inboxes and SendGrid Activity Feed to confirm delivery." });
       }
-    } catch {
-      toast({ title: "Error", description: "Failed to send test reports", variant: "destructive" });
+    } catch (e: any) {
+      const errMsg = e?.message || "Failed to send test reports";
+      setLastBulkResult({ reportType, recipients: [], error: errMsg });
+      toast({ title: "Error", description: errMsg, variant: "destructive" });
     } finally {
       setBulkTestSending(null);
     }
@@ -630,6 +638,34 @@ export default function AttendanceProgramEditorPage() {
                       {bulkTestSending === "weekly" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />} Send Test Weekly Report
                     </Button>
                   </div>
+                  {/* Per-recipient results panel */}
+                  {lastBulkResult && (
+                    <div className="mt-2 rounded-lg border border-muted bg-muted/20 p-3 space-y-2" data-testid="bulk-test-results">
+                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                        Last test — {lastBulkResult.reportType} report
+                      </p>
+                      {lastBulkResult.error && lastBulkResult.recipients.length === 0 && (
+                        <div className="flex items-start gap-2 text-xs text-red-400">
+                          <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                          <span>{lastBulkResult.error}</span>
+                        </div>
+                      )}
+                      {lastBulkResult.recipients.map((r: any, i: number) => (
+                        <div key={i} className={`flex items-start gap-2 text-xs rounded p-2 ${r.status === "sent" ? "bg-green-500/10 text-green-400" : r.status === "failed" ? "bg-red-500/10 text-red-400" : "bg-muted/30 text-muted-foreground"}`} data-testid={`bulk-result-${i}`}>
+                          <span className="font-bold shrink-0">{r.status === "sent" ? "✓" : r.status === "failed" ? "✗" : "—"}</span>
+                          <div className="flex-1 min-w-0">
+                            <span className="font-medium">{r.email}</span>
+                            {r.sendgridStatusCode && <span className="ml-2 opacity-70">HTTP {r.sendgridStatusCode}</span>}
+                            {r.sendgridMessageId && <span className="ml-2 opacity-60 font-mono text-[10px]">ID: {r.sendgridMessageId}</span>}
+                            {r.error && <div className="mt-0.5 break-all opacity-90">{r.error}</div>}
+                          </div>
+                          <Badge variant="outline" className={`text-[9px] shrink-0 ${r.status === "sent" ? "border-green-500/40 text-green-400" : r.status === "failed" ? "border-red-500/40 text-red-400" : "border-muted"}`}>
+                            {r.status}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
             </CardContent>

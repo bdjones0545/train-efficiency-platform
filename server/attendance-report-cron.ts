@@ -70,27 +70,38 @@ async function getOrgBranding(orgId: string): Promise<{ name: string; color: str
 
 // ── SendGrid ──────────────────────────────────────────────────────────────────
 
-async function getSendGridSettings() {
+async function getSendGridSettings(): Promise<{ sgMail: any; fromEmail: string } | null> {
   try {
     const sgMail = (await import("@sendgrid/mail")).default;
     const { getCredentials } = await import("./email");
     const { apiKey, email: fromEmail } = await getCredentials();
-    if (!apiKey || !fromEmail) return null;
+    if (!apiKey) {
+      console.error("[AttendanceReportCron] getSendGridSettings: apiKey is missing");
+      return null;
+    }
+    if (!fromEmail) {
+      console.error("[AttendanceReportCron] getSendGridSettings: fromEmail is missing");
+      return null;
+    }
     sgMail.setApiKey(apiKey);
+    console.log(`[AttendanceReportCron] getSendGridSettings: from=${fromEmail}`);
     return { sgMail, fromEmail };
-  } catch {
+  } catch (e: any) {
+    console.error("[AttendanceReportCron] getSendGridSettings error:", e?.message || e);
     return null;
   }
 }
 
-export async function checkSendGridConfigured(): Promise<{ configured: boolean; fromEmail?: string }> {
+export async function checkSendGridConfigured(): Promise<{ configured: boolean; fromEmail?: string; error?: string }> {
   try {
     const { getCredentials } = await import("./email");
     const { apiKey, email: fromEmail } = await getCredentials();
-    if (!apiKey || !fromEmail) return { configured: false };
+    if (!apiKey || !fromEmail) return { configured: false, error: "Missing apiKey or fromEmail in credentials" };
     return { configured: true, fromEmail };
-  } catch {
-    return { configured: false };
+  } catch (e: any) {
+    const errMsg = e?.message || String(e);
+    console.error("[AttendanceReportCron] checkSendGridConfigured error:", errMsg);
+    return { configured: false, error: errMsg };
   }
 }
 
@@ -315,8 +326,23 @@ interface SendResult {
   email: string;
   status: "sent" | "failed" | "skipped";
   sendgridMessageId?: string;
+  sendgridStatusCode?: number;
   error?: string;
 }
+
+async function ensureHistoryStatusCodeColumn(): Promise<void> {
+  try {
+    await db.execute(sql`
+      ALTER TABLE attendance_report_email_history
+      ADD COLUMN IF NOT EXISTS sendgrid_status_code INTEGER
+    `);
+  } catch (e: any) {
+    console.error("[AttendanceReportCron] Failed to add sendgrid_status_code column:", e?.message);
+  }
+}
+
+// Run migration on first import
+ensureHistoryStatusCodeColumn().catch(() => {});
 
 async function sendOneReport(opts: {
   sg: { sgMail: any; fromEmail: string };
@@ -340,6 +366,9 @@ async function sendOneReport(opts: {
   }
 
   console.log(`[AttendanceReportCron] Sending ${reportType} → ${recipientEmail} [${programName}]`);
+  console.log(`[AttendanceReportCron]   from=${sg.fromEmail} subject="${subject}"`);
+  console.log(`[AttendanceReportCron]   html length=${html.length} chars`);
+
   try {
     const [sgResponse] = await sg.sgMail.send({
       to: recipientEmail,
@@ -347,23 +376,27 @@ async function sendOneReport(opts: {
       subject,
       html,
     });
+    const statusCode: number = sgResponse?.statusCode ?? 202;
     const messageId = (sgResponse?.headers?.["x-message-id"] as string | undefined) || undefined;
-    console.log(`[AttendanceReportCron] ${reportType} ✓ → ${recipientEmail} messageId=${messageId ?? "n/a"}`);
+    console.log(`[AttendanceReportCron] ${reportType} ✓ → ${recipientEmail} statusCode=${statusCode} messageId=${messageId ?? "n/a"}`);
     await db.execute(sql`
       INSERT INTO attendance_report_email_history
-        (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, sendgrid_message_id)
-      VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'sent', ${messageId ?? null})
+        (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, sendgrid_message_id, sendgrid_status_code)
+      VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'sent', ${messageId ?? null}, ${statusCode})
     `).catch((e: any) => console.error("[AttendanceReportCron] history insert error:", e?.message));
-    return { email: recipientEmail, status: "sent", sendgridMessageId: messageId };
+    return { email: recipientEmail, status: "sent", sendgridMessageId: messageId, sendgridStatusCode: statusCode };
   } catch (e: any) {
-    const errMsg = e?.response?.body?.errors?.[0]?.message || e?.message || String(e);
-    console.error(`[AttendanceReportCron] ${reportType} ✗ → ${recipientEmail}: ${errMsg}`);
+    const statusCode: number | undefined = e?.response?.status ?? e?.code;
+    const errBody = e?.response?.body;
+    const errMsg = (errBody?.errors?.[0]?.message) || e?.message || String(e);
+    console.error(`[AttendanceReportCron] ${reportType} ✗ → ${recipientEmail}: statusCode=${statusCode ?? "n/a"} error=${errMsg}`);
+    if (errBody) console.error(`[AttendanceReportCron] SendGrid error body:`, JSON.stringify(errBody));
     await db.execute(sql`
       INSERT INTO attendance_report_email_history
-        (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, error_message)
-      VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'failed', ${errMsg})
+        (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, error_message, sendgrid_status_code)
+      VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'failed', ${errMsg}, ${statusCode ?? null})
     `).catch(() => {});
-    return { email: recipientEmail, status: "failed", error: errMsg };
+    return { email: recipientEmail, status: "failed", error: errMsg, sendgridStatusCode: statusCode };
   }
 }
 

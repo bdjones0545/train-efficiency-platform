@@ -181,9 +181,14 @@ async function sendAttendanceEmail(params: {
 
   try {
     const sgMail = (await import("@sendgrid/mail")).default;
-    const { getConnectionSettings } = await import("./replit_integrations/sendgrid");
-    const settings = await getConnectionSettings();
-    if (!settings?.api_key || !settings?.from_email) return;
+    const { getCredentials } = await import("./email");
+    const { apiKey, email: fromEmail } = await getCredentials();
+    if (!apiKey || !fromEmail) {
+      console.error("[Attendance Email] SendGrid credentials missing — apiKey or fromEmail not set");
+      return;
+    }
+    const settings = { api_key: apiKey, from_email: fromEmail };
+    console.log(`[Attendance Email] Sending ${emailType} to ${athleteEmail} from ${settings.from_email}`);
 
     sgMail.setApiKey(settings.api_key);
 
@@ -871,7 +876,7 @@ export async function registerAttendanceRoutes(app: Express) {
       `));
       const history = rows(await db.execute(sql`
         SELECT recipient_email, report_type, period_start, sent_at, status,
-               sendgrid_message_id, error_message
+               sendgrid_message_id, error_message, sendgrid_status_code
         FROM attendance_report_email_history
         WHERE attendance_program_id = ${programId}
         ORDER BY sent_at DESC
