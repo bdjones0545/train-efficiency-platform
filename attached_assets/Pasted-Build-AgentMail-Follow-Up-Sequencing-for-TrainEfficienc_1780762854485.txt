@@ -1,0 +1,263 @@
+Build AgentMail Follow-Up Sequencing for TrainEfficiency.
+
+Goal:
+After inbound emails and approved/sent replies, TrainEfficiency should create supervised follow-up sequences so leads, applicants, scheduling requests, support issues, and partner inquiries do not go cold.
+
+Human approval must remain mandatory before any outbound email is sent.
+
+Inspect first:
+- AgentMail integration
+- agentmail-inbound-router.ts
+- agentmail-reply-routes.ts
+- agent_mail_inbound_messages
+- agent_mail_reply_queue
+- agent_mail_reply_outcomes
+- Attention Inbox
+- CEO Heartbeat
+- Workflow Job Queue
+- existing follow-up cron
+- Revenue Agent
+- Scheduling Agent
+- Hiring/Employment Agent
+- Support Agent
+
+Build:
+
+1. Database table
+
+agent_mail_followups
+
+Fields:
+- id
+- organization_id
+- source_inbound_message_id
+- source_reply_queue_id
+- inbox
+- agent_name
+- classification
+- recipient_email
+- recipient_name
+- subject
+- followup_body
+- sequence_name
+- sequence_step
+- scheduled_for
+- status
+- approval_status
+- approved_by
+- approved_at
+- sent_at
+- provider_message_id
+- skipped_reason
+- error_message
+- created_at
+- updated_at
+
+Statuses:
+scheduled
+pending_review
+approved
+sent
+skipped
+failed
+cancelled
+
+2. Sequence rules
+
+Create default follow-up templates by classification:
+
+new_lead / pricing_question:
+- Step 1: 24 hours after first reply
+- Step 2: 3 days after first reply
+- Step 3: 7 days after first reply
+
+booking_request / reschedule_request:
+- Step 1: 12 hours after first reply if no booking confirmed
+- Step 2: 24 hours after first reply
+
+employment_candidate:
+- Step 1: 24 hours after reply
+- Step 2: 4 days after reply
+
+coach_partner_inquiry:
+- Step 1: 24 hours after reply
+- Step 2: 5 days after reply
+
+support_issue / billing_issue / software_bug_report:
+- Step 1: 24 hours after support reply
+- Step 2: 72 hours after support reply
+
+general_question:
+- Step 1: 3 days after reply
+
+3. Follow-up service
+
+Create:
+
+server/services/agentmail-followup-service.ts
+
+Functions:
+- createFollowupSequence()
+- generateFollowupDraft()
+- scheduleNextFollowup()
+- cancelFollowupsForThread()
+- markFollowupSkipped()
+- processDueFollowups()
+- detectStopConditions()
+
+4. Stop conditions
+
+Cancel or skip follow-ups when:
+
+- recipient replies
+- booking is completed
+- lead converted
+- applicant moved to next stage
+- support issue resolved
+- admin manually cancels
+- email bounced/failed
+- unsubscribe or stop language detected
+
+Important:
+Do not send follow-ups automatically.
+When a follow-up becomes due, create a pending approval item in the Follow-Up Queue.
+
+5. Approval workflow
+
+Add routes:
+
+GET /api/agentmail/followups
+GET /api/agentmail/followups/:id
+PATCH /api/agentmail/followups/:id
+POST /api/agentmail/followups/:id/approve
+POST /api/agentmail/followups/:id/reject
+POST /api/agentmail/followups/:id/send
+POST /api/agentmail/followups/:id/cancel
+POST /api/agentmail/followups/process-due
+
+Rules:
+- send requires approval_status = approved
+- edited body should be preserved
+- duplicate send protection required
+- org scoped and permission protected
+
+6. Scheduling
+
+Use the existing Workflow Job Queue or cron pattern.
+
+Every 15–30 minutes:
+- find scheduled follow-ups due now
+- check stop conditions
+- if valid, move to pending_review
+- create Attention Inbox item: “Follow-up awaiting approval”
+
+7. Admin UI
+
+Add new tab:
+
+Follow-Up Queue
+
+Show:
+- recipient
+- inbox
+- classification
+- agent
+- sequence name
+- step
+- scheduled_for
+- status
+- approval status
+- suggested follow-up body
+- original thread context
+- approve/edit/send/cancel actions
+
+Add filters:
+- status
+- inbox
+- agent
+- classification
+- due today
+- overdue
+
+8. Thread context
+
+Each follow-up detail should show:
+- original inbound email
+- first approved reply
+- prior follow-ups
+- current suggested follow-up
+- outcome history
+
+9. Attention Inbox
+
+Create or update items for:
+- due follow-up awaiting approval
+- overdue follow-up
+- failed follow-up send
+- sequence cancelled
+
+Close item after send/cancel/skip.
+
+10. CEO Heartbeat
+
+Add follow-up metrics:
+
+- follow-ups scheduled
+- follow-ups due today
+- pending approvals
+- overdue follow-ups
+- sent follow-ups
+- skipped/cancelled follow-ups
+- most common classification needing follow-up
+- agent with most pending follow-ups
+
+Write timeline events:
+- Follow-up scheduled
+- Follow-up due for approval
+- Follow-up sent
+- Follow-up skipped
+- Sequence cancelled
+
+11. Analytics
+
+Add to /api/agentmail/analytics:
+
+Per agent:
+- follow-ups scheduled
+- follow-ups approved
+- follow-ups sent
+- follow-ups cancelled
+- overdue count
+
+Per classification:
+- follow-up send rate
+- cancellation rate
+- average time to follow-up
+
+12. Testing
+
+Add simulation cases:
+
+- pricing lead gets first reply, then 24h follow-up becomes due
+- athlete booking request follow-up
+- hiring applicant follow-up
+- support issue follow-up
+- partner inquiry follow-up
+- recipient replies, sequence cancels
+- admin cancels sequence manually
+
+Deliverables:
+After implementation, summarize:
+
+1. Files created
+2. Files modified
+3. Database changes
+4. API routes added
+5. UI tabs/features added
+6. Follow-up sequence logic
+7. Stop conditions
+8. How to test end-to-end
+9. What remains manual
+
+Critical rule:
+The system may schedule and draft follow-ups automatically, but it must never send without human approval.

@@ -576,6 +576,37 @@ export async function registerAgentMailReplyRoutes(
           id, { inbox: reply.inbox, actor, messageId: sendResult.messageId },
         );
 
+        // Auto-schedule follow-up sequence after a successful reply send
+        if (DRAFTABLE_CLASSIFICATIONS.has(reply.classification)) {
+          try {
+            const { createFollowupSequence } = await import("./services/agentmail-followup-service");
+            // Fetch original inbound body for context
+            let inboundBody: string | null = null;
+            if (reply.inbound_message_id) {
+              const inboundRow = rows(await db.execute(sql`
+                SELECT body_text FROM agent_mail_inbound_messages WHERE id = ${reply.inbound_message_id}
+              `).catch(() => []));
+              inboundBody = inboundRow[0]?.body_text ?? null;
+            }
+            await createFollowupSequence({
+              organizationId: orgId,
+              sourceInboundMessageId: reply.inbound_message_id ?? null,
+              sourceReplyQueueId: id,
+              inbox: reply.inbox,
+              agentName: reply.agent_name,
+              classification: reply.classification,
+              recipientEmail: reply.recipient_email,
+              recipientName: reply.recipient_name ?? null,
+              originalSubject: reply.subject,
+              originalInboundBody: inboundBody,
+              firstReplyBody: bodyToSend,
+              baseSentAt: new Date(),
+            });
+          } catch (e: any) {
+            console.error("[AgentMail Reply] Follow-up sequence creation error:", e?.message);
+          }
+        }
+
         res.json({ ok: true, messageId: sendResult.messageId, sentAt: new Date().toISOString() });
       } else {
         await db.execute(sql`

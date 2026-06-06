@@ -29033,6 +29033,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   await registerAgentMailRoutes(app, isAuthenticated, requireRole);
   const { registerAgentMailReplyRoutes } = await import("./agentmail-reply-routes");
   await registerAgentMailReplyRoutes(app, isAuthenticated, requireRole);
+  const { registerAgentMailFollowupRoutes } = await import("./agentmail-followup-routes");
+  await registerAgentMailFollowupRoutes(app, isAuthenticated, requireRole);
 
   return httpServer;
 }
