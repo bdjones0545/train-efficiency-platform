@@ -1300,7 +1300,7 @@ export function AppSidebar() {
     },
     {
       id: "athletes",
-      label: "Athletes",
+      label: "Clients",
       icon: Users,
       items: [
         { title: "Athletes", url: "/coach/users", icon: Users, testId: "nav-users" },
@@ -1325,7 +1325,7 @@ export function AppSidebar() {
     ...(programToolItems.length > 0
       ? [{
           id: "training",
-          label: "Training",
+          label: "Program Tools",
           icon: Layers,
           items: programToolItems,
         } as NavSection]
