@@ -1,0 +1,220 @@
+Build the AgentMail Inbound Routing Layer for TrainEfficiency.
+
+Goal:
+When emails come into AgentMail inboxes like revenue@, hiring@, scheduling@, support@, operations@, or ceo@, TrainEfficiency should classify the message, attach it to the correct organization, create an actionable item, and route it to the correct agent workflow.
+
+Before coding:
+Inspect the existing AgentMail integration, agentmail-service.ts, agentmail-routes.ts, agent mail tables, agent workflows, Attention Inbox, CEO Heartbeat, Revenue Agent, Scheduling Agent, Hiring/Employment Agent, Support/Client Success Agent, and organization/auth patterns.
+
+Core requirements:
+
+1. Webhook ingestion
+Update the existing AgentMail webhook handler so inbound email events are captured and normalized.
+
+Store:
+- organizationId
+- inbox
+- fromEmail
+- fromName
+- toEmail
+- subject
+- bodyText
+- bodyHtml if available
+- providerMessageId
+- threadId if available
+- receivedAt
+- rawPayload safely if useful
+- status: received, classified, routed, failed
+
+2. Database table
+Create or extend a table:
+
+agent_mail_inbound_messages
+
+Fields:
+- id
+- organization_id
+- inbox
+- from_email
+- from_name
+- to_email
+- subject
+- body_text
+- body_html
+- provider_message_id
+- provider_thread_id
+- classification
+- confidence
+- routed_agent
+- routed_status
+- action_type
+- action_payload
+- raw_payload
+- error_message
+- received_at
+- created_at
+- updated_at
+
+Use existing migration/schema patterns.
+
+3. Classification layer
+Create:
+
+server/services/agentmail-inbound-router.ts
+
+Implement:
+- classifyInboundEmail()
+- routeInboundEmail()
+- processInboundAgentMail()
+- mapInboxToDefaultAgent()
+- extractIntentSignals()
+
+Classification categories:
+- new_lead
+- booking_request
+- reschedule_request
+- cancellation_request
+- pricing_question
+- employment_candidate
+- support_issue
+- billing_issue
+- athlete_parent_question
+- coach_partner_inquiry
+- software_bug_report
+- urgent_escalation
+- general_question
+- spam_or_noise
+
+Use deterministic rules first:
+- hiring@ → employment_candidate unless clearly support/spam
+- scheduling@ → booking/reschedule/cancellation
+- revenue@ → new lead, pricing, partner inquiry
+- support@ → support issue, billing issue, bug report
+- ceo@ / operations@ → urgent escalation, partner inquiry, operational issue
+
+Then optionally use the existing AI/agent inference pattern if available.
+
+4. Routing behavior
+Based on classification, create the right downstream action:
+
+new_lead:
+- create or update lead/prospect/applicant record if matching tables exist
+- add to Revenue Recovery Queue or Attention Inbox
+- assign Revenue Agent
+
+booking_request / reschedule_request / cancellation_request:
+- create scheduling attention item
+- assign Scheduling Agent
+- include proposed date/time/location details if extracted
+
+employment_candidate:
+- create employment applicant if table exists
+- assign Hiring/Employment Agent
+- include resume/experience/location signals if present
+
+support_issue / billing_issue / software_bug_report:
+- create support attention item
+- assign Support/Client Success Agent
+- if software_bug_report, optionally create software improvement task
+
+urgent_escalation:
+- create high severity Attention Inbox item
+- notify CEO Heartbeat / operations agent
+
+general_question:
+- create medium/low severity Attention Inbox item with suggested reply
+
+spam_or_noise:
+- store only; do not route unless admin manually reviews
+
+5. Attention Inbox integration
+Add inbound email items to the existing Attention Inbox system.
+
+Each item should include:
+- source: agentmail
+- sourceMessageId
+- inbox
+- classification
+- severity
+- recommendedAction
+- suggestedReply if generated
+- routedAgent
+- status: open
+
+6. Agent response preparation
+Do not automatically send replies yet.
+
+Instead, generate a suggested draft reply for:
+- new leads
+- pricing questions
+- booking requests
+- reschedule requests
+- employment candidates
+- support issues
+
+Store the suggested reply in action_payload or an appropriate field.
+
+7. Admin UI
+Extend /admin/agentmail with an “Inbound” tab.
+
+Show:
+- inbound messages
+- inbox
+- classification
+- confidence
+- routed agent
+- routed status
+- severity
+- received date
+- open source email
+- view full message
+- suggested reply
+- button to create/send reply later
+- filter by inbox, classification, routed status, severity
+
+8. AgentOps / CEO Heartbeat
+Wire inbound email activity into the agent operating timeline if that pattern exists.
+
+CEO Heartbeat should be able to see:
+- number of inbound emails received
+- number classified
+- number routed
+- urgent escalations
+- unrouted failures
+- suggested actions
+
+9. Safety and reliability
+- Webhook must verify AgentMail signature if AGENTMAIL_WEBHOOK_SECRET exists
+- Must be idempotent by providerMessageId
+- Must not crash if organization cannot be resolved
+- Must log unresolved inbound emails for admin review
+- Must not send any outbound email automatically
+- Must include clear errors in audit logs
+
+10. Testing
+Add test/debug endpoint or admin button to simulate inbound AgentMail payloads.
+
+Include sample test cases:
+- parent asking about speed training pricing
+- athlete asking to reschedule
+- coach asking about employment
+- customer reporting billing issue
+- software bug report
+- spam/noise
+
+Deliverables:
+- Backend service
+- Database schema/migration
+- Webhook update
+- API routes
+- Admin UI inbound tab
+- Attention Inbox integration
+- CEO Heartbeat summary integration
+- Test simulation endpoint
+
+After implementation, summarize:
+- files changed
+- routes added
+- database changes
+- how to test inbound routing
+- what is still manual
