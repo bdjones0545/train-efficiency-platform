@@ -783,31 +783,38 @@ export default function UserManagementPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+    <div className="space-y-4 overflow-x-hidden max-w-full w-full">
+      {/* Title row */}
+      <div className="flex items-center justify-between gap-3">
         <h1 className="text-xl font-semibold" data-testid="text-page-title">User Management</h1>
-        <div className="flex items-center gap-2">
-          <input
-            type="file"
-            accept=".csv"
-            ref={fileInputRef}
-            onChange={handleCsvFileSelect}
-            className="hidden"
-            data-testid="input-csv-file"
-          />
-          <Button variant="outline" onClick={() => fileInputRef.current?.click()} data-testid="button-import-csv">
-            <Upload className="h-4 w-4 mr-1" />
-            Import CSV
-          </Button>
-          <Button variant="outline" onClick={() => setClientDialogOpen(true)} data-testid="button-add-client">
-            <UserPlus className="h-4 w-4 mr-1" />
-            Add Client
-          </Button>
-          <Dialog open={coachDialogOpen} onOpenChange={setCoachDialogOpen}>
-            <Button onClick={() => setCoachDialogOpen(true)} data-testid="button-add-coach">
-              <UserCog className="h-4 w-4 mr-1" />
-              Add Coach
-            </Button>
+        <Badge variant="secondary" data-testid="text-user-count">{filteredUsers.length} users</Badge>
+      </div>
+
+      {/* Action buttons — stacked on mobile, row on desktop */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        <input
+          type="file"
+          accept=".csv"
+          ref={fileInputRef}
+          onChange={handleCsvFileSelect}
+          className="hidden"
+          data-testid="input-csv-file"
+        />
+        <Button variant="outline" className="w-full" onClick={() => fileInputRef.current?.click()} data-testid="button-import-csv">
+          <Upload className="h-4 w-4 mr-1" />
+          Import CSV
+        </Button>
+        <Button variant="outline" className="w-full" onClick={() => setClientDialogOpen(true)} data-testid="button-add-client">
+          <UserPlus className="h-4 w-4 mr-1" />
+          Add Client
+        </Button>
+        <Button className="w-full" onClick={() => setCoachDialogOpen(true)} data-testid="button-add-coach">
+          <UserCog className="h-4 w-4 mr-1" />
+          Add Coach
+        </Button>
+      </div>
+
+      <Dialog open={coachDialogOpen} onOpenChange={setCoachDialogOpen}>
             <DialogContent>
               <DialogHeader>
                 <DialogTitle>Add New Coach</DialogTitle>
@@ -876,18 +883,15 @@ export default function UserManagementPage() {
                 </Button>
               </div>
             </DialogContent>
-          </Dialog>
-          <Badge variant="secondary" data-testid="text-user-count">{filteredUsers.length} users</Badge>
-        </div>
-      </div>
+      </Dialog>
 
-      <div className="relative">
+      <div className="relative w-full max-w-full">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
         <Input
           placeholder="Search users by name or email..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
+          className="pl-9 w-full"
           data-testid="input-search-users"
         />
       </div>
@@ -909,6 +913,7 @@ export default function UserManagementPage() {
               onClick={() => setSelectedUser(user)}
               data-testid={`card-user-${user.id}`}
             >
+              {/* Top row: avatar + name/email/phone + badges + desktop actions */}
               <div className="flex items-center gap-3">
                 <Avatar className="h-9 w-9 shrink-0">
                   <AvatarImage src={user.profileImageUrl || undefined} />
@@ -917,9 +922,20 @@ export default function UserManagementPage() {
                   </AvatarFallback>
                 </Avatar>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate" data-testid={`text-user-name-${user.id}`}>
-                    {user.firstName} {user.lastName}
-                  </p>
+                  <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                    <p className="text-sm font-medium truncate min-w-0" data-testid={`text-user-name-${user.id}`}>
+                      {user.firstName} {user.lastName}
+                    </p>
+                    {subscribedUserIds.has(user.id) && (
+                      <Badge className="shrink-0 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-xs no-default-hover-elevate no-default-active-elevate" data-testid={`badge-subscribed-${user.id}`}>
+                        <RefreshCw className="h-3 w-3 mr-0.5" />
+                        Sub
+                      </Badge>
+                    )}
+                    <Badge variant="outline" className="shrink-0 text-xs" data-testid={`badge-role-${user.id}`}>
+                      {user.profile?.role || "CLIENT"}
+                    </Badge>
+                  </div>
                   <p className="text-xs text-muted-foreground truncate">
                     {user.email || "No email"}
                   </p>
@@ -935,16 +951,8 @@ export default function UserManagementPage() {
                     </p>
                   )}
                 </div>
-                {subscribedUserIds.has(user.id) && (
-                  <Badge className="shrink-0 bg-amber-500/15 text-amber-700 dark:text-amber-400 text-xs no-default-hover-elevate no-default-active-elevate" data-testid={`badge-subscribed-${user.id}`}>
-                    <RefreshCw className="h-3 w-3 mr-0.5" />
-                    Sub
-                  </Badge>
-                )}
-                <Badge variant="outline" className="shrink-0" data-testid={`badge-role-${user.id}`}>
-                  {user.profile?.role || "CLIENT"}
-                </Badge>
-                <div className="flex items-center gap-1 shrink-0">
+                {/* Desktop-only icon buttons */}
+                <div className="hidden sm:flex items-center gap-1 shrink-0">
                   <Button
                     size="icon"
                     variant="ghost"
@@ -964,6 +972,29 @@ export default function UserManagementPage() {
                     <Trash2 className="h-4 w-4" />
                   </Button>
                 </div>
+              </div>
+              {/* Mobile-only action row */}
+              <div className="flex sm:hidden items-center gap-2 mt-2 pt-2 border-t border-border/40">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 h-8 text-xs"
+                  onClick={(e) => { e.stopPropagation(); openEditUser(user); }}
+                  data-testid={`button-edit-user-mobile-${user.id}`}
+                >
+                  <Pencil className="h-3.5 w-3.5 mr-1" />
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 h-8 text-xs"
+                  onClick={(e) => { e.stopPropagation(); setDeleteUser(user); }}
+                  data-testid={`button-delete-user-mobile-${user.id}`}
+                >
+                  <Trash2 className="h-3.5 w-3.5 mr-1" />
+                  Delete
+                </Button>
               </div>
             </Card>
           ))}

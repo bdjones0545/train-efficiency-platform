@@ -1,0 +1,115 @@
+Fix mobile horizontal scrolling on the User Management page.
+
+Goal:
+The page is mostly good, but on smaller screens the user list/cards exceed the viewport width and require left-right scrolling. This should never happen on mobile.
+
+Target page:
+User Management
+
+Likely issue:
+The row/card layout has fixed widths or action columns that do not collapse properly on small screens.
+
+Requirements:
+
+1. Remove horizontal overflow
+- Ensure the page container uses:
+  - w-full
+  - max-w-full
+  - overflow-x-hidden
+- Ensure user cards do not use fixed/min widths that exceed the viewport.
+- Search for any min-w-[...] or fixed width classes causing overflow.
+
+2. Mobile-first user card layout
+On mobile, each user card should fit within the screen.
+
+Suggested layout:
+
+Top row:
+- avatar
+- name + email
+- role badge
+
+Bottom row:
+- Edit button
+- Delete button
+
+Example:
+
+[Avatar]  Shannon Harwell        CLIENT
+          bsharwell@gmail.com
+
+[Edit] [Delete]
+
+3. Move action icons below on mobile
+Currently edit/delete icons are forcing the row too wide.
+
+On screens below sm/md:
+- move edit/delete actions to a second row
+- use full-width or half-width buttons
+- show text labels if space allows:
+  - Edit
+  - Delete
+
+On desktop:
+- keep compact right-side icons if preferred.
+
+4. Top action buttons
+The top buttons currently stretch horizontally:
+- Import CSV
+- Add Client
+- Add Coach
+
+On mobile:
+- stack buttons vertically OR use a 2-row responsive grid
+- no horizontal scrolling
+- Add Coach should not run off screen
+
+Suggested:
+- grid grid-cols-1 sm:grid-cols-3
+- buttons w-full
+
+5. Search input
+Ensure search input is:
+- w-full
+- max-w-full
+- no fixed width
+
+6. Long names/emails
+Prevent overflow from long names/emails.
+
+Use:
+- truncate
+- min-w-0
+- break-words where appropriate
+
+Name/email area should have:
+- min-w-0
+- flex-1
+
+7. Body/page safety
+Add mobile overflow protection at the page root:
+- overflow-x-hidden
+- max-w-full
+
+8. Test cases
+Verify on:
+- iPhone width 390px
+- iPhone width 375px
+- Very long email
+- Long name
+- Users with no email
+- Admin role
+- Client role
+- Coach role
+
+9. Deliverables
+After implementation summarize:
+- files changed
+- exact overflow source found
+- mobile layout changes
+- desktop layout preserved
+- confirmation that horizontal scroll is removed
+
+Important:
+Do not remove edit/delete/import/add functionality.
+Only fix responsive layout and mobile usability.
