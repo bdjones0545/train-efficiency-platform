@@ -29025,5 +29025,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to close decision" }); }
   });
 
+  // ─── Software Improvement Agent ────────────────────────────────────────────
+  const { registerSoftwareImprovementRoutes } = await import("./software-improvement-routes");
+  await registerSoftwareImprovementRoutes(app, isAuthenticated, requireRole);
+
   return httpServer;
 }

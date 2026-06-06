@@ -624,6 +624,32 @@ async function coordinateAgents(orgId: string, heartbeatId: string): Promise<{
     errors.push(`workflow_orchestrator: ${err.message}`);
   }
 
+  // 6. Software Improvement Agent — scan for engineering issues
+  try {
+    const { runSoftwareImprovementAgent, canRunSoftwareImprovementAgent } = await import("./software-improvement-agent");
+    if (canRunSoftwareImprovementAgent(orgId)) {
+      const result = await runSoftwareImprovementAgent(orgId);
+      agentsCoordinated++;
+      actionsEvaluated += result.tasksCreated;
+      await writeTimeline({
+        orgId, heartbeatId, agentName: "software_improvement_agent",
+        systemName: "CEO Heartbeat", actionType: "heartbeat_cycle",
+        actionStatus: "completed",
+        summary: `Software Improvement Agent: ${result.tasksCreated} new task(s) created, ${result.tasksSkipped} skipped`,
+        metadata: { tasksCreated: result.tasksCreated, tasksSkipped: result.tasksSkipped, errors: result.errors },
+      });
+    } else {
+      await writeTimeline({
+        orgId, heartbeatId, agentName: "software_improvement_agent",
+        systemName: "CEO Heartbeat", actionType: "heartbeat_cycle",
+        actionStatus: "skipped",
+        summary: "Software Improvement Agent: cooldown active, skipped",
+      });
+    }
+  } catch (err: any) {
+    errors.push(`software_improvement_agent: ${err.message}`);
+  }
+
   return { agentsCoordinated, actionsEvaluated, errors };
 }
 
