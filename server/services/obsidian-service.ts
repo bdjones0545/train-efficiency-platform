@@ -88,7 +88,7 @@ async function obsidianRequest(
   const fetchFn = typeof fetch !== "undefined" ? fetch : undefined;
   if (!fetchFn) throw new Error("fetch not available in this runtime");
 
-  return fetchFn(`${baseUrl}${path}`, {
+  return fetchFn(`${baseUrl.replace(/\/$/, "")}${path}`, {
     method,
     headers: {
       Authorization: `Bearer ${apiKey}`,
