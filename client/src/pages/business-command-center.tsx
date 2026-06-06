@@ -3070,6 +3070,424 @@ function statusBadge(status: string) {
   }
 }
 
+// ─── Attention KPI Card ───────────────────────────────────────────────────────
+
+function AttentionKpiCard() {
+  const [, setLocation] = useLocation();
+  const { data: items = [] } = useQuery<AttentionPreviewItem[]>({
+    queryKey: ["/api/attention"],
+    refetchInterval: 3 * 60 * 1000,
+    staleTime: 90_000,
+  });
+  const active = items.filter(i => i.status === "active" || i.status === "escalated");
+  const high = active.filter(i => i.level === "critical" || i.status === "escalated").length;
+  const total = active.length;
+
+  return (
+    <Card
+      className={`p-3 cursor-pointer hover:border-primary/40 transition-colors ${high > 0 ? "border-red-400/40" : ""}`}
+      onClick={() => setLocation("/admin/attention")}
+      data-testid="kpi-attention-items"
+    >
+      <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Attention Items</p>
+      <p className={`text-lg font-bold mt-0.5 ${high > 0 ? "text-red-600 dark:text-red-400" : total > 0 ? "text-foreground" : "text-muted-foreground"}`}>
+        {total}
+      </p>
+      {high > 0 && <p className="text-[10px] text-red-500 mt-0.5">{high} urgent</p>}
+    </Card>
+  );
+}
+
+// ─── Recommended Action Card ──────────────────────────────────────────────────
+
+function RecommendedActionCard({ data, openAgentWith }: { data: CommandCenterData; openAgentWith: (msg: string) => void }) {
+  const [showOpportunities, setShowOpportunities] = useState(false);
+
+  const { data: brainData } = useQuery<CommandCenterSummary>({
+    queryKey: ["/api/admin/business-brain/command-center-summary"],
+    staleTime: 120_000,
+  });
+
+  const bestAction = data.bestAction;
+  const topUnified = brainData?.topActions?.[0];
+
+  const primaryAction = bestAction
+    ? {
+        headline: bestAction.headline,
+        value: bestAction.estimatedValueCents,
+        onAction: () => openAgentWith(`Help me take action on: ${bestAction.headline}`),
+        onWhy: () => openAgentWith(`Why is "${bestAction.headline}" your top recommendation today?`),
+      }
+    : topUnified
+    ? {
+        headline: topUnified.title,
+        value: topUnified.estimatedImpact * 100,
+        onAction: () => openAgentWith(`Help me with: ${topUnified.title}`),
+        onWhy: () => openAgentWith(`Why is "${topUnified.title}" a priority today?`),
+      }
+    : null;
+
+  const otherOpportunities: string[] = [
+    ...(brainData?.topActions?.slice(1, 3).map(a => a.title) ?? []),
+    ...(data.teamPipeline.repliesNeedingFollowUp > 0
+      ? [`Follow up with ${data.teamPipeline.repliesNeedingFollowUp} team training repl${data.teamPipeline.repliesNeedingFollowUp !== 1 ? "ies" : "y"}`]
+      : []),
+    ...(data.teamPipeline.draftsAwaitingApproval > 0
+      ? [`Review ${data.teamPipeline.draftsAwaitingApproval} outreach draft${data.teamPipeline.draftsAwaitingApproval !== 1 ? "s" : ""}`]
+      : []),
+    ...(data.teamPipeline.highConfidenceLeads > 0
+      ? [`Contact ${data.teamPipeline.highConfidenceLeads} high-confidence lead${data.teamPipeline.highConfidenceLeads !== 1 ? "s" : ""}`]
+      : []),
+  ];
+
+  return (
+    <section data-testid="section-recommended-action">
+      <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <Star className="h-3.5 w-3.5 text-primary" /> Recommended Action
+      </h2>
+
+      {!primaryAction ? (
+        <Card className="p-3 border-dashed flex items-center gap-3" style={{ maxHeight: "140px" }} data-testid="card-no-recommended-action">
+          <Brain className="h-5 w-5 text-muted-foreground/40 shrink-0" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium">No recommendation yet</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Add prospects or run a Business Brain analysis.</p>
+          </div>
+        </Card>
+      ) : (
+        <>
+          <DashPriorityCard>
+            <Card className="p-3.5 border-primary/40 bg-primary/5 dark:bg-primary/10" data-testid="card-recommended-action">
+              <div className="flex items-start gap-2.5 mb-3">
+                <div className="mt-0.5 rounded-full bg-primary/20 p-1.5 shrink-0">
+                  <Star className="h-3.5 w-3.5 text-primary" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm text-foreground leading-tight" data-testid="text-recommended-headline">
+                    {primaryAction.headline}
+                  </p>
+                  {primaryAction.value > 0 && (
+                    <p className="text-xs font-semibold text-primary mt-0.5">{fmt$(primaryAction.value)} opportunity</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" className="flex-1 h-8 text-xs" onClick={primaryAction.onAction} data-testid="button-take-action">
+                  <Zap className="h-3.5 w-3.5 mr-1" /> Take Action
+                </Button>
+                <Button size="sm" variant="outline" className="h-8 text-xs" onClick={primaryAction.onWhy} data-testid="button-ask-why">
+                  Why?
+                </Button>
+              </div>
+            </Card>
+          </DashPriorityCard>
+
+          {otherOpportunities.length > 0 && (
+            <div className="mt-2">
+              <button
+                className="flex items-center gap-1.5 w-full px-1 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setShowOpportunities(s => !s)}
+                data-testid="button-toggle-other-opportunities"
+              >
+                <ChevronRight className={`h-3.5 w-3.5 transition-transform duration-150 ${showOpportunities ? "rotate-90" : ""}`} />
+                <span>Other Opportunities ({otherOpportunities.length})</span>
+              </button>
+              {showOpportunities && (
+                <div className="mt-1 space-y-1" data-testid="list-other-opportunities">
+                  {otherOpportunities.map((opp, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-muted/40 text-xs" data-testid={`item-opportunity-${i}`}>
+                      <div className="h-1 w-1 rounded-full bg-muted-foreground/60 shrink-0" />
+                      <p className="flex-1 truncate">{opp}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+// ─── Attention Summary Card ───────────────────────────────────────────────────
+
+function AttentionSummaryCard() {
+  const [, setLocation] = useLocation();
+  const { data: items = [] } = useQuery<AttentionPreviewItem[]>({
+    queryKey: ["/api/attention"],
+    refetchInterval: 3 * 60 * 1000,
+    staleTime: 90_000,
+  });
+
+  const active = items.filter(i => i.status === "active" || i.status === "escalated");
+  const highCount = active.filter(i => i.level === "critical" || i.status === "escalated").length;
+  const mediumCount = active.filter(i => i.level === "important" && i.status !== "escalated").length;
+  const lowCount = active.filter(i => i.level === "suggested").length;
+  const total = active.length;
+
+  return (
+    <section data-testid="section-attention-summary">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+          <Inbox className="h-3.5 w-3.5" /> Attention
+        </h2>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs px-2"
+          onClick={() => setLocation("/admin/attention")}
+          data-testid="button-open-attention-inbox"
+        >
+          Open Inbox <ArrowRight className="h-3 w-3 ml-1" />
+        </Button>
+      </div>
+      <Card className="p-3" data-testid="card-attention-summary">
+        {total === 0 ? (
+          <div className="flex items-center gap-2.5">
+            <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
+            <p className="text-sm font-medium">No active attention items</p>
+          </div>
+        ) : (
+          <div className="flex items-center gap-6 flex-wrap">
+            {highCount > 0 && (
+              <div className="flex items-center gap-1.5" data-testid="text-attention-high">
+                <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+                <span className="text-2xl font-black text-red-600 dark:text-red-400">{highCount}</span>
+                <span className="text-xs text-muted-foreground">High</span>
+              </div>
+            )}
+            {mediumCount > 0 && (
+              <div className="flex items-center gap-1.5" data-testid="text-attention-medium">
+                <AlertCircle className="h-4 w-4 text-amber-500 shrink-0" />
+                <span className="text-2xl font-black text-amber-600 dark:text-amber-400">{mediumCount}</span>
+                <span className="text-xs text-muted-foreground">Medium</span>
+              </div>
+            )}
+            {lowCount > 0 && (
+              <div className="flex items-center gap-1.5" data-testid="text-attention-low">
+                <Lightbulb className="h-4 w-4 text-violet-400 shrink-0" />
+                <span className="text-2xl font-black text-violet-600 dark:text-violet-400">{lowCount}</span>
+                <span className="text-xs text-muted-foreground">Low</span>
+              </div>
+            )}
+            {total > 0 && highCount === 0 && mediumCount === 0 && lowCount === 0 && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-2xl font-black">{total}</span>
+                <span className="text-xs text-muted-foreground">Items</span>
+              </div>
+            )}
+          </div>
+        )}
+      </Card>
+    </section>
+  );
+}
+
+// ─── Compact Lead Pipeline Section ───────────────────────────────────────────
+
+function CompactLeadPipelineSection({ data, openAgentWith }: { data: CommandCenterData; openAgentWith: (msg: string) => void }) {
+  const [, setLocation] = useLocation();
+
+  const { data: leads } = useQuery<ProgramLeadsSummary>({
+    queryKey: ["/api/lead-capture/command-center-summary"],
+    staleTime: 60_000,
+  });
+
+  const totalLeads = data.teamPipeline.totalProspects + (leads?.totalSubmissions ?? 0);
+  const highConfidence = data.teamPipeline.highConfidenceLeads + (leads?.highIntent ?? 0);
+  const awaitingApproval = data.teamPipeline.draftsAwaitingApproval;
+  const pipelineValueCents = data.teamPipeline.estimatedPipelineValueCents + Math.round((leads?.estimatedPipelineValue ?? 0) * 100);
+
+  const topLeads = data.teamPipeline.activeLeads.slice(0, 4);
+
+  return (
+    <section data-testid="section-lead-pipeline">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+          <Building2 className="h-3.5 w-3.5" /> Lead Pipeline
+        </h2>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs px-2"
+          onClick={() => setLocation("/admin/team-training-leads")}
+          data-testid="button-view-all-leads"
+        >
+          View All <ArrowRight className="h-3 w-3 ml-1" />
+        </Button>
+      </div>
+
+      <div className="grid grid-cols-4 gap-1.5 mb-3" data-testid="grid-lead-kpis">
+        <Card className="p-2 text-center" data-testid="kpi-total-leads">
+          <p className="text-base font-bold">{totalLeads}</p>
+          <p className="text-[9px] text-muted-foreground leading-tight">Total</p>
+        </Card>
+        <Card className="p-2 text-center" data-testid="kpi-high-confidence">
+          <p className="text-base font-bold text-emerald-600 dark:text-emerald-400">{highConfidence}</p>
+          <p className="text-[9px] text-muted-foreground leading-tight">High Conf</p>
+        </Card>
+        <Card className={`p-2 text-center ${awaitingApproval > 0 ? "border-yellow-400/40" : ""}`} data-testid="kpi-awaiting-approval">
+          <p className={`text-base font-bold ${awaitingApproval > 0 ? "text-yellow-600 dark:text-yellow-400" : "text-foreground"}`}>{awaitingApproval}</p>
+          <p className="text-[9px] text-muted-foreground leading-tight">Awaiting</p>
+        </Card>
+        <Card className="p-2 text-center" data-testid="kpi-pipeline-value">
+          <p className="text-base font-bold text-primary">{fmt$(pipelineValueCents)}</p>
+          <p className="text-[9px] text-muted-foreground leading-tight">Pipeline</p>
+        </Card>
+      </div>
+
+      {topLeads.length > 0 ? (
+        <div className="space-y-1.5" data-testid="list-top-leads">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Top Leads Requiring Action</p>
+          {topLeads.map((lead, i) => (
+            <div key={lead.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-border/60 bg-card" data-testid={`row-top-lead-${i}`}>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{lead.prospectName}</p>
+                <p className="text-[10px] text-muted-foreground truncate">{[lead.sport, lead.city, lead.state].filter(Boolean).join(" · ")}</p>
+              </div>
+              <Badge className={`text-[10px] shrink-0 ${CONFIDENCE_BADGE[lead.confidenceScore >= 0.8 ? "high" : lead.confidenceScore >= 0.5 ? "medium" : "low"]}`}>
+                {Math.round(lead.confidenceScore * 100)}%
+              </Badge>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 px-2 text-xs shrink-0"
+                onClick={() => openAgentWith(`Help me contact ${lead.prospectName} for team training outreach`)}
+                data-testid={`button-act-lead-${i}`}
+              >
+                Act <ArrowRight className="h-3 w-3 ml-0.5" />
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : totalLeads === 0 ? (
+        <Card className="p-3 text-center border-dashed" style={{ maxHeight: "140px" }} data-testid="card-no-leads">
+          <p className="text-sm text-muted-foreground">No leads yet.</p>
+          <Button size="sm" variant="outline" className="mt-2 text-xs h-7" onClick={() => openAgentWith("Find me some team training leads")} data-testid="button-find-leads-cta">
+            Find Leads
+          </Button>
+        </Card>
+      ) : null}
+    </section>
+  );
+}
+
+// ─── Compact AI Workforce Section ─────────────────────────────────────────────
+
+function CompactAiWorkforceSection({ onRunBrain, openAgentWith }: { onRunBrain: () => void; openAgentWith: (msg: string) => void }) {
+  const [, setLocation] = useLocation();
+  const [showFindings, setShowFindings] = useState(false);
+
+  const { data: brainData, isLoading: brainLoading } = useQuery<CommandCenterSummary>({
+    queryKey: ["/api/admin/business-brain/command-center-summary"],
+    staleTime: 120_000,
+    refetchInterval: 300_000,
+  });
+
+  const { data: revenue } = useQuery<AiRevenueOutcomes>({
+    queryKey: ["/api/email-agent/revenue-outcomes"],
+    staleTime: 60_000,
+  });
+
+  const healthScore = brainData?.healthScore ?? null;
+  const brief = brainData?.briefSummary;
+
+  const findings: string[] = [
+    ...(brief?.biggestOpportunity?.title ? [brief.biggestOpportunity.title] : []),
+    ...(brief?.highestChurnRisk?.name ? [`Churn risk: ${brief.highestChurnRisk.name}`] : []),
+    ...(brief?.mostValuableLead?.name ? [`Best lead: ${brief.mostValuableLead.name}`] : []),
+    ...((revenue?.week.actions ?? 0) > 0 ? [`${revenue!.week.actions} AI actions tracked this week`] : []),
+  ];
+
+  const agentStatuses = [
+    { label: "Revenue Agent", active: (revenue?.month.actions ?? 0) > 0 },
+    { label: "Scheduling Agent", active: true },
+    { label: "Retention Agent", active: (brainData?.topActions ?? []).some(a => a.agentType === "retention") },
+    { label: "Support Agent", active: false },
+  ];
+
+  return (
+    <section data-testid="section-ai-workforce">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+          <Bot className="h-3.5 w-3.5" /> AI Workforce
+        </h2>
+        <Button variant="ghost" size="sm" className="h-7 text-xs px-2" onClick={() => setLocation("/admin/business-brain")} data-testid="button-view-brain">
+          Full View <ArrowRight className="h-3 w-3 ml-1" />
+        </Button>
+      </div>
+
+      <Card className="p-3" data-testid="card-ai-workforce">
+        {brainLoading ? (
+          <div className="space-y-2">
+            <Skeleton className="h-10 w-20" />
+            <Skeleton className="h-4 w-full" />
+          </div>
+        ) : (
+          <>
+            <div className="flex items-start gap-4 mb-3">
+              <div className="shrink-0 text-center min-w-[52px]">
+                <p className={`text-3xl font-black leading-none ${healthScoreColor(healthScore)}`} data-testid="text-workforce-health-score">
+                  {healthScore ?? "—"}
+                </p>
+                <p className="text-[9px] text-muted-foreground uppercase tracking-wider mt-0.5">Health</p>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Agent Status</p>
+                <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                  {agentStatuses.map((agent, i) => (
+                    <div key={i} className="flex items-center gap-1.5" data-testid={`agent-status-${i}`}>
+                      <div className={`h-1.5 w-1.5 rounded-full shrink-0 ${agent.active ? "bg-emerald-500" : "bg-muted-foreground/25"}`} />
+                      <span className={`text-[11px] truncate ${agent.active ? "text-foreground/80" : "text-muted-foreground/50"}`}>{agent.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-border/60 pt-2.5">
+              <button
+                className="flex items-center justify-between w-full"
+                onClick={() => setShowFindings(s => !s)}
+                data-testid="button-toggle-findings"
+              >
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Top Findings</p>
+                <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground transition-transform duration-150 ${showFindings ? "rotate-90" : ""}`} />
+              </button>
+              {showFindings && (
+                <div className="mt-2" data-testid="list-top-findings">
+                  {findings.length > 0 ? (
+                    <div className="space-y-1.5">
+                      {findings.map((f, i) => (
+                        <div key={i} className="flex items-start gap-1.5" data-testid={`finding-${i}`}>
+                          <div className="h-1 w-1 rounded-full bg-primary mt-1.5 shrink-0" />
+                          <p className="text-xs leading-snug">{f}</p>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">Run an analysis to see findings.</p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 mt-2.5 pt-2.5 border-t border-border/60">
+              <Button size="sm" variant="outline" className="flex-1 h-7 text-xs" onClick={onRunBrain} data-testid="button-run-analysis">
+                <RefreshCw className="h-3 w-3 mr-1" /> Run Analysis
+              </Button>
+              <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => openAgentWith("What should I do today to grow my revenue and fill my schedule?")} data-testid="button-ask-agent">
+                <Bot className="h-3 w-3 mr-1" /> Ask Agent
+              </Button>
+            </div>
+          </>
+        )}
+      </Card>
+    </section>
+  );
+}
+
 export default function BusinessCommandCenterPage() {
   const { toast } = useToast();
   const [, setLocation] = useLocation();
@@ -3146,12 +3564,14 @@ export default function BusinessCommandCenterPage() {
   if (isLoading) {
     return (
       <div className="space-y-4 p-4 max-w-4xl mx-auto">
-        <Skeleton className="h-8 w-64" />
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-          {[...Array(6)].map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+          {[...Array(4)].map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
         </div>
+        <Skeleton className="h-28 rounded-xl" />
+        <Skeleton className="h-24 rounded-xl" />
         <Skeleton className="h-40 rounded-xl" />
-        <Skeleton className="h-40 rounded-xl" />
+        <Skeleton className="h-32 rounded-xl" />
       </div>
     );
   }
@@ -3162,37 +3582,53 @@ export default function BusinessCommandCenterPage() {
   const goalProgress = hasGoal && data.monthGoalCents! > 0
     ? Math.min(100, Math.round((data.monthRevenueCents / data.monthGoalCents!) * 100))
     : null;
-  const projectedProgress = hasGoal && data.monthGoalCents! > 0
-    ? Math.min(100, Math.round((data.projectedMonthRevenueCents / data.monthGoalCents!) * 100))
-    : null;
 
   const allOpenSlots = [...data.openSlotsToday, ...data.openSlotsTomorrow];
 
+  type RecoveryRow = {
+    id: string;
+    icon: React.ReactNode;
+    title: string;
+    context: string;
+    value: number;
+    actionLabel: string;
+    onAction: () => void;
+  };
+
+  const recoveryRows: RecoveryRow[] = [
+    ...allOpenSlots.map((slot, idx) => ({
+      id: `slot-${slot.startISO}-${idx}`,
+      icon: <Clock className="h-3.5 w-3.5 text-orange-500" />,
+      title: `${slot.startTime}${slot.endTimeStr ? ` – ${slot.endTimeStr}` : ""}`,
+      context: slot.date,
+      value: slot.estimatedValueCents,
+      actionLabel: "Fill",
+      onAction: () => openAgentWith(`Help me fill the ${slot.startTime} slot on ${slot.date}`),
+    })),
+    ...data.clientOpportunities.map((opp, idx) => ({
+      id: `opp-${opp.clientId}-${opp.type}-${idx}`,
+      icon: opp.type === "churn_risk"
+        ? <AlertTriangle className="h-3.5 w-3.5 text-red-500" />
+        : <Users className="h-3.5 w-3.5 text-blue-500" />,
+      title: opp.clientName,
+      context: opp.detail,
+      value: opp.estimatedValueCents,
+      actionLabel: opp.type === "churn_risk" ? "Retain" : "Act",
+      onAction: () => openAgentWith(opp.suggestedAction),
+    })),
+  ].sort((a, b) => b.value - a.value);
+
+  const visibleRecovery = showAllRecovery ? recoveryRows : recoveryRows.slice(0, 4);
+
   return (
-    <div className="space-y-4 pb-24 sm:pb-6">
-      {/* ─── Header / Executive Strip ─────────────────────────────────────── */}
+    <div className="space-y-4 pb-6">
+      {/* ─── TODAY Header ─────────────────────────────────── */}
       <DashPageHeader>
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h1 className="text-xl font-bold tracking-tight leading-tight" data-testid="text-command-center-title">Today's Command Center</h1>
-            <div className="flex items-center gap-2 mt-1 flex-wrap">
-              <span className="text-xs text-muted-foreground">{format(new Date(), "EEE, MMM d")}</span>
-              <span className="text-xs text-muted-foreground">·</span>
-              <span className="text-xs font-semibold text-foreground">{fmt$(data.monthRevenueCents)} MTD</span>
-              {allOpenSlots.length > 0 && (
-                <>
-                  <span className="text-xs text-muted-foreground">·</span>
-                  <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">{allOpenSlots.length} open slot{allOpenSlots.length !== 1 ? "s" : ""}</span>
-                </>
-              )}
-              {data.teamPipeline.draftsAwaitingApproval > 0 && (
-                <>
-                  <span className="text-xs text-muted-foreground">·</span>
-                  <span className="text-xs text-yellow-600 dark:text-yellow-400 font-medium">{data.teamPipeline.draftsAwaitingApproval} draft{data.teamPipeline.draftsAwaitingApproval !== 1 ? "s" : ""} pending</span>
-                </>
-              )}
-              <span className="text-xs text-muted-foreground">· {data.daysRemainingInMonth}d left</span>
-            </div>
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">Today</p>
+            <h1 className="text-xl font-bold tracking-tight leading-tight" data-testid="text-command-center-title">Command Center</h1>
+            <p className="text-xs text-muted-foreground mt-0.5">{format(new Date(), "EEEE, MMMM d")}</p>
           </div>
           <Button
             variant="outline"
@@ -3207,365 +3643,109 @@ export default function BusinessCommandCenterPage() {
         </div>
       </DashPageHeader>
 
-      {/* ─── Top Attention Items ──────────────────────────────────────────── */}
-      <TopAttentionStrip />
+      {/* ─── 4 KPI Cards ──────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="section-kpi-cards">
+        <Card className="p-3" data-testid="kpi-revenue-mtd">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Revenue MTD</p>
+          <p className="text-lg font-bold mt-0.5">{fmt$(data.monthRevenueCents)}</p>
+        </Card>
+        <Card className={`p-3 ${allOpenSlots.length > 0 ? "border-orange-400/40" : ""}`} data-testid="kpi-open-slots">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Open Slots</p>
+          <p className={`text-lg font-bold mt-0.5 ${allOpenSlots.length > 0 ? "text-orange-600 dark:text-orange-400" : "text-foreground"}`}>
+            {allOpenSlots.length}
+          </p>
+        </Card>
+        <Card className={`p-3 ${data.teamPipeline.draftsAwaitingApproval > 0 ? "border-yellow-400/40" : ""}`} data-testid="kpi-pending-approvals">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wider">Pending Approvals</p>
+          <p className={`text-lg font-bold mt-0.5 ${data.teamPipeline.draftsAwaitingApproval > 0 ? "text-yellow-600 dark:text-yellow-400" : "text-foreground"}`}>
+            {data.teamPipeline.draftsAwaitingApproval}
+          </p>
+        </Card>
+        <AttentionKpiCard />
+      </div>
 
-      {/* ─── Active Workflow Status Strip ─────────────────────────────────── */}
+      {/* Goal progress (compact) */}
+      {hasGoal && goalProgress !== null && (
+        <div className="px-0.5" data-testid="section-goal-progress">
+          <div className="flex items-center justify-between mb-1">
+            <span className="text-xs text-muted-foreground">Goal: {fmt$(data.monthGoalCents!)} · {goalProgress}% reached</span>
+            <Button variant="ghost" size="sm" className="h-5 px-1.5 text-[10px]" onClick={() => setGoalDialogOpen(true)} data-testid="button-edit-goal">
+              Edit
+            </Button>
+          </div>
+          <Progress value={goalProgress} className="h-1" data-testid="progress-monthly-goal" />
+        </div>
+      )}
+      {!hasGoal && (
+        <button
+          className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors py-0.5"
+          onClick={() => setGoalDialogOpen(true)}
+          data-testid="button-set-goal"
+        >
+          <Target className="h-3.5 w-3.5" />
+          Set a monthly revenue goal to track progress
+        </button>
+      )}
+
+      {/* ─── Recommended Action ───────────────────────────── */}
+      <RecommendedActionCard data={data} openAgentWith={openAgentWith} />
+
+      {/* ─── Attention ────────────────────────────────────── */}
+      <AttentionSummaryCard />
+
+      {/* ─── Active Workflows ─────────────────────────────── */}
       <WorkflowStatusStrip />
 
-      {/* ─── Best Action Today (HERO) ─────────────────────────────────────── */}
-      {data.bestAction ? (
-        <section>
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Best Action Today</h2>
-          <DashPriorityCard>
-          <Card className="p-3.5 border-primary/40 bg-primary/5 dark:bg-primary/10" data-testid="card-best-action">
-            <div className="flex items-start gap-2.5">
-              <div className="mt-0.5 rounded-full bg-primary/20 p-1.5 shrink-0">
-                <Star className="h-3.5 w-3.5 text-primary" />
+      {/* ─── Revenue Recovery (compact) ───────────────────── */}
+      {recoveryRows.length > 0 ? (
+        <section data-testid="section-revenue-recovery">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+              <Clock className="h-3.5 w-3.5" /> Revenue Recovery
+              <span className="font-normal normal-case tracking-normal text-[10px] ml-0.5">
+                · {fmt$(recoveryRows.reduce((s, r) => s + r.value, 0))}
+              </span>
+            </h2>
+          </div>
+          <div className="space-y-1" data-testid="list-revenue-recovery">
+            {visibleRecovery.map((row) => (
+              <div key={row.id} className="flex items-center gap-2.5 px-3 py-2 rounded-xl border border-border/60 bg-card hover:border-border transition-colors" data-testid={`row-recovery-${row.id}`}>
+                <div className="shrink-0">{row.icon}</div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium leading-tight truncate">{row.title}</p>
+                  <p className="text-[10px] text-muted-foreground truncate">{row.context}</p>
+                </div>
+                <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 shrink-0">{fmt$(row.value)}</span>
+                <Button size="sm" variant="ghost" className="h-6 px-2 text-xs shrink-0" onClick={row.onAction} data-testid={`button-recovery-act-${row.id}`}>
+                  {row.actionLabel} <ArrowRight className="h-3 w-3 ml-0.5" />
+                </Button>
               </div>
-              <div className="flex-1 min-w-0">
-                <p className="font-semibold text-sm text-foreground leading-tight" data-testid="text-best-action-headline">
-                  {data.bestAction.headline}
-                </p>
-                <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2" data-testid="text-best-action-detail">
-                  {data.bestAction.detail}
-                </p>
-                <p className="text-xs text-primary font-semibold mt-1">
-                  Est. {fmt$(data.bestAction.estimatedValueCents)} opportunity
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2 mt-3">
-              <Button
-                size="sm"
-                className="flex-1 h-8 text-xs"
-                onClick={() => openAgentWith(`Help me take action on: ${data.bestAction!.headline}`)}
-                data-testid="button-take-action"
-              >
-                <Zap className="h-3.5 w-3.5 mr-1" /> Take Action
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-8 text-xs"
-                onClick={() => openAgentWith(`Why is "${data.bestAction!.headline}" your top recommendation today?`)}
-                data-testid="button-ask-why"
-              >
-                Ask Why
-              </Button>
-            </div>
-          </Card>
-          </DashPriorityCard>
-        </section>
-      ) : null}
-
-      {/* ─── Agent Quick Actions ──────────────────────────────────────────── */}
-      <section>
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Agent Quick Actions</h2>
-        <DashQuickActionGrid className="grid grid-cols-2 gap-2">
-          {[
-            { label: "What should I do today?", icon: Flame, msg: "What should I do today to grow my revenue and fill my schedule?" },
-            { label: "Fill open slots", icon: Calendar, msg: "Help me fill my open schedule slots for today and tomorrow." },
-            { label: "Draft team outreach", icon: Send, msg: "Draft team outreach for my highest-confidence leads." },
-            { label: "Review team drafts", icon: MessageSquare, msg: "Show me team outreach drafts waiting for my approval." },
-            { label: "Follow up with replies", icon: Users, msg: "Show me team training prospects who replied and need follow-up." },
-            { label: "Show revenue gap", icon: TrendingUp, msg: "What is my current revenue gap and what's the fastest way to close it?" },
-          ].map((action, i) => (
-            <DashQuickActionItem key={action.label}>
-              <Button
-                variant="outline"
-                className="w-full h-auto py-2.5 flex flex-col items-center gap-1 text-center"
-                onClick={() => openAgentWith(action.msg)}
-                data-testid={`button-quick-action-${i}`}
-              >
-                <action.icon className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className="text-xs leading-tight">{action.label}</span>
-              </Button>
-            </DashQuickActionItem>
-          ))}
-        </DashQuickActionGrid>
-      </section>
-
-      {/* ─── Revenue Snapshot ─────────────────────────────────────────────── */}
-      <section>
-        <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Revenue Snapshot</h2>
-        <DashStaggerList className="grid grid-cols-3 gap-2">
-          <DashStatCard scanLine>
-            <Card className="p-3 space-y-0.5" data-testid="card-revenue-today">
-              <p className="text-[10px] text-muted-foreground">Booked Today</p>
-              <p className="text-base font-bold text-foreground">{fmt$(data.todayRevenueCents)}</p>
-            </Card>
-          </DashStatCard>
-          <DashStatCard scanLine>
-            <Card className="p-3 space-y-0.5" data-testid="card-open-slot-value">
-              <p className="text-[10px] text-muted-foreground">Open Value</p>
-              <p className="text-base font-bold text-orange-600 dark:text-orange-400">{fmt$(data.openSlotValueTodayCents)}</p>
-            </Card>
-          </DashStatCard>
-          <DashStatCard scanLine>
-            <Card className="p-3 space-y-0.5" data-testid="card-month-revenue">
-              <p className="text-[10px] text-muted-foreground">MTD</p>
-              <p className="text-base font-bold">{fmt$(data.monthRevenueCents)}</p>
-            </Card>
-          </DashStatCard>
-        </DashStaggerList>
-
-        {hasGoal ? (
-          <Card className="p-3 mt-2 space-y-2" data-testid="card-revenue-goal">
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-medium">Goal: {fmt$(data.monthGoalCents!)} · Gap: {fmt$(data.revenueGapCents || 0)}</p>
-              <Button variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => setGoalDialogOpen(true)} data-testid="button-edit-goal">
-                Edit
-              </Button>
-            </div>
-            <div className="space-y-1">
-              <Progress value={goalProgress ?? 0} className="h-1.5" data-testid="progress-monthly-goal" />
-              <div className="flex justify-between text-[10px] text-muted-foreground">
-                <span>Current {goalProgress}%</span>
-                <span>Projected {projectedProgress}%</span>
-              </div>
-            </div>
-          </Card>
-        ) : (
-          <Card className="p-3 mt-2 flex items-center justify-between gap-3" data-testid="card-no-goal">
-            <p className="text-xs text-muted-foreground">Set a monthly goal to unlock revenue recommendations.</p>
-            <Button size="sm" className="h-7 px-2 text-xs shrink-0" onClick={() => setGoalDialogOpen(true)} data-testid="button-set-goal">
-              <Target className="h-3 w-3 mr-1" /> Set Goal
-            </Button>
-          </Card>
-        )}
-      </section>
-
-      {/* ─── Revenue Recovery Queue (merged slots + client opportunities) ─── */}
-      {(() => {
-        type RecoveryRow = {
-          id: string;
-          icon: React.ReactNode;
-          title: string;
-          context: string;
-          value: number;
-          actionLabel: string;
-          onAction: () => void;
-          urgency: string;
-        };
-        const rows: RecoveryRow[] = [
-          ...allOpenSlots.map((slot, idx) => ({
-            id: `slot-${slot.startISO}-${idx}`,
-            icon: <Clock className="h-4 w-4 text-orange-500" />,
-            title: `${slot.startTime} – ${slot.endTimeStr}`,
-            context: `Open slot · ${slot.date}${slot.suggestedClientName ? ` · ${slot.suggestedClientName}` : ""}`,
-            value: slot.estimatedValueCents,
-            actionLabel: "Fill",
-            onAction: () => openAgentWith(`Help me fill the ${slot.startTime} slot on ${slot.date}`),
-            urgency: "medium",
-          })),
-          ...data.clientOpportunities.map((opp, idx) => ({
-            id: `opp-${opp.clientId}-${opp.type}-${idx}`,
-            icon: opp.type === "churn_risk"
-              ? <AlertTriangle className="h-4 w-4 text-red-500" />
-              : opp.type === "renewal_due"
-              ? <RefreshCw className="h-4 w-4 text-yellow-500" />
-              : <Users className="h-4 w-4 text-blue-500" />,
-            title: opp.clientName,
-            context: opp.detail,
-            value: opp.estimatedValueCents,
-            actionLabel: opp.type === "churn_risk" ? "Retain" : "Act",
-            onAction: () => openAgentWith(opp.suggestedAction),
-            urgency: opp.urgency,
-          })),
-        ].sort((a, b) => b.value - a.value);
-
-        const RECOVERY_LIMIT = 5;
-        const visibleRows = showAllRecovery ? rows : rows.slice(0, RECOVERY_LIMIT);
-        const hasMore = rows.length > RECOVERY_LIMIT;
-
-        if (rows.length === 0) {
-          return (
-            <section>
-              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Revenue Recovery</h2>
-              <Card className="p-3 flex items-center gap-2.5" data-testid="card-no-recovery">
-                <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" />
-                <p className="text-sm font-medium">Schedule full · No churn risks</p>
-              </Card>
-            </section>
-          );
-        }
-
-        return (
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Revenue Recovery</h2>
-              <span className="text-xs text-muted-foreground">{rows.length} item{rows.length !== 1 ? "s" : ""}</span>
-            </div>
-            <div className="space-y-1.5" data-testid="list-revenue-recovery">
-              {visibleRows.map((row) => (
-                <DashActionRow key={row.id}>
-                  <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl border border-border/60 bg-card hover:border-border transition-colors" data-testid={`row-recovery-${row.id}`}>
-                    <div className="shrink-0">{row.icon}</div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium leading-tight truncate">{row.title}</p>
-                      <p className="text-xs text-muted-foreground truncate">{row.context}</p>
-                    </div>
-                    <div className="shrink-0 flex items-center gap-2">
-                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">{fmt$(row.value)}</span>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 px-2 text-xs"
-                        onClick={row.onAction}
-                        data-testid={`button-recovery-act-${row.id}`}
-                      >
-                        {row.actionLabel} <ArrowRight className="h-3 w-3 ml-0.5" />
-                      </Button>
-                    </div>
-                  </div>
-                </DashActionRow>
-              ))}
-            </div>
-            {hasMore && (
-              <button
-                className="mt-2 w-full text-xs text-muted-foreground hover:text-foreground py-1.5 border border-dashed border-border rounded-lg transition-colors"
-                onClick={() => setShowAllRecovery(!showAllRecovery)}
-                data-testid="button-view-all-recovery"
-              >
-                {showAllRecovery ? `Show less ↑` : `View all ${rows.length} items ↓`}
-              </button>
-            )}
-          </section>
-        );
-      })()}
-
-      {/* ─── Team Training Pipeline (compressed) ─────────────────────────── */}
-      <section>
-        <div className="flex items-center justify-between mb-2">
-          <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Team Training Pipeline</h2>
-          <Badge variant="outline" className="text-[10px] text-muted-foreground">Est. pipeline</Badge>
-        </div>
-
-        {data.teamPipeline.totalProspects === 0 ? (
-          <Card className="p-3 text-center text-sm text-muted-foreground" data-testid="card-no-team-pipeline">
-            No prospects yet.{" "}
-            <button className="text-primary underline" onClick={() => openAgentWith("Find me some team training leads")} data-testid="button-find-leads">
-              Find leads
+            ))}
+          </div>
+          {recoveryRows.length > 4 && (
+            <button
+              className="mt-1.5 w-full text-xs text-muted-foreground hover:text-foreground py-1 transition-colors"
+              onClick={() => setShowAllRecovery(s => !s)}
+              data-testid="button-view-all-recovery"
+            >
+              {showAllRecovery ? "Show less ↑" : `+${recoveryRows.length - 4} more`}
             </button>
-          </Card>
-        ) : (
-          <>
-            {/* Single summary card */}
-            <Card className="p-3 mb-2" data-testid="card-pipeline-summary">
-              <div className="grid grid-cols-4 gap-2 text-center">
-                <div data-testid="card-pipeline-total">
-                  <p className="text-base font-bold">{data.teamPipeline.totalProspects}</p>
-                  <p className="text-[10px] text-muted-foreground">Total</p>
-                </div>
-                <div data-testid="card-pipeline-highconf">
-                  <p className="text-base font-bold text-primary">{data.teamPipeline.highConfidenceLeads}</p>
-                  <p className="text-[10px] text-muted-foreground">High Conf</p>
-                </div>
-                <div data-testid="card-pipeline-drafts">
-                  <p className="text-base font-bold text-yellow-600 dark:text-yellow-400">{data.teamPipeline.draftsAwaitingApproval}</p>
-                  <p className="text-[10px] text-muted-foreground">Drafts</p>
-                </div>
-                <div data-testid="card-pipeline-replies">
-                  <p className="text-base font-bold text-emerald-600 dark:text-emerald-400">{data.teamPipeline.repliesNeedingFollowUp}</p>
-                  <p className="text-[10px] text-muted-foreground">Replies</p>
-                </div>
-              </div>
-              {data.teamPipeline.estimatedPipelineValueCents > 0 && (
-                <p className="text-xs text-muted-foreground mt-2 border-t border-border/40 pt-2">
-                  <TrendingUp className="h-3 w-3 inline mr-1 text-muted-foreground" />
-                  Pipeline: <span className="font-semibold text-foreground">{fmt$(data.teamPipeline.estimatedPipelineValueCents)}</span>
-                  <span className="text-[10px]"> potential</span>
-                </p>
-              )}
-            </Card>
-
-            {/* Top 2 pending drafts */}
-            {data.teamPipeline.pendingDrafts.length > 0 && (
-              <div className="space-y-1.5" data-testid="list-pending-drafts">
-                <p className="text-xs font-medium text-yellow-700 dark:text-yellow-400 flex items-center gap-1">
-                  <MessageSquare className="h-3 w-3" /> Drafts awaiting approval
-                </p>
-                {data.teamPipeline.pendingDrafts.slice(0, 2).map((draft, i) => (
-                  <Card key={draft.draftId} className="p-2.5" data-testid={`card-draft-${i}`}>
-                    <div className="flex items-center gap-2">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-medium">{draft.prospectName}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">{draft.subject}</p>
-                      </div>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="shrink-0 h-7 px-2 text-xs"
-                        onClick={() => openAgentWith(`Review and approve the team outreach draft for ${draft.prospectName} (draft ID: ${draft.draftId})`)}
-                        data-testid={`button-review-draft-${i}`}
-                      >
-                        Review
-                      </Button>
-                    </div>
-                  </Card>
-                ))}
-                {data.teamPipeline.pendingDrafts.length > 2 && (
-                  <button
-                    className="w-full text-xs text-muted-foreground hover:text-foreground py-1 transition-colors"
-                    onClick={() => openAgentWith("Show me all team outreach drafts waiting for my approval.")}
-                    data-testid="button-review-all-drafts"
-                  >
-                    Review all {data.teamPipeline.pendingDrafts.length} drafts →
-                  </button>
-                )}
-              </div>
-            )}
-          </>
-        )}
-      </section>
-
-      {/* ─── Program Leads ───────────────────────────────────────────────── */}
-      <ProgramLeadsPanel />
-
-      {/* ─── Agent Layer / Activity Feed ──────────────────────────────────── */}
-      <div className="space-y-4">
-        <div className="flex items-center gap-2">
-          <div className="h-px flex-1 bg-border/50" />
-          <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider px-2">Agent Layer</span>
-          <div className="h-px flex-1 bg-border/50" />
+          )}
+        </section>
+      ) : (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground py-0.5" data-testid="section-recovery-empty">
+          <CheckCircle className="h-3.5 w-3.5 text-emerald-500" />
+          Schedule full · No churn risks
         </div>
+      )}
 
-        {/* Daily Operator Mode */}
-        <DashSectionReveal>
-          <DailyOperatorMode openAgentWith={openAgentWith} />
-        </DashSectionReveal>
+      {/* ─── Lead Pipeline ────────────────────────────────── */}
+      <CompactLeadPipelineSection data={data} openAgentWith={openAgentWith} />
 
-        {/* Business Brain Intelligence Strip */}
-        <DashSectionReveal delay={0.01}>
-          <BrainBriefStrip onRunBrain={handleRunBrain} />
-        </DashSectionReveal>
+      {/* ─── AI Workforce ─────────────────────────────────── */}
+      <CompactAiWorkforceSection onRunBrain={handleRunBrain} openAgentWith={openAgentWith} />
 
-        {/* Unified Action Inbox */}
-        <DashSectionReveal delay={0.02}>
-          <UnifiedActionInbox onRunBrain={handleRunBrain} openAgentWith={openAgentWith} />
-        </DashSectionReveal>
-
-        {/* AI Revenue Outcome Engine */}
-        <DashSectionReveal delay={0.04}>
-          <AiRevenuePanel />
-        </DashSectionReveal>
-      </div>
-
-      {/* ─── Sticky bottom agent button (mobile) ─────────────────────────── */}
-      <div className="fixed bottom-0 left-0 right-0 bg-background/90 backdrop-blur-sm border-t sm:hidden z-40 px-4 pt-3 pb-safe" style={{ paddingBottom: "max(0.75rem, env(safe-area-inset-bottom))" }}>
-        <Button
-          className="w-full mb-3"
-          size="lg"
-          onClick={() => openAgentWith("What should I do today to grow my revenue and fill my schedule?")}
-          data-testid="button-sticky-agent"
-        >
-          <Bot className="h-5 w-5 mr-2" />
-          Ask Agent: What Should I Do Today?
-        </Button>
-      </div>
-
-      {/* ─── Set Goal Dialog ──────────────────────────────────────────────── */}
+      {/* ─── Set Goal Dialog ──────────────────────────────── */}
       <Dialog open={goalDialogOpen} onOpenChange={setGoalDialogOpen}>
         <DialogContent>
           <DialogHeader>

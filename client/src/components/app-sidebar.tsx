@@ -76,6 +76,7 @@ import {
   CheckCheck,
   QrCode,
   Bell,
+  MessageSquare,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -139,19 +140,30 @@ const MAX_RECENTS = 5;
 
 const AI_SUB_GROUPS: AiSubGroup[] = [
   {
-    id: "ai-intelligence",
-    label: "Intelligence",
-    icon: Lightbulb,
+    id: "ai-workforce-core",
+    label: "Workforce",
+    icon: Bot,
     standardVisible: true,
     defaultOpen: true,
     items: [
+      { title: "Attention Inbox", simplifiedTitle: "Attention", url: "/admin/attention", icon: Inbox, testId: "nav-attention-inbox" },
+      { title: "AgentMail", simplifiedTitle: "AgentMail", url: "/admin/agentmail", icon: MessageSquare, testId: "nav-agentmail" },
+      { title: "Communication Intel", simplifiedTitle: "Comm Intel", url: "/admin/communication-intelligence", icon: BarChart2, testId: "nav-communication-intelligence" },
       { title: "CEO Heartbeat", simplifiedTitle: "CEO Heartbeat", url: "/admin/ceo-heartbeat", icon: Brain, testId: "nav-ceo-heartbeat" },
+    ],
+  },
+  {
+    id: "ai-intelligence",
+    label: "Intelligence",
+    icon: Lightbulb,
+    standardVisible: false,
+    defaultOpen: false,
+    items: [
       { title: "Software Improvement", simplifiedTitle: "Improvement", url: "/admin/software-improvement", icon: Wrench, testId: "nav-software-improvement" },
       { title: "Athlete Intelligence", simplifiedTitle: "Athlete AI", url: "/admin/athlete-intelligence", icon: Dumbbell, testId: "nav-athlete-intelligence" },
       { title: "Command Center", simplifiedTitle: "AI Overview", url: "/admin/ai-operations", icon: Cpu, testId: "nav-ai-operations" },
       { title: "AI Comms Center", simplifiedTitle: "AI Comms", url: "/admin/ai-approvals", icon: CheckCheck, testId: "nav-ai-approvals" },
       { title: "Outreach Opportunities", simplifiedTitle: "Outreach", url: "/admin/ai-outreach-opportunities", icon: Target, testId: "nav-ai-outreach-opportunities" },
-      { title: "Attention Inbox", simplifiedTitle: "Attention", url: "/admin/attention", icon: Inbox, testId: "nav-attention-inbox" },
       { title: "Business Brain", simplifiedTitle: "Business Brain", url: "/admin/business-brain", icon: Brain, testId: "nav-business-brain" },
       { title: "Recommendations", simplifiedTitle: "Suggestions", url: "/admin/recommendations", icon: Zap, testId: "nav-recommendations" },
       { title: "Workflow Heatmap", simplifiedTitle: "Heatmap", url: "/admin/workflow-heatmap", icon: BarChart2, testId: "nav-workflow-heatmap" },
@@ -532,7 +544,7 @@ function AiOpsNavSection({
       >
         <span className="flex items-center gap-1.5">
           <Cpu className="h-3.5 w-3.5 text-violet-500" />
-          AI Operations
+          AI Workforce
           {isSimplified && (
             <span className="ml-1 text-[9px] font-medium px-1 py-0.5 rounded bg-violet-100 dark:bg-violet-900/40 text-violet-600 dark:text-violet-400 uppercase tracking-wide leading-none">
               Adv
@@ -779,7 +791,7 @@ function GrowthRevenueNavSection({
       >
         <span className="flex items-center gap-1.5">
           <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
-          Growth & Revenue
+          Growth
           {isAnyGrActive && (
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
           )}
@@ -1287,17 +1299,16 @@ export function AppSidebar() {
       ],
     },
     {
-      id: "clients",
-      label: "Clients & Scheduling",
+      id: "athletes",
+      label: "Athletes",
       icon: Users,
       items: [
-        { title: "Coaches", url: "/coaches", icon: UserCog, testId: "nav-coaches" },
-        { title: "Users", url: "/coach/users", icon: Users, testId: "nav-users" },
-        { title: "Schedule", url: "/scheduling", icon: CalendarDays, testId: "nav-scheduling" },
-        { title: "Availability", url: "/coach/availability", icon: CalendarClock, testId: "nav-availability" },
-        { title: "Group Sessions", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
+        { title: "Athletes", url: "/coach/users", icon: Users, testId: "nav-users" },
+        { title: "Teams", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
+        { title: "Scheduling", url: "/scheduling", icon: CalendarDays, testId: "nav-scheduling" },
         { title: "Team Training", url: "/team-training", icon: Dumbbell, testId: "nav-team-training" },
         { title: "My Bookings", url: "/bookings", icon: Calendar, testId: "nav-my-bookings" },
+        { title: "Availability", url: "/coach/availability", icon: CalendarClock, testId: "nav-availability" },
         ...(athleticEnabled
           ? [{
               title:
@@ -1309,35 +1320,36 @@ export function AppSidebar() {
               testId: "nav-athletic",
             }]
           : []),
-        { title: "My Profile", url: "/coach/profile", icon: UserCog, testId: "nav-my-profile" },
       ],
     },
     ...(programToolItems.length > 0
       ? [{
-          id: "program-tools",
-          label: "Program Tools",
+          id: "training",
+          label: "Training",
           icon: Layers,
           items: programToolItems,
         } as NavSection]
       : []),
-    ...(isAdmin
-      ? [
-          {
-            id: "organization",
-            label: "Organization",
-            icon: Building2,
-            lowPriority: true,
-            items: [
+    {
+      id: "organization",
+      label: "Organization",
+      icon: Building2,
+      lowPriority: true,
+      items: [
+        ...(isAdmin ? [{ title: "Coaches", url: "/coaches", icon: UserCog, testId: "nav-coaches" }] : []),
+        { title: "My Profile", url: "/coach/profile", icon: UserCog, testId: "nav-my-profile" },
+        ...(isAdmin
+          ? [
               { title: "Branding", url: "/admin/branding", icon: Paintbrush, testId: "nav-branding" },
               { title: "Media Library", url: "/admin/media", icon: ImagePlay, testId: "nav-media" },
               { title: "Stripe", url: "/admin/stripe", icon: CreditCard, testId: "nav-stripe" },
               { title: "Subscription", url: "/admin/subscription", icon: Sparkles, testId: "nav-subscription" },
               { title: "Options", url: "/admin/configuration", icon: Settings, testId: "nav-options" },
               { title: "Notifications", url: "/admin/notification-settings", icon: Bell, testId: "nav-notification-settings" },
-            ],
-          } as NavSection,
-        ]
-      : []),
+            ]
+          : []),
+      ],
+    },
   ];
 
   // CLIENT flat list
