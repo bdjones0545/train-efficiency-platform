@@ -509,6 +509,28 @@ export async function processInboundAgentMail(
   // 7. Add to Attention Inbox
   const attentionItemId = await addToAttentionInbox(orgId, inboundId, payload, result);
 
+  // 7b. Auto-create reply queue entry if a suggested reply exists
+  if (result.suggestedReply) {
+    try {
+      const { createReplyQueueEntry } = await import("../agentmail-reply-routes");
+      await createReplyQueueEntry({
+        organizationId: orgId,
+        inboundMessageId: inboundId,
+        inbox: payload.inbox,
+        agentName: result.routedAgent,
+        classification: result.classification,
+        recipientEmail: payload.fromEmail,
+        recipientName: payload.fromName,
+        subject: `Re: ${payload.subject}`,
+        draftBody: result.suggestedReply,
+        confidence: result.confidence,
+        threadId: payload.providerThreadId,
+      });
+    } catch (e: any) {
+      console.error("[AgentMail Inbound] Reply queue entry error:", e?.message);
+    }
+  }
+
   // 8. CEO Heartbeat timeline
   await notifyCeoHeartbeat(orgId, payload, result, inboundId);
 

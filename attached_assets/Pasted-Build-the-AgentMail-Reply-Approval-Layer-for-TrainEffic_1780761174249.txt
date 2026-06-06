@@ -1,0 +1,378 @@
+Build the AgentMail Reply Approval Layer for TrainEfficiency.
+
+Goal:
+TrainEfficiency agents can draft replies to inbound emails, but a human remains in control. Every suggested response should move through:
+
+Inbound Email
+→ Classification
+→ Suggested Reply Draft
+→ Human Review
+→ Approve/Edit
+→ Send via AgentMail
+→ Outcome Tracking
+→ Agent Learning Metrics
+
+Inspect first:
+- Existing AgentMail integration
+- agentmail-service.ts
+- agentmail-inbound-router.ts
+- agent_mail_messages table
+- agent_mail_inbound_messages table
+- Attention Inbox
+- CEO Heartbeat
+- Software Improvement Tasks
+- Agent Operating Timeline
+- Existing agent outcome/effectiveness tracking systems
+
+Do not duplicate patterns that already exist.
+
+--------------------------------------------------
+PHASE 1 — Reply Queue
+--------------------------------------------------
+
+Create:
+
+agent_mail_reply_queue
+
+Fields:
+- id
+- organization_id
+- inbound_message_id
+- inbox
+- agent_name
+- classification
+- recipient_email
+- recipient_name
+- subject
+- draft_body
+- edited_body
+- final_body
+- status
+- approval_status
+- approved_by
+- approved_at
+- sent_at
+- provider_message_id
+- thread_id
+- delivery_status
+- rejection_reason
+- created_at
+- updated_at
+
+Statuses:
+drafted
+pending_review
+approved
+rejected
+sent
+failed
+
+--------------------------------------------------
+PHASE 2 — Draft Creation
+--------------------------------------------------
+
+When inbound emails generate suggested replies:
+
+Automatically create a reply queue record.
+
+Supported classifications:
+
+- new_lead
+- pricing_question
+- booking_request
+- reschedule_request
+- employment_candidate
+- support_issue
+- athlete_parent_question
+- coach_partner_inquiry
+- general_question
+
+Store:
+- original AI draft
+- confidence
+- classification
+- assigned agent
+
+No email should be sent automatically.
+
+--------------------------------------------------
+PHASE 3 — Approval Workflow
+--------------------------------------------------
+
+Create API routes:
+
+GET /api/agentmail/replies
+GET /api/agentmail/replies/:id
+PATCH /api/agentmail/replies/:id
+POST /api/agentmail/replies/:id/approve
+POST /api/agentmail/replies/:id/reject
+POST /api/agentmail/replies/:id/send
+
+Approval:
+- approve stores approver + timestamp
+- reject stores reason
+- edit updates edited_body
+- send uses edited_body if present, otherwise draft_body
+
+--------------------------------------------------
+PHASE 4 — AgentMail Sending
+--------------------------------------------------
+
+Integrate with existing sendAgentEmail()
+
+When sending:
+
+Use correct inbox:
+- revenue@
+- hiring@
+- scheduling@
+- support@
+- operations@
+- ceo@
+
+Preserve:
+- subject
+- recipient
+- thread id if supported
+- reply headers if supported
+
+Store:
+- provider message id
+- send timestamp
+- delivery result
+- errors
+
+Update:
+agent_mail_messages
+reply_queue
+timeline
+
+--------------------------------------------------
+PHASE 5 — Admin UI
+--------------------------------------------------
+
+Add a new tab:
+
+"Reply Queue"
+
+Filters:
+
+- inbox
+- classification
+- status
+- approval status
+- agent
+- organization
+
+Columns:
+
+- inbox
+- recipient
+- classification
+- assigned agent
+- confidence
+- created date
+- approval status
+- send status
+
+Actions:
+
+- View Original Email
+- View Draft Reply
+- Edit Reply
+- Approve
+- Reject
+- Send
+- View Audit History
+
+Detail panel should show:
+
+LEFT:
+Original inbound email
+
+RIGHT:
+Editable draft response
+
+BOTTOM:
+Approval + send history
+
+--------------------------------------------------
+PHASE 6 — Outcome Tracking
+--------------------------------------------------
+
+Track every reply outcome.
+
+Create:
+
+agent_mail_reply_outcomes
+
+Fields:
+- id
+- reply_queue_id
+- organization_id
+- agent_name
+- inbox
+- classification
+- outcome_type
+- response_time_minutes
+- created_at
+
+Outcome types:
+
+approved_without_edit
+approved_with_edit
+rejected
+sent
+delivery_failed
+
+Metrics:
+
+approval rate
+edit rate
+rejection rate
+send rate
+average response time
+
+--------------------------------------------------
+PHASE 7 — Agent Learning Metrics
+--------------------------------------------------
+
+Create:
+
+GET /api/agentmail/analytics
+
+Show:
+
+Per agent:
+- drafts generated
+- approvals
+- edits
+- rejections
+- sends
+- avg approval time
+
+Per classification:
+- approval %
+- edit %
+- rejection %
+
+Track:
+
+Revenue Agent
+Scheduling Agent
+Support Agent
+Hiring Agent
+Operations Agent
+CEO Agent
+
+Purpose:
+
+Measure which agents write useful drafts.
+
+Do NOT automatically retrain anything.
+
+Just collect intelligence.
+
+--------------------------------------------------
+PHASE 8 — Attention Inbox Integration
+--------------------------------------------------
+
+When a reply is waiting approval:
+
+Create/update Attention Inbox item.
+
+Recommended actions:
+
+Approve Reply
+Edit Reply
+Send Reply
+
+Close attention item after send.
+
+--------------------------------------------------
+PHASE 9 — CEO Heartbeat Integration
+--------------------------------------------------
+
+Add AgentMail section.
+
+Display:
+
+Pending approvals
+Replies sent today
+Average approval time
+Rejection rate
+Delivery failures
+Most active inbox
+Most active agent
+
+Write events to:
+
+Agent Operating Timeline
+
+Examples:
+
+Revenue Agent drafted lead response
+Support Agent reply approved
+Scheduling Agent email sent
+Hiring Agent draft rejected
+
+--------------------------------------------------
+PHASE 10 — Reliability
+--------------------------------------------------
+
+Requirements:
+
+- No automatic sending
+- Full audit trail
+- Idempotent send protection
+- Prevent duplicate sends
+- Permission protected
+- Org scoped
+- Failure logging
+- Timeline logging
+
+--------------------------------------------------
+PHASE 11 — Testing
+--------------------------------------------------
+
+Add test scenarios:
+
+1. Parent asks pricing question
+2. Athlete asks to reschedule
+3. Employment applicant inquiry
+4. Support complaint
+5. Team training lead
+6. Partnership inquiry
+
+Run:
+
+Inbound
+→ Classification
+→ Draft
+→ Approval
+→ Send
+
+End-to-end.
+
+--------------------------------------------------
+DELIVERABLES
+--------------------------------------------------
+
+After implementation provide:
+
+1. Files created
+2. Files modified
+3. Database changes
+4. API routes added
+5. UI features added
+6. Analytics added
+7. How approval workflow works
+8. How to test end-to-end
+9. Remaining manual steps
+
+Most importantly:
+
+Keep human approval mandatory.
+
+The system should draft like an employee,
+but act only after approval.
