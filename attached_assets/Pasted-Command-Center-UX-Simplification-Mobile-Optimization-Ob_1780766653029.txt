@@ -1,0 +1,391 @@
+Command Center UX Simplification & Mobile Optimization
+
+Objective:
+
+Redesign the Command Center to reduce cognitive load, improve mobile usability, eliminate duplicate decision systems, and make the page answer one question:
+
+“What should I do next?”
+
+This is a UX simplification project.
+
+Do not remove functionality.
+
+Reorganize, compress, and prioritize information.
+
+⸻
+
+PHASE 1 — REDUCE COMPETING PRIORITIES
+
+Current issue:
+
+The page contains multiple systems competing for attention:
+
+* Attention Inbox
+* Best Action Today
+* Agent Quick Actions
+* Business Priorities
+* Agent Layer
+* AI Revenue
+* Revenue Recovery
+* Team Training Pipeline
+* Program Leads
+
+Users are being told what to do by multiple systems.
+
+Goal:
+
+One primary recommendation system.
+
+⸻
+
+PHASE 2 — EXECUTIVE SUMMARY REDESIGN
+
+Replace the current top area with:
+
+TODAY
+
+4 KPI cards:
+
+* Revenue MTD
+* Open Slots
+* Pending Approvals
+* Attention Items
+
+Requirements:
+
+* Compact cards
+* Mobile-first
+* Equal visual weight
+* One-row scroll on mobile if needed
+* Remove:
+    * “24d left”
+    * excessive text
+    * redundant metrics
+
+The top of the page should be readable in under 3 seconds.
+
+⸻
+
+PHASE 3 — SINGLE ACTION ENGINE
+
+Keep only ONE recommendation card.
+
+Replace:
+
+* Best Action Today
+* Agent Quick Actions
+
+With:
+
+RECOMMENDED ACTION
+
+Example:
+
+Fill Open Slot
+$70 Opportunity
+
+[Take Action]
+[Why?]
+
+Below it:
+
+OTHER OPPORTUNITIES
+
+Collapsed list:
+
+* Follow up with 3 hot leads
+* Review 2 outreach drafts
+* Schedule 1 athlete
+
+Expandable only when tapped.
+
+Only one primary action should be visible.
+
+⸻
+
+PHASE 4 — ATTENTION SECTION
+
+Move Attention higher.
+
+Immediately below Recommended Action.
+
+Display:
+
+ATTENTION
+
+High
+Medium
+Low
+
+Example:
+
+3 High
+4 Medium
+2 Low
+
+[Open Inbox]
+
+Do not hide attention counts behind:
+“+8 more items”
+
+This is one of the most important sections.
+
+⸻
+
+PHASE 5 — REVENUE RECOVERY COMPRESSION
+
+Current cards are too tall.
+
+Convert to compact list.
+
+Example:
+
+Open Slots
+
+1:30 PM — $48
+2:00 PM — $48
+3:30 PM — $48
+
+[View All]
+
+Keep recovery value visible.
+
+Reduce vertical space by at least 50%.
+
+⸻
+
+PHASE 6 — LEADS CONSOLIDATION
+
+Merge:
+
+* Team Training Pipeline
+* Program Leads
+
+Into one section:
+
+LEAD PIPELINE
+
+Top KPIs:
+
+* Total Leads
+* High Confidence
+* Awaiting Approval
+* Pipeline Value
+
+Example:
+
+117 Total
+60 High Confidence
+2 Awaiting Approval
+$87,000 Pipeline
+
+Then show:
+
+Top Leads Requiring Action
+
+Only 3–5 leads.
+
+[View All Leads]
+
+Do not separate pipeline metrics from lead actions.
+
+⸻
+
+PHASE 7 — AI WORKFORCE CONSOLIDATION
+
+Current sections:
+
+* Start Your Day
+* Business Brain
+* Today’s Business Priorities
+* AI Revenue
+
+These should become one section:
+
+AI WORKFORCE
+
+Display:
+
+Business Health Score
+
+Example:
+
+92 / 100
+
+Agent Status:
+
+* Revenue Agent
+* Scheduling Agent
+* Retention Agent
+* Support Agent
+
+Then:
+
+TOP FINDINGS
+
+Example:
+
+* 3 open slots detected
+* 2 hot leads awaiting contact
+* 1 overdue follow-up
+
+[Run Analysis]
+
+Remove duplicate giant cards.
+
+⸻
+
+PHASE 8 — REMOVE FIXED FOOTER CTA
+
+Current:
+
+Ask Agent: What Should I Do Today?
+
+appears permanently fixed at bottom.
+
+Issue:
+
+Consumes valuable mobile space.
+
+Required change:
+
+Remove the fixed footer CTA.
+
+Keep only:
+
+Floating Agent Button
+
+The floating assistant already exists and provides access.
+
+This should significantly increase usable mobile viewport height.
+
+⸻
+
+PHASE 9 — MOBILE OPTIMIZATION
+
+Requirements:
+
+* Reduce total page height
+* Reduce card padding where possible
+* Improve information density
+* Avoid giant empty states
+* Prioritize actions above analytics
+* Make scrolling faster
+
+Goal:
+
+Users should reach Lead Pipeline in significantly fewer scrolls.
+
+⸻
+
+PHASE 10 — EMPTY STATE IMPROVEMENTS
+
+Current empty states are oversized.
+
+Examples:
+
+Business Brain not analyzed
+No pending actions
+AI Revenue tracking starts now
+
+Replace with:
+
+Compact empty states.
+
+Maximum height:
+120px–160px
+
+Do not use large hero cards for empty content.
+
+⸻
+
+PHASE 11 — SIDEBAR REORGANIZATION
+
+Simplify navigation.
+
+Recommended structure:
+
+HOME
+
+* Command Center
+
+ATHLETES
+
+* Athletes
+* Teams
+* Scheduling
+
+TRAINING
+
+* Workout Builder
+* Programs
+* PR Tracker
+* Attendance
+
+GROWTH
+
+* Leads
+* Communication
+* Revenue
+
+AI WORKFORCE
+
+* Attention Inbox
+* AgentMail
+* Communication Intelligence
+* CEO Heartbeat
+
+ORGANIZATION
+
+* Coaches
+* Settings
+
+Review all existing menu items.
+
+Merge or relocate where appropriate.
+
+Do not remove functionality.
+
+Reduce navigation complexity.
+
+⸻
+
+PHASE 12 — SUCCESS CRITERIA
+
+When a coach opens the Command Center:
+
+Within 3 seconds they should know:
+
+1. How the business is doing
+2. What needs attention
+3. What action creates the most value today
+
+The page should feel:
+
+* Cleaner
+* Faster
+* Less overwhelming
+* More executive-focused
+* Better on mobile
+
+⸻
+
+DELIVERABLES
+
+After implementation provide:
+
+1. Sections removed
+2. Sections merged
+3. New information hierarchy
+4. Mobile UX improvements
+5. Sidebar changes
+6. Scroll reduction estimates
+7. Before vs After layout summary
+
+Important:
+
+Do not add new features.
+
+Do not remove existing capabilities.
+
+Focus entirely on simplification, hierarchy, clarity, and mobile usability.
