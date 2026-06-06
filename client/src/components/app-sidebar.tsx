@@ -78,6 +78,7 @@ import {
   Bell,
   MessageSquare,
   BookOpen,
+  Mail,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -161,6 +162,7 @@ const AI_SUB_GROUPS: AiSubGroup[] = [
     defaultOpen: false,
     items: [
       { title: "Software Improvement", simplifiedTitle: "Improvement", url: "/admin/software-improvement", icon: Wrench, testId: "nav-software-improvement" },
+      { title: "Gmail Draft Review", simplifiedTitle: "Gmail Drafts", url: "/admin/gmail-draft-review", icon: Mail, testId: "nav-gmail-draft-review" },
       { title: "Athlete Intelligence", simplifiedTitle: "Athlete AI", url: "/admin/athlete-intelligence", icon: Dumbbell, testId: "nav-athlete-intelligence" },
       { title: "Command Center", simplifiedTitle: "AI Overview", url: "/admin/ai-operations", icon: Cpu, testId: "nav-ai-operations" },
       { title: "AI Comms Center", simplifiedTitle: "AI Comms", url: "/admin/ai-approvals", icon: CheckCheck, testId: "nav-ai-approvals" },

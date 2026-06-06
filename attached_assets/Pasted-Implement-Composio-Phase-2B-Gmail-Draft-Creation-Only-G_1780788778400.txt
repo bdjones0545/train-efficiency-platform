@@ -1,0 +1,73 @@
+Implement Composio Phase 2B: Gmail Draft Creation Only.
+
+Goal:
+Allow approved agents to create Gmail drafts through Composio, but never send emails automatically.
+
+Do not add Gmail send.
+Do not bypass AgentMail approval flows.
+Do not allow autonomous outreach.
+Do not connect Calendar, Slack, Stripe, or Sheets in this phase.
+
+Requirements:
+
+1. Registry
+- Add Gmail draft creation as an allowed action.
+- Keep Gmail send actions blocked.
+- Require approval for all Gmail write actions.
+
+2. Agent permissions
+Allow only:
+- Revenue Agent → Gmail draft creation
+- Scheduling Agent → Gmail draft creation
+- Communication Agent → Gmail draft creation
+- CEO Heartbeat → Gmail draft creation for summaries only
+
+3. Adapter flow
+Agent request → permission check → policy engine → approval queue → admin approval → Composio Gmail draft creation → confirmed draft ID → status update → logs → Hermes event.
+
+4. Approval safety
+- Draft must include recipient, subject, body, agent, purpose, and risk level.
+- Human must approve before draft is created.
+- No email should be sent.
+- If Composio fails, keep the request retryable.
+- Never mark as created unless Gmail returns a valid draft ID.
+
+5. Logging
+Write to:
+- composio_action_log
+- agent_operating_timeline
+- communication_logs
+- composio_hermes_events
+
+6. UI
+Add a small admin review panel for pending Gmail draft requests.
+Show:
+- agent
+- recipient
+- subject
+- body preview
+- purpose
+- approval queue ID
+- approve/create draft button
+- failure/retry state
+
+7. Tests
+Add tests mirroring the GitHub Phase 2A pattern:
+- Gmail draft action allowed
+- Gmail send action blocked
+- unauthorized agents blocked
+- COACH can request if permitted but cannot approve
+- ADMIN can approve
+- status only changes on queued_for_approval
+- draft created only when Composio returns success + draft ID
+- failed draft creation remains retryable
+- Hermes event emitted
+
+Acceptance criteria:
+- No send action exists.
+- No autonomous Gmail write occurs.
+- Gmail draft creation is approval-gated.
+- Failed draft creation does not create false success.
+- Existing AgentMail flows are untouched.
+- 100% tests pass.
+- Server runs clean.
