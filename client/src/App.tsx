@@ -135,6 +135,7 @@ import AdminWorkflowOrchestratorPage from "@/pages/admin-workflow-orchestrator";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { CommandPalette } from "@/components/command-palette";
+import { ChatWidget } from "@/components/chat-widget";
 import { Search } from "lucide-react";
 import AttentionInboxPage from "@/pages/attention-inbox";
 import AdminAutonomyControlsPage from "@/pages/admin-autonomy-controls";
@@ -555,6 +556,7 @@ function AuthenticatedLayout() {
       <CoachAgentLauncher />
       <ClientAgentLauncher />
       <CommandPalette />
+      <ChatWidget />
     </SidebarProvider>
   );
 }

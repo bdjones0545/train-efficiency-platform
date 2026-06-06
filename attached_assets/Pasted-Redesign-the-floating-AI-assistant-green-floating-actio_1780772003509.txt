@@ -1,0 +1,283 @@
+Redesign the floating AI assistant (green floating action button) to become the CEO Agent / Executive Agent for the entire AI workforce.
+
+Current issue:
+The floating assistant currently feels like a Revenue Agent dashboard with a chat interface attached.
+
+It exposes:
+- Revenue chat
+- Revenue metrics
+- Revenue settings
+- Revenue actions
+
+This creates the impression that the assistant is a single-purpose revenue bot.
+
+TrainEfficiency is now an AI Workforce platform with a CEO Heartbeat architecture.
+
+The floating assistant should represent the CEO layer, not the Revenue department.
+
+==================================================
+NEW ARCHITECTURE
+==================================================
+
+Green Floating Button =
+CEO Agent
+
+CEO Agent sits above:
+
+- Revenue Agent
+- Growth Agent
+- Scheduling Agent
+- Retention Agent
+- Client Success Agent
+- Outreach Agent
+- Team Training Agent
+- Hiring Agent
+- Operations Agent
+- Software Improvement Agent
+- Executive Agent / Heartbeat
+
+The assistant should function like a CEO dashboard and workforce manager.
+
+==================================================
+CEO HOME TAB
+==================================================
+
+Default landing screen should be:
+
+CEO Dashboard
+
+Show:
+
+AI Workforce Status
+
+Active Agents: X
+Tasks Running: X
+Approvals Needed: X
+Alerts: X
+
+Heartbeat Status
+
+Last Heartbeat:
+Next Heartbeat:
+Success Rate:
+
+Quick summary:
+
+"Revenue opportunities detected."
+"32 athletes inactive."
+"12 open slots available."
+"3 outreach campaigns running."
+"1 software improvement recommendation."
+
+This should feel like talking to a CEO.
+
+==================================================
+CHAT TAB
+==================================================
+
+Chat should communicate with the CEO Agent.
+
+Examples:
+
+"What should I focus on today?"
+
+"Which coach has open capacity?"
+
+"Any revenue risks?"
+
+"Show me retention issues."
+
+"Which leads are most likely to convert?"
+
+"What did the heartbeat discover?"
+
+The CEO Agent should coordinate responses from subordinate agents.
+
+==================================================
+AGENTS TAB
+==================================================
+
+New tab:
+
+Agents
+
+Show every agent.
+
+Revenue Agent
+Growth Agent
+Scheduling Agent
+Retention Agent
+Client Success Agent
+Outreach Agent
+Hiring Agent
+Operations Agent
+Software Improvement Agent
+
+Each card should show:
+
+Status
+Last Run
+Actions Taken
+Impact
+Success Rate
+Errors
+
+Tap card → agent details.
+
+==================================================
+TASKS TAB
+==================================================
+
+New tab:
+
+Workforce Tasks
+
+Show:
+
+Completed
+Running
+Pending Approval
+Failed
+
+Examples:
+
+Revenue Agent:
+Created reactivation campaign
+
+Scheduling Agent:
+Detected 12 open slots
+
+Outreach Agent:
+Drafted outreach email
+
+Software Improvement Agent:
+Created fix recommendation
+
+CEO can review everything.
+
+==================================================
+APPROVALS TAB
+==================================================
+
+New tab:
+
+Approvals
+
+Show actions waiting for CEO approval.
+
+Examples:
+
+Approve campaign launch
+Approve outreach sequence
+Approve pricing change
+Approve follow-up automation
+
+Buttons:
+
+Approve
+Reject
+Modify
+
+==================================================
+INSIGHTS TAB
+==================================================
+
+Replace Revenue dashboard with Executive Insights.
+
+Sections:
+
+Revenue
+Scheduling
+Retention
+Growth
+Outreach
+Operations
+
+Each insight card:
+
+Problem
+Impact
+Recommendation
+Action Button
+
+Example:
+
+32 inactive athletes
+
+Estimated recovery:
+$4,200
+
+[Launch Reactivation Campaign]
+
+==================================================
+SETTINGS TAB
+==================================================
+
+Settings become workforce-wide.
+
+Automation Mode
+
+Co-Pilot
+Assisted
+Autonomous
+
+Agent Permissions
+
+Enable/disable agents
+
+Approval Requirements
+
+Heartbeat Frequency
+
+Risk Controls
+
+==================================================
+CEO AGENT PERSONALITY
+==================================================
+
+The CEO Agent should behave like:
+
+A business operator.
+
+Not a chatbot.
+
+Not a revenue dashboard.
+
+Not a reporting screen.
+
+It should proactively answer:
+
+What needs attention?
+What opportunities exist?
+What risks exist?
+What should I do next?
+
+==================================================
+MOBILE UX
+==================================================
+
+Keep the floating green button.
+
+Tap button:
+
+Open CEO Command Center.
+
+Use mobile-first cards.
+
+No horizontal scrolling.
+
+Bottom navigation:
+
+CEO
+Agents
+Tasks
+Approvals
+Settings
+
+==================================================
+IMPORTANT
+==================================================
+
+Revenue Agent becomes only ONE department inside the workforce.
+
+The floating assistant should represent the CEO layer that manages the entire AI workforce and reports business-wide intelligence across scheduling, revenue, retention, outreach, hiring, operations, and software improvement.
