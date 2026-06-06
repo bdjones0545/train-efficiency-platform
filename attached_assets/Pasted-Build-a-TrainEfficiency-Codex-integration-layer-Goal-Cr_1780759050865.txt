@@ -1,0 +1,184 @@
+Build a TrainEfficiency → Codex integration layer.
+
+Goal:
+Create a Software Improvement Agent that collects issues, bugs, failed jobs, workflow problems, and product opportunities from TrainEfficiency, then converts them into Codex-ready engineering tasks.
+
+Important:
+Do NOT allow Codex to directly modify production data, send emails, change Stripe, or execute business actions. This integration should create structured engineering tasks only.
+
+Architecture:
+CEO Heartbeat
+→ Executive Agent
+→ Revenue / Scheduling / Retention / Growth / Ops Agents
+→ Software Improvement Agent
+→ Codex Task Queue / GitHub Issue / PR workflow
+
+Build the following:
+
+1. Database tables
+
+Create a table for software improvement tasks:
+
+software_improvement_tasks
+- id
+- organization_id
+- source_agent
+- source_type
+- source_ref_id
+- title
+- problem_summary
+- business_context
+- affected_area
+- suspected_files
+- reproduction_steps
+- expected_behavior
+- constraints
+- acceptance_checks
+- severity
+- priority
+- status
+- codex_prompt
+- codex_status
+- codex_branch
+- codex_pr_url
+- created_at
+- updated_at
+- completed_at
+
+Statuses:
+- detected
+- triaged
+- ready_for_codex
+- sent_to_codex
+- in_progress
+- needs_review
+- merged
+- rejected
+- archived
+
+2. Backend service
+
+Create:
+
+server/services/software-improvement-agent.ts
+
+It should:
+- scan workflow failures, dead letters, trigger audit logs, agent execution logs, attention inbox items, and user-reported bugs if those tables exist
+- create or update software improvement tasks
+- deduplicate similar issues
+- calculate severity and priority
+- generate a Codex-ready prompt
+
+Codex prompt format:
+
+You are working on TrainEfficiency.
+
+Problem:
+[problem_summary]
+
+Business context:
+[business_context]
+
+Affected area:
+[affected_area]
+
+Suspected files/routes:
+[suspected_files]
+
+Reproduction steps:
+[reproduction_steps]
+
+Expected behavior:
+[expected_behavior]
+
+Constraints:
+- Preserve multi-tenant isolation
+- Do not break organization authentication
+- Do not expose global data
+- Do not modify production data
+- Do not send emails, Stripe actions, or business actions
+- Keep mobile responsive
+- Add useful logging
+- Add or update tests where possible
+
+Acceptance checks:
+- npm run check
+- affected endpoint works
+- no TypeScript errors
+- no cross-org data leakage
+- UI works on mobile if frontend is affected
+
+3. API routes
+
+Create:
+
+server/routes/software-improvement-routes.ts
+
+Endpoints:
+GET /api/software-improvement/tasks
+GET /api/software-improvement/tasks/:id
+POST /api/software-improvement/tasks
+PATCH /api/software-improvement/tasks/:id
+POST /api/software-improvement/tasks/:id/prepare-codex
+POST /api/software-improvement/tasks/:id/mark-sent
+POST /api/software-improvement/tasks/:id/mark-review
+POST /api/software-improvement/tasks/:id/archive
+POST /api/software-improvement/run
+
+All routes must enforce organization/session isolation.
+
+4. UI page
+
+Create:
+
+client/src/pages/software-improvement.tsx
+
+Add a dashboard with:
+- task cards
+- severity badge
+- status badge
+- source agent
+- affected area
+- business context
+- Codex prompt preview
+- copy Codex prompt button
+- status controls
+- filters by severity/status/source agent
+- empty state
+
+5. Navigation
+
+Add Software Improvement to the admin/AI Ops navigation.
+
+6. CEO Heartbeat integration
+
+Update the CEO Heartbeat or Executive Agent so it can call:
+
+runSoftwareImprovementAgent(organizationId)
+
+It should not run too aggressively. Add cooldown/dedup logic.
+
+7. Safety rules
+
+Hard requirements:
+- Codex tasks are suggestions only
+- no automatic production code execution
+- no automatic deployment
+- no automatic PR merge
+- no direct access to Stripe/sendgrid/business actions
+- human review required
+
+8. TypeScript quality
+
+Run:
+npm run check
+
+Fix all TypeScript errors.
+
+Deliver a summary of:
+- files created
+- files changed
+- endpoints added
+- database changes
+- how the Software Improvement Agent connects to CEO Heartbeat
+- how to use the Codex prompt workflow
