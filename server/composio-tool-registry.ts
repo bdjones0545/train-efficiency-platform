@@ -117,7 +117,12 @@ export const COMPOSIO_TOOLS: Record<ComposioToolId, ComposioToolDefinition> = {
     id: "GITHUB",
     displayName: "GitHub",
     category: "development",
-    description: "Read repositories, issues, and PRs. No autonomous writes.",
+    // Phase 2A: GITHUB_CREATE_AN_ISSUE is the sole write action permitted under
+    // explicit human approval. All other write actions remain blocked. The tool
+    // is still classified readOnly for all autonomous paths; the create-issue
+    // action is only reachable after requiresApproval forces an approval queue
+    // entry and an ADMIN explicitly executes it.
+    description: "Read repositories, issues, and PRs. One write action (create issue) permitted only through explicit human approval.",
     readOnly: true,
     requiresApproval: true,
     allowedActions: [
@@ -131,9 +136,12 @@ export const COMPOSIO_TOOLS: Record<ComposioToolId, ComposioToolDefinition> = {
       "GITHUB_GET_A_COMMIT",
       "GITHUB_SEARCH_CODE",
       "GITHUB_SEARCH_ISSUES_AND_PULL_REQUESTS",
+      // Phase 2A: promoted from blockedActions — routable through approval queue only.
+      // requiresApproval: true above guarantees this can never auto-execute.
+      "GITHUB_CREATE_AN_ISSUE",
     ],
     blockedActions: [
-      "GITHUB_CREATE_AN_ISSUE",
+      // All other write actions remain blocked — no Phase 2A promotion.
       "GITHUB_UPDATE_AN_ISSUE",
       "GITHUB_CREATE_A_PULL_REQUEST",
       "GITHUB_MERGE_A_PULL_REQUEST",

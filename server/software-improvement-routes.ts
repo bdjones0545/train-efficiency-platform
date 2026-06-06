@@ -492,8 +492,9 @@ export async function registerSoftwareImprovementRoutes(
         // Build the draft
         const draft = buildGitHubIssueDraft(task);
 
-        // Route through Composio action adapter
-        // GITHUB is read-only + approval-required → this will always queue for approval
+        // Route through Composio action adapter.
+        // GITHUB requiresApproval: true → adapter always returns queued_for_approval
+        // (never auto_execute). GITHUB_CREATE_AN_ISSUE is now in allowedActions (Phase 2A).
         const adapterResult = await requestComposioAction({
           orgId,
           agentId: "software_improvement_agent",
@@ -509,7 +510,30 @@ export async function registerSoftwareImprovementRoutes(
           notes: `GitHub issue draft for task: ${task.title} (${task.severity})`,
         });
 
-        // Update task: store draft + approval queue ID + new status
+        // ── Gate: only persist the draft when the adapter confirmed a queue entry ──
+        // Any other outcome (blocked_action_not_allowed, blocked_by_policy,
+        // blocked_no_permission, failed) means nothing was queued and the task
+        // status must NOT be updated.
+        if (adapterResult.outcome !== "queued_for_approval") {
+          const httpStatus =
+            adapterResult.outcome === "blocked_no_permission" ? 403 :
+            adapterResult.outcome === "blocked_by_policy"    ? 403 :
+            adapterResult.outcome === "blocked_action_not_allowed" ? 403 : 400;
+
+          console.warn(
+            `[SoftwareImprovement] request-github-issue adapter blocked: outcome=${adapterResult.outcome} task=${task.id}`,
+          );
+          return res.status(httpStatus).json({
+            success: false,
+            message: adapterResult.message ?? `Composio adapter rejected the request (${adapterResult.outcome}).`,
+            outcome: adapterResult.outcome,
+            deniedReason: adapterResult.deniedReason ?? null,
+            taskStatus: task.status, // unchanged
+          });
+        }
+
+        // Reached only when outcome === "queued_for_approval" and approvalQueueId exists.
+        // Update task: store draft + approval queue ID + new status.
         await db.execute(sql`
           UPDATE software_improvement_tasks
           SET
@@ -520,7 +544,7 @@ export async function registerSoftwareImprovementRoutes(
           WHERE id = ${task.id} AND organization_id = ${orgId}
         `);
 
-        // Log to agent_operating_timeline
+        // Log queued_for_approval to agent_operating_timeline
         await db.insert(agentOperatingTimeline).values({
           orgId,
           agentName: "software_improvement_agent",
@@ -528,7 +552,7 @@ export async function registerSoftwareImprovementRoutes(
           actionType: "approval_required",
           actionStatus: "requires_approval",
           communicationDomain: "github",
-          summary: `GitHub issue draft requested for: ${task.title}`,
+          summary: `GitHub issue draft queued for approval: ${task.title}`,
           requiresApproval: true,
           approvalStatus: "pending",
           relatedEntityType: "software_improvement_task",
@@ -540,7 +564,7 @@ export async function registerSoftwareImprovementRoutes(
           },
         }).catch(() => {});
 
-        // Emit Hermes event
+        // Emit Hermes event — queued_for_approval
         await emitComposioHermesEvent({
           source: "composio",
           orgId,
@@ -615,7 +639,7 @@ export async function registerSoftwareImprovementRoutes(
           },
         });
 
-        // Try to extract the GitHub issue URL from the result
+        // Extract the GitHub issue URL — only possible on success
         let githubIssueUrl: string | null = null;
         if (execResult.success && execResult.data) {
           const data: any = execResult.data;
@@ -627,7 +651,56 @@ export async function registerSoftwareImprovementRoutes(
             null;
         }
 
-        // Update task status
+        // ── Gate: only transition to github_issue_created on confirmed success ──
+        // On failure: task stays github_issue_draft_requested so it can be retried.
+        // Do NOT touch github_approval_queue_id on failure — it must remain for context.
+        if (!execResult.success) {
+          // Log the failed execution attempt
+          await db.insert(agentOperatingTimeline).values({
+            orgId,
+            agentName: "software_improvement_agent",
+            systemName: "composio_github",
+            actionType: "error",
+            actionStatus: "failed",
+            communicationDomain: "github",
+            summary: `GitHub issue creation failed (retryable): ${execResult.error}`,
+            requiresApproval: false,
+            approvalStatus: "approved",
+            relatedEntityType: "software_improvement_task",
+            relatedEntityId: task.id,
+            executedAt: new Date(),
+            outcomeStatus: "failure",
+            errorMessage: execResult.error,
+            metadata: { draft, durationMs: execResult.durationMs },
+          }).catch(() => {});
+
+          // Emit Hermes event — failed_execution
+          await emitComposioHermesEvent({
+            source: "composio",
+            orgId,
+            agent: "software_improvement_agent",
+            tool: "GITHUB",
+            action: "GITHUB_CREATE_AN_ISSUE",
+            result: "failure",
+            outcome: "failed_execution",
+            metadata: {
+              taskId: task.id,
+              taskTitle: task.title,
+              durationMs: execResult.durationMs,
+              error: execResult.error,
+            },
+          });
+
+          // Status remains github_issue_draft_requested — retryable
+          return res.status(502).json({
+            success: false,
+            message: `Composio execution failed: ${execResult.error}`,
+            taskStatus: "github_issue_draft_requested",
+            composioResult: { error: execResult.error, durationMs: execResult.durationMs },
+          });
+        }
+
+        // ── Success path: execution confirmed — persist created state ────────────
         await db.execute(sql`
           UPDATE software_improvement_tasks
           SET
@@ -637,57 +710,47 @@ export async function registerSoftwareImprovementRoutes(
           WHERE id = ${task.id} AND organization_id = ${orgId}
         `);
 
-        // Log to agent_operating_timeline
+        // Log successful creation
         await db.insert(agentOperatingTimeline).values({
           orgId,
           agentName: "software_improvement_agent",
           systemName: "composio_github",
-          actionType: execResult.success ? "workflow_executed" : "error",
-          actionStatus: execResult.success ? "completed" : "failed",
+          actionType: "workflow_executed",
+          actionStatus: "completed",
           communicationDomain: "github",
-          summary: execResult.success
-            ? `GitHub issue created for: ${task.title}${githubIssueUrl ? ` → ${githubIssueUrl}` : ""}`
-            : `GitHub issue creation failed: ${execResult.error}`,
+          summary: `GitHub issue created: ${task.title}${githubIssueUrl ? ` → ${githubIssueUrl}` : ""}`,
           requiresApproval: false,
           approvalStatus: "approved",
           relatedEntityType: "software_improvement_task",
           relatedEntityId: task.id,
           executedAt: new Date(),
-          outcomeStatus: execResult.success ? "success" : "failure",
-          errorMessage: execResult.error,
-          metadata: {
-            draft,
-            githubIssueUrl,
-            durationMs: execResult.durationMs,
-          },
+          outcomeStatus: "success",
+          metadata: { draft, githubIssueUrl, durationMs: execResult.durationMs },
         }).catch(() => {});
 
-        // Emit Hermes event
+        // Emit Hermes event — confirmed github_issue_created
         await emitComposioHermesEvent({
           source: "composio",
           orgId,
           agent: "software_improvement_agent",
           tool: "GITHUB",
           action: "GITHUB_CREATE_AN_ISSUE",
-          result: execResult.success ? "success" : "failure",
-          outcome: execResult.success ? "github_issue_created" : "failed",
+          result: "success",
+          outcome: "github_issue_created",
           metadata: {
             taskId: task.id,
             taskTitle: task.title,
             githubIssueUrl,
             durationMs: execResult.durationMs,
-            error: execResult.error,
           },
         });
 
         res.json({
-          success: execResult.success,
-          message: execResult.success
-            ? `GitHub issue created successfully${githubIssueUrl ? `. View at: ${githubIssueUrl}` : " (URL not returned by Composio — check GitHub directly)."}`
-            : `Composio execution failed: ${execResult.error}`,
+          success: true,
+          message: `GitHub issue created successfully${githubIssueUrl ? `. View at: ${githubIssueUrl}` : " (URL not returned by Composio — check GitHub directly)."}`,
           githubIssueUrl,
           taskStatus: "github_issue_created",
-          composioResult: execResult.success ? { durationMs: execResult.durationMs } : { error: execResult.error },
+          composioResult: { durationMs: execResult.durationMs },
         });
       } catch (e: any) {
         console.error("[SoftwareImprovement] approve-github-issue failed:", e.message);

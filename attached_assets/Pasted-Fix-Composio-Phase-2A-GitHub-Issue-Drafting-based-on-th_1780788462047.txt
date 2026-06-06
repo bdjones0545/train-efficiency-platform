@@ -1,0 +1,56 @@
+Fix Composio Phase 2A GitHub Issue Drafting based on the audit.
+
+Do not add new features.
+Do not change the overall architecture.
+Do not connect Gmail, Calendar, Slack, or Stripe.
+
+Required fixes:
+
+1. Fix the GitHub action registry
+   - Move GITHUB_CREATE_AN_ISSUE out of blockedActions.
+   - Add it to allowedActions as an explicitly approved Phase 2A action.
+   - Keep it approval-required.
+   - Do not allow any other GitHub write actions.
+   - If GitHub is marked readOnly, adjust the model so this single action is permitted only through approval.
+
+2. Fix request-github-issue status transitions
+   - Call requestComposioAction().
+   - Only update software_improvement_tasks.status to github_issue_draft_requested if adapterResult.outcome === "queued_for_approval".
+   - Only store githubApprovalQueueId if it exists.
+   - If the adapter returns blocked_action_not_allowed, blocked_by_policy, blocked_no_permission, or any failure outcome, do not update task status.
+   - Return a clear 400/403/409 response depending on failure type.
+
+3. Fix approve-github-issue execution
+   - Do not mark status github_issue_created unless execResult.success === true and a valid GitHub issue URL exists.
+   - On execution failure, keep status github_issue_draft_requested.
+   - Return HTTP 502 with the Composio error.
+   - Do not clear the approval queue id.
+   - Allow retry after failure.
+
+4. Fix response payloads
+   - Do not hardcode taskStatus: github_issue_created.
+   - Return the actual persisted task status.
+   - On failure return taskStatus: github_issue_draft_requested.
+
+5. Verify audit logging
+   - request step should log queued_for_approval when successful.
+   - approve step should log success only when GitHub confirms issue creation.
+   - failure should log failed_execution, not created.
+
+6. Add regression tests or lightweight test functions if the project supports them.
+
+Acceptance criteria:
+- COACH can request GitHub issue draft but cannot approve.
+- ADMIN can approve.
+- A task is only marked github_issue_draft_requested when an approval queue item actually exists.
+- A task is only marked github_issue_created when GitHub execution succeeds and URL exists.
+- Failed GitHub execution remains retryable.
+- No other GitHub write actions are permitted.
+- Zero TypeScript errors.
+
+Return:
+- Files changed
+- Exact fixes made
+- Before/after approval flow
+- Test plan
+- TypeScript result
