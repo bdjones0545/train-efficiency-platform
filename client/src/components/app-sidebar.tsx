@@ -1300,7 +1300,7 @@ export function AppSidebar() {
     },
     {
       id: "athletes",
-      label: "Clients",
+      label: "Clients & Scheduling",
       icon: Users,
       items: [
         { title: "Athletes", url: "/coach/users", icon: Users, testId: "nav-users" },
