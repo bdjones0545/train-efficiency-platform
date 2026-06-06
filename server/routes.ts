@@ -29048,5 +29048,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerForecastRoutes } = await import("./forecast-routes");
   await registerForecastRoutes(app);
 
+  const { registerComposioRoutes } = await import("./composio-routes");
+  await registerComposioRoutes(app, isAuthenticated, requireRole);
+
   return httpServer;
 }

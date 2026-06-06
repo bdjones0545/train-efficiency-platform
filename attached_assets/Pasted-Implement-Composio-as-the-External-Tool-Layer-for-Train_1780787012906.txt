@@ -1,0 +1,140 @@
+Implement Composio as the External Tool Layer for TrainEfficiency.
+
+Goal:
+Connect Composio to the existing AI Workforce architecture without bypassing current governance, approval, autonomy, outcome attribution, or Hermes learning systems.
+
+Do not replace existing integrations.
+Do not remove existing Gmail, Calendar, Slack, Stripe, or AgentMail functionality.
+Composio should act as a unified tool orchestration layer.
+
+Phase 1 Objectives
+
+1. Create a Composio Integration Service
+    * server/services/composio-service.ts
+    * Centralized wrapper around Composio SDK
+    * Handles authentication, tool discovery, execution, logging, and error handling
+    * Never allow direct agent-to-Composio calls
+2. Create a Tool Registry
+    * Define supported tools
+    * Gmail
+    * Google Calendar
+    * Slack
+    * Google Sheets
+    * GitHub
+    * Stripe (read-only initially)
+3. Create Agent Tool Permissions
+    Extend existing governance architecture.
+
+Example:
+
+CEO Heartbeat:
+
+* Gmail
+* Calendar
+* Slack
+* Sheets
+
+Revenue Agent:
+
+* Gmail
+* Calendar
+
+Scheduling Agent:
+
+* Calendar
+* Gmail
+
+Growth Agent:
+
+* Sheets
+* Gmail
+
+Software Improvement Agent:
+
+* GitHub only
+
+No agent should automatically gain access to every tool.
+
+4. Create Composio Action Logging
+
+Every Composio action must create records in:
+
+* agent_operating_timeline
+* communication_logs (if communication related)
+* autonomous_action_queue (if approval required)
+
+Required fields:
+
+* agent
+* tool
+* action
+* timestamp
+* success/failure
+* payload summary
+
+5. Preserve Existing Approval Gates
+
+Composio must not bypass:
+
+* AgentMail approval flows
+* Auto-execution engine policies
+* Autonomy scoring
+* Human approval requirements
+
+If an action normally requires approval today, it must still require approval after Composio integration.
+
+6. Build Composio Action Adapter Layer
+
+Example:
+
+Revenue Agent
+↓
+Request Email
+↓
+Composio Adapter
+↓
+Policy Engine
+↓
+Approval Check
+↓
+Composio Gmail
+↓
+Outcome Attribution
+
+Do not allow agents to execute external actions directly.
+
+7. Prepare Hermes Integration
+
+Every Composio action should emit a structured event:
+
+{
+source: “composio”,
+agent,
+tool,
+action,
+result,
+outcome
+}
+
+These events should be ready for future Hermes learning integration but should not yet modify trust scores or autonomy scores.
+
+Deliverables
+
+1. Architecture diagram
+2. Files created
+3. Files modified
+4. Tool registry design
+5. Permission model
+6. Logging model
+7. Approval model
+8. Hermes event model
+9. Testing plan
+
+Implement only Phase 1.
+
+Do not connect all tools automatically.
+Do not create autonomous financial actions.
+Do not create autonomous GitHub writes.
+Do not create autonomous Stripe actions.
+
+Focus on building the infrastructure correctly so future agents can safely use Composio.
