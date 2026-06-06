@@ -715,6 +715,22 @@ export async function runHeartbeatCycle(opts: {
   let actionsPendingApproval = 0;
   let prioritiesGenerated = 0;
 
+  // Fire-and-forget: retrieve institutional memory before coordinating agents
+  import("./obsidian-service").then(({ retrieveAgentContext, appendToNote, OBSIDIAN_FOLDERS }) => {
+    retrieveAgentContext(`CEO Heartbeat priorities business performance org ${orgId}`, { orgId, limit: 10 })
+      .then(ctx => {
+        if (ctx.retrieved > 0) {
+          console.log(`[CEO Heartbeat] Retrieved ${ctx.retrieved} Obsidian memory items for context`);
+          const dateStr = new Date().toISOString().split("T")[0];
+          appendToNote(
+            OBSIDIAN_FOLDERS.dailyReports,
+            dateStr,
+            `\n## Memory Context Retrieved — CEO Heartbeat\n\n_${ctx.retrieved} items retrieved from vault_\n\n${ctx.contextString.slice(0, 600)}\n`,
+          ).catch(() => {});
+        }
+      }).catch(() => {});
+  }).catch(() => {});
+
   try {
     // Coordinate all agents
     const coordResult = await coordinateAgents(orgId, heartbeatId);

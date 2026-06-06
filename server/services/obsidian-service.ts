@@ -1,17 +1,23 @@
 /**
- * Obsidian Integration Service
+ * Obsidian Organizational Memory Service — Phase 2
  *
- * Obsidian acts as the human-readable organizational memory layer for the
+ * Obsidian acts as the human-readable institutional memory layer for the
  * AI workforce. TrainEfficiency DB remains the source of truth for all
- * athlete/business data. Obsidian stores agent decisions, reports, learnings,
- * and procedural knowledge in markdown form.
+ * operational data. Obsidian stores agent decisions, reports, learnings,
+ * software fixes, and procedural knowledge in structured markdown + frontmatter.
+ *
+ * Phase 2 additions:
+ *   - Memory Classification Layer (YAML frontmatter on every note)
+ *   - Agent Context Retrieval (pre-execution vault search → context injection)
+ *   - Hermes Learning Engine (Outcome → Observation → Learning → Obsidian)
+ *   - Decision Journal (Decision / Reasoning / Outcome / Follow-up)
+ *   - Software Improvement Knowledge Base (searchable before new tasks)
+ *   - Vault Stats (per-type counts for dashboard)
+ *   - Similarity Search (keyword-extracted related notes)
  *
  * Requires env vars:
- *   OBSIDIAN_BASE_URL  — e.g. https://127.0.0.1:27124
+ *   OBSIDIAN_BASE_URL  — e.g. https://your-ngrok-url.ngrok-free.app
  *   OBSIDIAN_API_KEY   — from Obsidian → Settings → Local REST API
- *
- * All calls are non-throwing: failures are logged and ignored so agents
- * are never blocked by Obsidian connectivity issues.
  */
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -29,18 +35,46 @@ export function isObsidianConfigured(): boolean {
 
 // ─── Vault Folders ───────────────────────────────────────────────────────────
 export const OBSIDIAN_FOLDERS = {
-  ceoHeartbeat: "CEO Heartbeat",
-  agentDecisions: "Agent Decisions",
-  softwareImprovements: "Software Improvements",
-  hermesLearning: "Hermes Learning",
-  revenueIntelligence: "Revenue Intelligence",
-  growthIntelligence: "Growth Intelligence",
-  schedulingIntelligence: "Scheduling Intelligence",
-  clientSuccess: "Client Success",
-  sops: "SOPs",
-  dailyReports: "Daily Reports",
-  weeklyReports: "Weekly Reports",
+  ceoHeartbeat:            "CEO Heartbeat",
+  agentDecisions:          "Agent Decisions",
+  softwareImprovements:    "Software Improvements",
+  hermesLearning:          "Hermes Learning",
+  revenueIntelligence:     "Revenue Intelligence",
+  growthIntelligence:      "Growth Intelligence",
+  schedulingIntelligence:  "Scheduling Intelligence",
+  clientSuccess:           "Client Success",
+  decisionJournal:         "Decision Journal",
+  softwareKB:              "Software KB",
+  sops:                    "SOPs",
+  dailyReports:            "Daily Reports",
+  weeklyReports:           "Weekly Reports",
 } as const;
+
+export type ObsidianNoteType =
+  | "ceo_heartbeat"
+  | "agent_decision"
+  | "software_improvement"
+  | "hermes_learning"
+  | "revenue_intelligence"
+  | "growth_intelligence"
+  | "scheduling_intelligence"
+  | "client_success"
+  | "decision_journal"
+  | "software_kb"
+  | "sop"
+  | "daily_report"
+  | "weekly_report"
+  | "manual";
+
+export interface NoteMetadata {
+  type: ObsidianNoteType;
+  agent?: string;
+  department?: string;
+  organizationId?: string;
+  severity?: "critical" | "high" | "medium" | "low" | "info";
+  tags?: string[];
+  [key: string]: unknown;
+}
 
 // ─── In-Memory Metrics ───────────────────────────────────────────────────────
 interface ObsidianMetrics {
@@ -50,6 +84,7 @@ interface ObsidianMetrics {
   lastResetDate: string;
   connected: boolean;
   lastConnectionCheck: Date | null;
+  totalNotesByType: Record<string, number>;
 }
 
 let _metrics: ObsidianMetrics = {
@@ -59,6 +94,7 @@ let _metrics: ObsidianMetrics = {
   lastResetDate: "",
   connected: false,
   lastConnectionCheck: null,
+  totalNotesByType: {},
 };
 
 function today(): string {
@@ -74,6 +110,20 @@ function resetDailyIfNeeded() {
   }
 }
 
+// ─── Frontmatter Builder ─────────────────────────────────────────────────────
+function buildFrontmatter(meta: NoteMetadata): string {
+  const lines = ["---"];
+  lines.push(`type: ${meta.type}`);
+  if (meta.agent)          lines.push(`agent: ${meta.agent}`);
+  if (meta.department)     lines.push(`department: ${meta.department}`);
+  if (meta.organizationId) lines.push(`organizationId: ${meta.organizationId}`);
+  if (meta.severity)       lines.push(`severity: ${meta.severity}`);
+  lines.push(`date: ${today()}`);
+  if (meta.tags?.length)   lines.push(`tags: [${meta.tags.join(", ")}]`);
+  lines.push("---\n");
+  return lines.join("\n");
+}
+
 // ─── Core HTTP ───────────────────────────────────────────────────────────────
 async function obsidianRequest(
   path: string,
@@ -82,9 +132,8 @@ async function obsidianRequest(
   contentType = "text/markdown",
 ): Promise<Response> {
   const { baseUrl, apiKey } = getConfig();
-  if (!baseUrl || !apiKey) throw new Error("Obsidian not configured (missing OBSIDIAN_BASE_URL or OBSIDIAN_API_KEY)");
+  if (!baseUrl || !apiKey) throw new Error("Obsidian not configured");
 
-  // Node 18+ has native fetch; fall back gracefully
   const fetchFn = typeof fetch !== "undefined" ? fetch : undefined;
   if (!fetchFn) throw new Error("fetch not available in this runtime");
 
@@ -95,29 +144,33 @@ async function obsidianRequest(
       "Content-Type": contentType,
     },
     body,
-    // Allow self-signed certs via env flag in Node
-    ...(process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0" ? {} : {}),
   });
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+// ─── Public API — Core ───────────────────────────────────────────────────────
 
 /**
- * Create a new note (overwrites if exists).
- * @param folder  Vault folder (use OBSIDIAN_FOLDERS constants)
- * @param title   Note title without .md extension
- * @param content Markdown content
+ * Create a new note (overwrites if exists). Automatically injects frontmatter.
  */
-export async function createNote(folder: string, title: string, content: string): Promise<boolean> {
+export async function createNote(
+  folder: string,
+  title: string,
+  content: string,
+  meta?: NoteMetadata,
+): Promise<boolean> {
   if (!isObsidianConfigured()) return false;
   try {
-    const path = `/vault/${encodeURIComponent(folder)}/${encodeURIComponent(title)}.md`;
-    const res = await obsidianRequest(path, "PUT", content);
+    const fm = meta ? buildFrontmatter(meta) : "";
+    const path = `/vault/${folder}/${title}.md`;
+    const res = await obsidianRequest(path, "PUT", fm + content);
     if (res.ok || res.status === 204) {
       resetDailyIfNeeded();
       _metrics.notesCreatedToday++;
       _metrics.lastSyncAt = new Date();
       _metrics.connected = true;
+      if (meta?.type) {
+        _metrics.totalNotesByType[meta.type] = (_metrics.totalNotesByType[meta.type] || 0) + 1;
+      }
       return true;
     }
     console.warn(`[Obsidian] createNote failed: ${res.status} ${res.statusText}`);
@@ -129,20 +182,29 @@ export async function createNote(folder: string, title: string, content: string)
   }
 }
 
-/**
- * Update an existing note (alias for createNote with PUT — creates if missing).
- */
-export async function updateNote(folder: string, title: string, content: string): Promise<boolean> {
-  return createNote(folder, title, content);
+export async function updateNote(folder: string, title: string, content: string, meta?: NoteMetadata): Promise<boolean> {
+  return createNote(folder, title, content, meta);
 }
 
 /**
- * Append text to an existing note. Creates the note if it doesn't exist.
+ * Append text to a note. Creates the note if it doesn't exist.
+ * Frontmatter is only added when creating (PUT), not on append (POST).
  */
-export async function appendToNote(folder: string, title: string, content: string): Promise<boolean> {
+export async function appendToNote(
+  folder: string,
+  title: string,
+  content: string,
+  meta?: NoteMetadata,
+): Promise<boolean> {
   if (!isObsidianConfigured()) return false;
   try {
-    const path = `/vault/${encodeURIComponent(folder)}/${encodeURIComponent(title)}.md`;
+    // Check if the note exists; if not, create it with frontmatter
+    const existing = await readNote(folder, title);
+    if (existing === null && meta) {
+      return createNote(folder, title, content, meta);
+    }
+
+    const path = `/vault/${folder}/${title}.md`;
     const res = await obsidianRequest(path, "POST", content);
     if (res.ok || res.status === 204) {
       resetDailyIfNeeded();
@@ -160,13 +222,10 @@ export async function appendToNote(folder: string, title: string, content: strin
   }
 }
 
-/**
- * Read a note. Returns null on any failure.
- */
 export async function readNote(folder: string, title: string): Promise<string | null> {
   if (!isObsidianConfigured()) return null;
   try {
-    const path = `/vault/${encodeURIComponent(folder)}/${encodeURIComponent(title)}.md`;
+    const path = `/vault/${folder}/${title}.md`;
     const res = await obsidianRequest(path, "GET");
     if (!res.ok) return null;
     const text = await res.text();
@@ -186,14 +245,14 @@ export interface ObsidianSearchResult {
   matches: Array<{ match: { start: number; end: number }; context: string }>;
 }
 
-/**
- * Search the entire vault. Returns [] on any failure.
- */
-export async function searchNotes(query: string): Promise<ObsidianSearchResult[]> {
+export async function searchNotes(
+  query: string,
+  opts?: { typeFilter?: string; limit?: number },
+): Promise<ObsidianSearchResult[]> {
   if (!isObsidianConfigured()) return [];
   try {
     const res = await obsidianRequest(
-      `/search/simple/?query=${encodeURIComponent(query)}&contextLength=150`,
+      `/search/simple/?query=${encodeURIComponent(query)}&contextLength=200`,
       "POST",
       undefined,
       "application/json",
@@ -204,7 +263,15 @@ export async function searchNotes(query: string): Promise<ObsidianSearchResult[]
     _metrics.connected = true;
     _metrics.lastSyncAt = new Date();
     const data = await res.json();
-    return Array.isArray(data) ? data : [];
+    let results: ObsidianSearchResult[] = Array.isArray(data) ? data : [];
+
+    // Apply type filter if requested (matches against folder name in path)
+    if (opts?.typeFilter) {
+      const folderHint = opts.typeFilter.replace(/_/g, " ").toLowerCase();
+      results = results.filter(r => r.filename.toLowerCase().includes(folderHint));
+    }
+
+    return results.slice(0, opts?.limit ?? 50);
   } catch (e: any) {
     console.warn(`[Obsidian] searchNotes error: ${e.message}`);
     _metrics.connected = false;
@@ -212,18 +279,37 @@ export async function searchNotes(query: string): Promise<ObsidianSearchResult[]
   }
 }
 
-/**
- * List all .md files in the vault root.
- */
 export async function listVaultFiles(): Promise<string[]> {
   if (!isObsidianConfigured()) return [];
   try {
-    const res = await obsidianRequest("/vault/", "GET");
-    if (!res.ok) return [];
-    const data = await res.json();
-    const files: string[] = data.files || [];
+    // List root — root contains both .md files and folder/ entries
+    const rootRes = await obsidianRequest("/vault/", "GET");
+    if (!rootRes.ok) return [];
+    const rootData = await rootRes.json();
+    const rootEntries: string[] = rootData.files || [];
     _metrics.connected = true;
-    return files.filter((f: string) => f.endsWith(".md")).sort();
+
+    const allFiles: string[] = [];
+
+    // Collect root-level .md files
+    const rootMd = rootEntries.filter((f: string) => f.endsWith(".md"));
+    allFiles.push(...rootMd);
+
+    // Collect subfolders (entries ending with "/"), recurse one level
+    const folders = rootEntries.filter((f: string) => f.endsWith("/"));
+    await Promise.all(folders.map(async (folderEntry: string) => {
+      const folderName = folderEntry.slice(0, -1); // strip trailing "/"
+      try {
+        // Use raw path (spaces unencoded — Obsidian REST API accepts spaces)
+        const folderRes = await obsidianRequest(`/vault/${folderName}/`, "GET");
+        if (!folderRes.ok) return;
+        const folderData = await folderRes.json();
+        const folderFiles: string[] = (folderData.files || []).filter((f: string) => f.endsWith(".md"));
+        allFiles.push(...folderFiles.map((f: string) => `${folderName}/${f}`));
+      } catch { /* skip inaccessible folders */ }
+    }));
+
+    return allFiles.sort();
   } catch (e: any) {
     console.warn(`[Obsidian] listVaultFiles error: ${e.message}`);
     _metrics.connected = false;
@@ -231,9 +317,6 @@ export async function listVaultFiles(): Promise<string[]> {
   }
 }
 
-/**
- * Test connectivity to Obsidian and return vault info.
- */
 export async function checkConnection(): Promise<{ connected: boolean; vaultName?: string; version?: string }> {
   if (!isObsidianConfigured()) return { connected: false };
   try {
@@ -249,6 +332,176 @@ export async function checkConnection(): Promise<{ connected: boolean; vaultName
   }
 }
 
+// ─── Vault Stats ─────────────────────────────────────────────────────────────
+export interface VaultStats {
+  totalNotes: number;
+  byFolder: Record<string, number>;
+  byType: Record<string, number>;
+}
+
+export async function getVaultStats(): Promise<VaultStats> {
+  const files = await listVaultFiles();
+  const byFolder: Record<string, number> = {};
+
+  for (const f of files) {
+    const parts = f.split("/");
+    const folder = parts.length > 1 ? parts[0] : "Root";
+    byFolder[folder] = (byFolder[folder] || 0) + 1;
+  }
+
+  // Map folders → type names for display
+  const byType: Record<string, number> = {
+    ceo_heartbeat:           byFolder["CEO Heartbeat"] || 0,
+    agent_decision:          byFolder["Agent Decisions"] || 0,
+    software_improvement:    byFolder["Software Improvements"] || 0,
+    hermes_learning:         byFolder["Hermes Learning"] || 0,
+    decision_journal:        byFolder["Decision Journal"] || 0,
+    software_kb:             byFolder["Software KB"] || 0,
+    revenue_intelligence:    byFolder["Revenue Intelligence"] || 0,
+    growth_intelligence:     byFolder["Growth Intelligence"] || 0,
+    scheduling_intelligence: byFolder["Scheduling Intelligence"] || 0,
+    client_success:          byFolder["Client Success"] || 0,
+    sop:                     byFolder["SOPs"] || 0,
+    daily_report:            byFolder["Daily Reports"] || 0,
+    weekly_report:           byFolder["Weekly Reports"] || 0,
+  };
+
+  // Also blend in session-tracked write counts
+  for (const [type, count] of Object.entries(_metrics.totalNotesByType)) {
+    byType[type] = Math.max(byType[type] || 0, count);
+  }
+
+  return { totalNotes: files.length, byFolder, byType };
+}
+
+// ─── Similarity Search ───────────────────────────────────────────────────────
+export interface SimilarNote {
+  filename: string;
+  score: number;
+  context: string;
+  folder: string;
+  title: string;
+}
+
+/**
+ * Find notes similar to the given content by extracting key terms and searching.
+ * Returns up to `limit` deduplicated results excluding the source note.
+ */
+export async function findSimilarNotes(
+  content: string,
+  sourceFilename?: string,
+  limit = 8,
+): Promise<SimilarNote[]> {
+  if (!isObsidianConfigured()) return [];
+
+  // Extract key terms: strip frontmatter, markdown syntax, common stop words
+  const stripped = content
+    .replace(/^---[\s\S]*?---\n?/m, "")
+    .replace(/[#*_`[\]()>|]/g, " ")
+    .toLowerCase();
+
+  const stopWords = new Set([
+    "the", "a", "an", "and", "or", "but", "in", "on", "at", "to", "for",
+    "of", "with", "by", "from", "is", "was", "are", "were", "be", "been",
+    "has", "have", "had", "this", "that", "it", "its", "as", "not", "no",
+    "we", "our", "their", "they", "will", "would", "could", "should",
+    "agent", "org", "date", "type", "run", "id", "via",
+  ]);
+
+  const words = stripped.split(/\s+/)
+    .map(w => w.replace(/[^a-z0-9]/g, ""))
+    .filter(w => w.length > 4 && !stopWords.has(w));
+
+  // Frequency map → pick top 5 unique terms
+  const freq: Record<string, number> = {};
+  for (const w of words) freq[w] = (freq[w] || 0) + 1;
+  const topTerms = Object.entries(freq)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([w]) => w);
+
+  if (!topTerms.length) return [];
+
+  // Run parallel searches for each term
+  const queryStr = topTerms.join(" ");
+  const results = await searchNotes(queryStr, { limit: 30 });
+
+  const seen = new Set<string>();
+  const similar: SimilarNote[] = [];
+
+  for (const r of results) {
+    if (r.filename === sourceFilename) continue;
+    if (seen.has(r.filename)) continue;
+    seen.add(r.filename);
+
+    const parts = r.filename.split("/");
+    const folder = parts.length > 1 ? parts.slice(0, -1).join("/") : "Vault Root";
+    const title = parts[parts.length - 1].replace(".md", "");
+    const context = r.matches?.[0]?.context || "";
+
+    similar.push({ filename: r.filename, score: r.score, context, folder, title });
+    if (similar.length >= limit) break;
+  }
+
+  return similar;
+}
+
+// ─── Agent Context Retrieval ─────────────────────────────────────────────────
+export interface AgentContext {
+  recentDecisions: ObsidianSearchResult[];
+  relatedFixes: ObsidianSearchResult[];
+  ceoRecommendations: ObsidianSearchResult[];
+  hermesLearnings: ObsidianSearchResult[];
+  contextString: string;
+  retrieved: number;
+}
+
+/**
+ * Retrieve institutional memory relevant to an agent's upcoming task.
+ * Inject contextString into the agent's system prompt for stateful behavior.
+ */
+export async function retrieveAgentContext(
+  query: string,
+  opts?: { orgId?: string; limit?: number },
+): Promise<AgentContext> {
+  if (!isObsidianConfigured()) {
+    return { recentDecisions: [], relatedFixes: [], ceoRecommendations: [], hermesLearnings: [], contextString: "", retrieved: 0 };
+  }
+
+  const lim = opts?.limit ?? 10;
+
+  const [decisions, fixes, ceoRecs, learnings] = await Promise.all([
+    searchNotes(query, { typeFilter: "agent_decision", limit: lim }),
+    searchNotes(query, { typeFilter: "software_kb", limit: Math.ceil(lim / 2) }),
+    searchNotes(query, { typeFilter: "ceo_heartbeat", limit: Math.ceil(lim / 2) }),
+    searchNotes(query, { typeFilter: "hermes_learning", limit: lim }),
+  ]);
+
+  const retrieved = decisions.length + fixes.length + ceoRecs.length + learnings.length;
+
+  const formatSection = (label: string, items: ObsidianSearchResult[]) => {
+    if (!items.length) return "";
+    const lines = items.slice(0, 5).map(r => {
+      const title = r.filename.split("/").pop()?.replace(".md", "") || r.filename;
+      const snippet = r.matches?.[0]?.context?.trim() || "";
+      return `- **${title}**: ${snippet}`;
+    }).join("\n");
+    return `\n### ${label}\n${lines}`;
+  };
+
+  const contextString = retrieved === 0
+    ? ""
+    : `## Institutional Memory Context\n\nRelevant prior knowledge retrieved from organizational memory (${retrieved} items):\n` +
+      formatSection("Prior Agent Decisions", decisions) +
+      formatSection("Software Fix History", fixes) +
+      formatSection("CEO Recommendations", ceoRecs) +
+      formatSection("Hermes Learnings", learnings) +
+      "\n\n---\nUse the above context to inform your response, avoid repeating known mistakes, and build on prior decisions.\n";
+
+  return { recentDecisions: decisions, relatedFixes: fixes, ceoRecommendations: ceoRecs, hermesLearnings: learnings, contextString, retrieved };
+}
+
+// ─── Status ───────────────────────────────────────────────────────────────────
 export interface ObsidianStatus {
   configured: boolean;
   connected: boolean;
@@ -256,6 +509,8 @@ export interface ObsidianStatus {
   notesCreatedToday: number;
   searchesPerformed: number;
   lastConnectionCheck: string | null;
+  vaultName?: string;
+  version?: string;
 }
 
 export function getObsidianStatus(): ObsidianStatus {
@@ -270,12 +525,8 @@ export function getObsidianStatus(): ObsidianStatus {
   };
 }
 
-// ─── Agent-Specific Writers ───────────────────────────────────────────────────
+// ─── Agent Writers — Phase 1 (upgraded with frontmatter) ─────────────────────
 
-/**
- * Write a CEO Heartbeat report to Obsidian.
- * Called fire-and-forget after runHeartbeatCycle() completes.
- */
 export async function writeHeartbeatReport(opts: {
   orgId: string;
   runId: string;
@@ -322,15 +573,24 @@ ${errorSection}
 _Written automatically by CEO Heartbeat Agent_
 `;
 
-  await createNote(OBSIDIAN_FOLDERS.ceoHeartbeat, `${dateStr} Heartbeat`, content);
-  // Also append to daily report
-  await appendToNote(OBSIDIAN_FOLDERS.dailyReports, dateStr, `\n## ${timeStr} — CEO Heartbeat\n\n${topList || "_No priorities_"}\n`);
+  const meta: NoteMetadata = {
+    type: "ceo_heartbeat",
+    agent: "CEO Heartbeat Agent",
+    department: "executive",
+    organizationId: orgId,
+    severity: errors.length > 0 ? "high" : "info",
+    tags: ["heartbeat", "priorities", "executive"],
+  };
+
+  await createNote(OBSIDIAN_FOLDERS.ceoHeartbeat, `${dateStr} Heartbeat`, content, meta);
+  await appendToNote(
+    OBSIDIAN_FOLDERS.dailyReports,
+    dateStr,
+    `\n## ${timeStr} — CEO Heartbeat\n\n${topList || "_No priorities_"}\n`,
+    { type: "daily_report", agent: "CEO Heartbeat Agent", organizationId: orgId, tags: ["daily", "heartbeat"] },
+  );
 }
 
-/**
- * Write an auto-execution decision to Obsidian.
- * Called fire-and-forget after the auto-execution engine fires.
- */
 export async function writeAgentDecision(opts: {
   orgId: string;
   actionType: string;
@@ -338,8 +598,9 @@ export async function writeAgentDecision(opts: {
   reasoning: string;
   confidence?: number;
   executedAt?: Date;
+  outcome?: string;
 }): Promise<void> {
-  const { orgId, actionType, title, reasoning, confidence, executedAt } = opts;
+  const { orgId, actionType, title, reasoning, confidence, executedAt, outcome } = opts;
   const dateStr = today();
   const timeStr = (executedAt ?? new Date()).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 
@@ -348,24 +609,32 @@ export async function writeAgentDecision(opts: {
 **Action Type:** ${actionType}  
 **Org:** ${orgId}  
 **Confidence:** ${confidence != null ? `${confidence}%` : "—"}  
-**Reasoning:** ${reasoning}
+**Reasoning:** ${reasoning}  
+${outcome ? `**Outcome:** ${outcome}` : ""}
 
 ---
 `;
 
-  await appendToNote(OBSIDIAN_FOLDERS.agentDecisions, `${dateStr} Decisions`, entry);
+  const meta: NoteMetadata = {
+    type: "agent_decision",
+    agent: "Auto-Execution Engine",
+    department: "operations",
+    organizationId: orgId,
+    severity: "info",
+    tags: ["decision", actionType.toLowerCase().replace(/\s+/g, "_")],
+  };
+
+  await appendToNote(OBSIDIAN_FOLDERS.agentDecisions, `${dateStr} Decisions`, entry, meta);
 }
 
-/**
- * Write a software improvement finding to Obsidian.
- */
 export async function writeSoftwareImprovement(opts: {
   title: string;
   finding: string;
   fix?: string;
   severity?: string;
+  orgId?: string;
 }): Promise<void> {
-  const { title, finding, fix, severity } = opts;
+  const { title, finding, fix, severity, orgId } = opts;
   const dateStr = today();
   const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
 
@@ -378,20 +647,209 @@ ${fix ? `**Fix Applied:** ${fix}` : ""}
 ---
 `;
 
-  await appendToNote(OBSIDIAN_FOLDERS.softwareImprovements, `${dateStr} Improvements`, entry);
+  const meta: NoteMetadata = {
+    type: "software_improvement",
+    agent: "Software Improvement Agent",
+    department: "engineering",
+    organizationId: orgId,
+    severity: (severity as any) || "info",
+    tags: ["software", "improvement", severity || "info"],
+  };
+
+  await appendToNote(OBSIDIAN_FOLDERS.softwareImprovements, `${dateStr} Improvements`, entry, meta);
 }
 
-/**
- * Write a Hermes learning/procedural knowledge note.
- */
 export async function writeHermesLearning(opts: {
   topic: string;
   content: string;
   source?: string;
+  orgId?: string;
+  tags?: string[];
 }): Promise<void> {
-  const { topic, content, source } = opts;
+  const { topic, content, source, orgId, tags } = opts;
   const dateStr = today();
 
   const entry = `\n## ${topic}\n\n${content}\n\n${source ? `_Source: ${source}_` : ""}\n\n---\n`;
-  await appendToNote(OBSIDIAN_FOLDERS.hermesLearning, `${dateStr} Hermes Learning`, entry);
+
+  const meta: NoteMetadata = {
+    type: "hermes_learning",
+    agent: "Hermes Learning Engine",
+    department: "intelligence",
+    organizationId: orgId,
+    severity: "info",
+    tags: ["learning", "hermes", ...(tags || [])],
+  };
+
+  await appendToNote(OBSIDIAN_FOLDERS.hermesLearning, `${dateStr} Hermes Learning`, entry, meta);
+}
+
+// ─── Agent Writers — Phase 2: New Pipelines ───────────────────────────────────
+
+/**
+ * Hermes Learning Engine: Outcome → Observation → Learning → Obsidian
+ * Converts a raw outcome into a structured reusable learning.
+ */
+export async function recordOutcomeLearning(opts: {
+  outcome: string;
+  observation: string;
+  learning: string;
+  domain: string;
+  metric?: string;
+  metricValue?: string | number;
+  orgId?: string;
+  tags?: string[];
+}): Promise<boolean> {
+  const { outcome, observation, learning, domain, metric, metricValue, orgId, tags } = opts;
+  const dateStr = today();
+  const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+
+  const content = `## ${timeStr} — ${domain}
+
+**Outcome:** ${outcome}  
+**Observation:** ${observation}  
+**Learning:** ${learning}  
+${metric ? `**Metric:** ${metric}: ${metricValue}` : ""}
+
+---
+`;
+
+  const meta: NoteMetadata = {
+    type: "hermes_learning",
+    agent: "Hermes Learning Engine",
+    department: "intelligence",
+    organizationId: orgId,
+    severity: "info",
+    tags: ["learning", "outcome", domain.toLowerCase(), ...(tags || [])],
+  };
+
+  const title = `${dateStr} Hermes Learning`;
+  return appendToNote(OBSIDIAN_FOLDERS.hermesLearning, title, "\n" + content, meta);
+}
+
+/**
+ * Decision Journal: Full structured entry with Decision / Reasoning / Outcome / Follow-up.
+ */
+export async function writeDecisionJournal(opts: {
+  decision: string;
+  reasoning: string;
+  outcome?: string;
+  followUp?: string;
+  agent: string;
+  orgId?: string;
+  confidence?: number;
+  tags?: string[];
+}): Promise<boolean> {
+  const { decision, reasoning, outcome, followUp, agent, orgId, confidence, tags } = opts;
+  const dateStr = today();
+  const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const title = `${dateStr} Decisions`;
+
+  const entry = `
+## ${timeStr} — ${decision.slice(0, 80)}${decision.length > 80 ? "…" : ""}
+
+| Field | Value |
+|-------|-------|
+| **Agent** | ${agent} |
+| **Org** | ${orgId || "—"} |
+| **Confidence** | ${confidence != null ? `${confidence}%` : "—"} |
+| **Date** | ${new Date().toISOString()} |
+
+**Decision:** ${decision}
+
+**Reasoning:** ${reasoning}
+
+${outcome ? `**Outcome:** ${outcome}\n\n` : ""}${followUp ? `**Follow-Up:** ${followUp}\n\n` : ""}---
+`;
+
+  const meta: NoteMetadata = {
+    type: "decision_journal",
+    agent,
+    department: "executive",
+    organizationId: orgId,
+    severity: "info",
+    tags: ["decision", "journal", ...(tags || [])],
+  };
+
+  return appendToNote(OBSIDIAN_FOLDERS.decisionJournal, title, entry, meta);
+}
+
+/**
+ * Update a decision journal entry with its outcome and follow-up result.
+ */
+export async function updateDecisionOutcome(opts: {
+  decisionTitle: string;
+  outcome: string;
+  followUp?: string;
+  orgId?: string;
+}): Promise<boolean> {
+  const { decisionTitle, outcome, followUp, orgId } = opts;
+  const updateEntry = `\n> **Outcome Update (${new Date().toLocaleString()}):** ${outcome}${followUp ? `\n> **Follow-Up:** ${followUp}` : ""}\n`;
+  return appendToNote(OBSIDIAN_FOLDERS.decisionJournal, decisionTitle, updateEntry);
+}
+
+/**
+ * Software Knowledge Base: Write a structured issue/fix entry for future agent reference.
+ * Agents should call searchSoftwareKB() before creating new improvement tasks.
+ */
+export async function writeSoftwareKB(opts: {
+  issue: string;
+  rootCause: string;
+  fix: string;
+  filesModified?: string[];
+  outcome: string;
+  severity?: "critical" | "high" | "medium" | "low";
+  tags?: string[];
+  orgId?: string;
+}): Promise<boolean> {
+  const { issue, rootCause, fix, filesModified, outcome, severity, tags, orgId } = opts;
+  const dateStr = today();
+  const timeStr = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+  const title = `${dateStr} Software KB`;
+
+  const filesSection = filesModified?.length
+    ? `**Files Modified:**\n${filesModified.map(f => `- \`${f}\``).join("\n")}\n\n`
+    : "";
+
+  const entry = `
+## ${timeStr} — ${issue.slice(0, 80)}${issue.length > 80 ? "…" : ""}
+
+**Severity:** ${severity || "medium"}
+
+**Issue:** ${issue}
+
+**Root Cause:** ${rootCause}
+
+**Fix:** ${fix}
+
+${filesSection}**Outcome:** ${outcome}
+
+---
+`;
+
+  const meta: NoteMetadata = {
+    type: "software_kb",
+    agent: "Software Improvement Agent",
+    department: "engineering",
+    organizationId: orgId,
+    severity: severity || "medium",
+    tags: ["software", "kb", "fix", ...(tags || [])],
+  };
+
+  return appendToNote(OBSIDIAN_FOLDERS.softwareKB, title, entry, meta);
+}
+
+/**
+ * Search the Software KB before creating a new improvement task.
+ * Returns relevant prior fixes sorted by relevance.
+ */
+export async function searchSoftwareKB(
+  query: string,
+  limit = 5,
+): Promise<Array<{ filename: string; context: string; score: number }>> {
+  const results = await searchNotes(query, { typeFilter: "software_kb", limit });
+  return results.map(r => ({
+    filename: r.filename,
+    context: r.matches?.[0]?.context || "",
+    score: r.score,
+  }));
 }

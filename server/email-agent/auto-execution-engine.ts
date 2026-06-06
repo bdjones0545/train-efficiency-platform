@@ -437,6 +437,16 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
     revenueAttributed: 0,
   };
 
+  // Fire-and-forget: retrieve institutional memory context before executing
+  import("../services/obsidian-service").then(({ retrieveAgentContext }) => {
+    retrieveAgentContext(`${eligibleAction.actionType} ${eligibleAction.title}`, { orgId, limit: 5 })
+      .then(ctx => {
+        if (ctx.retrieved > 0) {
+          console.log(`[AutoExec] Obsidian context: ${ctx.retrieved} items for ${eligibleAction.actionType}`);
+        }
+      }).catch(() => {});
+  }).catch(() => {});
+
   try {
     if (eligibleAction.actionType === "send_follow_up") {
       const followUpId = await executeFollowUp(orgId, eligibleAction.prospectId!);
