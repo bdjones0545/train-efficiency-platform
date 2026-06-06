@@ -479,10 +479,62 @@ export async function impl_record_payment(orgId: string, input: Record<string, a
 
 // ─── Gmail Tool Implementations ───────────────────────────────────────────────
 
+/**
+ * PHASE 1 REMEDIATION: Gmail agent send is now DRAFT-ONLY.
+ *
+ * Direct sends from agent workflows were unconditional (approvalRequired=false,
+ * no guards, no daily cap, no emergency pause). This implementation routes all
+ * agent "send email" requests to gmailCreateDraft() instead.
+ *
+ * Human admins can then review and manually send from Gmail Drafts.
+ * If a direct send is truly required for a specific admin flow, it must be
+ * performed via a dedicated admin-only API with explicit authorization.
+ */
 async function impl_gmail_send_email(orgId: string, input: Record<string, any>): Promise<ToolResult> {
-  const { gmailSendEmail } = await import("../services/gmail-agent-service");
-  const result = await gmailSendEmail({ orgId, to: input.to, subject: input.subject, body: input.body, cc: input.cc, bcc: input.bcc, replyToThreadId: input.replyToThreadId, leadId: input.leadId, dealId: input.dealId });
-  return { success: true, message: `Email sent to ${input.to}`, data: result };
+  console.warn(
+    `[Gmail-Agent] Direct Gmail send requested by agent for org ${orgId} to ${input.to} — ` +
+    `BLOCKED: Gmail direct send is disabled for agent workflows. Creating draft instead.`
+  );
+
+  const { gmailCreateDraft } = await import("../services/gmail-agent-service");
+  const result = await gmailCreateDraft({
+    orgId,
+    to: input.to,
+    subject: input.subject,
+    body: input.body,
+    cc: input.cc,
+    bcc: input.bcc,
+    replyToThreadId: input.replyToThreadId,
+    leadId: input.leadId,
+    dealId: input.dealId,
+  });
+
+  // Write a blocked-send record to the audit log so admins can see what happened
+  try {
+    const { writeOutboundAuditLog } = await import("../services/outbound-audit-log");
+    await writeOutboundAuditLog({
+      orgId,
+      channel: "gmail",
+      sourceSystem: "agent_tool",
+      recipientEmail: input.to,
+      subject: input.subject,
+      emailType: "agent_outreach",
+      triggeredBy: "agent_tool",
+      autoSent: false,
+      approvalRequired: true,
+      approvalStatus: "pending",
+      guardResult: "blocked_agent_send_policy",
+      status: "draft_created",
+      providerMessageId: result.draftId,
+    });
+  } catch { /* audit is best-effort */ }
+
+  return {
+    success: true,
+    message: `Gmail direct send blocked for agent workflow — draft created instead. Review and send from Gmail Drafts. (Draft ID: ${result.draftId})`,
+    draftId: result.draftId,
+    data: { ...result, blockedDirectSend: true, draftOnly: true },
+  };
 }
 
 async function impl_gmail_create_draft(orgId: string, input: Record<string, any>): Promise<ToolResult> {

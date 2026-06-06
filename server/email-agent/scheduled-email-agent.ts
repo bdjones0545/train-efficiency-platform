@@ -1,6 +1,7 @@
 import { storage } from "../storage";
 import { generateOutreachEmail, generateOutreachEmailFromVariant } from "../team-training-prospecting";
-import { sendTeamTrainingOutreachEmail, type OrgBranding } from "../email";
+import { type OrgBranding } from "../email";
+import { guardedSendTeamTrainingOutreachEmail } from "../services/guarded-outbound-email";
 import { logTriggerEvent, updateTriggerEvent, detectTriggerCollision, buildTriggerContextForProspect } from "./trigger-logger";
 
 let initialized = false;
@@ -317,13 +318,99 @@ export async function runEmailAgentForOrg(orgId: string, triggerSource: "cron_8_
       }
 
       try {
-        await sendTeamTrainingOutreachEmail(
-          prospect.contactEmail,
-          draftToSend.subject,
-          draftToSend.body,
+        // ── PHASE 5: Autonomy Policy Gate — every auto-send goes through the policy engine ──
+        const { evaluatePolicy } = await import("../services/autonomy-policy-engine");
+        const policy = await evaluatePolicy({
+          orgId,
+          actionType: "send_initial_email",
+          recipientEmail: prospect.contactEmail,
+          confidence: 0.80,
+          riskLevel: "low",
+          bodyText: draftToSend.body ?? undefined,
+          isFirstContact: true,
+          isNewRecipient: true,
+        }).catch((e) => {
+          // PHASE 3 pattern: fail closed — policy errors → approval_required
+          console.warn(`[Email Agent Cron] Policy evaluation failed — defaulting to approval_required (org ${orgId}):`, e?.message);
+          return {
+            decision: "approval_required" as const,
+            reasons: ["Policy evaluation error — defaulting to approval_required"] as string[],
+            confidence: 0.80,
+            riskLevel: "low" as const,
+            policyVersion: "1.0.0",
+            evaluatedAt: new Date(),
+          };
+        });
+
+        if (policy.decision === "blocked") {
+          await storage.updateOutreachDraft(draftToSend.id, { approved: false });
+          result.emailsBlocked++;
+          await updateTriggerEvent(triggerEventId, {
+            wasExecuted: false,
+            executionBlocked: true,
+            blockReason: "POLICY_BLOCKED",
+            reasoning: `Autonomy policy blocked: ${policy.reasons.join("; ")}`,
+          });
+          console.log(`[Email Agent Cron] Policy BLOCKED send to ${prospect.contactEmail}`);
+          continue;
+        }
+
+        if (policy.decision === "approval_required") {
+          try {
+            const { db: _db } = await import("../db");
+            const { gmailAgentActions } = await import("@shared/schema");
+            await _db.insert(gmailAgentActions).values({
+              orgId,
+              actionType: "initial_outreach_email",
+              recipientEmail: prospect.contactEmail,
+              subject: draftToSend.subject ?? `Outreach for ${prospect.prospectName}`,
+              bodyPreview: (draftToSend.body ?? "").slice(0, 300),
+              riskLevel: "low",
+              approvalRequired: true,
+              status: "proposed",
+              communicationDomain: "team_training",
+              createdByAgent: "scheduled_email_agent",
+              result: { draftId: draftToSend.id, prospectId: prospect.id },
+            });
+          } catch { /* approval queuing is best-effort */ }
+          await storage.updateOutreachDraft(draftToSend.id, { approved: false });
+          result.emailsSkipped++;
+          await updateTriggerEvent(triggerEventId, {
+            wasExecuted: false,
+            executionBlocked: false,
+            reasoning: `Policy requires approval — queued in AI Comms Center. Reasons: ${policy.reasons.join("; ")}`,
+          });
+          console.log(`[Email Agent Cron] Policy APPROVAL_REQUIRED for send to ${prospect.contactEmail} — queued`);
+          continue;
+        }
+
+        // ── PHASE 4: Guarded send through the full Send Guard chain ─────────
+        const sendResult = await guardedSendTeamTrainingOutreachEmail({
+          orgId,
+          recipientEmail: prospect.contactEmail,
+          recipientName: prospect.contactName || undefined,
+          subject: draftToSend.subject,
+          body: draftToSend.body,
           branding,
-          draftToSend.id,
-        );
+          trackingId: draftToSend.id,
+          sourceSystem: "scheduled_email_agent",
+          sourceRecordId: draftToSend.id,
+          triggeredBy: "cron",
+          emailType: "initial_outreach",
+          policyDecision: "auto_execute",
+        });
+
+        if (sendResult.blocked) {
+          result.emailsBlocked++;
+          await updateTriggerEvent(triggerEventId, {
+            wasExecuted: false,
+            executionBlocked: true,
+            blockReason: "POLICY_BLOCKED",
+            reasoning: `Send Guard blocked: ${sendResult.blockReason}`,
+          });
+          console.warn(`[Email Agent Cron] Send Guard blocked send to ${prospect.contactEmail}: ${sendResult.blockReason}`);
+          continue;
+        }
 
         const sentAt = new Date();
         await storage.updateOutreachDraft(draftToSend.id, { sentAt });

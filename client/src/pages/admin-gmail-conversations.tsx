@@ -237,6 +237,16 @@ export default function AdminGmailConversationsPage() {
         </div>
       </div>
 
+      {/* Phase 8 — Gmail Draft-Only Safety Notice */}
+      <div className="flex items-start gap-3 p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 text-sm" data-testid="banner-gmail-safety">
+        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-purple-500" />
+        <span>
+          <strong>Draft-Only Agent Mode:</strong> Gmail agent tool sends are routed to Drafts only — no direct auto-send from agent workflows.
+          Review and send drafts manually from your Gmail inbox.
+          {" "}<a href="/admin/email-audit" className="underline font-medium">View Email Audit Log →</a>
+        </span>
+      </div>
+
       {/* Stats row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {[

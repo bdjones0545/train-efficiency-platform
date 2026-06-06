@@ -590,6 +590,17 @@ export default function AdminAgentMailPage() {
           </div>
         </div>
 
+        {/* Phase 8 — Communication Safety Banner */}
+        <div className="flex items-start gap-3 p-3 rounded-lg bg-blue-50 border border-blue-200 text-blue-800 text-sm" data-testid="banner-agentmail-safety">
+          <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-blue-500" />
+          <span>
+            <strong>Approval-First:</strong> All AgentMail replies require human approval before sending.
+            Follow-up sequences go through the Send Guard chain (emergency pause → suppression → daily cap → 24h cross-channel window).
+            Policy errors default to <em>approval_required</em>, not auto-execute.
+            {" "}<a href="/admin/email-audit" className="underline font-medium">View Email Audit Log →</a>
+          </span>
+        </div>
+
         {!statusLoading && !statusData?.configured && (
           <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
             <CardContent className="pt-4 pb-4 flex items-start gap-3">

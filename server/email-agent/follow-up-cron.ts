@@ -1,13 +1,14 @@
 import { storage } from "../storage";
-import { sendTeamTrainingOutreachEmail, type OrgBranding } from "../email";
+import { type OrgBranding } from "../email";
 import { generateOutreachEmailFromVariant } from "../team-training-prospecting";
 import { logTriggerEvent, updateTriggerEvent } from "./trigger-logger";
 import { evaluatePolicy } from "../services/autonomy-policy-engine";
 import { createOutcomeOnSend } from "../services/outcome-intelligence-service";
+import { guardedSendTeamTrainingOutreachEmail } from "../services/guarded-outbound-email";
 import { db } from "../db";
 import { gmailAgentActions, appSettings } from "@shared/schema";
 import { acquireJobLock, releaseJobLock } from "../services/ceo-heartbeat-service";
-import { like } from "drizzle-orm";
+import { like, sql } from "drizzle-orm";
 
 // Base follow-up sequence schedule: days after initial send
 const BASE_FOLLOW_UP_DAYS = [3, 7, 14];
@@ -169,6 +170,30 @@ export async function processFollowUpsForOrg(
     });
 
     try {
+      // ── PHASE 2: Atomic Row Claim — prevents duplicate sends if follow-up-cron
+      // and auto-execution-engine both pick up the same row concurrently. ─────────
+      const claimResult = await db.execute(sql`
+        UPDATE follow_ups
+        SET status = 'processing'
+        WHERE id = ${followUp.id} AND status = 'pending'
+        RETURNING id
+      `).catch(() => null);
+      const claimedRows = Array.isArray(claimResult)
+        ? claimResult
+        : ((claimResult as any)?.rows ?? []);
+      if (claimedRows.length === 0) {
+        console.log(`[FollowUp] follow-up ${followUp.id} already claimed by another worker — skipping`);
+        result.skipped++;
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: "COOLDOWN_ACTIVE",
+          reasoning: "Row already claimed by concurrent worker (race condition prevented)",
+        });
+        continue;
+      }
+      // ─────────────────────────────────────────────────────────────────────────
+
       const prospect = await storage.getTeamTrainingProspect(followUp.prospectId);
 
       if (!prospect || !prospect.contactEmail) {
@@ -284,6 +309,7 @@ export async function processFollowUpsForOrg(
       }
 
       // ── Autonomy Policy Gate (Priority 1) ────────────────────────────────────
+      // PHASE 3: Fail-closed — policy errors default to approval_required, NOT auto_execute.
       const policy = await evaluatePolicy({
         orgId,
         actionType: "send_follow_up",
@@ -295,12 +321,12 @@ export async function processFollowUpsForOrg(
         isNewRecipient: false,
       }).catch((e) => {
         console.warn(
-          `[FollowUp] Policy evaluation error for org ${orgId}, defaulting to auto_execute:`,
+          `[FollowUp] Policy evaluation failed — defaulting to approval_required for safety (org ${orgId}):`,
           e.message
         );
         return {
-          decision: "auto_execute" as const,
-          reasons: [] as string[],
+          decision: "approval_required" as const,
+          reasons: ["Policy evaluation error — defaulting to approval_required"] as string[],
           confidence: 0.80,
           riskLevel: "low" as const,
           policyVersion: "1.0.0",
@@ -378,13 +404,33 @@ export async function processFollowUpsForOrg(
         .returning()
         .catch(() => [{ id: "" }] as { id: string }[]);
 
-      await sendTeamTrainingOutreachEmail(
-        prospect.contactEmail,
-        subject!,
-        body!,
+      // PHASE 4: All automated sends go through the Send Guard chain.
+      const sendResult = await guardedSendTeamTrainingOutreachEmail({
+        orgId,
+        recipientEmail: prospect.contactEmail,
+        recipientName: prospect.contactName || undefined,
+        subject: subject!,
+        body: body!,
         branding,
-        followUp.id
-      );
+        trackingId: followUp.id,
+        sourceSystem: "follow_up_cron",
+        sourceRecordId: followUp.id,
+        triggeredBy: "cron",
+        emailType: "follow_up",
+        policyDecision: "auto_execute",
+      });
+      if (sendResult.blocked) {
+        await storage.updateFollowUp(followUp.id, { status: "skipped" });
+        result.skipped++;
+        await updateTriggerEvent(triggerEventId, {
+          wasExecuted: false,
+          executionBlocked: true,
+          blockReason: "POLICY_BLOCKED",
+          reasoning: `Send Guard blocked: ${sendResult.blockReason}`,
+        });
+        console.warn(`[FollowUp] Send Guard blocked follow-up ${followUp.id}: ${sendResult.blockReason}`);
+        continue;
+      }
 
       await storage.updateFollowUp(followUp.id, {
         status: "sent",

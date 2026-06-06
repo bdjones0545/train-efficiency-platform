@@ -186,6 +186,7 @@ import AttendanceCheckinPage from "@/pages/attendance-checkin";
 import AttendanceProgramEditorPage from "@/pages/attendance-program-editor";
 import AdminAttendanceTrackerPage from "@/pages/admin-attendance-tracker";
 import AdminNotificationSettingsPage from "@/pages/admin-notification-settings";
+import AdminEmailAuditPage from "@/pages/admin-email-audit";
 
 interface SubscriptionStatus {
   status: string;
@@ -418,6 +419,7 @@ function AuthenticatedLayout() {
                   <Route path="/attendance-programs/:programId" component={AttendanceProgramEditorPage} />
                   <Route path="/admin/attendance-tracker" component={AdminAttendanceTrackerPage} />
                   <Route path="/admin/notification-settings" component={AdminNotificationSettingsPage} />
+                  <Route path="/admin/email-audit" component={AdminEmailAuditPage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
                   <Route path="/bookings" component={MyBookingsPage} />
                   <Route path="/settings" component={SettingsPage} />

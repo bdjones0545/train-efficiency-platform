@@ -371,6 +371,16 @@ export default function EmailTriggerAuditPage() {
         </Button>
       </div>
 
+      {/* Phase 8 — Safety Remediation Notice */}
+      <div className="flex items-start gap-3 p-3 rounded-lg bg-green-50 border border-green-200 text-green-800 text-sm" data-testid="banner-trigger-safety">
+        <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-green-600" />
+        <span>
+          <strong>Safety Remediation Active:</strong> Gmail agent send → Draft-only. All policy errors → approval_required (fail-closed).
+          Atomic row claims prevent duplicate sends. All automated sends go through the Send Guard chain.
+          {" "}<a href="/admin/email-audit" className="underline font-medium">View unified Email Audit Log →</a>
+        </span>
+      </div>
+
       {/* ── Filters ─────────────────────────────────────────────────────────── */}
       <div className="flex items-center gap-2 flex-wrap">
         <Filter className="h-4 w-4 text-muted-foreground shrink-0" />

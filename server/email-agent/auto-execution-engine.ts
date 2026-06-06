@@ -1,6 +1,8 @@
 import { storage } from "../storage";
 import { buildGlobalActionQueue, type GlobalAction } from "./global-priority-engine";
 import { logTriggerEvent, updateTriggerEvent } from "./trigger-logger";
+import { db } from "../db";
+import { sql } from "drizzle-orm";
 
 const MAX_AUTO_EXEC_PER_DAY = 3;
 const RISK_THRESHOLD = 40;
@@ -86,9 +88,19 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
 
   const followUp = prospectFollowUps[0];
 
-  // Double-send guard — bail if the follow-up was already sent (e.g. race condition)
-  if (followUp.status === "sent" || followUp.status === "cancelled") {
-    console.warn(`[Auto-Execute] follow-up ${followUp.id} already in status "${followUp.status}" — skipping`);
+  // PHASE 2: Atomic row claim — atomically transition status from 'pending' → 'processing'.
+  // If 0 rows returned, another worker (follow-up-cron) already claimed this row; skip.
+  const claimResult = await db.execute(sql`
+    UPDATE follow_ups
+    SET status = 'processing'
+    WHERE id = ${followUp.id} AND status = 'pending'
+    RETURNING id
+  `).catch(() => null);
+  const claimedRows = Array.isArray(claimResult)
+    ? claimResult
+    : ((claimResult as any)?.rows ?? []);
+  if (claimedRows.length === 0) {
+    console.log(`[Auto-Execute] follow-up ${followUp.id} already claimed by concurrent worker — skipping`);
     return null;
   }
 
@@ -160,6 +172,7 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
     : undefined;
 
   // ── Autonomy Policy Gate (Priority 2 Safety Pass) ────────────────────────
+  // PHASE 3: Fail-closed — policy errors default to approval_required, NOT auto_execute.
   const { evaluatePolicy } = await import("../services/autonomy-policy-engine");
   const policy = await evaluatePolicy({
     orgId,
@@ -169,20 +182,25 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
     riskLevel: "low",
     bodyText: body ?? undefined,
     isFirstContact: false,
-  }).catch(() => ({
-    decision: "auto_execute" as const,
-    reasons: [] as string[],
-    confidence: 0.85,
-    riskLevel: "low" as const,
-    policyVersion: "1.0.0",
-    evaluatedAt: new Date(),
-  }));
+  }).catch((e) => {
+    console.warn(
+      `[Auto-Execute] Policy evaluation failed — defaulting to approval_required for safety (org ${orgId}):`,
+      e?.message
+    );
+    return {
+      decision: "approval_required" as const,
+      reasons: ["Policy evaluation error — defaulting to approval_required"] as string[],
+      confidence: 0.85,
+      riskLevel: "low" as const,
+      policyVersion: "1.0.0",
+      evaluatedAt: new Date(),
+    };
+  });
 
   if (policy.decision !== "auto_execute") {
     // Create a proposal/block record in AI Comms Center for visibility
-    const { db: _db } = await import("../db");
     const { gmailAgentActions: _gaa } = await import("@shared/schema");
-    await _db
+    await db
       .insert(_gaa)
       .values({
         orgId,
@@ -204,8 +222,27 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
     return null;
   }
 
-  const { sendTeamTrainingOutreachEmail } = await import("../email");
-  await sendTeamTrainingOutreachEmail(prospect.contactEmail, subject!, body!, branding, followUp.id);
+  // PHASE 4: All automated sends go through the Send Guard chain.
+  const { guardedSendTeamTrainingOutreachEmail } = await import("../services/guarded-outbound-email");
+  const sendResult = await guardedSendTeamTrainingOutreachEmail({
+    orgId,
+    recipientEmail: prospect.contactEmail,
+    recipientName: prospect.contactName || undefined,
+    subject: subject!,
+    body: body!,
+    branding,
+    trackingId: followUp.id,
+    sourceSystem: "auto_execution_engine",
+    sourceRecordId: followUp.id,
+    triggeredBy: "auto_execute",
+    emailType: "follow_up",
+    policyDecision: "auto_execute",
+  });
+  if (sendResult.blocked) {
+    await storage.updateFollowUp(followUp.id, { status: "skipped" });
+    console.warn(`[Auto-Execute] Send Guard blocked follow-up ${followUp.id}: ${sendResult.blockReason}`);
+    return null;
+  }
 
   await storage.updateFollowUp(followUp.id, { status: "sent", sentAt: new Date(), subject, body });
   await storage.logOutreachEvent({
@@ -217,9 +254,8 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
   });
 
   // Record outcome for attribution
-  const { db: _outDb } = await import("../db");
   const { gmailAgentActions: _outGaa } = await import("@shared/schema");
-  const [gmailAction] = await _outDb
+  const [gmailAction] = await db
     .insert(_outGaa)
     .values({
       orgId,

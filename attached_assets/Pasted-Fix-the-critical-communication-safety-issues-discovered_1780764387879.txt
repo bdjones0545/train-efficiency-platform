@@ -1,0 +1,313 @@
+Fix the critical communication safety issues discovered in the Gmail vs AgentMail vs SendGrid audit.
+
+This is a remediation build, not a feature expansion.
+
+Goal:
+Make all outbound communication paths safe, approval-aware, idempotent, and centrally auditable.
+
+Do these fixes in priority order.
+
+--------------------------------------------------
+PHASE 1 — Disable Gmail Auto-Send
+--------------------------------------------------
+
+Problem:
+gmailSendEmail() currently sends directly through Gmail with:
+- approvalRequired: false
+- status: executed
+- no emergency pause
+- no opt-out check
+- no daily cap
+- no Send Guard
+- no policy engine
+
+Required fix:
+Gmail must become draft-only for agent workflows.
+
+Change agent tool behavior so any AI/agent request to send through Gmail creates a Gmail draft instead of sending.
+
+Rules:
+- gmailCreateDraft() is allowed.
+- gmailSendEmail() must not be callable by agent tools.
+- If gmailSendEmail() remains for admin/manual use, protect it with explicit admin-only authorization and Send Guard.
+- Update agent-tools/implementations.ts so send_gmail/send_email tools route to draft creation, not direct send.
+- All Gmail-created agent actions should use:
+  - approvalRequired: true
+  - status: proposed or draft_created
+- No Gmail API send should happen automatically.
+
+Add clear logging:
+"Gmail direct send blocked for agent workflow. Draft created instead."
+
+--------------------------------------------------
+PHASE 2 — Fix Follow-Up Duplicate Race
+--------------------------------------------------
+
+Problem:
+follow-up-cron.ts and auto-execution-engine.ts can both process the same follow-up record.
+
+Required fix:
+Add atomic claiming before processing any follow-up.
+
+Preferred approach:
+Add columns if missing:
+- processing_status
+- claimed_by
+- claimed_at
+
+Before sending or queuing any follow-up:
+Run an atomic update similar to:
+
+UPDATE follow_ups
+SET processing_status = 'processing',
+    claimed_by = :workerName,
+    claimed_at = NOW()
+WHERE id = :id
+  AND status = 'pending'
+  AND (processing_status IS NULL OR processing_status IN ('queued', 'failed'))
+RETURNING id;
+
+If no row is returned, skip processing because another worker claimed it.
+
+After success:
+- status = sent or queued_for_approval
+- processing_status = completed
+
+After failure:
+- processing_status = failed
+- error_message stored
+
+Apply this to:
+- server/email-agent/follow-up-cron.ts
+- server/email-agent/auto-execution-engine.ts
+
+Alternative acceptable fix:
+Make only one process own follow-up sending and remove/deactivate the duplicate processor.
+
+--------------------------------------------------
+PHASE 3 — Policy Error Must Fail Closed
+--------------------------------------------------
+
+Problem:
+follow-up-cron.ts defaults to auto_execute when policy evaluation errors.
+
+Required fix:
+Change every policy evaluation error fallback to:
+- approval_required
+
+Never default to auto_execute on system error.
+
+Add log:
+"Policy evaluation failed; defaulting to approval_required for safety."
+
+Search the full codebase for any other:
+- defaulting to auto_execute
+- fallback auto_execute
+- catch blocks around evaluatePolicy
+
+Patch all unsafe cases.
+
+--------------------------------------------------
+PHASE 4 — Apply Send Guard to Automated SendGrid Outreach
+--------------------------------------------------
+
+Problem:
+Send Guard is only applied in AgentMail paths.
+
+Required fix:
+Create a shared helper:
+
+server/services/guarded-outbound-email.ts
+
+Functions:
+- guardedSendTeamTrainingOutreachEmail()
+- guardedSendAgentOutreachEmail()
+- guardedSendTransactionalEmail() if appropriate
+
+For automated outreach, before calling SendGrid send functions, run:
+- emergency pause
+- suppression/opt-out
+- daily cap
+- policy/governance check where applicable
+
+Apply to:
+- scheduled-email-agent.ts
+- follow-up-cron.ts
+- auto-execution-engine.ts
+
+Important:
+Transactional emails like password reset, booking confirmation, cancellation, and reminders should not be blocked by sales outreach daily caps, but should still keep existing emergency/dedup/opt-out behavior where appropriate.
+
+--------------------------------------------------
+PHASE 5 — Add Policy Engine to Scheduled Email Agent
+--------------------------------------------------
+
+Problem:
+scheduled-email-agent.ts uses only org.autoSend and bypasses the Autonomy Policy Engine.
+
+Required fix:
+Before every initial outreach send:
+- call evaluatePolicy()
+- if decision is approval_required, create approval/draft item
+- if decision is block, do not send
+- if decision is auto_execute, continue only after Send Guard passes
+
+If policy evaluation fails:
+- default to approval_required
+
+--------------------------------------------------
+PHASE 6 — Central Unified Email Audit Log
+--------------------------------------------------
+
+Create table:
+
+outbound_email_audit_log
+
+Fields:
+- id
+- organization_id
+- channel
+- source_system
+- source_record_id
+- recipient_email
+- recipient_name
+- from_email
+- subject
+- email_type
+- triggered_by
+- auto_sent
+- approval_required
+- approval_status
+- policy_decision
+- guard_result
+- status
+- provider_message_id
+- error_message
+- sent_at
+- created_at
+- updated_at
+
+Channels:
+- sendgrid
+- gmail
+- agentmail
+
+All outbound paths should write here:
+- SendGrid transactional
+- SendGrid outreach
+- Gmail draft creation
+- Gmail blocked direct-send attempts
+- AgentMail replies
+- AgentMail follow-ups
+
+Add API route:
+GET /api/email-audit
+
+Add admin UI:
+/admin/email-audit
+
+Show:
+- channel
+- source system
+- recipient
+- subject
+- auto-sent yes/no
+- approval required yes/no
+- policy decision
+- guard result
+- status
+- sent date
+- errors
+
+--------------------------------------------------
+PHASE 7 — Cross-Channel Coordination
+--------------------------------------------------
+
+Problem:
+Same prospect can be emailed by Gmail, AgentMail, and SendGrid independently.
+
+Required fix:
+Before automated outreach/follow-up send, check recent communication across all channels.
+
+Add helper:
+server/services/communication-coordination-service.ts
+
+Functions:
+- getRecentOutboundForRecipient()
+- shouldSuppressCrossChannelSend()
+- recordOutboundTouch()
+- getLastTouchSummary()
+
+Rules:
+- If recipient was contacted by any channel within the last 24 hours, do not auto-send.
+- Instead create approval_required item with reason:
+  "Recent cross-channel contact detected."
+- AgentMail approved human sends may still proceed, but show warning in UI.
+- Transactional emails are exempt.
+
+--------------------------------------------------
+PHASE 8 — UI Safety Warnings
+--------------------------------------------------
+
+Add warnings where needed:
+
+1. Email Agent Settings:
+If autoSend is enabled, show red/yellow warning:
+"Auto-send is enabled. Outreach emails can be sent without manual review if policy allows."
+
+2. Gmail Integration:
+Show:
+"Gmail is draft-only for agent workflows. Agents cannot send directly from Gmail."
+
+3. AgentMail:
+Show:
+"AgentMail replies and follow-ups require approval before sending."
+
+4. Email Audit:
+Add filters for:
+- channel
+- auto_sent
+- approval_required
+- failed
+- blocked
+- policy_decision
+
+--------------------------------------------------
+PHASE 9 — Tests
+--------------------------------------------------
+
+Add tests or simulation checks for:
+
+1. Gmail agent send request creates draft, not sent email
+2. Gmail direct send from agent tool is blocked
+3. Follow-up cron cannot double-send same record
+4. Auto-execution engine cannot double-send same follow-up
+5. Policy engine error defaults to approval_required
+6. Scheduled email agent respects policy engine
+7. Send Guard blocks outreach when emergency pause is enabled
+8. Cross-channel coordination blocks auto-send within 24 hours
+9. AgentMail approved send still works
+10. Transactional SendGrid emails still work
+
+--------------------------------------------------
+DELIVERABLES
+--------------------------------------------------
+
+After implementation, summarize:
+
+1. Files changed
+2. Database changes
+3. Routes added
+4. UI pages added
+5. Gmail behavior before/after
+6. Race condition fix
+7. Policy fallback fix
+8. Send Guard coverage
+9. Unified audit log behavior
+10. How to test each critical fix
+
+Critical architecture rule:
+Gmail = draft/context only for agents.
+AgentMail = supervised agent communication.
+SendGrid = transactional and guarded outreach.
+No agent communication should bypass approval, policy, guard checks, or audit logging.
