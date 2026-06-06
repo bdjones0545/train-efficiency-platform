@@ -77,6 +77,7 @@ import {
   QrCode,
   Bell,
   MessageSquare,
+  BookOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -1346,6 +1347,7 @@ export function AppSidebar() {
               { title: "Subscription", url: "/admin/subscription", icon: Sparkles, testId: "nav-subscription" },
               { title: "Options", url: "/admin/configuration", icon: Settings, testId: "nav-options" },
               { title: "Notifications", url: "/admin/notification-settings", icon: Bell, testId: "nav-notification-settings" },
+              { title: "Obsidian Vault", url: "/admin/obsidian", icon: BookOpen, testId: "nav-obsidian" },
             ]
           : []),
       ],
