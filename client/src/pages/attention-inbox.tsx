@@ -609,7 +609,7 @@ function DigestPanel({ digest }: { digest: DigestData }) {
           <p className="text-xs text-muted-foreground leading-relaxed">{digest.summary}</p>
         </div>
       </div>
-      <div className="grid grid-cols-4 gap-2 mt-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-4">
         {stats.map((s) => (
           <div key={s.label} className={cn("rounded-lg p-2.5 text-center", s.bg)}>
             <div className={cn("text-xl font-bold leading-none", s.color)}>{s.count}</div>

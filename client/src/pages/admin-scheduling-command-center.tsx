@@ -343,7 +343,7 @@ function HealthScorePanel() {
           <p className="text-xs text-muted-foreground leading-relaxed">{data.summary}</p>
         </div>
       </div>
-      <div className="grid grid-cols-5 gap-1.5">
+      <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
         {factors.map(f => {
           const barColor = f.value >= 80 ? "bg-green-500" : f.value >= 60 ? "bg-yellow-500" : "bg-red-500";
           return (

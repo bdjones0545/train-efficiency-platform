@@ -267,7 +267,7 @@ function CreateActionDialog({ open, onClose, onCreated }: { open: boolean; onClo
           <Textarea placeholder="Description" value={form.description} onChange={e => f("description", e.target.value)} className="min-h-[80px]" data-testid="input-action-description" />
           <Textarea placeholder="Suggested action" value={form.suggestedAction} onChange={e => f("suggestedAction", e.target.value)} data-testid="input-action-suggested" />
           <Input placeholder="Estimated impact" value={form.estimatedImpact} onChange={e => f("estimatedImpact", e.target.value)} data-testid="input-action-impact" />
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <Select value={form.severity} onValueChange={v => f("severity", v)}>
               <SelectTrigger data-testid="select-severity"><SelectValue /></SelectTrigger>
               <SelectContent>

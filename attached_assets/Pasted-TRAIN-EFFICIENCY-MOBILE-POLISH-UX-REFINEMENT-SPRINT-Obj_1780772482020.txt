@@ -1,0 +1,399 @@
+TRAIN EFFICIENCY — MOBILE POLISH & UX REFINEMENT SPRINT
+
+Objective:
+
+Stop building major features.
+
+Shift into product refinement mode.
+
+Review all existing pages and improve usability, consistency, mobile experience, information hierarchy, navigation clarity, visual polish, and conversion flow.
+
+The goal is to make TrainEfficiency feel like a finished professional SaaS platform rather than a collection of powerful features.
+
+==================================================
+PHASE 1 — MOBILE UX AUDIT
+
+Perform a complete mobile-first audit of every page.
+
+Requirements:
+
+* No horizontal scrolling anywhere
+* No clipped text
+* No truncated buttons
+* No inaccessible controls
+* No floating button overlap
+* No modal overflow issues
+* No hidden actions below viewport
+* All pages optimized for 375px width
+
+Verify:
+
+Scheduling
+Availability
+Open Group Sessions
+My Bookings
+Athlete Leads
+Team Training Leads
+Outreach Center
+Lead Pipeline
+Branding
+CEO Heartbeat
+Command Center
+Notifications
+Settings
+Athlete Profiles
+Team Profiles
+
+Fix any remaining mobile responsiveness issues.
+
+==================================================
+PHASE 2 — MY BOOKINGS REDESIGN
+
+Current issue:
+
+My Bookings is difficult to scan.
+
+It displays long descriptions and repetitive information.
+
+Users cannot quickly answer:
+
+What am I booked for?
+When?
+With which coach?
+
+Redesign.
+
+Add:
+
+Summary cards:
+
+Upcoming Sessions
+This Week
+This Month
+Hours Booked
+
+Grouping options:
+
+Group by Coach
+Group by Date
+Group by Session Type
+
+Filters:
+
+All
+1-on-1
+Semi-Private
+Group
+Team Training
+
+Booking cards should show:
+
+Session Type
+Coach
+Date
+Time
+Location
+Status
+
+Hide long descriptions behind:
+
+“View Details”
+
+Default state should be compact and highly scannable.
+
+==================================================
+PHASE 3 — OPEN GROUP SESSIONS
+
+Current issue:
+
+Month and week views truncate the most important information.
+
+Users need to see:
+
+Sport
+Location
+Coach
+Skill Level
+
+instead of generic session names.
+
+Requirements:
+
+Month View:
+
+Replace abbreviated session labels with:
+
+Sport
+Location short name
+Available spots
+
+Example:
+
+TRACK
+BLUFFTON HS
+6 OPEN
+
+Week View:
+
+Convert to stacked cards on mobile.
+
+Each card should show:
+
+Sport
+Location
+Coach
+Time
+Skill Level
+Age Group
+Open Spots
+
+Make browsing sessions feel like shopping available classes.
+
+==================================================
+PHASE 4 — MODAL IMPROVEMENTS
+
+Current issue:
+
+Long session descriptions create unusable mobile popups.
+
+Requirements:
+
+Every modal must:
+
+Support scrolling
+Respect viewport height
+Use safe-area spacing
+Lock body scroll properly
+
+Maximum modal height:
+
+90vh
+
+Structure:
+
+Header
+Metadata
+Description
+Actions
+
+Sticky footer:
+
+Join Session
+Save
+Confirm
+Close
+
+Buttons always visible.
+
+==================================================
+PHASE 5 — OUTREACH CENTER
+
+Current issue:
+
+Horizontal scrolling exists on mobile.
+
+Requirements:
+
+Remove all horizontal overflow.
+
+Apply:
+
+overflow-x-hidden
+
+Audit:
+
+Cards
+Filters
+Tabs
+Search
+Tables
+Badges
+Tags
+
+All content must fit within viewport width.
+
+No sideways movement.
+
+==================================================
+PHASE 6 — LEAD PIPELINE MOBILE REBUILD
+
+Current issue:
+
+Lead Pipeline is functional but desktop-oriented.
+
+Requirements:
+
+Mobile-first experience.
+
+Lead cards should become stacked.
+
+Collapse advanced details behind expandable sections.
+
+Convert:
+
+AI Context
+Scheduling Context
+Follow-Up History
+Tags
+
+into accordion sections.
+
+Show only:
+
+Lead Name
+Sport
+School
+Lead Score
+Pipeline Stage
+Suggested Action
+
+at first glance.
+
+Everything else expands.
+
+Reduce visual clutter by at least 50%.
+
+==================================================
+PHASE 7 — CEO COMMAND CENTER
+
+Audit CEO Agent experience.
+
+Current goal:
+
+CEO Agent should feel like an executive operating system.
+
+Not a dashboard.
+
+Not a chatbot.
+
+Improve:
+
+CEO Home
+Agents
+Tasks
+Approvals
+Settings
+
+Questions that should be answerable instantly:
+
+What needs attention?
+What opportunities exist?
+What risks exist?
+Which agent needs me?
+What should I do next?
+
+Add:
+
+Best Action Today
+
+section at top.
+
+Examples:
+
+Recover 32 inactive athletes
+Fill 12 open slots
+Approve outreach campaign
+Review software improvement task
+
+==================================================
+PHASE 8 — DASHBOARD DATA QUALITY
+
+Audit all dashboards.
+
+Replace:
+
+Empty states
+Zero-value confusion
+Placeholder text
+Generic labels
+
+with meaningful messaging.
+
+Examples:
+
+Instead of:
+
+0 Scheduled Evals
+
+Use:
+
+No evaluations scheduled yet.
+
+Instead of:
+
+Never
+
+Use:
+
+Heartbeat has not run yet.
+
+Provide context and guidance.
+
+==================================================
+PHASE 9 — VISUAL DESIGN SYSTEM
+
+Standardize:
+
+KPI Cards
+Status Badges
+Search Bars
+Filters
+Buttons
+Tables
+Modals
+Forms
+Empty States
+Agent Cards
+
+Requirements:
+
+Consistent spacing
+Consistent typography
+Consistent badge colors
+Consistent card heights
+Consistent section headers
+
+Eliminate one-off UI patterns.
+
+==================================================
+PHASE 10 — NAVIGATION REVIEW
+
+Review platform information architecture.
+
+Identify overlapping sections:
+
+Athlete Leads
+Lead Pipeline
+Outreach Center
+
+Determine whether they should live under:
+
+CRM
+
+with sub-sections.
+
+Goal:
+
+Reduce cognitive load.
+
+Make navigation obvious for first-time coaches.
+
+==================================================
+SUCCESS CRITERIA
+
+After this sprint:
+
+* No horizontal scrolling
+* No modal scrolling issues
+* No truncated critical information
+* My Bookings is easy to scan
+* Group Sessions are easy to browse
+* Lead Pipeline is mobile-friendly
+* CEO Agent feels like an executive operating system
+* Consistent UI across platform
+* Mobile experience feels native
+* Platform feels enterprise-grade
+
+Focus on refinement, usability, polish, consistency, and clarity.
+
+Do not add new major features unless required to improve the user experience.

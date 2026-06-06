@@ -600,7 +600,7 @@ function DayReviewPanel() {
 
   return (
     <div className="space-y-4" data-testid="section-day-review">
-      <div className="grid grid-cols-3 gap-2">
+      <div className="grid grid-cols-3 gap-2 sm:grid-cols-3">
         {stats.map((s, i) => (
           <Card key={i} className="p-3 text-center" data-testid={`card-review-stat-${i}`}>
             <s.icon className={`h-4 w-4 mx-auto mb-1 ${s.color}`} />
@@ -2114,7 +2114,7 @@ function AiRevenuePanel() {
       )}
 
       {/* Revenue stat cards */}
-      <DashStaggerList className="grid grid-cols-3 gap-3 mb-3">
+      <DashStaggerList className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
         {/* Today */}
         <DashStatCard scanLine>
           <Card className="p-3 space-y-0.5" data-testid="card-ai-revenue-today">
@@ -2508,7 +2508,7 @@ function ProgramLeadsPanel() {
             <AlertTriangle className="h-4 w-4 text-orange-500 shrink-0" />
             <p className="text-xs font-semibold text-orange-700 dark:text-orange-400">Hot Lead SLA — Speed-to-Lead Response Required</p>
           </div>
-          <div className="grid grid-cols-4 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <div className="text-center">
               <p className="text-base font-bold text-green-600 dark:text-green-400">{sla.green}</p>
               <p className="text-xs text-muted-foreground">&lt;5 min</p>
@@ -3318,7 +3318,7 @@ function CompactLeadPipelineSection({ data, openAgentWith }: { data: CommandCent
         </Button>
       </div>
 
-      <div className="grid grid-cols-4 gap-1.5 mb-3" data-testid="grid-lead-kpis">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 mb-3" data-testid="grid-lead-kpis">
         <Card className="p-2 text-center" data-testid="kpi-total-leads">
           <p className="text-base font-bold">{totalLeads}</p>
           <p className="text-[9px] text-muted-foreground leading-tight">Total</p>

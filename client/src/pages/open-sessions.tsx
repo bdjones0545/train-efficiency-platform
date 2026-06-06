@@ -1154,25 +1154,48 @@ function SessionDetailModal({
 
 function SessionChip({ session, onClick }: { session: OpenSession; onClick: () => void }) {
   const status = getSessionStatus(session);
-  const colorClass = status === "Open"
-    ? "bg-green-500/10 border-green-500/30 text-green-800 dark:text-green-300 hover:bg-green-500/20"
-    : status === "Full"
-    ? "bg-orange-500/10 border-orange-500/30 text-orange-800 dark:text-orange-300 hover:bg-orange-500/20"
-    : status === "Cancelled"
-    ? "bg-muted/50 border-muted-foreground/20 text-muted-foreground line-through hover:bg-muted"
-    : "bg-blue-500/10 border-blue-500/30 text-blue-800 dark:text-blue-300 hover:bg-blue-500/20";
+  const count = session.participantCount || 0;
+  const max = session.maxParticipants || 6;
+  const spotsLeft = max - count;
+  const isFull = spotsLeft <= 0;
 
-  const label = session.sport
-    ? `${getSportEmoji(session.sport)} ${session.sport}`
-    : session.service?.name || "Session";
+  const bgClass = status === "Open"
+    ? "bg-green-500/10 border-green-500/30 hover:bg-green-500/20"
+    : status === "Full"
+    ? "bg-orange-500/10 border-orange-500/30 hover:bg-orange-500/20"
+    : status === "Cancelled"
+    ? "bg-muted/50 border-muted-foreground/20 hover:bg-muted"
+    : "bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20";
+
+  const sport = (session.sport || session.service?.name || "Session").toUpperCase();
+  // Show only the first segment of the location (before first comma) to keep it compact
+  const locationShort = session.location
+    ? session.location.split(",")[0].trim().toUpperCase()
+    : null;
+
+  const spotsLabel = status === "Cancelled"
+    ? "CANCELLED"
+    : isFull
+    ? "FULL"
+    : `${spotsLeft} OPEN`;
+
+  const spotsColor = status === "Cancelled"
+    ? "text-muted-foreground"
+    : isFull
+    ? "text-orange-600 dark:text-orange-400"
+    : "text-green-700 dark:text-green-400";
 
   return (
     <button
       onClick={onClick}
-      className={`w-full text-left text-xs px-1.5 py-0.5 rounded border truncate transition-colors cursor-pointer ${colorClass}`}
+      className={`w-full text-left px-1.5 py-1 rounded border transition-colors cursor-pointer ${bgClass}`}
       data-testid={`chip-session-${session.id}`}
     >
-      {label}
+      <p className="text-[10px] font-bold leading-tight truncate">{sport}</p>
+      {locationShort && (
+        <p className="text-[9px] text-muted-foreground leading-tight truncate mt-px">{locationShort}</p>
+      )}
+      <p className={`text-[9px] font-semibold leading-tight mt-px ${spotsColor}`}>{spotsLabel}</p>
     </button>
   );
 }
@@ -1349,7 +1372,7 @@ function MonthView({
               <div
                 key={di}
                 onClick={() => onDayClick(day)}
-                className={`min-h-[80px] p-1.5 border-r last:border-r-0 cursor-pointer transition-colors group
+                className={`min-h-[96px] p-1.5 border-r last:border-r-0 cursor-pointer transition-colors group
                   ${!isCurrentMonth ? "bg-muted/20" : ""}
                   ${isSelected ? "bg-primary/5 ring-1 ring-inset ring-primary/30" : "hover:bg-muted/40"}
                 `}
@@ -1473,16 +1496,26 @@ function MobileWeekView({
                   return (
                     <button
                       key={s.id}
-                      className="w-full flex items-center gap-2.5 text-left hover:bg-muted/50 rounded-md px-2 py-1.5 -mx-2 transition-colors"
+                      className="w-full flex items-start gap-2.5 text-left hover:bg-muted/50 rounded-md px-2 py-2 -mx-2 transition-colors"
                       onClick={() => onSessionClick(s)}
                       data-testid={`mobile-week-open-session-${s.id}`}
                     >
-                      <span className="text-lg leading-none shrink-0">{sEmoji || "📅"}</span>
+                      <span className="text-lg leading-none shrink-0 mt-0.5">{sEmoji || "📅"}</span>
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{s.sport || s.service?.name || "Session"}</p>
-                        <p className="text-xs text-muted-foreground">{format(sStart, "h:mm a")} · {cnt}/{mx} athletes</p>
+                        <p className="text-sm font-semibold truncate">{s.sport || s.service?.name || "Session"}</p>
+                        <p className="text-xs text-muted-foreground">{format(sStart, "h:mm a")} · {sLeft > 0 ? `${sLeft} spots left` : "Full"}</p>
+                        {s.location && (
+                          <p className="text-[11px] text-muted-foreground truncate flex items-center gap-1 mt-0.5">
+                            <span>📍</span> {s.location.split(",")[0].trim()}
+                          </p>
+                        )}
+                        {(s.skillLevel || s.ageRange) && (
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            {[s.skillLevel, s.ageRange ? `Ages ${s.ageRange}` : null].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
                       </div>
-                      <div className="shrink-0">{getStatusBadge(st, sLeft)}</div>
+                      <div className="shrink-0 mt-0.5">{getStatusBadge(st, sLeft)}</div>
                     </button>
                   );
                 })}

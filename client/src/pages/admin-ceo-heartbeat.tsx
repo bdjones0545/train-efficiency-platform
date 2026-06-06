@@ -213,7 +213,7 @@ export default function AdminCeoHeartbeatPage() {
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="text-xs text-muted-foreground mb-1">Last Heartbeat</div>
-            <div className="font-medium text-sm">{lastRun ? fmtTime(lastRun.startedAt) : "Never"}</div>
+            <div className="font-medium text-sm">{lastRun ? fmtTime(lastRun.startedAt) : "Not run yet"}</div>
             {lastRun && (
               <div className="text-xs text-muted-foreground mt-1">
                 {fmtMs(lastRun.durationMs)} • <span className={lastRun.status === "completed" ? "text-green-600" : "text-red-500"}>{lastRun.status}</span>
@@ -224,24 +224,24 @@ export default function AdminCeoHeartbeatPage() {
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="text-xs text-muted-foreground mb-1">Next Heartbeat</div>
-            <div className="font-medium text-sm">{status?.nextHeartbeatAt ? fmtTime(status.nextHeartbeatAt) : "—"}</div>
-            <div className="text-xs text-muted-foreground mt-1">Every 30 minutes</div>
+            <div className="font-medium text-sm">{status?.nextHeartbeatAt ? fmtTime(status.nextHeartbeatAt) : "Automatic"}</div>
+            <div className="text-xs text-muted-foreground mt-1">Runs every 30 minutes</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="text-xs text-muted-foreground mb-1">Agents Coordinated</div>
-            <div className="font-bold text-xl">{lastRun?.agentsCoordinated ?? 0}</div>
-            <div className="text-xs text-muted-foreground mt-1">{lastRun?.actionsEvaluated ?? 0} actions evaluated</div>
+            <div className="font-bold text-xl">{lastRun?.agentsCoordinated ?? "—"}</div>
+            <div className="text-xs text-muted-foreground mt-1">{lastRun ? `${lastRun.actionsEvaluated ?? 0} actions evaluated` : "Run heartbeat to see data"}</div>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4 pb-3">
             <div className="text-xs text-muted-foreground mb-1">Errors (last run)</div>
-            <div className={`font-bold text-xl ${(lastRun?.errorsEncountered ?? 0) > 0 ? "text-red-500" : "text-green-600"}`}>
-              {lastRun?.errorsEncountered ?? 0}
+            <div className={`font-bold text-xl ${(lastRun?.errorsEncountered ?? 0) > 0 ? "text-red-500" : lastRun ? "text-green-600" : "text-muted-foreground"}`}>
+              {lastRun ? (lastRun.errorsEncountered ?? 0) : "—"}
             </div>
-            <div className="text-xs text-muted-foreground mt-1">{lastRun?.actionsPendingApproval ?? 0} pending approval</div>
+            <div className="text-xs text-muted-foreground mt-1">{lastRun ? `${lastRun.actionsPendingApproval ?? 0} pending approval` : "No run data yet"}</div>
           </CardContent>
         </Card>
       </div>

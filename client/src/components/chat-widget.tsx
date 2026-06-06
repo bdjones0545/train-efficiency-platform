@@ -93,8 +93,66 @@ function CeoHomeTab({ onSwitchTab }: { onSwitchTab: (t: Tab) => void }) {
     successRate != null && `Heartbeat success rate: ${successRate}%.`,
   ].filter(Boolean) as string[];
 
+  // Compute the single best action for today
+  const bestAction: { title: string; description: string; cta: string; tab?: Tab } = (() => {
+    if (pendingApprovals > 0) {
+      return {
+        title: `Review ${pendingApprovals} pending approval${pendingApprovals !== 1 ? "s" : ""}`,
+        description: "AI agents are waiting for your sign-off before sending outreach or taking action.",
+        cta: "Open Approvals",
+        tab: "approvals",
+      };
+    }
+    const top = topPriorities[0];
+    if (top) {
+      return {
+        title: top.title || top.action || "Review top priority",
+        description: top.description || top.reason || "Your highest-priority item needs attention.",
+        cta: "View Details",
+      };
+    }
+    if (totalAgents > 0 && activeAgents === 0) {
+      return {
+        title: "Activate your AI workforce",
+        description: "No agents are currently running. Enable agents to start automating outreach and follow-ups.",
+        cta: "View Agents",
+        tab: "agents",
+      };
+    }
+    if (activeAgents < totalAgents) {
+      return {
+        title: `${totalAgents - activeAgents} agent${totalAgents - activeAgents !== 1 ? "s" : ""} available but idle`,
+        description: "Review and enable additional agents to expand your automation coverage.",
+        cta: "View Agents",
+        tab: "agents",
+      };
+    }
+    return {
+      title: "Operations look good",
+      description: `${activeAgents} agent${activeAgents !== 1 ? "s" : ""} running, no pending approvals. Check heartbeat for any background risks.`,
+      cta: "Ask CEO Agent",
+      tab: "chat",
+    };
+  })();
+
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Best Action Today */}
+      <div className="rounded-xl bg-gradient-to-br from-green-950/60 to-green-900/30 border border-green-700/50 p-4">
+        <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+          <Zap className="h-3 w-3" /> Best Action Today
+        </p>
+        <p className="text-sm font-semibold text-white leading-snug">{bestAction.title}</p>
+        <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">{bestAction.description}</p>
+        <button
+          onClick={() => bestAction.tab && onSwitchTab(bestAction.tab)}
+          className="mt-3 w-full py-2 rounded-lg bg-green-600 hover:bg-green-500 active:bg-green-700 text-white text-xs font-semibold transition-colors"
+          data-testid="button-best-action-today"
+        >
+          {bestAction.cta}
+        </button>
+      </div>
+
       {/* Workforce status */}
       <div>
         <p className="text-[10px] font-semibold text-green-400 uppercase tracking-widest mb-2">AI Workforce Status</p>

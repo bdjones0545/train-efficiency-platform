@@ -894,7 +894,7 @@ function AuditTab() {
           {/* Auto-Exec Metrics */}
           <Card className="p-3">
             <p className="text-xs font-semibold mb-2 flex items-center gap-1"><Zap className="h-3.5 w-3.5" /> Auto-Execution Performance</p>
-            <div className="grid grid-cols-3 gap-3 text-xs">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <div className="text-center">
                 <p className="text-lg font-bold text-primary" data-testid="text-audit-success-rate">{report.autoExecMetrics.successRate}%</p>
                 <p className="text-muted-foreground">Success Rate</p>

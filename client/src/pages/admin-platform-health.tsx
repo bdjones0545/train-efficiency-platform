@@ -225,7 +225,7 @@ function ErrorsTab() {
   return (
     <div className="space-y-4" data-testid="tab-errors">
       {data && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: "Total (24h)",   value: data.totalErrors24h,  color: "text-foreground" },
             { label: "Critical",      value: data.criticalErrors,  color: data.criticalErrors > 0 ? "text-rose-600 dark:text-rose-400" : "text-emerald-600 dark:text-emerald-400" },
@@ -461,7 +461,7 @@ function UxAuditTab() {
   return (
     <div className="space-y-4" data-testid="tab-ux">
       {data && (
-        <div className="grid grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
             { label: "Audit Score",  value: `${data.auditScore}/100`, color: data.auditScore >= 90 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400" },
             { label: "Pages Checked",value: data.totalChecked,         color: "text-primary" },

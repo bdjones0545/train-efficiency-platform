@@ -110,7 +110,7 @@ function GenerateDialog({ open, onClose, onCreated }: { open: boolean; onClose: 
         <div className="space-y-3 py-1">
           <Input placeholder="Client ID *" value={form.clientId} onChange={e => f("clientId", e.target.value)} data-testid="input-gen-client-id" />
           <Input placeholder="Retention Workflow ID (optional)" value={form.workflowId} onChange={e => f("workflowId", e.target.value)} data-testid="input-gen-workflow-id" />
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
             <Select value={form.purpose} onValueChange={v => f("purpose", v)}>
               <SelectTrigger data-testid="select-purpose"><SelectValue /></SelectTrigger>
               <SelectContent>{Object.entries(PURPOSE_LABELS).map(([v,l]) => <SelectItem key={v} value={v}>{l}</SelectItem>)}</SelectContent>
