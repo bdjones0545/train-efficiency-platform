@@ -29045,5 +29045,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerAutonomyTrustRoutes } = await import("./autonomy-trust-routes");
   await registerAutonomyTrustRoutes(app);
 
+  const { registerForecastRoutes } = await import("./forecast-routes");
+  await registerForecastRoutes(app);
+
   return httpServer;
 }

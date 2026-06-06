@@ -190,6 +190,7 @@ import AdminNotificationSettingsPage from "@/pages/admin-notification-settings";
 import AdminObsidianPage from "@/pages/admin-obsidian";
 import AdminAgentOutcomePage from "@/pages/admin-agent-outcome";
 import AdminAutonomyTrustPage from "@/pages/admin-autonomy-trust";
+import AdminForecastPage from "@/pages/admin-forecast";
 import AdminEmailAuditPage from "@/pages/admin-email-audit";
 import AdminCommunicationIntelligencePage from "@/pages/admin-communication-intelligence";
 
@@ -427,6 +428,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/obsidian" component={AdminObsidianPage} />
                   <Route path="/admin/agent-outcome" component={AdminAgentOutcomePage} />
                   <Route path="/admin/autonomy" component={AdminAutonomyTrustPage} />
+                  <Route path="/admin/forecast" component={AdminForecastPage} />
                   <Route path="/admin/email-audit" component={AdminEmailAuditPage} />
                   <Route path="/admin/communication-intelligence" component={AdminCommunicationIntelligencePage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
