@@ -1,0 +1,104 @@
+Integrate AgentMail into TrainEfficiency as a secure outbound/inbound agent email infrastructure layer.
+
+Goal:
+Add AgentMail API support so TrainEfficiency agents can send, receive, and manage dedicated agent inboxes like:
+
+- revenue@
+- hiring@
+- support@
+- scheduling@
+- operations@
+- ceo@
+
+Do not hardcode any credentials. Ask me to provide the necessary AgentMail API connection details through Replit Secrets.
+
+Required setup:
+1. Add environment variable support for:
+   - AGENTMAIL_API_KEY
+   - AGENTMAIL_BASE_URL
+   - AGENTMAIL_DEFAULT_FROM
+   - AGENTMAIL_WEBHOOK_SECRET if required
+   - AGENTMAIL_ORG_DOMAIN if required
+
+2. Create a backend service:
+   server/services/agentmail-service.ts
+
+It should include:
+   - sendAgentEmail()
+   - createOrVerifyInbox()
+   - listInboxes()
+   - getInboxMessages()
+   - replyFromAgentInbox()
+   - verifyAgentMailConnection()
+   - handleAgentMailWebhook()
+
+3. Add API routes:
+   server/agentmail-routes.ts
+
+Routes should be org-scoped and auth-gated:
+   - GET /api/agentmail/status
+   - GET /api/agentmail/inboxes
+   - POST /api/agentmail/inboxes/verify
+   - POST /api/agentmail/send
+   - GET /api/agentmail/messages
+   - POST /api/agentmail/reply
+   - POST /api/agentmail/webhook
+
+4. Integrate with existing TrainEfficiency agents:
+   - Revenue Agent uses revenue@
+   - Hiring/Employment Agent uses hiring@
+   - Scheduling Agent uses scheduling@
+   - Support/Client Success Agent uses support@
+   - CEO Heartbeat can route outbound summaries through ceo@ or operations@
+
+5. Add fallback logic:
+   If AgentMail is not configured, do not crash the agent system.
+   Return a clear status:
+   “AgentMail not configured. Add API credentials to Replit Secrets.”
+
+6. Add audit logging:
+   Every sent message should log:
+   - organizationId
+   - agent name
+   - inbox used
+   - recipient
+   - subject
+   - delivery status
+   - provider message id
+   - timestamp
+   - error message if failed
+
+Use existing database patterns. If a table is needed, create:
+   agent_mail_messages
+
+Fields:
+   id
+   organization_id
+   agent_name
+   inbox
+   to_email
+   from_email
+   subject
+   body_preview
+   provider_message_id
+   status
+   error_message
+   created_at
+   updated_at
+
+7. Add admin UI section:
+   Add an “AgentMail” settings/status panel inside the AI Workforce / Agent Ops area.
+
+It should show:
+   - connection status
+   - configured inboxes
+   - last sent messages
+   - failed messages
+   - button to test connection
+   - button to send test email
+
+8. Important:
+   Before writing implementation code, inspect the existing email, SendGrid, agent, organization, and auth patterns so this integration matches the current architecture.
+
+After inspection, tell me exactly which Replit Secrets I need to add and the format expected for each one.
+Then implement the integration.
