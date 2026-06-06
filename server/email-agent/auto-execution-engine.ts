@@ -499,6 +499,18 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
     reasoning: `Successfully auto-executed: ${execution.title}`,
   });
 
+  // Fire-and-forget: write agent decision to Obsidian organizational memory
+  import("../services/obsidian-service").then(({ writeAgentDecision }) => {
+    writeAgentDecision({
+      orgId,
+      actionType: eligibleAction.actionType,
+      title: execution.title || eligibleAction.actionType,
+      reasoning: `Auto-executed with confidence ${eligibleAction.confidenceScore ?? "—"}%. Action: ${eligibleAction.subject || eligibleAction.actionType}`,
+      confidence: eligibleAction.confidenceScore ?? undefined,
+      executedAt: new Date(),
+    }).catch(() => {});
+  }).catch(() => {});
+
   // Log to revenue outcome engine for attribution tracking
   try {
     const { logActionAsEvent } = await import("./revenue-outcome-engine");

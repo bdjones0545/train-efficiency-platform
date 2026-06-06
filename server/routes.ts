@@ -29029,6 +29029,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerSoftwareImprovementRoutes } = await import("./software-improvement-routes");
   await registerSoftwareImprovementRoutes(app, isAuthenticated, requireRole);
 
+  const { registerObsidianRoutes } = await import("./obsidian-routes");
+  registerObsidianRoutes(app);
+
   const { registerAgentMailRoutes } = await import("./agentmail-routes");
   await registerAgentMailRoutes(app, isAuthenticated, requireRole);
   const { registerAgentMailReplyRoutes } = await import("./agentmail-reply-routes");

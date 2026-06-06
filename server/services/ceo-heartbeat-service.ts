@@ -784,6 +784,19 @@ export async function runHeartbeatCycle(opts: {
     await releaseJobLock(lockKey);
   }
 
+  // Fire-and-forget: write heartbeat report to Obsidian organizational memory
+  import("./obsidian-service").then(({ writeHeartbeatReport }) => {
+    writeHeartbeatReport({
+      orgId,
+      runId: heartbeatId,
+      priorities,
+      agentsCoordinated,
+      prioritiesGenerated,
+      errors: allErrors,
+      durationMs: Date.now() - startTime,
+    }).catch(() => {});
+  }).catch(() => {});
+
   return { success: allErrors.length === 0, runId: heartbeatId, priorities, errors: allErrors };
 }
 

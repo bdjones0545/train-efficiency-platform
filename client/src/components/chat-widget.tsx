@@ -5,7 +5,7 @@ import {
   Clock, Zap, Users, ListTodo, Bell, Settings, MessageSquare,
   TrendingUp, Flame, RefreshCw, ChevronRight, Shield, ToggleLeft,
   ToggleRight, XCircle, Loader2, Home, BarChart3, Target,
-  Mail, CalendarCheck, Briefcase,
+  Mail, CalendarCheck, Briefcase, BookOpen, FileText, Search,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
@@ -54,6 +54,45 @@ function StreamingBubble({ content, isStreaming, showThinking }: {
       ))}
       {isStreaming && <span className="chat-cursor" aria-hidden="true" />}
     </>
+  );
+}
+
+// ─── Obsidian Status Card ─────────────────────────────────────────────────────
+
+function ObsidianStatusCard() {
+  const { data } = useQuery<any>({
+    queryKey: ["/api/obsidian/status"],
+    queryFn: () => fetch("/api/obsidian/status", { credentials: "include" }).then(r => r.json()),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  if (!data?.configured) return null;
+
+  const connected = data?.connected ?? false;
+  const lastSync = data?.lastSyncAt
+    ? new Date(data.lastSyncAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+    : "—";
+
+  return (
+    <div className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3">
+      <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+        <BookOpen className="h-3 w-3" /> Obsidian Memory
+      </p>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+        {[
+          { label: "Status",       value: connected ? "Connected" : "Offline",          color: connected ? "text-green-400" : "text-red-400" },
+          { label: "Last Sync",    value: lastSync,                                      color: "text-zinc-300" },
+          { label: "Notes Today",  value: data?.notesCreatedToday ?? 0,                 color: "text-purple-400" },
+          { label: "Searches",     value: data?.searchesPerformed ?? 0,                 color: "text-blue-400" },
+        ].map(row => (
+          <div key={row.label} className="flex items-baseline gap-1.5 text-xs min-w-0">
+            <span className="text-zinc-500 shrink-0">{row.label}:</span>
+            <span className={`${row.color} truncate font-medium`}>{row.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -198,6 +237,9 @@ function CeoHomeTab({ onSwitchTab }: { onSwitchTab: (t: Tab) => void }) {
           </div>
         ))}
       </div>
+
+      {/* Obsidian Memory Status */}
+      <ObsidianStatusCard />
 
       {/* Executive summary */}
       {summaryItems.length > 0 && (
