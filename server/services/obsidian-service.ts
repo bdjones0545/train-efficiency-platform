@@ -48,6 +48,8 @@ export const OBSIDIAN_FOLDERS = {
   sops:                    "SOPs",
   dailyReports:            "Daily Reports",
   weeklyReports:           "Weekly Reports",
+  ceoReviews:              "CEO Reviews",
+  playbooks:               "Playbooks",
 } as const;
 
 export type ObsidianNoteType =
@@ -64,6 +66,8 @@ export type ObsidianNoteType =
   | "sop"
   | "daily_report"
   | "weekly_report"
+  | "ceo_review"
+  | "playbook"
   | "manual";
 
 export interface NoteMetadata {
@@ -852,4 +856,107 @@ export async function searchSoftwareKB(
     context: r.matches?.[0]?.context || "",
     score: r.score,
   }));
+}
+
+/**
+ * CEO Daily Review: Writes what-worked / what-failed / what-repeat / what-stop
+ * to the CEO Reviews folder for human-readable retrospectives.
+ */
+export async function writeCEOReview(opts: {
+  whatWorked: string;
+  whatFailed: string;
+  whatRepeat: string;
+  whatStop: string;
+  outcomesAnalyzed: number;
+  orgId?: string;
+}): Promise<boolean> {
+  const { whatWorked, whatFailed, whatRepeat, whatStop, outcomesAnalyzed, orgId } = opts;
+  const dateStr = today();
+  const title = `${dateStr} CEO Review`;
+
+  const entry = `
+## Daily Outcome Review — ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+
+> Based on ${outcomesAnalyzed} agent decisions analyzed
+
+### ✅ What Worked
+${whatWorked}
+
+### ❌ What Failed
+${whatFailed}
+
+### 🔁 What To Repeat
+${whatRepeat}
+
+### 🛑 What To Stop
+${whatStop}
+
+---
+`;
+
+  const meta: NoteMetadata = {
+    type: "ceo_review",
+    agent: "CEO Review Engine",
+    department: "executive",
+    organizationId: orgId,
+    severity: "info",
+    tags: ["ceo", "review", "outcomes", "daily"],
+  };
+
+  return appendToNote(OBSIDIAN_FOLDERS.ceoReviews, title, entry, meta);
+}
+
+/**
+ * Organizational Playbook: Writes a promoted high-performing pattern as a
+ * structured SOP to the Playbooks folder.
+ */
+export async function writePlaybook(opts: {
+  title: string;
+  description?: string;
+  sourceLearning: string;
+  patternType?: string;
+  successRate: number;
+  evidenceCount: number;
+  triggerCondition?: string;
+  actions?: string;
+  expectedOutcome?: string;
+  orgId?: string;
+}): Promise<boolean> {
+  const { title, description, sourceLearning, patternType, successRate, evidenceCount, triggerCondition, actions, expectedOutcome, orgId } = opts;
+  const dateStr = today();
+  const noteTitle = `${dateStr} ${title}`;
+
+  const entry = `
+## ${title}
+
+> **Promoted:** ${new Date().toLocaleDateString()} | **Type:** ${patternType ?? "General"} | **Success Rate:** ${successRate}% | **Evidence:** ${evidenceCount} cases
+
+### Description
+${description ?? sourceLearning}
+
+### Source Pattern
+${sourceLearning}
+
+### Trigger Condition
+${triggerCondition ?? "Identified automatically from recurring high-success recommendations."}
+
+### Actions
+${actions ?? "Follow the pattern as described above."}
+
+### Expected Outcome
+${expectedOutcome ?? `Based on ${evidenceCount} historical cases with ${successRate}% average success score.`}
+
+---
+`;
+
+  const meta: NoteMetadata = {
+    type: "playbook",
+    agent: "Playbook Generator",
+    department: "operations",
+    organizationId: orgId,
+    severity: "info",
+    tags: ["playbook", "sop", "promoted", patternType ?? "general"],
+  };
+
+  return appendToNote(OBSIDIAN_FOLDERS.playbooks, noteTitle, entry, meta);
 }

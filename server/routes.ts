@@ -29039,5 +29039,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerAgentMailFollowupRoutes } = await import("./agentmail-followup-routes");
   await registerAgentMailFollowupRoutes(app, isAuthenticated, requireRole);
 
+  const { registerAgentOutcomeAttributionRoutes } = await import("./agent-outcome-attribution-routes");
+  await registerAgentOutcomeAttributionRoutes(app);
+
   return httpServer;
 }
