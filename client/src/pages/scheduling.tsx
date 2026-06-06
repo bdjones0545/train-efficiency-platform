@@ -150,6 +150,7 @@ function getHeightPx(start: Date, end: Date): number {
 // ─── Color Legend ─────────────────────────────────────────────────────────────
 
 function ColorLegend() {
+  const [showLegend, setShowLegend] = useState(false);
   const items = [
     { label: "Group", color: "bg-green-500" },
     { label: "1-on-1", color: "bg-blue-500" },
@@ -160,13 +161,25 @@ function ColorLegend() {
     { label: "Cancelled", color: "bg-red-400" },
   ];
   return (
-    <div className="flex flex-wrap gap-x-4 gap-y-1.5">
-      {items.map(i => (
-        <div key={i.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <span className={`w-2.5 h-2.5 rounded-full ${i.color} shrink-0`} />
-          {i.label}
-        </div>
-      ))}
+    <div>
+      {/* Mobile: collapsible toggle */}
+      <button
+        className="flex md:hidden items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        onClick={() => setShowLegend(v => !v)}
+      >
+        <Eye className="h-3 w-3" />
+        Legend
+        <ChevronDown className={`h-3 w-3 transition-transform ${showLegend ? "rotate-180" : ""}`} />
+      </button>
+      {/* Legend items — always on desktop, toggled on mobile */}
+      <div className={`flex flex-wrap gap-x-4 gap-y-1.5 ${showLegend ? "mt-2" : "hidden"} md:flex md:mt-0`}>
+        {items.map(i => (
+          <div key={i.label} className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <span className={`w-2.5 h-2.5 rounded-full ${i.color} shrink-0`} />
+            {i.label}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -221,7 +234,7 @@ function MetricsDashboard({ bookings }: { bookings: BookingWithDetails[] }) {
       testId: "metric-week-sessions",
     },
     {
-      label: "Confirmed Upcoming",
+      label: "Confirmed",
       value: confirmedCount,
       icon: CheckCircle,
       color: "text-green-600 dark:text-green-400",
@@ -229,7 +242,7 @@ function MetricsDashboard({ bookings }: { bookings: BookingWithDetails[] }) {
       testId: "metric-confirmed",
     },
     {
-      label: "Revenue This Week",
+      label: "Week Revenue",
       value: `$${revenueScheduled.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`,
       icon: DollarSign,
       color: "text-emerald-600 dark:text-emerald-400",
@@ -242,14 +255,14 @@ function MetricsDashboard({ bookings }: { bookings: BookingWithDetails[] }) {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {metrics.map(m => (
         <Card key={m.label} className="border-0 shadow-sm" data-testid={m.testId}>
-          <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className={`p-2 rounded-lg ${m.bg}`}>
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              <div className={`p-1.5 sm:p-2 rounded-lg ${m.bg} shrink-0`}>
                 <m.icon className={`h-4 w-4 ${m.color}`} />
               </div>
               <div className="min-w-0">
-                <p className="text-xs text-muted-foreground truncate">{m.label}</p>
-                <p className={`text-xl font-bold ${m.color}`} data-testid={`${m.testId}-value`}>{m.value}</p>
+                <p className="text-xs text-muted-foreground leading-tight">{m.label}</p>
+                <p className={`text-lg sm:text-xl font-bold ${m.color} leading-tight`} data-testid={`${m.testId}-value`}>{m.value}</p>
               </div>
             </div>
           </CardContent>
@@ -505,6 +518,117 @@ function DayView({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+// ─── Mobile Week View (stacked day cards) ────────────────────────────────────
+
+function MobileWeekView({
+  bookings,
+  currentWeek,
+  onEventClick,
+  onAddSession,
+}: {
+  bookings: BookingWithDetails[];
+  currentWeek: Date;
+  onEventClick: (b: BookingWithDetails) => void;
+  onAddSession: () => void;
+}) {
+  const days = useMemo(() => {
+    const start = startOfWeek(currentWeek, { weekStartsOn: 0 });
+    return Array.from({ length: 7 }, (_, i) => addDays(start, i));
+  }, [currentWeek]);
+
+  return (
+    <div className="space-y-2">
+      {days.map(day => {
+        const dayBookings = bookings
+          .filter(b => isSameDay(new Date(b.startAt), day))
+          .sort((a, b) => new Date(a.startAt).getTime() - new Date(b.startAt).getTime());
+        const confirmed = dayBookings.filter(b => b.status === "CONFIRMED").length;
+        const pending = dayBookings.filter(b => b.status === "PENDING").length;
+        const isCurrent = isToday(day);
+
+        return (
+          <div
+            key={day.toISOString()}
+            className={`rounded-lg border overflow-hidden ${isCurrent ? "border-primary/50" : "border-border"}`}
+            data-testid={`mobile-week-day-${format(day, "yyyy-MM-dd")}`}
+          >
+            {/* Day header */}
+            <div className={`flex items-center justify-between px-3 py-2 ${isCurrent ? "bg-primary/10" : "bg-muted/40"}`}>
+              <div className="flex items-center gap-2">
+                <span className={`text-[11px] font-bold tracking-wide ${isCurrent ? "text-primary" : "text-muted-foreground"}`}>
+                  {format(day, "EEE").toUpperCase()}
+                </span>
+                <span className={`text-sm font-semibold ${isCurrent ? "text-primary" : "text-foreground"}`}>
+                  {format(day, "MMM d")}
+                </span>
+                {isCurrent && (
+                  <Badge className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground leading-none">Today</Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-1 text-xs">
+                {dayBookings.length === 0 ? (
+                  <span className="text-muted-foreground/60">No sessions</span>
+                ) : (
+                  <>
+                    <span className="text-muted-foreground">{dayBookings.length} session{dayBookings.length !== 1 ? "s" : ""}</span>
+                    {confirmed > 0 && <span className="text-green-600 dark:text-green-400 font-medium">· {confirmed} confirmed</span>}
+                    {pending > 0 && <span className="text-yellow-600 dark:text-yellow-400 font-medium">· {pending} pending</span>}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* Sessions list */}
+            <div className="px-3 py-2 space-y-1">
+              {dayBookings.length === 0 ? (
+                <p className="text-xs text-muted-foreground/60 italic py-0.5">No sessions scheduled</p>
+              ) : (
+                dayBookings.map(b => {
+                  const start = new Date(b.startAt);
+                  const color = getEventColor(b);
+                  return (
+                    <button
+                      key={b.id}
+                      className="w-full flex items-center gap-2 text-left hover:bg-muted/50 rounded-md px-2 py-1.5 transition-colors -mx-2"
+                      onClick={() => onEventClick(b)}
+                      data-testid={`mobile-week-event-${b.id}`}
+                    >
+                      <span className={`w-2 h-2 rounded-full shrink-0 ${color.bg}`} />
+                      <span className="text-xs text-muted-foreground shrink-0 w-[52px]">{format(start, "h:mm a")}</span>
+                      <span className="text-sm font-medium truncate flex-1 min-w-0">{b.service?.name || "Session"}</span>
+                      {b.client && (
+                        <span className="text-xs text-muted-foreground truncate hidden sm:block max-w-[120px]">
+                          {b.client.firstName} {b.client.lastName}
+                        </span>
+                      )}
+                      <Badge
+                        variant="secondary"
+                        className={`text-[10px] h-4 px-1 leading-none shrink-0 ${STATUS_COLORS[b.status] || ""}`}
+                      >
+                        {b.status}
+                      </Badge>
+                    </button>
+                  );
+                })
+              )}
+              <Button
+                size="sm"
+                variant="ghost"
+                className="w-full h-7 mt-1 text-xs text-muted-foreground border border-dashed border-border/60 hover:border-primary/40 hover:text-primary"
+                onClick={onAddSession}
+                data-testid={`button-mobile-add-session-${format(day, "yyyy-MM-dd")}`}
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add Session
+              </Button>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1158,7 +1282,7 @@ export default function SchedulingPage() {
                   placeholder="Search client, coach, service..."
                   value={searchTerm}
                   onChange={e => setSearchTerm(e.target.value)}
-                  className="h-8 w-48 text-sm"
+                  className="h-8 w-full sm:w-48 text-sm"
                   data-testid="input-search-bookings"
                 />
                 <Select value={filterCoach} onValueChange={setFilterCoach}>
@@ -1239,7 +1363,17 @@ export default function SchedulingPage() {
         </Card>
       ) : view === "week" ? (
         <Card className="shadow-sm">
-          <CardContent className="p-4 overflow-y-auto" style={{ maxHeight: 700 }}>
+          {/* Mobile: stacked day cards */}
+          <CardContent className="p-3 md:hidden pb-20">
+            <MobileWeekView
+              bookings={filtered}
+              currentWeek={currentDate}
+              onEventClick={setSelectedEvent}
+              onAddSession={() => setCreateOpen(true)}
+            />
+          </CardContent>
+          {/* Desktop: time grid */}
+          <CardContent className="hidden md:block p-4 overflow-y-auto" style={{ maxHeight: 700 }}>
             <WeekView
               bookings={filtered}
               currentWeek={currentDate}

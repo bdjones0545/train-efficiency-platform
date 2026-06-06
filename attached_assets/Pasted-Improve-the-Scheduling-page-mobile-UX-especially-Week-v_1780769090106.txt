@@ -1,0 +1,113 @@
+Improve the Scheduling page mobile UX, especially Week view.
+
+Goal:
+Keep the powerful calendar system, but make mobile scheduling easier to read and use. On small screens, Week view should not behave like a cramped desktop calendar grid.
+
+Target page:
+Scheduling
+
+Current issue:
+The Week view uses a multi-column calendar grid on mobile. Sessions are squeezed, text truncates heavily, and the user has to visually scan tiny blocks. This is hard to use on phones.
+
+Requirements:
+
+1. Mobile Week View redesign
+On mobile only, replace the week grid with stacked day cards.
+
+Each day card should show:
+- Day name
+- Date
+- Total sessions
+- Confirmed / Pending count if available
+- Compact session list
+
+Example:
+
+MON Jun 1
+4 sessions · 4 confirmed
+
+8:00 AM — 1:1 S&C Session
+9:00 AM — 1:1 S&C Session
+11:00 AM — Semi-Private
+
+[Add Session]
+
+If no sessions:
+MON Jun 1
+No sessions
+
+2. Keep desktop week grid
+On tablet/desktop, keep the current weekly grid.
+
+Breakpoint suggestion:
+- mobile: stacked day cards below md
+- desktop: calendar grid md and above
+
+3. Improve session cards on mobile
+Session rows should show:
+- time
+- session type
+- client/team name
+- status dot or badge
+
+Avoid heavy truncation.
+
+4. View switcher
+Current Day / Week / Month / Agenda switcher is good.
+Keep it.
+
+5. KPI cards
+Current KPI cards are useful but large.
+On mobile:
+- use 2x2 grid as current
+- reduce padding slightly
+- ensure labels do not truncate awkwardly
+Change truncated labels like:
+- "Confirmed Upc..."
+- "Revenue This W..."
+to:
+- "Confirmed"
+- "Week Revenue"
+
+6. Filter legend
+The legend takes up space.
+On mobile:
+- collapse legend behind "Legend" or move it into Filters
+- keep only active filters visible
+
+7. Floating agent button overlap
+The green floating agent button overlaps sessions on the right side.
+On calendar-heavy pages:
+- move it slightly higher/lower if needed
+- or reduce size on mobile
+- or add bottom/right padding so it does not cover session cards
+
+8. Month view mobile
+If Month view already works, keep it.
+But make sure cells are tap-friendly and do not overflow.
+
+9. Agenda view
+Make Agenda the preferred mobile-friendly list view:
+- group sessions by day
+- show time, client/team, type, status
+- add quick actions
+
+10. Empty states
+Keep compact.
+No giant empty cards.
+
+11. Deliverables
+After implementation summarize:
+- files changed
+- mobile week view changes
+- desktop behavior preserved
+- KPI label fixes
+- legend/filter improvements
+- floating button overlap fix
+- Agenda improvements if changed
+
+Important:
+Do not remove Day / Week / Month / Agenda views.
+Do not remove filters.
+Do not remove existing booking creation or session editing.
+Only improve responsive behavior and readability.
