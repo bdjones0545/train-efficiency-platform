@@ -681,6 +681,7 @@ function SessionDetailModal({
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showJoinDialog, setShowJoinDialog] = useState(false);
   const [joinParticipantNames, setJoinParticipantNames] = useState<string[]>([""]);
+  const [showDescription, setShowDescription] = useState(false);
 
   const { data: participants, isLoading: participantsLoading } = useQuery<ParticipantWithUser[]>({
     queryKey: ["/api/bookings", session?.id, "participants"],
@@ -797,11 +798,16 @@ function SessionDetailModal({
   return (
     <>
       <Dialog open={!!session} onOpenChange={open => { if (!open) onClose(); }}>
-        <DialogContent className="max-w-lg max-h-[90vh] flex flex-col p-0" data-testid="modal-session-detail">
-          <DialogHeader className="px-6 pt-6 pb-4 border-b">
+        <DialogContent
+          className="w-full sm:max-w-lg max-h-[85dvh] sm:max-h-[90dvh] flex flex-col p-0 gap-0 sm:rounded-lg rounded-t-2xl fixed bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 translate-y-0 sm:translate-x-[-50%] left-0 sm:left-1/2"
+          data-testid="modal-session-detail"
+        >
+          {/* ── Sticky header ─────────────────────────────────────────── */}
+          <div className="shrink-0 px-5 pt-5 pb-4 border-b">
+            {/* drag handle on mobile */}
+            <div className="w-10 h-1 bg-muted-foreground/20 rounded-full mx-auto mb-4 sm:hidden" />
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                {/* Sport — primary, largest */}
                 {session.sport ? (
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-2xl leading-none" aria-hidden="true">{getSportEmoji(session.sport)}</span>
@@ -814,7 +820,6 @@ function SessionDetailModal({
                     {session.service?.name || "Group Session"}
                   </DialogTitle>
                 )}
-                {/* Service name as subtitle when sport is shown */}
                 {session.sport && session.service?.name && (
                   <p className="text-sm text-muted-foreground mb-1">{session.service.name}</p>
                 )}
@@ -830,156 +835,190 @@ function SessionDetailModal({
                 </Button>
               )}
             </div>
-          </DialogHeader>
+          </div>
 
-          <ScrollArea className="flex-1 px-6">
-            <div className="py-4 space-y-4">
-              {session.groupDescription && (
-                <p className="text-sm text-muted-foreground leading-relaxed" data-testid={`text-group-desc-${session.id}`}>
-                  {session.groupDescription}
-                </p>
-              )}
+          {/* ── Scrollable body — native scroll for iOS Safari ─────────── */}
+          <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-4" style={{ WebkitOverflowScrolling: "touch" }}>
 
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex items-start gap-2 text-sm">
-                  <Calendar className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="font-medium">{format(startDate, "EEEE, MMM d")}</p>
-                    <p className="text-muted-foreground text-xs">{format(startDate, "yyyy")}</p>
-                  </div>
-                </div>
-                <div className="flex items-start gap-2 text-sm">
-                  <Clock className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                  <div>
-                    <p className="font-medium">{format(startDate, "h:mm a")} – {format(endDate, "h:mm a")}</p>
-                    <p className="text-muted-foreground text-xs">{duration}</p>
-                  </div>
-                </div>
-                {session.location && (
-                  <div className="flex items-start gap-2 text-sm col-span-2">
-                    <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                    <p data-testid={`text-session-location-${session.id}`}>{session.location}</p>
-                  </div>
+            {/* 1. Skill + Age chips */}
+            {(session.skillLevel || session.ageRange) && (
+              <div className="flex flex-wrap gap-2">
+                {session.skillLevel && (
+                  <Badge variant="outline" className="text-xs" data-testid={`badge-skill-level-${session.id}`}>{session.skillLevel}</Badge>
+                )}
+                {session.ageRange && (
+                  <Badge variant="outline" className="text-xs" data-testid={`badge-age-range-${session.id}`}>Ages {session.ageRange}</Badge>
+                )}
+                {session.sport && (
+                  <Badge variant="outline" className="text-xs" data-testid={`badge-sport-${session.id}`}>
+                    <Dumbbell className="h-3 w-3 mr-1" />{session.sport}
+                  </Badge>
                 )}
               </div>
+            )}
 
-              <div className="flex flex-wrap gap-2">
-                {session.sport && <Badge variant="outline" className="text-xs" data-testid={`badge-sport-${session.id}`}><Dumbbell className="h-3 w-3 mr-1" />{session.sport}</Badge>}
-                {session.ageRange && <Badge variant="outline" className="text-xs" data-testid={`badge-age-range-${session.id}`}>Ages: {session.ageRange}</Badge>}
-                {session.skillLevel && <Badge variant="outline" className="text-xs" data-testid={`badge-skill-level-${session.id}`}>{session.skillLevel}</Badge>}
+            {/* 2. Date + Time */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="flex items-start gap-2 text-sm">
+                <Calendar className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-medium">{format(startDate, "EEE, MMM d")}</p>
+                  <p className="text-muted-foreground text-xs">{format(startDate, "yyyy")}</p>
+                </div>
               </div>
+              <div className="flex items-start gap-2 text-sm">
+                <Clock className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                <div className="min-w-0">
+                  <p className="font-medium">{format(startDate, "h:mm a")} – {format(endDate, "h:mm a")}</p>
+                  {duration && <p className="text-muted-foreground text-xs">{duration}</p>}
+                </div>
+              </div>
+            </div>
 
-              <Separator />
+            {/* 3. Location — never truncate */}
+            {session.location && (
+              <div className="flex items-start gap-2 text-sm">
+                <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
+                <p className="break-words min-w-0" data-testid={`text-session-location-${session.id}`}>{session.location}</p>
+              </div>
+            )}
 
-              <div className="space-y-2">
+            {/* 4. Coach */}
+            {session.coach?.user && (
+              <div className="flex items-center gap-3">
+                <Avatar className="h-9 w-9 shrink-0">
+                  <AvatarImage src={session.coach.photoUrl || session.coach.user.profileImageUrl || undefined} />
+                  <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                    {(session.coach.user.firstName?.[0] || "").toUpperCase()}
+                    {(session.coach.user.lastName?.[0] || "").toUpperCase()}
+                  </AvatarFallback>
+                </Avatar>
+                <div>
+                  <p className="text-sm font-medium">Coach {session.coach.user.firstName} {session.coach.user.lastName}</p>
+                  <p className="text-xs text-muted-foreground">Lead Coach</p>
+                </div>
+              </div>
+            )}
+
+            {/* 5. Capacity bar */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between text-sm">
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <Users className="h-4 w-4" />
+                  <span>{session.participantCount || 0} / {session.maxParticipants || 6} Athletes</span>
+                </div>
+                <span className={`text-xs font-semibold ${isFull ? "text-orange-600 dark:text-orange-400" : spotsRemaining <= 2 ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400"}`}>
+                  {isFull ? "FULL" : `${spotsRemaining} Spot${spotsRemaining !== 1 ? "s" : ""} Available`}
+                </span>
+              </div>
+              <div className="w-full bg-muted rounded-full h-1.5">
+                <div
+                  className={`h-1.5 rounded-full transition-all ${isFull ? "bg-orange-500" : spotsRemaining <= 2 ? "bg-yellow-500" : "bg-green-500"}`}
+                  style={{ width: `${Math.min(100, ((session.participantCount || 0) / (session.maxParticipants || 6)) * 100)}%` }}
+                />
+              </div>
+            </div>
+
+            {/* 6. Price */}
+            {session.service && (
+              <>
+                <Separator />
                 <div className="flex items-center justify-between text-sm">
-                  <div className="flex items-center gap-2 text-muted-foreground">
-                    <Users className="h-4 w-4" />
-                    <span>Capacity</span>
-                  </div>
-                  <span className="font-medium">
-                    {session.participantCount || 0} / {session.maxParticipants || 6}
-                    {!isFull && <span className="text-muted-foreground text-xs ml-1">({spotsRemaining} left)</span>}
+                  <span className="text-muted-foreground">Price</span>
+                  <span className="font-semibold text-primary" data-testid={`text-session-price-${session.id}`}>
+                    {session.service.priceCents === 0 ? "FREE" : `$${(session.service.priceCents / 100).toFixed(2)} per person`}
                   </span>
                 </div>
-                <div className="w-full bg-muted rounded-full h-1.5">
-                  <div
-                    className={`h-1.5 rounded-full transition-all ${isFull ? "bg-orange-500" : "bg-green-500"}`}
-                    style={{ width: `${Math.min(100, ((session.participantCount || 0) / (session.maxParticipants || 6)) * 100)}%` }}
-                  />
+              </>
+            )}
+
+            {/* 7. Compatibility (athlete only) */}
+            {!isCoach && <CompatibilityBadge session={session} userId={userId} />}
+
+            {/* 8. Registered athletes */}
+            <Separator />
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Registered Athletes</p>
+              {participantsLoading ? (
+                <Skeleton className="h-8 w-full" />
+              ) : !participants || participants.length === 0 ? (
+                <p className="text-xs text-muted-foreground">No athletes registered yet — be the first!</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5" data-testid={`participants-list-${session.id}`}>
+                  {participants.map((p: any) => (
+                    <Badge key={p.id} variant="secondary" className="text-xs" data-testid={`badge-participant-${p.id}`}>
+                      {p.participantName || `${p.user?.firstName || ""} ${p.user?.lastName || ""}`.trim()}
+                    </Badge>
+                  ))}
                 </div>
-              </div>
-
-              {session.coach?.user && (
-                <>
-                  <Separator />
-                  <div className="flex items-center gap-3">
-                    <Avatar className="h-9 w-9">
-                      <AvatarImage src={session.coach.photoUrl || session.coach.user.profileImageUrl || undefined} />
-                      <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                        {(session.coach.user.firstName?.[0] || "").toUpperCase()}
-                        {(session.coach.user.lastName?.[0] || "").toUpperCase()}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <p className="text-sm font-medium">Coach {session.coach.user.firstName} {session.coach.user.lastName}</p>
-                      <p className="text-xs text-muted-foreground">Lead Coach</p>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {!isCoach && <CompatibilityBadge session={session} userId={userId} />}
-
-              {session.service && (
-                <>
-                  <Separator />
-                  <div className="flex items-center justify-between text-sm">
-                    <span className="text-muted-foreground">Price</span>
-                    <span className="font-semibold text-primary" data-testid={`text-session-price-${session.id}`}>
-                      {session.service.priceCents === 0 ? "FREE" : `$${(session.service.priceCents / 100).toFixed(2)} per person`}
-                    </span>
-                  </div>
-                </>
-              )}
-
-              <Separator />
-
-              <div className="space-y-2">
-                <p className="text-sm font-medium">Registered Athletes</p>
-                {participantsLoading ? (
-                  <Skeleton className="h-8 w-full" />
-                ) : !participants || participants.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">No athletes registered yet — be the first!</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5" data-testid={`participants-list-${session.id}`}>
-                    {participants.map((p: any) => (
-                      <Badge key={p.id} variant="secondary" className="text-xs" data-testid={`badge-participant-${p.id}`}>
-                        {p.participantName || `${p.user?.firstName || ""} ${p.user?.lastName || ""}`.trim()}
-                      </Badge>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {waitlist && waitlist.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium text-muted-foreground">Waitlist ({waitlist.length})</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {waitlist.map((w: any) => (
-                      <Badge key={w.id} variant="outline" className="text-xs text-muted-foreground">
-                        {w.participant_name || `${w.first_name || ""} ${w.last_name || ""}`.trim()}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {isCoach && (
-                <>
-                  <Separator />
-                  <SessionPerformanceBadge bookingId={session.id} />
-                  <RevenuePanel bookingId={session.id} />
-                </>
-              )}
-
-              {isCoach && isAfter(new Date(), endDate) && (
-                <>
-                  <Separator />
-                  <AttendancePanel bookingId={session.id} participants={participants} sessionId={session.id} />
-                </>
-              )}
-
-              {!isCoach && isAuthenticated && userId && (
-                <>
-                  <Separator />
-                  <AthleteRecommendationsPanel userId={userId} currentSessionId={session.id} />
-                </>
               )}
             </div>
-          </ScrollArea>
 
-          <div className="px-6 py-4 border-t space-y-2">
+            {waitlist && waitlist.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">Waitlist ({waitlist.length})</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {waitlist.map((w: any) => (
+                    <Badge key={w.id} variant="outline" className="text-xs text-muted-foreground">
+                      {w.participant_name || `${w.first_name || ""} ${w.last_name || ""}`.trim()}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 9. Description — collapsed by default */}
+            {session.groupDescription && (
+              <>
+                <Separator />
+                <div>
+                  <button
+                    onClick={() => setShowDescription(v => !v)}
+                    className="text-xs text-primary font-medium flex items-center gap-1 hover:underline"
+                    data-testid="button-toggle-description"
+                  >
+                    <ChevronRight className={`h-3.5 w-3.5 transition-transform ${showDescription ? "rotate-90" : ""}`} />
+                    {showDescription ? "Hide Description" : "Show Description"}
+                  </button>
+                  {showDescription && (
+                    <p className="mt-2 text-sm text-muted-foreground leading-relaxed" data-testid={`text-group-desc-${session.id}`}>
+                      {session.groupDescription}
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
+
+            {/* 10. Coach-only: Performance, Revenue, Attendance */}
+            {isCoach && (
+              <>
+                <Separator />
+                <SessionPerformanceBadge bookingId={session.id} />
+                <RevenuePanel bookingId={session.id} />
+              </>
+            )}
+
+            {isCoach && isAfter(new Date(), endDate) && (
+              <>
+                <Separator />
+                <AttendancePanel bookingId={session.id} participants={participants} sessionId={session.id} />
+              </>
+            )}
+
+            {/* 11. Athlete recommendations */}
+            {!isCoach && isAuthenticated && userId && (
+              <>
+                <Separator />
+                <AthleteRecommendationsPanel userId={userId} currentSessionId={session.id} />
+              </>
+            )}
+
+            {/* bottom padding so last item clears the sticky footer shadow */}
+            <div className="h-2" />
+          </div>
+
+          {/* ── Sticky footer ─────────────────────────────────────────── */}
+          <div className="shrink-0 px-5 py-4 border-t space-y-2 bg-background">
             {isCoach && <CoachFillCampaignButton session={session} />}
             {status === "Cancelled" ? (
               <Button className="w-full" disabled variant="outline">
