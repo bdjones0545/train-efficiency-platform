@@ -24,10 +24,10 @@ export async function createForecastTables(): Promise<void> {
       variance_low     NUMERIC(14,2) DEFAULT 0,
       variance_high    NUMERIC(14,2) DEFAULT 0,
       supporting_factors JSONB DEFAULT '[]',
-      generated_at     TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (org_id, horizon_days, metric, DATE(generated_at))
+      generated_at     TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS risk_signals (

@@ -12,3 +12,9 @@ id = "SewwMI9rIiicRYEF7v2US"
 uri = "file://COMMUNICATION_ARCHITECTURE_AUDIT.md"
 type = "text"
 title = "Communication Architecture Audit — 10 Phases"
+
+[[outputs]]
+id = "M4njZOUvkAOGRdIHbaIb2"
+uri = "file://attached_assets/TrainEfficiency-Full-System-Audit.md"
+type = "text"
+title = "TrainEfficiency — Full System Audit Report"
