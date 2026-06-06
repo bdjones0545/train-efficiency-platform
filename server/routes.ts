@@ -29054,5 +29054,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerComposioGmailDraftRoutes } = await import("./composio-gmail-draft-routes");
   await registerComposioGmailDraftRoutes(app, isAuthenticated, requireRole);
 
+  const { registerComposioSlackAlertRoutes } = await import("./composio-slack-alert-routes");
+  await registerComposioSlackAlertRoutes(app, isAuthenticated, requireRole);
+
   return httpServer;
 }

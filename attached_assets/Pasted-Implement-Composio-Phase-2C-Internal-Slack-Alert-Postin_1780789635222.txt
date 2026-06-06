@@ -1,0 +1,234 @@
+Implement Composio Phase 2C: Internal Slack Alert Posting.
+
+Goal:
+Allow TrainEfficiency agents to create and publish internal operational Slack alerts through Composio using the same governance pattern established in GitHub Phase 2A and Gmail Phase 2B.
+
+This phase is limited to internal notifications only.
+
+Do not implement Slack DMs.
+Do not implement external messaging.
+Do not implement user communication.
+Do not implement autonomous posting.
+Do not connect additional tools.
+
+Approved Agents
+
+Allow only:
+
+* CEO Heartbeat
+* Executive Agent
+* Software Improvement Agent
+* Revenue Agent (critical alerts only)
+
+All other agents should be blocked.
+
+Allowed Use Cases
+
+CEO Heartbeat:
+
+* Daily executive summary
+* Critical business risk alerts
+* Revenue anomaly alerts
+
+Software Improvement Agent:
+
+* Critical bug detected
+* System failure detected
+* High-severity engineering task created
+
+Revenue Agent:
+
+* High-value lead alert
+* Large deal stage change
+* Revenue recovery opportunity
+
+No marketing messages.
+No outreach.
+No customer-facing communication.
+
+Architecture
+
+Agent
+↓
+requestComposioAction()
+↓
+Permission Check
+↓
+Policy Engine
+↓
+Approval Queue
+↓
+Admin Approval
+↓
+Composio Slack Post
+↓
+Success Confirmation
+↓
+Status Update
+↓
+Logs
+↓
+Hermes Event
+
+Implementation Requirements
+
+1. Slack Action Registry
+
+Allow:
+
+* SLACK_SEND_CHANNEL_MESSAGE
+
+Keep all other Slack actions blocked.
+
+Require:
+
+* requiresApproval = true
+
+2. New Slack Alert Module
+
+Create:
+
+server/composio-slack-alert-routes.ts
+
+Endpoints:
+
+POST /api/composio/slack-alert/request
+GET /api/composio/slack-alert/pending
+GET /api/composio/slack-alert/all
+POST /api/composio/slack-alert/:id/approve
+POST /api/composio/slack-alert/:id/cancel
+
+3. Approval Workflow
+
+Request:
+
+* Validate approved agent
+* Validate channel
+* Validate alert type
+* Route through requestComposioAction()
+
+Only if:
+outcome === “queued_for_approval”
+
+Then:
+
+* Create pending record
+* Store approval queue id
+* Log event
+
+Otherwise:
+
+* No status update
+* Return error
+
+Approval:
+
+Admin only.
+
+Execute:
+
+executeComposioAction()
+
+Success:
+
+* Store Slack message ID
+* Store Slack channel ID
+* Mark alert_posted
+
+Failure:
+
+* Keep pending status
+* Store error message
+* Remain retryable
+* Return 502
+
+4. Logging
+
+Write to:
+
+* composio_action_log
+* agent_operating_timeline
+* communication_logs
+* composio_hermes_events
+
+Required metadata:
+
+* agent
+* alert_type
+* severity
+* channel
+* message preview
+* approval queue id
+
+5. Hermes Events
+
+Emit:
+
+source: “composio”
+tool: “SLACK”
+
+Results:
+
+* queued_for_approval
+* slack_alert_posted
+* failed_execution
+* cancelled
+
+Do not modify trust scores.
+Do not modify autonomy scores.
+
+6. UI
+
+Create:
+
+/admin/slack-alert-review
+
+Tabs:
+
+* Pending
+* Posted
+* Failed
+* Cancelled
+
+Show:
+
+* Agent
+* Severity
+* Channel
+* Alert Type
+* Message Preview
+* Approval Queue ID
+* Timestamp
+
+Actions:
+
+* Approve & Post
+* Cancel
+* Retry
+
+7. Tests
+
+Add comprehensive tests:
+
+* Slack action allowed
+* Other Slack actions blocked
+* Unauthorized agents blocked
+* Approval required
+* Request gate works
+* Post only after approval
+* Failed post remains retryable
+* Hermes events emitted
+* Logging written
+* Role enforcement works
+
+Acceptance Criteria
+
+* No autonomous Slack posting.
+* Internal alerts only.
+* Approval-gated workflow.
+* Failed execution remains retryable.
+* Full audit trail exists.
+* Hermes events emitted.
+* Existing systems untouched.
+* 100% tests pass.
+* Server runs clean.

@@ -187,6 +187,7 @@ export const COMPOSIO_TOOLS: Record<ComposioToolId, ComposioToolDefinition> = {
 
 export type ComposioAgentId =
   | "ceo_heartbeat"
+  | "executive_agent"
   | "revenue_agent"
   | "scheduling_agent"
   | "growth_agent"
@@ -211,11 +212,18 @@ export const AGENT_PERMISSIONS: Record<ComposioAgentId, AgentPermissionEntry> = 
     description: "Orchestrates daily business intelligence across all systems",
     allowedTools: ["GMAIL", "GOOGLECALENDAR", "SLACK", "GOOGLESHEETS"],
   },
+  executive_agent: {
+    agentId: "executive_agent",
+    displayName: "Executive Agent",
+    description: "Sends internal executive and operational Slack alerts (Phase 2C)",
+    allowedTools: ["SLACK"],
+  },
   revenue_agent: {
     agentId: "revenue_agent",
     displayName: "Revenue Agent",
     description: "Manages revenue recovery, deal pipeline, and prospect outreach",
-    allowedTools: ["GMAIL", "GOOGLECALENDAR"],
+    // Phase 2C: SLACK added for critical revenue alerts (approval-required)
+    allowedTools: ["GMAIL", "GOOGLECALENDAR", "SLACK"],
   },
   scheduling_agent: {
     agentId: "scheduling_agent",
@@ -233,7 +241,8 @@ export const AGENT_PERMISSIONS: Record<ComposioAgentId, AgentPermissionEntry> = 
     agentId: "software_improvement_agent",
     displayName: "Software Improvement Agent",
     description: "Monitors code quality, issues, and engineering health",
-    allowedTools: ["GITHUB"],
+    // Phase 2C: SLACK added for critical engineering alerts (approval-required)
+    allowedTools: ["GITHUB", "SLACK"],
   },
   email_agent: {
     agentId: "email_agent",
