@@ -1,0 +1,297 @@
+TRAIN EFFICIENCY — GMAIL vs AGENTMAIL AUTHORITY AUDIT
+
+Objective
+
+Perform a complete audit of all communication systems across the TrainEfficiency codebase.
+
+The purpose of this audit is to eliminate overlap, conflicting ownership, duplicate follow-ups, duplicate notifications, conflicting agents, and communication paths that bypass human approval.
+
+This is an architecture audit only.
+
+Do not modify code until the audit is complete.
+
+⸻
+
+PHASE 1 — DISCOVER ALL COMMUNICATION SYSTEMS
+
+Inspect the entire codebase and identify every service, route, cron, workflow, agent, tool, integration, automation, or background process that can:
+
+* Read email
+* Send email
+* Generate email drafts
+* Create follow-ups
+* Create notifications
+* Create attention items
+* Create tasks
+* Create outreach
+* Trigger communication workflows
+* Use Gmail
+* Use AgentMail
+* Use SendGrid
+* Use Google Calendar
+* Use Google Contacts
+* Use CRM-related communication
+
+Include:
+
+* CEO Heartbeat
+* Executive Agent
+* Revenue Agent
+* Growth Agent
+* Scheduling Agent
+* Retention Agent
+* Client Success Agent
+* Hiring Agent
+* Agent Action Executor
+* Follow-Up Cron
+* Business Brain
+* Workflow Queue
+* Workflow Jobs
+* Workflow Automations
+* Gmail integrations
+* AgentMail integrations
+* SendGrid integrations
+* Notification systems
+* Attention Inbox
+* Timeline systems
+
+Produce a complete inventory.
+
+⸻
+
+PHASE 2 — GMAIL OWNERSHIP AUDIT
+
+Identify every Gmail-related component.
+
+For each component provide:
+
+Component Name
+File Path
+Purpose
+Reads Gmail?
+Sends Gmail?
+Creates Drafts?
+Auto Sends?
+Requires Approval?
+Creates Follow-Ups?
+Creates Attention Items?
+Creates Timeline Events?
+Uses Calendar?
+Uses Contacts?
+
+Create a table.
+
+⸻
+
+PHASE 3 — AGENTMAIL OWNERSHIP AUDIT
+
+Identify every AgentMail-related component.
+
+For each component provide:
+
+Component Name
+File Path
+Purpose
+Reads AgentMail?
+Sends AgentMail?
+Creates Drafts?
+Auto Sends?
+Requires Approval?
+Creates Follow-Ups?
+Creates Attention Items?
+Creates Timeline Events?
+
+Create a table.
+
+⸻
+
+PHASE 4 — SENDGRID AUDIT
+
+Identify every SendGrid usage.
+
+For each:
+
+File
+Purpose
+Email Type
+Trigger
+Approval Required?
+Auto Send?
+Risk Level
+
+Examples:
+
+* booking confirmations
+* attendance emails
+* lead emails
+* applicant emails
+* system notifications
+
+Create a complete inventory.
+
+⸻
+
+PHASE 5 — AUTHORITY MATRIX
+
+Create a definitive communication ownership matrix.
+
+For every communication category determine:
+
+PRIMARY OWNER
+SECONDARY OWNER
+NO OWNER
+
+Categories:
+
+New Leads
+Pricing Questions
+Team Training Leads
+Employment Applicants
+Scheduling Requests
+Reschedules
+Cancellations
+Support Tickets
+Billing Issues
+Bug Reports
+Coach Recruiting
+Partnership Requests
+Vendor Communication
+Calendar Invites
+Internal Staff Communication
+Executive Escalations
+Parent Questions
+Athlete Questions
+Customer Retention
+Renewal Outreach
+Follow-Ups
+Mass Notifications
+System Alerts
+
+Output as a matrix.
+
+⸻
+
+PHASE 6 — DUPLICATE EXECUTION AUDIT
+
+Find every case where more than one system can perform the same action.
+
+Examples:
+
+Gmail Follow-Up + AgentMail Follow-Up
+Revenue Agent + Gmail Agent
+SendGrid + AgentMail
+Duplicate Attention Items
+Duplicate Timeline Events
+Duplicate Lead Creation
+Duplicate Applicant Creation
+
+For each duplication:
+
+Source A
+Source B
+Risk Level
+Possible Outcome
+Recommended Owner
+
+Create a report.
+
+⸻
+
+PHASE 7 — APPROVAL ENFORCEMENT AUDIT
+
+Verify every outbound communication path.
+
+Determine:
+
+Can it send automatically?
+Can it bypass approval?
+Can it bypass Attention Inbox?
+Can it bypass Reply Queue?
+Can it bypass Follow-Up Queue?
+Can it bypass AgentMail review?
+
+Highlight every risk.
+
+Severity levels:
+
+Critical
+High
+Medium
+Low
+
+⸻
+
+PHASE 8 — COMMUNICATION FLOW DIAGRAM
+
+Generate an architecture diagram showing:
+
+Gmail
+AgentMail
+SendGrid
+Attention Inbox
+Reply Queue
+Follow-Up Queue
+CEO Heartbeat
+Executive Agent
+Revenue Agent
+Scheduling Agent
+Support Agent
+Hiring Agent
+Workflow Queue
+
+Show:
+
+Inbound paths
+Outbound paths
+Approval paths
+Escalation paths
+
+⸻
+
+PHASE 9 — RECOMMENDED FUTURE STATE
+
+Based on the actual codebase:
+
+Recommend:
+
+What Gmail should own
+What AgentMail should own
+What SendGrid should own
+What CEO Heartbeat should own
+
+Goal:
+
+Single source of truth.
+
+No duplicate ownership.
+
+No overlapping follow-up systems.
+
+No overlapping outreach systems.
+
+No overlapping notification systems.
+
+⸻
+
+PHASE 10 — EXECUTIVE SUMMARY
+
+Provide:
+
+1. Communication systems discovered
+2. Major risks
+3. Duplicate systems found
+4. Approval vulnerabilities
+5. Recommended ownership structure
+6. Recommended code changes
+7. Recommended deprecations
+8. Final architecture score (1–10)
+
+Important:
+
+This is an audit only.
+
+Do not change code.
+
+Do not implement fixes.
+
+Inspect everything and produce a complete report first.
