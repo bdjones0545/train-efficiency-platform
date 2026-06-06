@@ -29042,5 +29042,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerAgentOutcomeAttributionRoutes } = await import("./agent-outcome-attribution-routes");
   await registerAgentOutcomeAttributionRoutes(app);
 
+  const { registerAutonomyTrustRoutes } = await import("./autonomy-trust-routes");
+  await registerAutonomyTrustRoutes(app);
+
   return httpServer;
 }
