@@ -1,0 +1,267 @@
+Open Group Sessions UX Enhancement — Sport-First Discovery Model
+
+Objective:
+Redesign Open Group Sessions around how athletes and parents actually search for training opportunities. Preserve all existing APIs, functionality, permissions, booking logic, filters, registration flows, waitlists, and session management. This is a UX/UI enhancement only.
+
+PHASE 1 — SESSION CARD INFORMATION HIERARCHY
+
+Current issue:
+Cards prioritize session type ("Semi-Private Session") instead of the information users care about most.
+
+Replace current hierarchy with:
+
+PRIMARY HEADER
+🏀 Basketball
+⚽ Soccer
+🏈 Football
+🏃 Track & Field
+⚾ Baseball
+🥍 Lacrosse
+
+The sport should be the largest and most prominent element on the card.
+
+SECONDARY DETAILS
+🕒 11:00 AM – 12:00 PM
+📍 Bluffton High School
+👤 Coach Hunter Thaxton
+
+Location must never truncate.
+Replace:
+"Bluffton Hig..."
+"Oscar Frazie..."
+
+With:
+📍 Bluffton High School
+📍 Oscar Frazier Park
+
+Allow wrapping to two lines if needed.
+
+SKILL + AGE GROUP CHIPS
+
+Examples:
+
+[ Advanced ]
+[ Ages 14–18 ]
+
+[ Beginner ]
+[ Ages 8–12 ]
+
+CAPACITY DISPLAY
+
+Replace:
+
+0/6
+6 left
+
+With:
+
+👥 0 / 6 Athletes
+
+██████
+
+6 Spots Available
+
+Examples:
+
+👥 5 / 6 Athletes
+█████░
+1 Spot Left
+
+👥 6 / 6 Athletes
+██████
+FULL
+
+STATUS BADGES
+
+🟢 Open
+🟡 2 Spots Left
+🟠 Full
+🔴 Waitlist
+
+Visible on every card.
+
+CTA BUTTONS
+
+Open:
+[ Join Session ]
+
+Full:
+[ Join Waitlist ]
+
+Coach/Admin:
+[ Edit Session ]
+
+PHASE 2 — MOBILE WEEK VIEW REDESIGN
+
+Current issue:
+Calendar cells show unreadable abbreviations such as:
+
+11...
+3...
+4...
+
+Replace mobile week view with stacked day cards.
+
+Example:
+
+Mon Jun 8
+
+🏃 Track & Field
+⚽ Soccer
+🏀 Basketball
+
+4 Sessions
+
+OR
+
+Mon Jun 8
+
+4 Sessions
+2 Open
+1 Full
+1 Waitlist
+
+Tapping a day opens session details for that day.
+
+Desktop week grid remains unchanged.
+
+PHASE 3 — SESSION DETAILS DRAWER
+
+When tapping any session card, open a details drawer showing:
+
+Sport
+Skill Level
+Age Group
+Coach
+Location
+Date
+Start Time
+End Time
+Capacity
+Remaining Spots
+
+Example:
+
+Track & Field
+
+Advanced
+Ages 14–18
+
+Coach Hunter Thaxton
+
+Bluffton High School
+
+June 15
+11:00 AM – 12:00 PM
+
+0 / 6 Registered
+6 Spots Available
+
+Actions:
+
+[ Join Session ]
+[ Message Coach ]
+[ View Location ]
+
+PHASE 4 — FILTER REORGANIZATION
+
+Reorder filters to match parent decision-making.
+
+New order:
+
+1. Sport
+2. Age Group
+3. Skill Level
+4. Location
+5. Coach
+6. Availability
+
+Add quick sport chips:
+
+All
+Football
+Basketball
+Soccer
+Track
+Baseball
+Lacrosse
+
+One-tap filtering.
+
+PHASE 5 — CALENDAR CELL IMPROVEMENTS
+
+Month View
+
+Replace unreadable abbreviations with:
+
+🏃 Track
+⚽ Soccer
+
++2 More
+
+OR
+
+4 Sessions
+
+depending on available space.
+
+Never show abbreviated labels like:
+11...
+3...
+4...
+
+PHASE 6 — SEARCH IMPROVEMENTS
+
+Add search box:
+
+"Search sport, coach, location..."
+
+Search should match:
+
+- Sport
+- Coach Name
+- Location
+- Skill Level
+- Session Name
+
+PHASE 7 — MOBILE READABILITY AUDIT
+
+Apply:
+
+min-width: 0
+word wrapping where appropriate
+
+Never truncate:
+
+- Sport
+- Coach
+- Location
+- Spots Remaining
+
+Only truncate long descriptions.
+
+PHASE 8 — INFORMATION PRIORITY RULE
+
+Every session card must allow a parent to answer these questions within 2 seconds:
+
+✓ What sport is this?
+✓ Where is it?
+✓ Who coaches it?
+✓ What level is it?
+✓ What age group is it for?
+✓ How many spots are left?
+✓ Can my child join?
+
+If any of these require opening the session details, the card hierarchy still needs improvement.
+
+Constraints:
+
+- Preserve all existing APIs.
+- Preserve registration logic.
+- Preserve waitlist logic.
+- Preserve permissions.
+- Preserve booking flows.
+- Preserve coach/admin editing functionality.
+- Preserve filters and backend queries.
+- Mobile-first implementation.
+- Desktop behavior should remain unchanged unless specifically mentioned above.

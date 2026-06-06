@@ -280,16 +280,35 @@ function getSessionStatus(session: OpenSession): "Open" | "Full" | "Cancelled" |
   return "Open";
 }
 
-function getStatusBadge(status: string) {
+const SPORT_EMOJIS: Record<string, string> = {
+  "basketball": "🏀", "soccer": "⚽", "football": "🏈",
+  "track": "🏃", "track & field": "🏃", "cross country": "🏃",
+  "baseball": "⚾", "softball": "🥎", "lacrosse": "🥍",
+  "volleyball": "🏐", "tennis": "🎾", "swimming": "🏊",
+  "wrestling": "🤼", "gymnastics": "🤸", "golf": "⛳",
+  "hockey": "🏒", "rugby": "🏉", "weightlifting": "🏋️",
+  "strength": "💪", "fitness": "💪", "conditioning": "🏋️",
+};
+
+function getSportEmoji(sport?: string | null): string {
+  if (!sport) return "";
+  const key = sport.toLowerCase().trim();
+  return SPORT_EMOJIS[key] || "🏅";
+}
+
+function getStatusBadge(status: string, spotsLeft?: number) {
+  if (status === "Open" && spotsLeft !== undefined && spotsLeft > 0 && spotsLeft <= 2) {
+    return <Badge className="bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20 text-xs">🟡 {spotsLeft} Spot{spotsLeft !== 1 ? "s" : ""} Left</Badge>;
+  }
   switch (status) {
     case "Open":
-      return <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20 text-xs">{status}</Badge>;
+      return <Badge className="bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20 text-xs">🟢 Open</Badge>;
     case "Full":
-      return <Badge className="bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/20 text-xs">{status}</Badge>;
+      return <Badge className="bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/20 text-xs">🟠 Full</Badge>;
     case "Cancelled":
-      return <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20 text-xs">{status}</Badge>;
+      return <Badge className="bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20 text-xs">🔴 Cancelled</Badge>;
     case "Waitlist":
-      return <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/20 text-xs">{status}</Badge>;
+      return <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/20 text-xs">🔴 Waitlist</Badge>;
     default:
       return <Badge variant="secondary" className="text-xs">{status}</Badge>;
   }
@@ -321,73 +340,91 @@ function sessionDuration(session: OpenSession): string {
 // ─── Filter Panel ───────────────────────────────────────────────────────────
 
 function FilterPanel({
-  sessions, filters, setFilters, open, onToggle
+  sessions, filters, setFilters, open, onToggle, searchTerm, setSearchTerm
 }: {
   sessions: OpenSession[];
   filters: Filters;
   setFilters: (f: Filters) => void;
   open: boolean;
   onToggle: () => void;
+  searchTerm: string;
+  setSearchTerm: (v: string) => void;
 }) {
   const sports = Array.from(new Set(sessions.map(s => s.sport).filter((x): x is string => !!x && x.trim() !== ""))).sort();
   const locations = Array.from(new Set(sessions.map(s => s.location).filter((x): x is string => !!x && x.trim() !== ""))).sort();
   const ageGroups = Array.from(new Set(sessions.map(s => s.ageRange).filter((x): x is string => !!x && x.trim() !== ""))).sort();
 
-  const hasActive = Object.values(filters).some(v => v !== "all");
+  const hasActive = Object.values(filters).some(v => v !== "all") || searchTerm.trim() !== "";
 
-  const clear = () => setFilters({ sport: "all", location: "all", ageGroup: "all", skillLevel: "all", availability: "all", sessionType: "all" });
+  const clear = () => {
+    setFilters({ sport: "all", location: "all", ageGroup: "all", skillLevel: "all", availability: "all", sessionType: "all" });
+    setSearchTerm("");
+  };
+
+  const QUICK_SPORTS = ["Football", "Basketball", "Soccer", "Track", "Baseball", "Lacrosse"];
 
   return (
-    <div>
-      <div className="flex items-center gap-2">
+    <div className="space-y-3">
+      {/* Quick sport chips */}
+      <div className="flex flex-wrap gap-2" data-testid="sport-chips">
+        <button
+          onClick={() => setFilters({ ...filters, sport: "all" })}
+          className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filters.sport === "all" ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"}`}
+          data-testid="sport-chip-all"
+        >
+          All
+        </button>
+        {QUICK_SPORTS.map(sp => (
+          <button
+            key={sp}
+            onClick={() => setFilters({ ...filters, sport: filters.sport === sp ? "all" : sp })}
+            className={`px-3 py-1 rounded-full text-xs font-medium border transition-colors ${filters.sport === sp ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/50 hover:text-foreground"}`}
+            data-testid={`sport-chip-${sp.toLowerCase()}`}
+          >
+            {getSportEmoji(sp)} {sp}
+          </button>
+        ))}
+      </div>
+
+      {/* Search + filter toggle row */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Filter className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <Input
+            placeholder="Search sport, coach, location…"
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="pl-8 h-9 text-sm w-full"
+            data-testid="input-search-open-sessions"
+          />
+          {searchTerm && (
+            <button onClick={() => setSearchTerm("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
+        </div>
         <Button
           variant="outline"
           size="sm"
           onClick={onToggle}
-          className="gap-2 h-9"
+          className="gap-2 h-9 shrink-0"
           data-testid="button-toggle-filters"
         >
           <SlidersHorizontal className="h-3.5 w-3.5" />
           Filters
-          {hasActive && <Badge className="h-4 w-4 p-0 flex items-center justify-center text-[10px] bg-primary text-primary-foreground rounded-full">{Object.values(filters).filter(v => v !== "all").length}</Badge>}
+          {hasActive && <Badge className="h-4 w-4 p-0 flex items-center justify-center text-[10px] bg-primary text-primary-foreground rounded-full">{Object.values(filters).filter(v => v !== "all").length + (searchTerm ? 1 : 0)}</Badge>}
         </Button>
         {hasActive && (
-          <Button variant="ghost" size="sm" className="h-9 text-muted-foreground" onClick={clear} data-testid="button-clear-filters">
+          <Button variant="ghost" size="sm" className="h-9 text-muted-foreground shrink-0" onClick={clear} data-testid="button-clear-filters">
             <X className="h-3.5 w-3.5 mr-1" />
             Clear
           </Button>
         )}
       </div>
 
+      {/* Expanded filter dropdowns — ordered: Sport → Age → Skill → Location → Availability */}
       {open && (
-        <div className="mt-3 p-4 rounded-lg border bg-muted/30 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Availability</Label>
-            <Select value={filters.availability} onValueChange={v => setFilters({ ...filters, availability: v })}>
-              <SelectTrigger className="h-8 text-xs" data-testid="filter-availability"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All</SelectItem>
-                <SelectItem value="Open">Open</SelectItem>
-                <SelectItem value="Full">Full</SelectItem>
-                <SelectItem value="Cancelled">Cancelled</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Skill Level</Label>
-            <Select value={filters.skillLevel} onValueChange={v => setFilters({ ...filters, skillLevel: v })}>
-              <SelectTrigger className="h-8 text-xs" data-testid="filter-skill-level"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Levels</SelectItem>
-                <SelectItem value="Beginner">Beginner</SelectItem>
-                <SelectItem value="Intermediate">Intermediate</SelectItem>
-                <SelectItem value="Advanced">Advanced</SelectItem>
-                <SelectItem value="All Levels">All Levels</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
+        <div className="p-4 rounded-lg border bg-muted/30 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {sports.length > 0 && (
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Sport</Label>
@@ -395,20 +432,7 @@ function FilterPanel({
                 <SelectTrigger className="h-8 text-xs" data-testid="filter-sport"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All Sports</SelectItem>
-                  {sports.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {locations.length > 0 && (
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Location</Label>
-              <Select value={filters.location} onValueChange={v => setFilters({ ...filters, location: v })}>
-                <SelectTrigger className="h-8 text-xs" data-testid="filter-location"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Locations</SelectItem>
-                  {locations.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                  {sports.map(s => <SelectItem key={s} value={s}>{getSportEmoji(s)} {s}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -426,6 +450,46 @@ function FilterPanel({
               </Select>
             </div>
           )}
+
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Skill Level</Label>
+            <Select value={filters.skillLevel} onValueChange={v => setFilters({ ...filters, skillLevel: v })}>
+              <SelectTrigger className="h-8 text-xs" data-testid="filter-skill-level"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Levels</SelectItem>
+                <SelectItem value="Beginner">Beginner</SelectItem>
+                <SelectItem value="Intermediate">Intermediate</SelectItem>
+                <SelectItem value="Advanced">Advanced</SelectItem>
+                <SelectItem value="All Levels">All Levels</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {locations.length > 0 && (
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Location</Label>
+              <Select value={filters.location} onValueChange={v => setFilters({ ...filters, location: v })}>
+                <SelectTrigger className="h-8 text-xs" data-testid="filter-location"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Locations</SelectItem>
+                  {locations.map(l => <SelectItem key={l} value={l}>{l}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Availability</Label>
+            <Select value={filters.availability} onValueChange={v => setFilters({ ...filters, availability: v })}>
+              <SelectTrigger className="h-8 text-xs" data-testid="filter-availability"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="Open">Open</SelectItem>
+                <SelectItem value="Full">Full</SelectItem>
+                <SelectItem value="Cancelled">Cancelled</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       )}
     </div>
@@ -737,11 +801,25 @@ function SessionDetailModal({
           <DialogHeader className="px-6 pt-6 pb-4 border-b">
             <div className="flex items-start justify-between gap-3">
               <div className="flex-1 min-w-0">
-                <DialogTitle className="text-lg font-semibold leading-tight">
-                  {session.service?.name || "Group Session"}
-                </DialogTitle>
-                <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                  {getStatusBadge(status)}
+                {/* Sport — primary, largest */}
+                {session.sport ? (
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-2xl leading-none" aria-hidden="true">{getSportEmoji(session.sport)}</span>
+                    <DialogTitle className="text-xl font-bold leading-tight" data-testid={`modal-sport-${session.id}`}>
+                      {session.sport}
+                    </DialogTitle>
+                  </div>
+                ) : (
+                  <DialogTitle className="text-lg font-semibold leading-tight">
+                    {session.service?.name || "Group Session"}
+                  </DialogTitle>
+                )}
+                {/* Service name as subtitle when sport is shown */}
+                {session.sport && session.service?.name && (
+                  <p className="text-sm text-muted-foreground mb-1">{session.service.name}</p>
+                )}
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  {getStatusBadge(status, spotsRemaining)}
                   {hasJoined && <Badge className="bg-primary/15 text-primary border-primary/20 text-xs">Registered</Badge>}
                   {onWaitlist && <Badge className="bg-blue-500/15 text-blue-700 dark:text-blue-400 text-xs">On Waitlist</Badge>}
                 </div>
@@ -1037,7 +1115,6 @@ function SessionDetailModal({
 
 function SessionChip({ session, onClick }: { session: OpenSession; onClick: () => void }) {
   const status = getSessionStatus(session);
-  const start = parseISO(session.startAt as unknown as string);
   const colorClass = status === "Open"
     ? "bg-green-500/10 border-green-500/30 text-green-800 dark:text-green-300 hover:bg-green-500/20"
     : status === "Full"
@@ -1046,72 +1123,133 @@ function SessionChip({ session, onClick }: { session: OpenSession; onClick: () =
     ? "bg-muted/50 border-muted-foreground/20 text-muted-foreground line-through hover:bg-muted"
     : "bg-blue-500/10 border-blue-500/30 text-blue-800 dark:text-blue-300 hover:bg-blue-500/20";
 
+  const label = session.sport
+    ? `${getSportEmoji(session.sport)} ${session.sport}`
+    : session.service?.name || "Session";
+
   return (
     <button
       onClick={onClick}
       className={`w-full text-left text-xs px-1.5 py-0.5 rounded border truncate transition-colors cursor-pointer ${colorClass}`}
       data-testid={`chip-session-${session.id}`}
     >
-      {format(start, "h:mma")} {session.service?.name || "Session"}
+      {label}
     </button>
   );
 }
 
 // ─── Day Session Card (for day & week views) ───────────────────────────────
 
-function DaySessionCard({ session, onClick }: { session: OpenSession; onClick: () => void }) {
+function DaySessionCard({ session, onClick, isCoach }: { session: OpenSession; onClick: () => void; isCoach?: boolean }) {
   const status = getSessionStatus(session);
   const start = parseISO(session.startAt as unknown as string);
   const end = parseISO(session.endAt as unknown as string);
-  const dur = sessionDuration(session);
-  const isFull = status === "Full";
-  const spotsLeft = (session.maxParticipants || 6) - (session.participantCount || 0);
+  const count = session.participantCount || 0;
+  const max = session.maxParticipants || 6;
+  const spotsLeft = max - count;
+  const isFull = spotsLeft <= 0;
+  const fillPct = Math.min(100, (count / max) * 100);
+  const sportEmoji = getSportEmoji(session.sport);
+
+  const ctaLabel = isCoach ? "Edit Session" : isFull ? "Join Waitlist" : "Join Session";
 
   return (
     <Card
-      className="p-3 cursor-pointer hover:shadow-md transition-all border-l-4 group"
+      className="p-4 cursor-pointer hover:shadow-md transition-all border-l-4"
       style={{ borderLeftColor: status === "Open" ? "rgb(34 197 94)" : status === "Full" ? "rgb(249 115 22)" : status === "Cancelled" ? "rgb(156 163 175)" : "rgb(59 130 246)" }}
       onClick={onClick}
       data-testid={`card-open-session-${session.id}`}
     >
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <p className="font-medium text-sm truncate">{session.service?.name || "Group Session"}</p>
-          <div className="flex items-center gap-1.5 mt-1 text-xs text-muted-foreground flex-wrap">
-            <span className="flex items-center gap-0.5"><Clock className="h-3 w-3" />{format(start, "h:mm a")} – {format(end, "h:mm a")}</span>
-            {dur && <span className="text-muted-foreground/60">· {dur}</span>}
-          </div>
-          <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-            {getStatusBadge(status)}
-            {session.sport && <Badge variant="outline" className="text-xs py-0">{session.sport}</Badge>}
-            {session.skillLevel && <Badge variant="outline" className="text-xs py-0">{session.skillLevel}</Badge>}
-          </div>
-        </div>
-        <div className="text-right shrink-0 space-y-1">
-          <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end">
-            <Users className="h-3 w-3" />
-            <span>{session.participantCount || 0}/{session.maxParticipants || 6}</span>
-          </div>
-          {!isFull && <p className="text-xs text-green-600 dark:text-green-400">{spotsLeft} left</p>}
-          {session.location && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground justify-end max-w-[100px]">
-              <MapPin className="h-3 w-3 shrink-0" />
-              <span className="truncate">{session.location}</span>
+      {/* Header: sport + status badge */}
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="flex-1 min-w-0">
+          {session.sport ? (
+            <div className="flex items-center gap-2">
+              <span className="text-2xl leading-none" aria-hidden="true">{sportEmoji}</span>
+              <span className="text-xl font-bold leading-tight" data-testid={`text-sport-${session.id}`}>{session.sport}</span>
             </div>
+          ) : (
+            <p className="text-xl font-bold leading-tight">{session.service?.name || "Group Session"}</p>
+          )}
+          {session.sport && session.service?.name && (
+            <p className="text-sm text-muted-foreground mt-0.5">{session.service.name}</p>
           )}
         </div>
+        <div className="shrink-0">{getStatusBadge(status, spotsLeft)}</div>
       </div>
+
+      {/* Time */}
+      <div className="flex items-center gap-2 text-sm mb-1.5">
+        <Clock className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="font-medium">{format(start, "h:mm a")} – {format(end, "h:mm a")}</span>
+      </div>
+
+      {/* Location — never truncate, allow wrap */}
+      {session.location && (
+        <div className="flex items-start gap-2 text-sm mb-1.5">
+          <MapPin className="h-3.5 w-3.5 text-muted-foreground shrink-0 mt-0.5" />
+          <span className="break-words min-w-0" data-testid={`text-location-${session.id}`}>{session.location}</span>
+        </div>
+      )}
+
+      {/* Coach */}
       {session.coach?.user && (
-        <div className="flex items-center gap-1.5 mt-2">
-          <Avatar className="h-5 w-5">
+        <div className="flex items-center gap-2 text-sm mb-2.5">
+          <Avatar className="h-5 w-5 shrink-0">
             <AvatarImage src={session.coach.photoUrl || session.coach.user.profileImageUrl || undefined} />
             <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
               {(session.coach.user.firstName?.[0] || "").toUpperCase()}{(session.coach.user.lastName?.[0] || "").toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          <span className="text-xs text-muted-foreground">Coach {session.coach.user.firstName} {session.coach.user.lastName}</span>
+          <span className="text-muted-foreground" data-testid={`text-coach-${session.id}`}>
+            Coach {session.coach.user.firstName} {session.coach.user.lastName}
+          </span>
         </div>
       )}
+
+      {/* Skill + Age chips */}
+      {(session.skillLevel || session.ageRange) && (
+        <div className="flex flex-wrap gap-1.5 mb-3">
+          {session.skillLevel && (
+            <Badge variant="outline" className="text-xs" data-testid={`badge-skill-${session.id}`}>{session.skillLevel}</Badge>
+          )}
+          {session.ageRange && (
+            <Badge variant="outline" className="text-xs" data-testid={`badge-age-${session.id}`}>Ages {session.ageRange}</Badge>
+          )}
+        </div>
+      )}
+
+      {/* Capacity bar */}
+      <div className="space-y-1 mb-3">
+        <div className="flex items-center justify-between text-sm">
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            <Users className="h-3.5 w-3.5" />
+            <span>{count} / {max} Athletes</span>
+          </span>
+          <span className={`text-xs font-semibold ${isFull ? "text-orange-600 dark:text-orange-400" : spotsLeft <= 2 ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400"}`}>
+            {isFull ? "FULL" : `${spotsLeft} Spot${spotsLeft !== 1 ? "s" : ""} Available`}
+          </span>
+        </div>
+        <div className="w-full bg-muted rounded-full h-1.5">
+          <div
+            className={`h-1.5 rounded-full transition-all ${isFull ? "bg-orange-500" : spotsLeft <= 2 ? "bg-yellow-500" : "bg-green-500"}`}
+            style={{ width: `${fillPct}%` }}
+          />
+        </div>
+      </div>
+
+      {/* CTA */}
+      <div className="pt-2 border-t border-border/40">
+        <Button
+          size="sm"
+          variant={isFull && !isCoach ? "outline" : "default"}
+          className="w-full h-8 text-xs"
+          onClick={onClick}
+          data-testid={`button-cta-session-${session.id}`}
+        >
+          {ctaLabel}
+        </Button>
+      </div>
     </Card>
   );
 }
@@ -1212,6 +1350,134 @@ function MonthView({
           })}
         </div>
       ))}
+    </div>
+  );
+}
+
+// ─── Mobile Week View (< md) ────────────────────────────────────────────────
+
+function MobileWeekView({
+  currentDate, sessions, onSessionClick, onDayClick, isCoach, onCreateSession
+}: {
+  currentDate: Date;
+  sessions: OpenSession[];
+  onSessionClick: (session: OpenSession) => void;
+  onDayClick: (date: Date) => void;
+  isCoach?: boolean;
+  onCreateSession?: (date: Date) => void;
+}) {
+  const weekStart = startOfWeek(currentDate, { weekStartsOn: 0 });
+  const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
+
+  const sessionsByDay = useMemo(() => {
+    const map = new Map<string, OpenSession[]>();
+    sessions.forEach(s => {
+      const key = format(parseISO(s.startAt as unknown as string), "yyyy-MM-dd");
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(s);
+    });
+    return map;
+  }, [sessions]);
+
+  return (
+    <div className="space-y-2">
+      {days.map(day => {
+        const key = format(day, "yyyy-MM-dd");
+        const daySessions = (sessionsByDay.get(key) || []).sort(
+          (a, b) => new Date(a.startAt as any).getTime() - new Date(b.startAt as any).getTime()
+        );
+        const openCount = daySessions.filter(s => getSessionStatus(s) === "Open").length;
+        const fullCount = daySessions.filter(s => getSessionStatus(s) === "Full").length;
+        const isCurrent = isToday(day);
+
+        return (
+          <div key={key} className={`rounded-lg border overflow-hidden ${isCurrent ? "border-primary/50" : "border-border"}`}>
+            {/* Day header */}
+            <div
+              className={`flex items-center justify-between px-3 py-2 cursor-pointer ${isCurrent ? "bg-primary/10" : "bg-muted/40"}`}
+              onClick={() => onDayClick(day)}
+              data-testid={`mobile-week-day-${key}`}
+            >
+              <div className="flex items-center gap-2">
+                <span className={`text-[11px] font-bold tracking-wide ${isCurrent ? "text-primary" : "text-muted-foreground"}`}>
+                  {format(day, "EEE").toUpperCase()}
+                </span>
+                <span className={`text-sm font-semibold ${isCurrent ? "text-primary" : "text-foreground"}`}>
+                  {format(day, "MMM d")}
+                </span>
+                {isCurrent && (
+                  <Badge className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground">Today</Badge>
+                )}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                {daySessions.length > 0 && (
+                  <>
+                    <span>{daySessions.length} session{daySessions.length !== 1 ? "s" : ""}</span>
+                    {openCount > 0 && <span className="text-green-600 dark:text-green-400">· {openCount} open</span>}
+                    {fullCount > 0 && <span className="text-orange-600 dark:text-orange-400">· {fullCount} full</span>}
+                  </>
+                )}
+                <ChevronRight className="h-3.5 w-3.5 ml-0.5" />
+              </div>
+            </div>
+
+            {/* Session rows */}
+            {daySessions.length > 0 ? (
+              <div className="px-3 py-2 space-y-1.5">
+                {daySessions.map(s => {
+                  const st = getSessionStatus(s);
+                  const sEmoji = getSportEmoji(s.sport);
+                  const sStart = parseISO(s.startAt as unknown as string);
+                  const cnt = s.participantCount || 0;
+                  const mx = s.maxParticipants || 6;
+                  const sLeft = mx - cnt;
+                  return (
+                    <button
+                      key={s.id}
+                      className="w-full flex items-center gap-2.5 text-left hover:bg-muted/50 rounded-md px-2 py-1.5 -mx-2 transition-colors"
+                      onClick={() => onSessionClick(s)}
+                      data-testid={`mobile-week-open-session-${s.id}`}
+                    >
+                      <span className="text-lg leading-none shrink-0">{sEmoji || "📅"}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{s.sport || s.service?.name || "Session"}</p>
+                        <p className="text-xs text-muted-foreground">{format(sStart, "h:mm a")} · {cnt}/{mx} athletes</p>
+                      </div>
+                      <div className="shrink-0">{getStatusBadge(st, sLeft)}</div>
+                    </button>
+                  );
+                })}
+                {isCoach && onCreateSession && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="w-full h-7 mt-1 text-xs text-muted-foreground border border-dashed border-border/60 hover:border-primary/40 hover:text-primary"
+                    onClick={() => onCreateSession(day)}
+                    data-testid={`button-create-open-week-${key}`}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add Session
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <div className="px-3 py-2">
+                <p className="text-xs text-muted-foreground/60 italic">No sessions</p>
+                {isCoach && onCreateSession && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="w-full h-7 mt-1 text-xs text-muted-foreground border border-dashed border-border/60"
+                    onClick={() => onCreateSession(day)}
+                    data-testid={`button-create-open-week-empty-${key}`}
+                  >
+                    <Plus className="h-3 w-3 mr-1" /> Add Session
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -1327,7 +1593,7 @@ function DayView({
   return (
     <div className="space-y-3">
       {daySessions.map(s => (
-        <DaySessionCard key={s.id} session={s} onClick={() => onSessionClick(s)} />
+        <DaySessionCard key={s.id} session={s} onClick={() => onSessionClick(s)} isCoach={isCoach} />
       ))}
     </div>
   );
@@ -1379,6 +1645,7 @@ export default function OpenSessionsPage() {
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [createSessionOpen, setCreateSessionOpen] = useState(false);
   const [createSessionDate, setCreateSessionDate] = useState<Date | undefined>(undefined);
+  const [searchTerm, setSearchTerm] = useState("");
   const [filters, setFilters] = useState<Filters>({
     sport: "all", location: "all", ageGroup: "all",
     skillLevel: "all", availability: "all", sessionType: "all"
@@ -1397,6 +1664,7 @@ export default function OpenSessionsPage() {
   });
 
   const filteredSessions = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
     return sessions.filter(session => {
       if (filters.availability !== "all") {
         const status = getSessionStatus(session);
@@ -1406,9 +1674,23 @@ export default function OpenSessionsPage() {
       if (filters.sport !== "all" && session.sport !== filters.sport) return false;
       if (filters.location !== "all" && session.location !== filters.location) return false;
       if (filters.ageGroup !== "all" && session.ageRange !== filters.ageGroup) return false;
+      if (q) {
+        const coachName = session.coach?.user
+          ? `${session.coach.user.firstName || ""} ${session.coach.user.lastName || ""}`.toLowerCase()
+          : "";
+        const haystack = [
+          session.sport || "",
+          session.location || "",
+          session.skillLevel || "",
+          session.ageRange || "",
+          session.service?.name || "",
+          coachName,
+        ].join(" ").toLowerCase();
+        if (!haystack.includes(q)) return false;
+      }
       return true;
     });
-  }, [sessions, filters]);
+  }, [sessions, filters, searchTerm]);
 
   const navigate = (dir: "prev" | "next" | "today") => {
     if (dir === "today") { setCurrentDate(new Date()); setSelectedDay(null); return; }
@@ -1476,6 +1758,8 @@ export default function OpenSessionsPage() {
         setFilters={setFilters}
         open={filtersOpen}
         onToggle={() => setFiltersOpen(f => !f)}
+        searchTerm={searchTerm}
+        setSearchTerm={setSearchTerm}
       />
 
       {/* Calendar Controls */}
@@ -1547,14 +1831,30 @@ export default function OpenSessionsPage() {
         />
       )}
       {view === "week" && (
-        <WeekView
-          currentDate={currentDate}
-          sessions={filteredSessions}
-          onSessionClick={setSelectedSession}
-          onDayClick={handleDayClick}
-          isCoach={isCoach}
-          onCreateSession={handleCreateSession}
-        />
+        <>
+          {/* Mobile: stacked day cards */}
+          <div className="md:hidden">
+            <MobileWeekView
+              currentDate={currentDate}
+              sessions={filteredSessions}
+              onSessionClick={setSelectedSession}
+              onDayClick={handleDayClick}
+              isCoach={isCoach}
+              onCreateSession={handleCreateSession}
+            />
+          </div>
+          {/* Desktop: grid week view */}
+          <div className="hidden md:block">
+            <WeekView
+              currentDate={currentDate}
+              sessions={filteredSessions}
+              onSessionClick={setSelectedSession}
+              onDayClick={handleDayClick}
+              isCoach={isCoach}
+              onCreateSession={handleCreateSession}
+            />
+          </div>
+        </>
       )}
       {view === "day" && (
         <DayView
