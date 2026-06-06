@@ -1814,8 +1814,8 @@ export default function OpenSessionsPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
-          <h1 className="text-2xl font-serif font-bold" data-testid="text-open-sessions-title">Open Group Sessions</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Browse and join semi-private training sessions</p>
+          <h1 className="text-2xl font-serif font-bold" data-testid="text-open-sessions-title">Teams</h1>
+          <p className="text-muted-foreground text-sm mt-0.5">Browse and join open team training sessions</p>
         </div>
         {isCoach && <AddSessionDialog />}
       </div>

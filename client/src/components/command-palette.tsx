@@ -203,7 +203,7 @@ const ALL_PAGES: PageDef[] = [
   { id: "command-center", label: "Command Center", url: "/command-center", icon: Flame, section: "Home", keywords: "hub daily ops", minRole: "COACH" },
   { id: "dashboard", label: "Dashboard", url: "/coach", icon: LayoutDashboard, section: "Home", keywords: "overview stats", minRole: "COACH" },
   { id: "coaches", label: "Coaches", url: "/coaches", icon: UserCog, section: "Browse", keywords: "coaches trainers" },
-  { id: "group-sessions", label: "Group Sessions", url: "/sessions", icon: UsersRound, section: "Browse", keywords: "classes open sessions" },
+  { id: "group-sessions", label: "Teams", url: "/sessions", icon: UsersRound, section: "Browse", keywords: "teams classes open sessions group" },
   { id: "team-training", label: "Team Training", url: "/team-training", icon: Dumbbell, section: "Browse", keywords: "corporate team strength" },
   { id: "my-bookings", label: "My Bookings", url: "/bookings", icon: Calendar, section: "Browse", keywords: "appointments sessions" },
   { id: "schedule", label: "Schedule", url: "/scheduling", icon: CalendarDays, section: "Scheduling", keywords: "calendar book sessions", minRole: "STAFF" },

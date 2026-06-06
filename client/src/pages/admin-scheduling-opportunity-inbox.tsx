@@ -276,7 +276,7 @@ export default function AdminSchedulingOpportunityInboxPage() {
       window.location.href = "/admin/scheduling-command-center";
     } else if (opp.category === "capacity" && opp.type === "waitlist_demand") {
       // Navigate to open sessions to add another session
-      window.location.href = "/open-sessions";
+      window.location.href = "/sessions";
     } else if (opp.category === "retention" && opp.type === "reactivation") {
       // Navigate to AI comms center for outreach drafts
       window.location.href = "/admin/ai-outreach-opportunities";

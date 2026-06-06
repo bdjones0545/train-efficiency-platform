@@ -1280,7 +1280,7 @@ export function AppSidebar() {
       items: [
         { title: "Coaches", url: "/coaches", icon: UserCog, testId: "nav-coaches" },
         { title: "Schedule", url: "/scheduling", icon: CalendarDays, testId: "nav-scheduling" },
-        { title: "Group Sessions", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
+        { title: "Teams", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
         { title: "Team Training", url: "/team-training", icon: Dumbbell, testId: "nav-team-training" },
         { title: "My Bookings", url: "/bookings", icon: Calendar, testId: "nav-my-bookings" },
       ],
@@ -1355,7 +1355,7 @@ export function AppSidebar() {
   // CLIENT flat list
   const clientItems: NavItem[] = [
     { title: "Coaches", url: "/coaches", icon: Users, testId: "nav-coaches" },
-    { title: "Group Sessions", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
+    { title: "Teams", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
     { title: "Team Training", url: "/team-training", icon: Dumbbell, testId: "nav-team-training" },
     { title: "My Bookings", url: "/bookings", icon: Calendar, testId: "nav-my-bookings" },
     { title: "My Wallet", url: "/wallet", icon: Wallet, testId: "nav-my-wallet" },
