@@ -1,0 +1,68 @@
+Enhance the Coach Dashboard calendar page with Day / Week / Month view options.
+
+Goal:
+Keep the current daily calendar view, but add simple weekly and monthly views so coaches can see their schedule at a higher level.
+
+Do not redesign the entire page. Keep the current UI style.
+
+Requirements:
+
+1. Add view switcher near the date controls:
+   - Day
+   - Week
+   - Month
+
+2. Day view:
+   - Keep current layout mostly unchanged
+   - Show time-grid schedule
+   - Keep Add Session button
+   - Keep coach selector
+   - Keep Morning / Afternoon / Evening filters if useful
+
+3. Week view:
+   - Show 7-day horizontal or stacked mobile-friendly layout
+   - Each day should show:
+     - date
+     - total sessions
+     - confirmed/pending count
+     - compact list of sessions
+   - On mobile, use stacked day cards rather than a cramped grid
+   - Tapping a day opens that day view
+   - Tapping a session opens session details
+
+4. Month view:
+   - Show calendar month overview
+   - Each date should show:
+     - session count
+     - small status indicator if sessions exist
+   - Tapping a date switches to day view for that date
+   - Include month navigation: previous / next / today
+
+5. Summary cards:
+   Update summary counts based on selected view:
+   - Day: sessions for selected date
+   - Week: sessions for selected week
+   - Month: sessions for selected month
+
+6. Empty states:
+   - Day: “No sessions scheduled today.”
+   - Week: “No sessions scheduled this week.”
+   - Month: “No sessions scheduled this month.”
+   Keep empty states compact.
+
+7. Mobile UX:
+   - View switcher should be thumb-friendly
+   - Week view should not require horizontal scrolling
+   - Month view should fit cleanly on mobile
+   - Reduce vertical padding where possible
+
+8. Deliverables:
+   - Files changed
+   - New state added
+   - How Day / Week / Month views work
+   - Mobile improvements
+   - Any route or API changes if needed
+
+Important:
+Do not remove existing daily schedule behavior.
+Just add weekly and monthly calendar visibility.

@@ -36,7 +36,19 @@ import {
   addDays,
   subDays,
   getDay,
+  startOfWeek,
+  endOfWeek,
+  startOfMonth,
+  endOfMonth,
+  eachDayOfInterval,
+  addWeeks,
+  subWeeks,
+  addMonths,
+  subMonths,
+  isToday,
+  isSameMonth,
 } from "date-fns";
+
 import { AddSessionDialog } from "@/components/add-session-dialog";
 import { EditSessionDialog } from "@/components/edit-session-dialog";
 import { SubscriptionScheduleDialog } from "@/components/subscription-schedule-dialog";
@@ -240,6 +252,174 @@ function fetchWithAuth(url: string) {
   });
 }
 
+type CalendarView = "day" | "week" | "month";
+
+// ─── Week View ─────────────────────────────────────────────────────────────
+function WeekView({
+  weekDays,
+  bookings,
+  onDaySelect,
+  onBookingEdit,
+}: {
+  weekDays: Date[];
+  bookings: BookingWithDetails[];
+  onDaySelect: (d: Date) => void;
+  onBookingEdit: (b: BookingWithDetails) => void;
+}) {
+  return (
+    <div className="space-y-2" data-testid="week-view">
+      {weekDays.map((day) => {
+        const dayBkgs = bookings.filter((b) =>
+          isSameDay(parseISO(b.startAt as unknown as string), day)
+        );
+        const confirmed = dayBkgs.filter((b) => b.status === "CONFIRMED").length;
+        const pending = dayBkgs.filter((b) => b.status === "PENDING").length;
+        const isToday_ = isToday(day);
+
+        return (
+          <Card key={day.toISOString()} className={`p-3 ${isToday_ ? "border-primary/40" : ""}`} data-testid={`week-day-card-${format(day, "yyyy-MM-dd")}`}>
+            <button
+              className="w-full flex items-center justify-between mb-1.5"
+              onClick={() => onDaySelect(day)}
+              data-testid={`button-week-day-${format(day, "yyyy-MM-dd")}`}
+            >
+              <div className="flex items-center gap-2.5">
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shrink-0 ${isToday_ ? "bg-primary text-primary-foreground" : "bg-muted"}`}>
+                  {format(day, "d")}
+                </div>
+                <div className="text-left">
+                  <p className="text-sm font-semibold leading-tight">{format(day, "EEEE")}</p>
+                  <p className="text-xs text-muted-foreground">{format(day, "MMM d")}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {dayBkgs.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">
+                    {dayBkgs.length} session{dayBkgs.length !== 1 ? "s" : ""}
+                  </Badge>
+                )}
+                {confirmed > 0 && <span className="w-2 h-2 rounded-full bg-primary" />}
+                {pending > 0 && <span className="w-2 h-2 rounded-full bg-yellow-500" />}
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
+            </button>
+
+            {dayBkgs.length === 0 ? (
+              <p className="text-xs text-muted-foreground pl-10">No sessions</p>
+            ) : (
+              <div className="pl-10 space-y-1">
+                {dayBkgs
+                  .sort((a, b) => new Date(a.startAt as unknown as string).getTime() - new Date(b.startAt as unknown as string).getTime())
+                  .map((b) => (
+                    <button
+                      key={b.id}
+                      className="w-full flex items-center gap-2 text-left px-2 py-1 rounded-md hover:bg-muted transition-colors"
+                      onClick={() => onBookingEdit(b)}
+                      data-testid={`week-session-${b.id}`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                        b.status === "CONFIRMED" ? "bg-primary"
+                        : b.status === "PENDING" ? "bg-yellow-500"
+                        : b.status === "COMPLETED" ? "bg-emerald-500"
+                        : "bg-red-400"
+                      }`} />
+                      <span className="text-xs font-medium shrink-0">
+                        {format(parseISO(b.startAt as unknown as string), "h:mm a")}
+                      </span>
+                      <span className="text-xs text-muted-foreground truncate">
+                        {b.service?.name || "Session"}
+                        {b.client ? ` · ${b.client.firstName} ${b.client.lastName}` : ""}
+                      </span>
+                      <Badge className={`text-[9px] px-1 py-0 ml-auto shrink-0 ${statusColors[b.status] || statusColors.PENDING}`}>
+                        {b.status}
+                      </Badge>
+                    </button>
+                  ))}
+              </div>
+            )}
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Month View ────────────────────────────────────────────────────────────
+function MonthView({
+  selectedDate,
+  bookings,
+  onDaySelect,
+}: {
+  selectedDate: Date;
+  bookings: BookingWithDetails[];
+  onDaySelect: (d: Date) => void;
+}) {
+  const monthStart = startOfMonth(selectedDate);
+  const monthEnd = endOfMonth(selectedDate);
+  const calStart = startOfWeek(monthStart, { weekStartsOn: 1 });
+  const calEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
+  const calDays = eachDayOfInterval({ start: calStart, end: calEnd });
+  const dayHeaders = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  return (
+    <Card className="p-3" data-testid="month-view">
+      <div className="grid grid-cols-7 mb-1">
+        {dayHeaders.map((h) => (
+          <div key={h} className="text-[10px] font-semibold text-muted-foreground text-center py-1">
+            {h}
+          </div>
+        ))}
+      </div>
+      <div className="grid grid-cols-7 gap-0.5">
+        {calDays.map((day) => {
+          const inMonth = isSameMonth(day, selectedDate);
+          const isToday_ = isToday(day);
+          const isSelected = isSameDay(day, selectedDate);
+          const dayBkgs = bookings.filter((b) =>
+            isSameDay(parseISO(b.startAt as unknown as string), day)
+          );
+          const count = dayBkgs.length;
+          const hasConfirmed = dayBkgs.some((b) => b.status === "CONFIRMED");
+          const hasPending = dayBkgs.some((b) => b.status === "PENDING");
+          const hasCompleted = dayBkgs.some((b) => b.status === "COMPLETED");
+
+          return (
+            <button
+              key={day.toISOString()}
+              onClick={() => { if (inMonth) onDaySelect(day); }}
+              disabled={!inMonth}
+              className={`flex flex-col items-center justify-start py-1.5 px-0.5 rounded-md transition-colors min-h-[44px] ${
+                !inMonth ? "opacity-25 cursor-default" : "hover:bg-muted cursor-pointer"
+              } ${isSelected && inMonth ? "bg-primary/10 ring-1 ring-primary/40" : ""}`}
+              data-testid={`month-cell-${format(day, "yyyy-MM-dd")}`}
+            >
+              <span className={`text-xs font-semibold w-6 h-6 flex items-center justify-center rounded-full ${
+                isToday_ ? "bg-primary text-primary-foreground" : ""
+              }`}>
+                {format(day, "d")}
+              </span>
+              {count > 0 && (
+                <div className="flex items-center gap-0.5 mt-0.5">
+                  <span className="text-[9px] text-muted-foreground font-medium">{count}</span>
+                  {hasConfirmed && <span className="w-1 h-1 rounded-full bg-primary" />}
+                  {hasPending && <span className="w-1 h-1 rounded-full bg-yellow-500" />}
+                  {hasCompleted && !hasConfirmed && !hasPending && <span className="w-1 h-1 rounded-full bg-emerald-500" />}
+                </div>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-3 flex items-center gap-3 text-[10px] text-muted-foreground border-t border-border/40 pt-2">
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-primary inline-block" /> Confirmed</span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-yellow-500 inline-block" /> Pending</span>
+        <span className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block" /> Completed</span>
+      </div>
+    </Card>
+  );
+}
+
+// ─── Main Component ────────────────────────────────────────────────────────
 export default function CoachDashboardPage() {
   const { toast } = useToast();
   const [selectedDate, setSelectedDate] = useState(new Date());
@@ -252,6 +432,7 @@ export default function CoachDashboardPage() {
   const [showStickyHeader, setShowStickyHeader] = useState(false);
 
   const [quickPickerSlot, setQuickPickerSlot] = useState<{ hour: number; minute: number } | null>(null);
+  const [viewMode, setViewMode] = useState<CalendarView>("day");
 
   const { data: profile } = useQuery<{ organizationId?: string | null }>({
     queryKey: ["/api/profile"],
@@ -365,6 +546,34 @@ export default function CoachDashboardPage() {
     completed: dayBookings.filter((b) => b.status === "COMPLETED").length,
     pending: dayBookings.filter((b) => b.status === "PENDING").length,
   };
+
+  // Week / month derived data
+  const weekStart = startOfWeek(selectedDate, { weekStartsOn: 1 });
+  const weekEnd = endOfWeek(selectedDate, { weekStartsOn: 1 });
+  const weekDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
+
+  const weekBookings = (bookings || []).filter((b) => {
+    const d = parseISO(b.startAt as unknown as string);
+    return d >= weekStart && d <= weekEnd;
+  });
+  const monthBookings = (bookings || []).filter((b) =>
+    isSameMonth(parseISO(b.startAt as unknown as string), selectedDate)
+  );
+
+  const weekStats = {
+    total: weekBookings.length,
+    confirmed: weekBookings.filter((b) => b.status === "CONFIRMED").length,
+    completed: weekBookings.filter((b) => b.status === "COMPLETED").length,
+    pending: weekBookings.filter((b) => b.status === "PENDING").length,
+  };
+  const monthStats = {
+    total: monthBookings.length,
+    confirmed: monthBookings.filter((b) => b.status === "CONFIRMED").length,
+    completed: monthBookings.filter((b) => b.status === "COMPLETED").length,
+    pending: monthBookings.filter((b) => b.status === "PENDING").length,
+  };
+
+  const activeStats = viewMode === "day" ? dayStats : viewMode === "week" ? weekStats : monthStats;
 
   const scrollToHour = useCallback((hour: number) => {
     if (!calendarRef.current) return;
@@ -495,273 +704,286 @@ export default function CoachDashboardPage() {
         </Card>
       )}
 
-      {/* Date navigation */}
+      {/* View switcher + Date navigation */}
       <DashSectionReveal>
-      <div className="flex items-center gap-2 flex-wrap">
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setSelectedDate(subDays(selectedDate, 1))}
-          data-testid="button-prev-day"
-        >
-          <ChevronLeft className="h-4 w-4" />
-        </Button>
-        <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" className="flex-1 sm:flex-none min-w-0 truncate" data-testid="button-date-picker">
-              <Calendar className="h-4 w-4 mr-2 shrink-0" />
-              <span className="truncate hidden sm:inline">{format(selectedDate, "EEEE, MMMM d, yyyy")}</span>
-              <span className="truncate sm:hidden">{format(selectedDate, "EEE, MMM d")}</span>
+        {/* View mode tabs */}
+        <div className="flex rounded-lg border border-border overflow-hidden mb-3 w-full sm:w-auto" data-testid="view-switcher">
+          {(["day", "week", "month"] as CalendarView[]).map((v) => (
+            <button
+              key={v}
+              onClick={() => setViewMode(v)}
+              className={`flex-1 px-3 py-1.5 text-xs font-semibold capitalize transition-colors ${
+                viewMode === v
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-background text-muted-foreground hover:bg-muted"
+              }`}
+              data-testid={`button-view-${v}`}
+            >
+              {v.charAt(0).toUpperCase() + v.slice(1)}
+            </button>
+          ))}
+        </div>
+
+        {/* Day nav */}
+        {viewMode === "day" && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button variant="outline" size="icon" onClick={() => setSelectedDate(subDays(selectedDate, 1))} data-testid="button-prev-day">
+              <ChevronLeft className="h-4 w-4" />
             </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <CalendarWidget
-              mode="single"
-              selected={selectedDate}
-              onSelect={(date) => {
-                if (date) setSelectedDate(date);
-                setCalendarOpen(false);
-              }}
-              data-testid="calendar-day-picker"
-            />
-          </PopoverContent>
-        </Popover>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => setSelectedDate(addDays(selectedDate, 1))}
-          data-testid="button-next-day"
-        >
-          <ChevronRight className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => setSelectedDate(new Date())}
-          data-testid="button-today"
-        >
-          Today
-        </Button>
-      </div>
+            <Popover open={calendarOpen} onOpenChange={setCalendarOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" className="flex-1 sm:flex-none min-w-0 truncate" data-testid="button-date-picker">
+                  <Calendar className="h-4 w-4 mr-2 shrink-0" />
+                  <span className="truncate hidden sm:inline">{format(selectedDate, "EEEE, MMMM d, yyyy")}</span>
+                  <span className="truncate sm:hidden">{format(selectedDate, "EEE, MMM d")}</span>
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-auto p-0" align="start">
+                <CalendarWidget
+                  mode="single"
+                  selected={selectedDate}
+                  onSelect={(date) => { if (date) setSelectedDate(date); setCalendarOpen(false); }}
+                  data-testid="calendar-day-picker"
+                />
+              </PopoverContent>
+            </Popover>
+            <Button variant="outline" size="icon" onClick={() => setSelectedDate(addDays(selectedDate, 1))} data-testid="button-next-day">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())} data-testid="button-today">Today</Button>
+          </div>
+        )}
+
+        {/* Week nav */}
+        {viewMode === "week" && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={() => setSelectedDate(subWeeks(selectedDate, 1))} data-testid="button-prev-week">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="flex-1 sm:flex-none text-sm font-medium" disabled data-testid="button-week-range">
+              <Calendar className="h-4 w-4 mr-2 shrink-0" />
+              {format(weekStart, "MMM d")} – {format(weekEnd, "MMM d, yyyy")}
+            </Button>
+            <Button variant="outline" size="icon" onClick={() => setSelectedDate(addWeeks(selectedDate, 1))} data-testid="button-next-week">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())} data-testid="button-today-week">Today</Button>
+          </div>
+        )}
+
+        {/* Month nav */}
+        {viewMode === "month" && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="icon" onClick={() => setSelectedDate(subMonths(selectedDate, 1))} data-testid="button-prev-month">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button variant="outline" className="flex-1 sm:flex-none text-sm font-medium" disabled data-testid="button-month-label">
+              <Calendar className="h-4 w-4 mr-2 shrink-0" />
+              {format(selectedDate, "MMMM yyyy")}
+            </Button>
+            <Button variant="outline" size="icon" onClick={() => setSelectedDate(addMonths(selectedDate, 1))} data-testid="button-next-month">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setSelectedDate(new Date())} data-testid="button-today-month">Today</Button>
+          </div>
+        )}
       </DashSectionReveal>
 
-      {/* Quick scroll controls */}
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">Jump to:</span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs gap-1 px-2"
-          onClick={() => scrollToHour(6)}
-          data-testid="button-scroll-morning"
-        >
-          <Sunrise className="h-3 w-3" />
-          Morning
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs gap-1 px-2"
-          onClick={() => scrollToHour(12)}
-          data-testid="button-scroll-afternoon"
-        >
-          <Sun className="h-3 w-3" />
-          Afternoon
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs gap-1 px-2"
-          onClick={() => scrollToHour(16)}
-          data-testid="button-scroll-evening"
-        >
-          <Sunset className="h-3 w-3" />
-          Evening
-        </Button>
-      </div>
+      {/* Quick scroll controls — Day view only */}
+      {viewMode === "day" && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">Jump to:</span>
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1 px-2" onClick={() => scrollToHour(6)} data-testid="button-scroll-morning">
+            <Sunrise className="h-3 w-3" /> Morning
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1 px-2" onClick={() => scrollToHour(12)} data-testid="button-scroll-afternoon">
+            <Sun className="h-3 w-3" /> Afternoon
+          </Button>
+          <Button variant="outline" size="sm" className="h-7 text-xs gap-1 px-2" onClick={() => scrollToHour(16)} data-testid="button-scroll-evening">
+            <Sunset className="h-3 w-3" /> Evening
+          </Button>
+        </div>
+      )}
 
-      {/* Stats */}
+      {/* Stats — update based on active view */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <Card className="p-3 text-center">
-          <p className="text-2xl font-bold text-primary" data-testid="text-day-total">{dayStats.total}</p>
+          <p className="text-2xl font-bold text-primary" data-testid="text-stat-total">{activeStats.total}</p>
           <p className="text-xs text-muted-foreground">Total</p>
         </Card>
         <Card className="p-3 text-center">
-          <p className="text-2xl font-bold" data-testid="text-day-confirmed">{dayStats.confirmed}</p>
+          <p className="text-2xl font-bold" data-testid="text-stat-confirmed">{activeStats.confirmed}</p>
           <p className="text-xs text-muted-foreground">Confirmed</p>
         </Card>
         <Card className="p-3 text-center">
-          <p className="text-2xl font-bold" data-testid="text-day-pending">{dayStats.pending}</p>
+          <p className="text-2xl font-bold" data-testid="text-stat-pending">{activeStats.pending}</p>
           <p className="text-xs text-muted-foreground">Pending</p>
         </Card>
         <Card className="p-3 text-center">
-          <p className="text-2xl font-bold" data-testid="text-day-completed">{dayStats.completed}</p>
+          <p className="text-2xl font-bold" data-testid="text-stat-completed">{activeStats.completed}</p>
           <p className="text-xs text-muted-foreground">Completed</p>
         </Card>
       </div>
 
-      {/* Calendar card */}
-      <div className="relative">
-        {/* Sticky mini header */}
-        {showStickyHeader && (
-          <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between gap-2 px-3 py-2 bg-background/95 backdrop-blur-sm border-b rounded-t-lg">
-            <div className="flex items-center gap-2 min-w-0">
-              <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-              <span className="text-sm font-medium truncate">{format(selectedDate, "EEEE, MMM d")}</span>
-              {selectedCoachId && selectedCoachId !== myCoachProfile?.id && (
-                <span className="text-xs text-muted-foreground truncate hidden sm:inline">· {selectedCoachName}</span>
-              )}
-            </div>
-            <AddSessionDialog
-              initialDate={selectedDate}
-              initialTime={slotTime}
-              coachId={activeCoachId}
-              triggerButton={
-                <Button size="sm" className="h-7 text-xs shrink-0" data-testid="button-add-session-sticky">
-                  <Plus className="h-3 w-3 mr-1" />
-                  Add
-                </Button>
-              }
-            />
-          </div>
-        )}
-
-        <Card className="p-0 overflow-x-hidden overflow-y-auto" style={{ maxHeight: "70vh" }} ref={calendarRef}>
-          <div
-            className="relative"
-            style={{ height: `${TOTAL_MINUTES * PIXELS_PER_MINUTE}px` }}
-            data-testid="calendar-timeline"
-          >
-            {/* Availability background blocks */}
-            {dayAvailability.map((block) => {
-              const [sh, sm] = block.startTime.split(":").map(Number);
-              const [eh, em] = block.endTime.split(":").map(Number);
-              const topMin = minutesSinceStart(sh, sm);
-              const endMin = minutesSinceStart(eh, em);
-              const top = topMin * PIXELS_PER_MINUTE;
-              const height = (endMin - topMin) * PIXELS_PER_MINUTE;
-              return (
-                <div
-                  key={block.id}
-                  className="absolute left-0 right-0 bg-primary/5 border-l-2 border-primary/20"
-                  style={{ top: `${top}px`, height: `${height}px` }}
-                  data-testid={`availability-block-${block.id}`}
-                />
-              );
-            })}
-
-            {/* 30-minute time slots */}
-            {slots.map(({ hour, minute }) => {
-              const topMin = minutesSinceStart(hour, minute);
-              const top = topMin * PIXELS_PER_MINUTE;
-              const isFullHour = minute === 0;
-              const slotKey = `slot-${hour}-${minute}`;
-
-              return (
-                <div key={slotKey}>
-                  {/* Divider line */}
-                  <div
-                    className="absolute left-0 right-0 flex items-start pointer-events-none"
-                    style={{ top: `${top}px` }}
-                  >
-                    {isFullHour ? (
-                      <>
-                        <span className="w-14 text-right pr-2 text-[11px] text-muted-foreground -mt-1.5 select-none shrink-0">
-                          {formatHour(hour)}
-                        </span>
-                        <div className="flex-1 border-t border-border/50" />
-                      </>
-                    ) : (
-                      <>
-                        <span className="w-14 text-right pr-2 text-[10px] text-muted-foreground/50 -mt-1 select-none shrink-0">
-                          :30
-                        </span>
-                        <div className="flex-1 border-t border-dashed border-border/25" />
-                      </>
-                    )}
-                  </div>
-
-                  {/* Clickable slot area */}
-                  <div
-                    className="absolute left-16 right-2 cursor-pointer rounded-sm transition-colors group hover:bg-primary/5 active:bg-primary/10"
-                    style={{ top: `${top}px`, height: `${HALF_SLOT_HEIGHT}px`, zIndex: 1 }}
-                    onClick={() => handleSlotClick(hour, minute)}
-                    data-testid={`slot-${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`}
-                  >
-                    <div className="flex items-center justify-center h-full opacity-0 group-hover:opacity-100 transition-opacity">
-                      <Plus className="h-3.5 w-3.5 text-muted-foreground" />
-                    </div>
-                  </div>
+      {/* Calendar / schedule area — switches by viewMode */}
+      {viewMode === "day" && (
+        <>
+          <div className="relative">
+            {showStickyHeader && (
+              <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between gap-2 px-3 py-2 bg-background/95 backdrop-blur-sm border-b rounded-t-lg">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Calendar className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="text-sm font-medium truncate">{format(selectedDate, "EEEE, MMM d")}</span>
+                  {selectedCoachId && selectedCoachId !== myCoachProfile?.id && (
+                    <span className="text-xs text-muted-foreground truncate hidden sm:inline">· {selectedCoachName}</span>
+                  )}
                 </div>
-              );
-            })}
-
-            {/* Bookings */}
-            {dayBookings.map((booking) => (
-              <BookingBlock
-                key={booking.id}
-                booking={booking}
-                redeemedIds={redeemedIds}
-                onStatusChange={(id, status) => updateStatusMutation.mutate({ bookingId: id, status })}
-                onRedeem={(id) => redeemMutation.mutate(id)}
-                onEdit={(b) => setEditBooking(b)}
-                statusPending={updateStatusMutation.isPending}
-                redeemPending={redeemMutation.isPending}
-              />
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      {/* Quick time picker popover */}
-      {quickPickerSlot && (
-        <div
-          className="fixed inset-0 z-40"
-          onClick={() => setQuickPickerSlot(null)}
-        >
-          <div
-            className="absolute bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto"
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              bottom: 0,
-            }}
-          >
-            <Card className="rounded-b-none sm:rounded-lg p-4 space-y-3 shadow-xl border sm:relative sm:bottom-auto sm:left-auto sm:right-auto sm:w-64 mx-auto max-w-sm w-full">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold">Choose start time</p>
-                <button
-                  type="button"
-                  className="text-muted-foreground hover:text-foreground text-xs"
-                  onClick={() => setQuickPickerSlot(null)}
-                  data-testid="button-close-time-picker"
-                >
-                  ✕
-                </button>
+                <AddSessionDialog
+                  initialDate={selectedDate}
+                  initialTime={slotTime}
+                  coachId={activeCoachId}
+                  triggerButton={
+                    <Button size="sm" className="h-7 text-xs shrink-0" data-testid="button-add-session-sticky">
+                      <Plus className="h-3 w-3 mr-1" /> Add
+                    </Button>
+                  }
+                />
               </div>
-              <div className="flex flex-wrap gap-2">
-                {quickPickerOptions.map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className="flex-1 min-w-[80px] py-2 px-3 rounded-md border text-sm font-medium bg-background hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
-                    onClick={() => handlePickerSelect(opt.value)}
-                    data-testid={`time-chip-${opt.value}`}
-                  >
-                    {opt.label}
-                  </button>
+            )}
+
+            <Card className="p-0 overflow-x-hidden overflow-y-auto" style={{ maxHeight: "70vh" }} ref={calendarRef}>
+              <div
+                className="relative"
+                style={{ height: `${TOTAL_MINUTES * PIXELS_PER_MINUTE}px` }}
+                data-testid="calendar-timeline"
+              >
+                {dayAvailability.map((block) => {
+                  const [sh, sm] = block.startTime.split(":").map(Number);
+                  const [eh, em] = block.endTime.split(":").map(Number);
+                  const topMin = minutesSinceStart(sh, sm);
+                  const endMin = minutesSinceStart(eh, em);
+                  return (
+                    <div
+                      key={block.id}
+                      className="absolute left-0 right-0 bg-primary/5 border-l-2 border-primary/20"
+                      style={{ top: `${topMin * PIXELS_PER_MINUTE}px`, height: `${(endMin - topMin) * PIXELS_PER_MINUTE}px` }}
+                      data-testid={`availability-block-${block.id}`}
+                    />
+                  );
+                })}
+
+                {slots.map(({ hour, minute }) => {
+                  const topMin = minutesSinceStart(hour, minute);
+                  const top = topMin * PIXELS_PER_MINUTE;
+                  const isFullHour = minute === 0;
+                  return (
+                    <div key={`slot-${hour}-${minute}`}>
+                      <div className="absolute left-0 right-0 flex items-start pointer-events-none" style={{ top: `${top}px` }}>
+                        {isFullHour ? (
+                          <>
+                            <span className="w-14 text-right pr-2 text-[11px] text-muted-foreground -mt-1.5 select-none shrink-0">{formatHour(hour)}</span>
+                            <div className="flex-1 border-t border-border/50" />
+                          </>
+                        ) : (
+                          <>
+                            <span className="w-14 text-right pr-2 text-[10px] text-muted-foreground/50 -mt-1 select-none shrink-0">:30</span>
+                            <div className="flex-1 border-t border-dashed border-border/25" />
+                          </>
+                        )}
+                      </div>
+                      <div
+                        className="absolute left-16 right-2 cursor-pointer rounded-sm transition-colors group hover:bg-primary/5 active:bg-primary/10"
+                        style={{ top: `${top}px`, height: `${HALF_SLOT_HEIGHT}px`, zIndex: 1 }}
+                        onClick={() => handleSlotClick(hour, minute)}
+                        data-testid={`slot-${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`}
+                      >
+                        <div className="flex items-center justify-center h-full opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {dayBookings.map((booking) => (
+                  <BookingBlock
+                    key={booking.id}
+                    booking={booking}
+                    redeemedIds={redeemedIds}
+                    onStatusChange={(id, status) => updateStatusMutation.mutate({ bookingId: id, status })}
+                    onRedeem={(id) => redeemMutation.mutate(id)}
+                    onEdit={(b) => setEditBooking(b)}
+                    statusPending={updateStatusMutation.isPending}
+                    redeemPending={redeemMutation.isPending}
+                  />
                 ))}
               </div>
             </Card>
           </div>
-        </div>
+
+          {quickPickerSlot && (
+            <div className="fixed inset-0 z-40" onClick={() => setQuickPickerSlot(null)}>
+              <div className="absolute bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-auto" onClick={(e) => e.stopPropagation()}>
+                <Card className="rounded-b-none sm:rounded-lg p-4 space-y-3 shadow-xl border sm:w-64 mx-auto max-w-sm w-full">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">Choose start time</p>
+                    <button type="button" className="text-muted-foreground hover:text-foreground text-xs" onClick={() => setQuickPickerSlot(null)} data-testid="button-close-time-picker">✕</button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {quickPickerOptions.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className="flex-1 min-w-[80px] py-2 px-3 rounded-md border text-sm font-medium bg-background hover:bg-primary hover:text-primary-foreground hover:border-primary transition-colors"
+                        onClick={() => handlePickerSelect(opt.value)}
+                        data-testid={`time-chip-${opt.value}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </Card>
+              </div>
+            </div>
+          )}
+
+          {dayBookings.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-3" data-testid="text-empty-day">
+              No sessions scheduled for {format(selectedDate, "EEEE, MMMM d")}. Tap a time slot or use "Add Session" to schedule one.
+            </p>
+          )}
+        </>
       )}
 
-      {dayBookings.length === 0 && (
-        <div className="text-center py-4">
-          <p className="text-sm text-muted-foreground">
-            No sessions scheduled for {format(selectedDate, "EEEE, MMMM d")}. Tap a time slot or use "Add Session" to schedule one.
-          </p>
-        </div>
+      {viewMode === "week" && (
+        <>
+          {weekBookings.length === 0 ? (
+            <p className="text-center text-sm text-muted-foreground py-3" data-testid="text-empty-week">
+              No sessions scheduled this week.
+            </p>
+          ) : null}
+          <WeekView
+            weekDays={weekDays}
+            bookings={bookings || []}
+            onDaySelect={(d) => { setSelectedDate(d); setViewMode("day"); }}
+            onBookingEdit={(b) => setEditBooking(b)}
+          />
+        </>
+      )}
+
+      {viewMode === "month" && (
+        <>
+          {monthBookings.length === 0 && (
+            <p className="text-center text-sm text-muted-foreground py-2" data-testid="text-empty-month">
+              No sessions scheduled this month.
+            </p>
+          )}
+          <MonthView
+            selectedDate={selectedDate}
+            bookings={bookings || []}
+            onDaySelect={(d) => { setSelectedDate(d); setViewMode("day"); }}
+          />
+        </>
       )}
 
       {editBooking && (
