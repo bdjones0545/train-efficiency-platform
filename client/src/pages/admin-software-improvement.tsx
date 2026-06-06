@@ -4,20 +4,29 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Bug, Zap, RefreshCw, Copy, Check, AlertTriangle, Clock,
   ChevronDown, ChevronUp, Plus, Archive, Send, GitPullRequest,
-  Filter, Play, ShieldAlert, Code, Wrench,
+  Filter, Play, ShieldAlert, Code, Wrench, Github, ExternalLink,
+  CheckCircle2, Loader2, Eye,
 } from "lucide-react";
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
+
+interface GitHubIssueDraft {
+  title: string;
+  body: string;
+  labels: string[];
+  severity: string;
+  affectedFiles: string;
+  codexPromptSummary: string;
+}
 
 interface SoftwareTask {
   id: string;
@@ -41,6 +50,9 @@ interface SoftwareTask {
   codexStatus?: string;
   codexBranch?: string;
   codexPrUrl?: string;
+  githubIssueUrl?: string;
+  githubApprovalQueueId?: string;
+  githubIssueDraft?: GitHubIssueDraft;
   createdAt: string;
   updatedAt: string;
   completedAt?: string;
@@ -74,6 +86,8 @@ const STATUS_COLORS: Record<string, string> = {
   merged: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
   rejected: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
   archived: "bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-500",
+  github_issue_draft_requested: "bg-violet-100 text-violet-800 dark:bg-violet-900/30 dark:text-violet-300",
+  github_issue_created: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300",
 };
 
 function SeverityBadge({ severity }: { severity: string }) {
@@ -101,16 +115,264 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
     });
   };
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={copy}
-      data-testid="button-copy-prompt"
-      className="gap-1.5"
-    >
+    <Button variant="outline" size="sm" onClick={copy} data-testid="button-copy-prompt" className="gap-1.5">
       {copied ? <Check className="h-3.5 w-3.5 text-green-500" /> : <Copy className="h-3.5 w-3.5" />}
       {copied ? "Copied!" : label}
     </Button>
+  );
+}
+
+// ─── GitHub Issue Draft Dialog ─────────────────────────────────────────────────
+
+function GitHubIssueDraftDialog({
+  open,
+  onClose,
+  task,
+  onRequested,
+}: {
+  open: boolean;
+  onClose: () => void;
+  task: SoftwareTask;
+  onRequested: () => void;
+}) {
+  const { toast } = useToast();
+  const [showBody, setShowBody] = useState(false);
+
+  const request = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/software-improvement/tasks/${task.id}/request-github-issue`),
+    onSuccess: () => {
+      toast({
+        title: "GitHub issue draft queued",
+        description: "The draft has been submitted for human approval. Review it in the approval queue.",
+      });
+      onRequested();
+      onClose();
+    },
+    onError: (err: any) =>
+      toast({ title: err?.message ?? "Failed to request GitHub issue", variant: "destructive" }),
+  });
+
+  const draft = task.githubIssueDraft ?? {
+    title: `[${task.severity.toUpperCase()}] ${task.title}`,
+    labels: [`severity:${task.severity}`, "ai-detected", "needs-review"],
+    body: `## Problem Summary\n${task.problemSummary}\n\n## Affected Area\n${task.affectedArea ?? "Not specified"}\n\n## Suspected Files\n${task.suspectedFiles ?? "Not specified"}`,
+    severity: task.severity,
+    affectedFiles: task.suspectedFiles ?? "",
+    codexPromptSummary: task.codexPrompt?.slice(0, 300) ?? "No prompt yet",
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Github className="h-5 w-5" />
+            GitHub Issue Draft
+          </DialogTitle>
+          <DialogDescription>
+            Review the proposed GitHub issue before submitting for approval. This will be queued — no GitHub write happens until an admin approves.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          {/* Safety notice */}
+          <div className="flex items-start gap-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg px-3 py-2.5 text-sm text-violet-800 dark:text-violet-300">
+            <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
+              <strong>Read-only + approval required.</strong> GitHub is in read-only mode for Phase 1. Submitting this will create an approval queue item — no GitHub issue is written until an admin explicitly approves it.
+            </span>
+          </div>
+
+          {/* Title */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Proposed Title</p>
+            <p className="text-sm font-medium bg-muted rounded px-3 py-2 font-mono" data-testid="text-github-draft-title">
+              {draft.title}
+            </p>
+          </div>
+
+          {/* Labels */}
+          <div>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Labels</p>
+            <div className="flex flex-wrap gap-1.5">
+              {draft.labels.map((label) => (
+                <span key={label} data-testid={`badge-github-label-${label}`} className="text-xs bg-muted border rounded px-2 py-0.5 font-mono">
+                  {label}
+                </span>
+              ))}
+            </div>
+          </div>
+
+          {/* Severity + Files */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Severity</p>
+              <SeverityBadge severity={draft.severity} />
+            </div>
+            {draft.affectedFiles && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Affected Files</p>
+                <p className="text-xs font-mono text-muted-foreground truncate" data-testid="text-github-draft-files">
+                  {draft.affectedFiles}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Issue body preview */}
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Issue Body</p>
+              <div className="flex gap-2">
+                <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setShowBody((v) => !v)} data-testid="button-toggle-body">
+                  <Eye className="h-3 w-3 mr-1" /> {showBody ? "Hide" : "Preview"}
+                </Button>
+                <CopyButton text={draft.body} label="Copy Body" />
+              </div>
+            </div>
+            {showBody && (
+              <pre className="text-xs bg-muted rounded p-3 whitespace-pre-wrap font-mono overflow-x-auto max-h-56 overflow-y-auto" data-testid="text-github-draft-body">
+                {draft.body}
+              </pre>
+            )}
+          </div>
+
+          {/* Codex prompt summary */}
+          {draft.codexPromptSummary && (
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Codex Prompt Summary</p>
+              <p className="text-xs text-muted-foreground bg-muted rounded px-2 py-1.5 line-clamp-3" data-testid="text-github-draft-codex-summary">
+                {draft.codexPromptSummary}
+              </p>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="mt-2 gap-2">
+          <Button variant="ghost" onClick={onClose} data-testid="button-cancel-github-draft">Cancel</Button>
+          <Button
+            onClick={() => request.mutate()}
+            disabled={request.isPending}
+            data-testid="button-submit-github-draft"
+            className="gap-1.5"
+          >
+            {request.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Github className="h-4 w-4" />}
+            {request.isPending ? "Submitting..." : "Submit for Approval"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── GitHub Approve Dialog ─────────────────────────────────────────────────────
+
+function GitHubApproveDialog({
+  open,
+  onClose,
+  task,
+  onApproved,
+}: {
+  open: boolean;
+  onClose: () => void;
+  task: SoftwareTask;
+  onApproved: () => void;
+}) {
+  const { toast } = useToast();
+  const [showBody, setShowBody] = useState(false);
+
+  const approve = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/software-improvement/tasks/${task.id}/approve-github-issue`),
+    onSuccess: (res: any) => {
+      toast({
+        title: res.githubIssueUrl ? "GitHub issue created!" : "Execution attempted",
+        description: res.message,
+      });
+      onApproved();
+      onClose();
+    },
+    onError: (err: any) =>
+      toast({ title: err?.message ?? "Execution failed", variant: "destructive" }),
+  });
+
+  const draft = task.githubIssueDraft;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+            Approve GitHub Issue Creation
+          </DialogTitle>
+          <DialogDescription>
+            You are approving the creation of this GitHub issue via Composio. This action requires admin approval and cannot be undone automatically.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-3 py-2.5 text-sm text-amber-800 dark:text-amber-300">
+            <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
+              <strong>Final approval step.</strong> Clicking "Execute" will call the Composio GitHub API to create this issue. Ensure your GitHub account is connected in Composio first.
+            </span>
+          </div>
+
+          {draft ? (
+            <>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Issue Title</p>
+                <p className="text-sm font-medium bg-muted rounded px-3 py-2 font-mono">{draft.title}</p>
+              </div>
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Labels</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {draft.labels.map((label) => (
+                    <span key={label} className="text-xs bg-muted border rounded px-2 py-0.5 font-mono">{label}</span>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Issue Body</p>
+                  <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setShowBody((v) => !v)} data-testid="button-toggle-approve-body">
+                    <Eye className="h-3 w-3 mr-1" /> {showBody ? "Hide" : "Preview"}
+                  </Button>
+                </div>
+                {showBody && (
+                  <pre className="text-xs bg-muted rounded p-3 whitespace-pre-wrap font-mono overflow-x-auto max-h-48 overflow-y-auto">
+                    {draft.body}
+                  </pre>
+                )}
+              </div>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">No draft stored — the issue will be built from task data.</p>
+          )}
+
+          {task.githubApprovalQueueId && (
+            <div className="text-xs text-muted-foreground border rounded px-3 py-2">
+              <strong>Approval Queue ID:</strong> <span className="font-mono">{task.githubApprovalQueueId}</span>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="mt-2 gap-2">
+          <Button variant="ghost" onClick={onClose} data-testid="button-cancel-approve">Cancel</Button>
+          <Button
+            onClick={() => approve.mutate()}
+            disabled={approve.isPending}
+            data-testid="button-execute-github-issue"
+            className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {approve.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+            {approve.isPending ? "Executing..." : "Execute GitHub Issue Creation"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -119,6 +381,8 @@ function CopyButton({ text, label = "Copy" }: { text: string; label?: string }) 
 function TaskCard({ task, onRefresh }: { task: SoftwareTask; onRefresh: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [showPrompt, setShowPrompt] = useState(false);
+  const [showGitHubDraft, setShowGitHubDraft] = useState(false);
+  const [showGitHubApprove, setShowGitHubApprove] = useState(false);
   const { toast } = useToast();
 
   const prepareCodex = useMutation({
@@ -145,21 +409,44 @@ function TaskCard({ task, onRefresh }: { task: SoftwareTask; onRefresh: () => vo
     onError: () => toast({ title: "Failed to archive", variant: "destructive" }),
   });
 
+  const isHighSeverity = ["high", "critical"].includes(task.severity);
+
   const statusActions: Record<string, JSX.Element | null> = {
     detected: (
-      <Button size="sm" variant="outline" onClick={() => prepareCodex.mutate()} disabled={prepareCodex.isPending} data-testid="button-prepare-codex">
-        <Code className="h-3.5 w-3.5 mr-1.5" /> Prepare Codex Prompt
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => prepareCodex.mutate()} disabled={prepareCodex.isPending} data-testid="button-prepare-codex">
+          <Code className="h-3.5 w-3.5 mr-1.5" /> Prepare Codex Prompt
+        </Button>
+        {isHighSeverity && (
+          <Button size="sm" variant="outline" className="border-violet-400 text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-900/20" onClick={() => setShowGitHubDraft(true)} data-testid="button-create-github-issue-draft">
+            <Github className="h-3.5 w-3.5 mr-1.5" /> Create GitHub Issue Draft
+          </Button>
+        )}
+      </div>
     ),
     triaged: (
-      <Button size="sm" variant="outline" onClick={() => prepareCodex.mutate()} disabled={prepareCodex.isPending} data-testid="button-prepare-codex">
-        <Code className="h-3.5 w-3.5 mr-1.5" /> Prepare Codex Prompt
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="outline" onClick={() => prepareCodex.mutate()} disabled={prepareCodex.isPending} data-testid="button-prepare-codex">
+          <Code className="h-3.5 w-3.5 mr-1.5" /> Prepare Codex Prompt
+        </Button>
+        {isHighSeverity && (
+          <Button size="sm" variant="outline" className="border-violet-400 text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-900/20" onClick={() => setShowGitHubDraft(true)} data-testid="button-create-github-issue-draft">
+            <Github className="h-3.5 w-3.5 mr-1.5" /> Create GitHub Issue Draft
+          </Button>
+        )}
+      </div>
     ),
     ready_for_codex: (
-      <Button size="sm" variant="default" onClick={() => markSent.mutate()} disabled={markSent.isPending} data-testid="button-mark-sent">
-        <Send className="h-3.5 w-3.5 mr-1.5" /> Mark Sent to Codex
-      </Button>
+      <div className="flex flex-wrap gap-2">
+        <Button size="sm" variant="default" onClick={() => markSent.mutate()} disabled={markSent.isPending} data-testid="button-mark-sent">
+          <Send className="h-3.5 w-3.5 mr-1.5" /> Mark Sent to Codex
+        </Button>
+        {isHighSeverity && (
+          <Button size="sm" variant="outline" className="border-violet-400 text-violet-700 hover:bg-violet-50 dark:text-violet-300 dark:hover:bg-violet-900/20" onClick={() => setShowGitHubDraft(true)} data-testid="button-create-github-issue-draft">
+            <Github className="h-3.5 w-3.5 mr-1.5" /> Create GitHub Issue Draft
+          </Button>
+        )}
+      </div>
     ),
     sent_to_codex: (
       <Button size="sm" variant="outline" onClick={() => markReview.mutate()} disabled={markReview.isPending} data-testid="button-mark-review">
@@ -171,6 +458,23 @@ function TaskCard({ task, onRefresh }: { task: SoftwareTask; onRefresh: () => vo
         <GitPullRequest className="h-3.5 w-3.5 mr-1.5" /> Mark PR Open
       </Button>
     ),
+    github_issue_draft_requested: (
+      <div className="space-y-2 w-full">
+        <div className="flex items-center gap-2 text-xs text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded px-3 py-2">
+          <Clock className="h-3.5 w-3.5 shrink-0" />
+          <span>GitHub issue draft is <strong>pending admin approval</strong>. Review in the approval queue, then execute below.</span>
+        </div>
+        <Button
+          size="sm"
+          className="gap-1.5 bg-emerald-600 hover:bg-emerald-700 text-white"
+          onClick={() => setShowGitHubApprove(true)}
+          data-testid="button-approve-github-issue"
+        >
+          <CheckCircle2 className="h-3.5 w-3.5" /> Approve & Create GitHub Issue
+        </Button>
+      </div>
+    ),
+    github_issue_created: null,
     needs_review: null,
     merged: null,
     rejected: null,
@@ -178,119 +482,192 @@ function TaskCard({ task, onRefresh }: { task: SoftwareTask; onRefresh: () => vo
   };
 
   return (
-    <Card data-testid={`card-task-${task.id}`} className="border dark:border-gray-700">
-      <CardHeader className="pb-2">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex flex-wrap items-center gap-2 mb-1.5">
-              <SeverityBadge severity={task.severity} />
-              <StatusBadge status={task.status} />
-              <span className="text-xs text-muted-foreground">Priority: {task.priority}</span>
-            </div>
-            <CardTitle className="text-sm font-semibold leading-snug" data-testid={`text-task-title-${task.id}`}>
-              {task.title}
-            </CardTitle>
-          </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7 shrink-0"
-            onClick={() => setExpanded((v) => !v)}
-            data-testid={`button-expand-${task.id}`}
-          >
-            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </Button>
-        </div>
-
-        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground mt-1">
-          <span data-testid={`text-source-agent-${task.id}`}>
-            <strong>Source:</strong> {task.sourceAgent.replace(/_/g, " ")}
-          </span>
-          {task.affectedArea && (
-            <span data-testid={`text-affected-area-${task.id}`}>
-              <strong>Area:</strong> {task.affectedArea}
-            </span>
-          )}
-        </div>
-      </CardHeader>
-
-      {expanded && (
-        <CardContent className="pt-0 space-y-3">
-          {task.businessContext && (
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Business Context</p>
-              <p className="text-sm" data-testid={`text-business-context-${task.id}`}>{task.businessContext}</p>
-            </div>
-          )}
-          <div>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Problem Summary</p>
-            <p className="text-sm" data-testid={`text-problem-summary-${task.id}`}>{task.problemSummary}</p>
-          </div>
-          {task.suspectedFiles && (
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Suspected Files</p>
-              <p className="text-sm font-mono text-xs bg-muted rounded px-2 py-1" data-testid={`text-suspected-files-${task.id}`}>{task.suspectedFiles}</p>
-            </div>
-          )}
-          {task.reproductionSteps && (
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Reproduction Steps</p>
-              <p className="text-sm whitespace-pre-line" data-testid={`text-reproduction-steps-${task.id}`}>{task.reproductionSteps}</p>
-            </div>
-          )}
-          {task.expectedBehavior && (
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Expected Behavior</p>
-              <p className="text-sm" data-testid={`text-expected-behavior-${task.id}`}>{task.expectedBehavior}</p>
-            </div>
-          )}
-
-          {task.codexPrompt && (
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Codex Prompt</p>
-                <div className="flex gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-6 text-xs"
-                    onClick={() => setShowPrompt((v) => !v)}
-                    data-testid="button-toggle-prompt"
-                  >
-                    {showPrompt ? "Hide" : "Preview"}
-                  </Button>
-                  <CopyButton text={task.codexPrompt} label="Copy Prompt" />
-                </div>
+    <>
+      <Card data-testid={`card-task-${task.id}`} className="border dark:border-gray-700">
+        <CardHeader className="pb-2">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex flex-wrap items-center gap-2 mb-1.5">
+                <SeverityBadge severity={task.severity} />
+                <StatusBadge status={task.status} />
+                <span className="text-xs text-muted-foreground">Priority: {task.priority}</span>
               </div>
-              {showPrompt && (
-                <pre className="text-xs bg-muted rounded p-3 whitespace-pre-wrap font-mono overflow-x-auto max-h-64 overflow-y-auto" data-testid="text-codex-prompt-preview">
-                  {task.codexPrompt}
-                </pre>
-              )}
+              <CardTitle className="text-sm font-semibold leading-snug" data-testid={`text-task-title-${task.id}`}>
+                {task.title}
+              </CardTitle>
             </div>
-          )}
-
-          <div className="flex flex-wrap gap-2 pt-1 border-t dark:border-gray-700">
-            {statusActions[task.status]}
             <Button
               variant="ghost"
-              size="sm"
-              className="text-muted-foreground"
-              onClick={() => archiveTask.mutate()}
-              disabled={archiveTask.isPending || task.status === "archived"}
-              data-testid={`button-archive-${task.id}`}
+              size="icon"
+              className="h-7 w-7 shrink-0"
+              onClick={() => setExpanded((v) => !v)}
+              data-testid={`button-expand-${task.id}`}
             >
-              <Archive className="h-3.5 w-3.5 mr-1.5" /> Archive
+              {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
             </Button>
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            Created {new Date(task.createdAt).toLocaleDateString()}
-            {task.completedAt && ` · Completed ${new Date(task.completedAt).toLocaleDateString()}`}
-          </p>
-        </CardContent>
+          <div className="flex flex-wrap gap-3 text-xs text-muted-foreground mt-1">
+            <span data-testid={`text-source-agent-${task.id}`}>
+              <strong>Source:</strong> {task.sourceAgent.replace(/_/g, " ")}
+            </span>
+            {task.affectedArea && (
+              <span data-testid={`text-affected-area-${task.id}`}>
+                <strong>Area:</strong> {task.affectedArea}
+              </span>
+            )}
+            {task.githubIssueUrl && (
+              <a
+                href={task.githubIssueUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-emerald-700 dark:text-emerald-400 font-medium hover:underline"
+                data-testid={`link-github-issue-${task.id}`}
+              >
+                <Github className="h-3 w-3" />
+                View GitHub Issue
+                <ExternalLink className="h-2.5 w-2.5" />
+              </a>
+            )}
+          </div>
+        </CardHeader>
+
+        {expanded && (
+          <CardContent className="pt-0 space-y-3">
+            {task.businessContext && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Business Context</p>
+                <p className="text-sm" data-testid={`text-business-context-${task.id}`}>{task.businessContext}</p>
+              </div>
+            )}
+            <div>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Problem Summary</p>
+              <p className="text-sm" data-testid={`text-problem-summary-${task.id}`}>{task.problemSummary}</p>
+            </div>
+            {task.suspectedFiles && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Suspected Files</p>
+                <p className="text-sm font-mono text-xs bg-muted rounded px-2 py-1" data-testid={`text-suspected-files-${task.id}`}>{task.suspectedFiles}</p>
+              </div>
+            )}
+            {task.reproductionSteps && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Reproduction Steps</p>
+                <p className="text-sm whitespace-pre-line" data-testid={`text-reproduction-steps-${task.id}`}>{task.reproductionSteps}</p>
+              </div>
+            )}
+            {task.expectedBehavior && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Expected Behavior</p>
+                <p className="text-sm" data-testid={`text-expected-behavior-${task.id}`}>{task.expectedBehavior}</p>
+              </div>
+            )}
+
+            {task.codexPrompt && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Codex Prompt</p>
+                  <div className="flex gap-2">
+                    <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={() => setShowPrompt((v) => !v)} data-testid="button-toggle-prompt">
+                      {showPrompt ? "Hide" : "Preview"}
+                    </Button>
+                    <CopyButton text={task.codexPrompt} label="Copy Prompt" />
+                  </div>
+                </div>
+                {showPrompt && (
+                  <pre className="text-xs bg-muted rounded p-3 whitespace-pre-wrap font-mono overflow-x-auto max-h-64 overflow-y-auto" data-testid="text-codex-prompt-preview">
+                    {task.codexPrompt}
+                  </pre>
+                )}
+              </div>
+            )}
+
+            {/* GitHub issue created info */}
+            {task.status === "github_issue_created" && (
+              <div className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 rounded-lg px-3 py-2.5">
+                <CheckCircle2 className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
+                <div className="text-sm">
+                  <p className="font-semibold text-emerald-800 dark:text-emerald-300">GitHub issue created via Composio</p>
+                  {task.githubIssueUrl ? (
+                    <a
+                      href={task.githubIssueUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-emerald-700 dark:text-emerald-400 hover:underline flex items-center gap-1 mt-0.5"
+                      data-testid={`link-github-issue-detail-${task.id}`}
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      {task.githubIssueUrl}
+                    </a>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-0.5">URL not returned — check GitHub directly.</p>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* GitHub draft stored info */}
+            {task.githubIssueDraft && task.status === "github_issue_draft_requested" && (
+              <div className="border rounded-lg px-3 py-2.5 space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Stored GitHub Draft</p>
+                  <CopyButton text={task.githubIssueDraft.body} label="Copy Body" />
+                </div>
+                <p className="text-xs font-mono bg-muted rounded px-2 py-1" data-testid="text-stored-draft-title">{task.githubIssueDraft.title}</p>
+                <div className="flex flex-wrap gap-1">
+                  {task.githubIssueDraft.labels.map((l) => (
+                    <span key={l} className="text-xs bg-muted border rounded px-1.5 py-0.5 font-mono">{l}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-2 pt-1 border-t dark:border-gray-700">
+              {statusActions[task.status] ?? null}
+              <Button
+                variant="ghost"
+                size="sm"
+                className="text-muted-foreground"
+                onClick={() => archiveTask.mutate()}
+                disabled={archiveTask.isPending || task.status === "archived"}
+                data-testid={`button-archive-${task.id}`}
+              >
+                <Archive className="h-3.5 w-3.5 mr-1.5" /> Archive
+              </Button>
+            </div>
+
+            <p className="text-xs text-muted-foreground">
+              Created {new Date(task.createdAt).toLocaleDateString()}
+              {task.completedAt && ` · Completed ${new Date(task.completedAt).toLocaleDateString()}`}
+            </p>
+          </CardContent>
+        )}
+      </Card>
+
+      {showGitHubDraft && (
+        <GitHubIssueDraftDialog
+          open={showGitHubDraft}
+          onClose={() => setShowGitHubDraft(false)}
+          task={task}
+          onRequested={() => {
+            onRefresh();
+            queryClient.invalidateQueries({ queryKey: ["/api/software-improvement/tasks"] });
+          }}
+        />
       )}
-    </Card>
+
+      {showGitHubApprove && (
+        <GitHubApproveDialog
+          open={showGitHubApprove}
+          onClose={() => setShowGitHubApprove(false)}
+          task={task}
+          onApproved={() => {
+            onRefresh();
+            queryClient.invalidateQueries({ queryKey: ["/api/software-improvement/tasks"] });
+          }}
+        />
+      )}
+    </>
   );
 }
 
@@ -299,14 +676,8 @@ function TaskCard({ task, onRefresh }: { task: SoftwareTask; onRefresh: () => vo
 function CreateTaskDialog({ open, onClose, onSuccess }: { open: boolean; onClose: () => void; onSuccess: () => void }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
-    title: "",
-    problemSummary: "",
-    businessContext: "",
-    affectedArea: "",
-    suspectedFiles: "",
-    reproductionSteps: "",
-    expectedBehavior: "",
-    severity: "medium",
+    title: "", problemSummary: "", businessContext: "", affectedArea: "",
+    suspectedFiles: "", reproductionSteps: "", expectedBehavior: "", severity: "medium",
   });
 
   const create = useMutation({
@@ -342,9 +713,7 @@ function CreateTaskDialog({ open, onClose, onSuccess }: { open: boolean; onClose
           <div>
             <Label htmlFor="input-severity">Severity</Label>
             <Select value={form.severity} onValueChange={(v) => setForm((f) => ({ ...f, severity: v }))}>
-              <SelectTrigger data-testid="select-severity">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger data-testid="select-severity"><SelectValue /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="critical">Critical</SelectItem>
                 <SelectItem value="high">High</SelectItem>
@@ -422,13 +791,16 @@ export default function AdminSoftwareImprovementPage() {
 
   const uniqueSources = [...new Set(tasks.map((t) => t.sourceAgent))];
 
+  const githubDraftCount = tasks.filter((t) => t.status === "github_issue_draft_requested").length;
+  const githubCreatedCount = tasks.filter((t) => t.status === "github_issue_created").length;
+
   const stats = [
     { label: "Total Tasks", value: tasks.length, icon: Wrench, color: "text-blue-600" },
     { label: "Critical", value: data?.bySeverity?.critical ?? 0, icon: ShieldAlert, color: "text-red-600" },
     { label: "High", value: data?.bySeverity?.high ?? 0, icon: AlertTriangle, color: "text-orange-600" },
     { label: "Ready for Codex", value: data?.byStatus?.ready_for_codex ?? 0, icon: Code, color: "text-cyan-600" },
-    { label: "In Review", value: data?.byStatus?.needs_review ?? 0, icon: GitPullRequest, color: "text-amber-600" },
-    { label: "Merged", value: data?.byStatus?.merged ?? 0, icon: Check, color: "text-green-600" },
+    { label: "GitHub Pending", value: githubDraftCount, icon: Github, color: "text-violet-600" },
+    { label: "GitHub Created", value: githubCreatedCount, icon: CheckCircle2, color: "text-emerald-600" },
   ];
 
   return (
@@ -443,13 +815,7 @@ export default function AdminSoftwareImprovementPage() {
           <p className="text-sm text-muted-foreground">AI-detected engineering tasks, ready for the Codex workflow. Human review required before any code changes.</p>
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            data-testid="button-refresh"
-            className="gap-1.5"
-          >
+          <Button variant="outline" size="sm" onClick={() => refetch()} data-testid="button-refresh" className="gap-1.5">
             <RefreshCw className="h-3.5 w-3.5" /> Refresh
           </Button>
           <Button
@@ -463,12 +829,7 @@ export default function AdminSoftwareImprovementPage() {
             <Play className="h-3.5 w-3.5" />
             {runAgent.isPending ? "Scanning..." : "Run Agent Scan"}
           </Button>
-          <Button
-            size="sm"
-            onClick={() => setShowCreate(true)}
-            data-testid="button-create-task"
-            className="gap-1.5"
-          >
+          <Button size="sm" onClick={() => setShowCreate(true)} data-testid="button-create-task" className="gap-1.5">
             <Plus className="h-3.5 w-3.5" /> Report Issue
           </Button>
         </div>
@@ -478,7 +839,7 @@ export default function AdminSoftwareImprovementPage() {
       <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3 text-sm text-amber-800 dark:text-amber-300">
         <ShieldAlert className="h-4 w-4 mt-0.5 shrink-0" />
         <span>
-          <strong>Safety guardrails active.</strong> These are engineering suggestions only. Codex cannot execute production code, send emails, charge Stripe, or merge PRs automatically. Human review is required at every step.
+          <strong>Safety guardrails active.</strong> Codex cannot merge PRs automatically. GitHub issue creation via Composio is <strong>approval-required</strong> and only available for high/critical tasks. No autonomous financial or code-write actions.
         </span>
       </div>
 
@@ -495,13 +856,22 @@ export default function AdminSoftwareImprovementPage() {
         ))}
       </div>
 
+      {/* GitHub pending alert */}
+      {githubDraftCount > 0 && (
+        <div className="flex items-center gap-2 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800 rounded-lg px-4 py-3 text-sm text-violet-800 dark:text-violet-300">
+          <Github className="h-4 w-4 shrink-0" />
+          <span>
+            <strong>{githubDraftCount} GitHub issue{githubDraftCount > 1 ? "s" : ""} pending approval.</strong>{" "}
+            Expand the task{githubDraftCount > 1 ? "s" : ""} marked <em>github issue draft requested</em> and click "Approve &amp; Create GitHub Issue" to execute.
+          </span>
+        </div>
+      )}
+
       {/* Filters */}
       <div className="flex flex-wrap gap-2 items-center">
         <Filter className="h-4 w-4 text-muted-foreground" />
         <Select value={filterSeverity} onValueChange={setFilterSeverity}>
-          <SelectTrigger className="w-36 h-8" data-testid="select-filter-severity">
-            <SelectValue placeholder="Severity" />
-          </SelectTrigger>
+          <SelectTrigger className="w-36 h-8" data-testid="select-filter-severity"><SelectValue placeholder="Severity" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All severities</SelectItem>
             <SelectItem value="critical">Critical</SelectItem>
@@ -512,9 +882,7 @@ export default function AdminSoftwareImprovementPage() {
         </Select>
 
         <Select value={filterStatus} onValueChange={setFilterStatus}>
-          <SelectTrigger className="w-40 h-8" data-testid="select-filter-status">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
+          <SelectTrigger className="w-48 h-8" data-testid="select-filter-status"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All statuses</SelectItem>
             <SelectItem value="detected">Detected</SelectItem>
@@ -526,13 +894,13 @@ export default function AdminSoftwareImprovementPage() {
             <SelectItem value="merged">Merged</SelectItem>
             <SelectItem value="rejected">Rejected</SelectItem>
             <SelectItem value="archived">Archived</SelectItem>
+            <SelectItem value="github_issue_draft_requested">GitHub Draft Requested</SelectItem>
+            <SelectItem value="github_issue_created">GitHub Issue Created</SelectItem>
           </SelectContent>
         </Select>
 
         <Select value={filterSource} onValueChange={setFilterSource}>
-          <SelectTrigger className="w-44 h-8" data-testid="select-filter-source">
-            <SelectValue placeholder="Source Agent" />
-          </SelectTrigger>
+          <SelectTrigger className="w-44 h-8" data-testid="select-filter-source"><SelectValue placeholder="Source Agent" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">All agents</SelectItem>
             <SelectItem value="manual">Manual</SelectItem>
@@ -543,13 +911,7 @@ export default function AdminSoftwareImprovementPage() {
         </Select>
 
         {(filterSeverity !== "all" || filterStatus !== "all" || filterSource !== "all") && (
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => { setFilterSeverity("all"); setFilterStatus("all"); setFilterSource("all"); }}
-            data-testid="button-clear-filters"
-          >
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => { setFilterSeverity("all"); setFilterStatus("all"); setFilterSource("all"); }} data-testid="button-clear-filters">
             Clear filters
           </Button>
         )}
@@ -567,17 +929,10 @@ export default function AdminSoftwareImprovementPage() {
           <Bug className="h-10 w-10 mx-auto mb-3 opacity-30" />
           <p className="font-medium">No tasks found</p>
           <p className="text-sm mt-1">
-            {tasks.length === 0
-              ? "Run the agent scan or report an issue manually to get started."
-              : "Try adjusting your filters."}
+            {tasks.length === 0 ? "Run the agent scan or report an issue manually to get started." : "Try adjusting your filters."}
           </p>
           {tasks.length === 0 && (
-            <Button
-              className="mt-4"
-              onClick={() => runAgent.mutate()}
-              disabled={runAgent.isPending || !data?.canRunAgent}
-              data-testid="button-run-agent-empty"
-            >
+            <Button className="mt-4" onClick={() => runAgent.mutate()} disabled={runAgent.isPending || !data?.canRunAgent} data-testid="button-run-agent-empty">
               <Play className="h-4 w-4 mr-2" />
               Run First Scan
             </Button>

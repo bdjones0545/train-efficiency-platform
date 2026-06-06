@@ -5181,6 +5181,8 @@ export const softwareImprovementStatusEnum = pgEnum("software_improvement_status
   "merged",
   "rejected",
   "archived",
+  "github_issue_draft_requested",
+  "github_issue_created",
 ]);
 
 export const softwareImprovementTasks = pgTable("software_improvement_tasks", {
@@ -5205,6 +5207,9 @@ export const softwareImprovementTasks = pgTable("software_improvement_tasks", {
   codexStatus: varchar("codex_status", { length: 64 }),
   codexBranch: varchar("codex_branch", { length: 256 }),
   codexPrUrl: varchar("codex_pr_url", { length: 512 }),
+  githubIssueUrl: varchar("github_issue_url", { length: 512 }),
+  githubApprovalQueueId: varchar("github_approval_queue_id", { length: 256 }),
+  githubIssueDraft: jsonb("github_issue_draft"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   completedAt: timestamp("completed_at"),

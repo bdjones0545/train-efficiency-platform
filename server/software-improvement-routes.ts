@@ -4,20 +4,105 @@
  * All routes enforce organization/session isolation.
  * SAFETY: These routes manage task records only — no code execution,
  * no deployment, no PR merges, no emails, no Stripe actions.
+ *
+ * Phase 2A additions:
+ *   POST /api/software-improvement/tasks/:id/request-github-issue
+ *   POST /api/software-improvement/tasks/:id/approve-github-issue
+ *   GET  /api/software-improvement/tasks/:id/github-issue-draft
  */
 
 import { Express } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
-import { softwareImprovementTasks } from "@shared/schema";
+import { softwareImprovementTasks, agentOperatingTimeline } from "@shared/schema";
 import {
   runSoftwareImprovementAgent,
   ensureSoftwareImprovementTable,
   canRunSoftwareImprovementAgent,
 } from "./services/software-improvement-agent";
+import { requestComposioAction } from "./composio-action-adapter";
+import { executeComposioAction } from "./services/composio-service";
+import { emitComposioHermesEvent } from "./composio-hermes-emitter";
 
 function getOrgId(req: any): string | null {
   return req.user?.orgId ?? req.query.orgId ?? null;
+}
+
+// ─── GitHub Issue column bootstrap ───────────────────────────────────────────
+
+async function ensureGitHubIssueColumns(): Promise<void> {
+  try {
+    await db.execute(sql`ALTER TABLE software_improvement_tasks ADD COLUMN IF NOT EXISTS github_issue_url VARCHAR(512)`);
+    await db.execute(sql`ALTER TABLE software_improvement_tasks ADD COLUMN IF NOT EXISTS github_approval_queue_id VARCHAR(256)`);
+    await db.execute(sql`ALTER TABLE software_improvement_tasks ADD COLUMN IF NOT EXISTS github_issue_draft JSONB`);
+  } catch {
+    // Columns may already exist
+  }
+}
+
+// ─── GitHub issue draft builder ───────────────────────────────────────────────
+
+function buildGitHubIssueDraft(task: any): {
+  title: string;
+  body: string;
+  labels: string[];
+  severity: string;
+  affectedFiles: string;
+  codexPromptSummary: string;
+} {
+  const labels: string[] = [
+    `severity:${task.severity}`,
+    "ai-detected",
+    "needs-review",
+    "software-improvement-agent",
+  ];
+  if (task.affectedArea) {
+    labels.push(`area:${task.affectedArea.toLowerCase().replace(/[\s/]+/g, "-").replace(/[^a-z0-9:-]/g, "")}`);
+  }
+
+  const body = [
+    `## Problem Summary`,
+    task.problemSummary,
+    ``,
+    `## Business Context`,
+    task.businessContext ?? "_Not specified_",
+    ``,
+    `## Affected Area`,
+    task.affectedArea ?? "_Not specified_",
+    ``,
+    `## Suspected Files / Routes`,
+    "```",
+    task.suspectedFiles ?? "Not specified",
+    "```",
+    ``,
+    `## Reproduction Steps`,
+    task.reproductionSteps ?? "_Not specified_",
+    ``,
+    `## Expected Behavior`,
+    task.expectedBehavior ?? "_Not specified_",
+    ``,
+    `---`,
+    `**Severity:** \`${task.severity.toUpperCase()}\``,
+    `**Priority:** ${task.priority}`,
+    `**Source Agent:** ${task.sourceAgent}`,
+    `**Detected At:** ${new Date(task.createdAt).toISOString()}`,
+    ``,
+    `> This issue was drafted by the TrainEfficiency Software Improvement Agent.`,
+    `> Human review and approval is required before any code changes are made.`,
+  ].join("\n");
+
+  const codexPromptSummary = task.codexPrompt
+    ? task.codexPrompt.slice(0, 600) + (task.codexPrompt.length > 600 ? "\n…(truncated)" : "")
+    : "No Codex prompt generated yet — run Prepare Codex Prompt first.";
+
+  return {
+    title: `[${task.severity.toUpperCase()}] ${task.title}`,
+    body,
+    labels,
+    severity: task.severity,
+    affectedFiles: task.suspectedFiles ?? "",
+    codexPromptSummary,
+  };
 }
 
 export async function registerSoftwareImprovementRoutes(
@@ -25,8 +110,9 @@ export async function registerSoftwareImprovementRoutes(
   isAuthenticated: (req: any, res: any, next: any) => void,
   requireRole: (...roles: string[]) => (req: any, res: any, next: any) => void,
 ): Promise<void> {
-  // Bootstrap table on startup
+  // Bootstrap tables on startup
   await ensureSoftwareImprovementTable();
+  await ensureGitHubIssueColumns();
 
   // ─── GET /api/software-improvement/tasks ────────────────────────────────────
   app.get("/api/software-improvement/tasks", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
@@ -331,6 +417,284 @@ export async function registerSoftwareImprovementRoutes(
       res.status(500).json({ message: "Failed to run agent", error: e.message });
     }
   });
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // Phase 2A — Composio GitHub Issue Drafting
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ─── GET /api/software-improvement/tasks/:id/github-issue-draft ─────────────
+  // Returns the stored GitHub issue draft for a task.
+  app.get(
+    "/api/software-improvement/tasks/:id/github-issue-draft",
+    isAuthenticated,
+    requireRole("COACH", "ADMIN"),
+    async (req: any, res) => {
+      try {
+        const orgId = getOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+
+        const [task] = await db
+          .select()
+          .from(softwareImprovementTasks)
+          .where(and(eq(softwareImprovementTasks.id, req.params.id), eq(softwareImprovementTasks.organizationId, orgId)))
+          .limit(1)
+          .catch(() => []);
+
+        if (!task) return res.status(404).json({ message: "Task not found" });
+
+        const draft = (task as any).githubIssueDraft ?? buildGitHubIssueDraft(task);
+        res.json({ draft, taskStatus: task.status, taskId: task.id });
+      } catch (e: any) {
+        res.status(500).json({ message: "Failed to fetch draft", error: e.message });
+      }
+    },
+  );
+
+  // ─── POST /api/software-improvement/tasks/:id/request-github-issue ──────────
+  // Step 1: Build the GitHub issue draft and queue it for human approval.
+  // Status transition: any eligible → github_issue_draft_requested
+  app.post(
+    "/api/software-improvement/tasks/:id/request-github-issue",
+    isAuthenticated,
+    requireRole("COACH", "ADMIN"),
+    async (req: any, res) => {
+      try {
+        const orgId = getOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+
+        const [task] = await db
+          .select()
+          .from(softwareImprovementTasks)
+          .where(and(eq(softwareImprovementTasks.id, req.params.id), eq(softwareImprovementTasks.organizationId, orgId)))
+          .limit(1)
+          .catch(() => []);
+
+        if (!task) return res.status(404).json({ message: "Task not found" });
+
+        // Only allow high or critical severity
+        if (!["high", "critical"].includes(task.severity)) {
+          return res.status(400).json({
+            message: `GitHub issue drafting is only available for high or critical severity tasks. This task is "${task.severity}".`,
+          });
+        }
+
+        // Guard: already requested or created
+        if ((task.status as string) === "github_issue_draft_requested") {
+          return res.status(409).json({ message: "GitHub issue draft already requested for this task." });
+        }
+        if ((task.status as string) === "github_issue_created") {
+          return res.status(409).json({
+            message: "GitHub issue already created for this task.",
+            githubIssueUrl: (task as any).githubIssueUrl,
+          });
+        }
+
+        // Build the draft
+        const draft = buildGitHubIssueDraft(task);
+
+        // Route through Composio action adapter
+        // GITHUB is read-only + approval-required → this will always queue for approval
+        const adapterResult = await requestComposioAction({
+          orgId,
+          agentId: "software_improvement_agent",
+          tool: "GITHUB",
+          action: "GITHUB_CREATE_AN_ISSUE",
+          inputParams: {
+            title: draft.title,
+            body: draft.body,
+            labels: draft.labels,
+          },
+          confidence: 0.85,
+          riskLevel: "high",
+          notes: `GitHub issue draft for task: ${task.title} (${task.severity})`,
+        });
+
+        // Update task: store draft + approval queue ID + new status
+        await db.execute(sql`
+          UPDATE software_improvement_tasks
+          SET
+            status = 'github_issue_draft_requested',
+            github_issue_draft = ${JSON.stringify(draft)}::jsonb,
+            github_approval_queue_id = ${adapterResult.approvalQueueId ?? null},
+            updated_at = NOW()
+          WHERE id = ${task.id} AND organization_id = ${orgId}
+        `);
+
+        // Log to agent_operating_timeline
+        await db.insert(agentOperatingTimeline).values({
+          orgId,
+          agentName: "software_improvement_agent",
+          systemName: "composio_github",
+          actionType: "approval_required",
+          actionStatus: "requires_approval",
+          communicationDomain: "github",
+          summary: `GitHub issue draft requested for: ${task.title}`,
+          requiresApproval: true,
+          approvalStatus: "pending",
+          relatedEntityType: "software_improvement_task",
+          relatedEntityId: task.id,
+          metadata: {
+            draft,
+            approvalQueueId: adapterResult.approvalQueueId,
+            taskSeverity: task.severity,
+          },
+        }).catch(() => {});
+
+        // Emit Hermes event
+        await emitComposioHermesEvent({
+          source: "composio",
+          orgId,
+          agent: "software_improvement_agent",
+          tool: "GITHUB",
+          action: "GITHUB_CREATE_AN_ISSUE",
+          result: "queued_for_approval",
+          outcome: "pending_approval",
+          metadata: {
+            taskId: task.id,
+            taskTitle: task.title,
+            taskSeverity: task.severity,
+            approvalQueueId: adapterResult.approvalQueueId,
+            draft,
+          },
+        });
+
+        res.status(202).json({
+          success: true,
+          message: "GitHub issue draft queued for human approval.",
+          approvalQueueId: adapterResult.approvalQueueId,
+          draft,
+          taskStatus: "github_issue_draft_requested",
+        });
+      } catch (e: any) {
+        console.error("[SoftwareImprovement] request-github-issue failed:", e.message);
+        res.status(500).json({ message: "Failed to request GitHub issue", error: e.message });
+      }
+    },
+  );
+
+  // ─── POST /api/software-improvement/tasks/:id/approve-github-issue ──────────
+  // Step 2: Human has reviewed the draft and approves execution.
+  // Executes the Composio GitHub create-issue action and records the URL.
+  // Status transition: github_issue_draft_requested → github_issue_created
+  app.post(
+    "/api/software-improvement/tasks/:id/approve-github-issue",
+    isAuthenticated,
+    requireRole("ADMIN"),
+    async (req: any, res) => {
+      try {
+        const orgId = getOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+
+        const [task] = await db
+          .select()
+          .from(softwareImprovementTasks)
+          .where(and(eq(softwareImprovementTasks.id, req.params.id), eq(softwareImprovementTasks.organizationId, orgId)))
+          .limit(1)
+          .catch(() => []);
+
+        if (!task) return res.status(404).json({ message: "Task not found" });
+
+        if ((task.status as string) !== "github_issue_draft_requested") {
+          return res.status(400).json({
+            message: `Expected status "github_issue_draft_requested", got "${task.status}". Request a draft first.`,
+          });
+        }
+
+        const draft: any = (task as any).githubIssueDraft ?? buildGitHubIssueDraft(task);
+
+        // Execute via Composio service directly (admin has explicitly approved)
+        const execResult = await executeComposioAction({
+          orgId,
+          agentId: "software_improvement_agent",
+          tool: "GITHUB",
+          action: "GITHUB_CREATE_AN_ISSUE",
+          inputParams: {
+            title: draft.title,
+            body: draft.body,
+            labels: draft.labels,
+          },
+        });
+
+        // Try to extract the GitHub issue URL from the result
+        let githubIssueUrl: string | null = null;
+        if (execResult.success && execResult.data) {
+          const data: any = execResult.data;
+          githubIssueUrl =
+            data?.html_url ??
+            data?.url ??
+            data?.issue?.html_url ??
+            data?.data?.html_url ??
+            null;
+        }
+
+        // Update task status
+        await db.execute(sql`
+          UPDATE software_improvement_tasks
+          SET
+            status = 'github_issue_created',
+            github_issue_url = ${githubIssueUrl},
+            updated_at = NOW()
+          WHERE id = ${task.id} AND organization_id = ${orgId}
+        `);
+
+        // Log to agent_operating_timeline
+        await db.insert(agentOperatingTimeline).values({
+          orgId,
+          agentName: "software_improvement_agent",
+          systemName: "composio_github",
+          actionType: execResult.success ? "workflow_executed" : "error",
+          actionStatus: execResult.success ? "completed" : "failed",
+          communicationDomain: "github",
+          summary: execResult.success
+            ? `GitHub issue created for: ${task.title}${githubIssueUrl ? ` → ${githubIssueUrl}` : ""}`
+            : `GitHub issue creation failed: ${execResult.error}`,
+          requiresApproval: false,
+          approvalStatus: "approved",
+          relatedEntityType: "software_improvement_task",
+          relatedEntityId: task.id,
+          executedAt: new Date(),
+          outcomeStatus: execResult.success ? "success" : "failure",
+          errorMessage: execResult.error,
+          metadata: {
+            draft,
+            githubIssueUrl,
+            durationMs: execResult.durationMs,
+          },
+        }).catch(() => {});
+
+        // Emit Hermes event
+        await emitComposioHermesEvent({
+          source: "composio",
+          orgId,
+          agent: "software_improvement_agent",
+          tool: "GITHUB",
+          action: "GITHUB_CREATE_AN_ISSUE",
+          result: execResult.success ? "success" : "failure",
+          outcome: execResult.success ? "github_issue_created" : "failed",
+          metadata: {
+            taskId: task.id,
+            taskTitle: task.title,
+            githubIssueUrl,
+            durationMs: execResult.durationMs,
+            error: execResult.error,
+          },
+        });
+
+        res.json({
+          success: execResult.success,
+          message: execResult.success
+            ? `GitHub issue created successfully${githubIssueUrl ? `. View at: ${githubIssueUrl}` : " (URL not returned by Composio — check GitHub directly)."}`
+            : `Composio execution failed: ${execResult.error}`,
+          githubIssueUrl,
+          taskStatus: "github_issue_created",
+          composioResult: execResult.success ? { durationMs: execResult.durationMs } : { error: execResult.error },
+        });
+      } catch (e: any) {
+        console.error("[SoftwareImprovement] approve-github-issue failed:", e.message);
+        res.status(500).json({ message: "Failed to execute GitHub issue creation", error: e.message });
+      }
+    },
+  );
 }
 
 // ─── Local prompt builder (duplicate-free, no circular dep) ──────────────────
