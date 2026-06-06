@@ -9,6 +9,7 @@
  */
 
 import { db } from "../db";
+import { processOutcomeEvent } from "./hermes-service";
 import { eq, and, desc, gte, lt, sql, or, ne } from "drizzle-orm";
 import {
   softwareImprovementTasks,
@@ -353,7 +354,7 @@ export async function runSoftwareImprovementAgent(orgId: string): Promise<{
         expectedBehavior: issue.expectedBehavior,
       });
 
-      await db.insert(softwareImprovementTasks).values({
+      const [created] = await db.insert(softwareImprovementTasks).values({
         organizationId: orgId,
         sourceAgent: issue.sourceAgent,
         sourceType: issue.sourceType,
@@ -371,9 +372,23 @@ export async function runSoftwareImprovementAgent(orgId: string): Promise<{
         priority,
         status: "detected",
         codexPrompt,
-      });
+      }).returning({ id: softwareImprovementTasks.id });
 
       tasksCreated++;
+
+      // Non-blocking: write a Hermes learning note for each detected issue.
+      // Task creation is never blocked if this fails.
+      processOutcomeEvent("software_improvement_task_created", {
+        taskId: created?.id,
+        severity: issue.severity,
+        title: issue.title,
+        affectedArea: issue.affectedArea,
+        domain: "software_improvement",
+        orgId,
+        tags: [issue.sourceType, issue.sourceAgent],
+      }).catch((e: any) =>
+        console.error(`[Hermes] processOutcomeEvent failed (task ${created?.id}): ${e.message}`),
+      );
     } catch (e: any) {
       errors.push(`task_create: ${e.message}`);
     }

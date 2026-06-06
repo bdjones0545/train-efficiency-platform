@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, RequestHandler } from "express";
 import {
   checkConnection,
   createNote,
@@ -19,7 +19,11 @@ import {
   searchSoftwareKB,
 } from "./services/obsidian-service";
 
-export function registerObsidianRoutes(app: Express) {
+export function registerObsidianRoutes(
+  app: Express,
+  isAuthenticated: RequestHandler,
+  requireRole: (...roles: string[]) => RequestHandler,
+) {
 
   // ─── GET /api/obsidian/status ─────────────────────────────────────────────
   app.get("/api/obsidian/status", async (_req: any, res) => {
@@ -158,7 +162,8 @@ export function registerObsidianRoutes(app: Express) {
 
   // ─── POST /api/obsidian/learn ─────────────────────────────────────────────
   // Hermes Learning Engine: record an outcome → observation → learning
-  app.post("/api/obsidian/learn", async (req: any, res) => {
+  // Requires authentication and COACH/ADMIN role — not publicly callable.
+  app.post("/api/obsidian/learn", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     const { outcome, observation, learning, domain, metric, metricValue, orgId, tags } = req.body || {};
     if (!outcome || !observation || !learning || !domain)
       return res.status(400).json({ message: "outcome, observation, learning, domain required" });

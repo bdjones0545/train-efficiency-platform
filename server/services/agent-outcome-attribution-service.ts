@@ -8,6 +8,7 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import OpenAI from "openai";
+import { processOutcomeEvent } from "./hermes-service";
 
 const openai = new OpenAI();
 
@@ -59,6 +60,18 @@ export async function logDecisionOutcome(opts: {
   const id = rows[0]?.id;
   // Async perf recalc
   recalculatePerfScores(opts.orgId).catch(console.error);
+  // Non-blocking: write a Hermes learning note for every logged decision.
+  processOutcomeEvent("communication_outcome_recorded", {
+    agentType: opts.agentType,
+    domain: opts.domain ?? "general",
+    outcomeStatus: "decision_logged",
+    revenueCents: opts.revenueCents,
+    decisionId: id,
+    orgId: opts.orgId,
+    tags: opts.tags,
+  }).catch((e: any) =>
+    console.error(`[Hermes] logDecisionOutcome write failed (id ${id}): ${e.message}`),
+  );
   return id;
 }
 
@@ -85,6 +98,18 @@ export async function updateDecisionOutcome(opts: {
     WHERE id = ${opts.id} AND org_id = ${opts.orgId}
   `);
   recalculatePerfScores(opts.orgId).catch(console.error);
+  // Non-blocking: write a Hermes learning note when an outcome is resolved.
+  processOutcomeEvent("communication_outcome_recorded", {
+    agentType: "executive_agent",
+    domain: "general",
+    outcomeStatus: opts.actualOutcome,
+    outcomeScore: opts.successScore,
+    revenueCents: opts.revenueCents,
+    decisionId: opts.id,
+    orgId: opts.orgId,
+  }).catch((e: any) =>
+    console.error(`[Hermes] updateDecisionOutcome write failed (id ${opts.id}): ${e.message}`),
+  );
 }
 
 // ─── Recalculate rolling performance scores ───────────────────────────────────
