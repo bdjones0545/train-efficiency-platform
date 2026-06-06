@@ -176,6 +176,7 @@ import AthleteSignupPage from "@/pages/athlete-signup";
 import AdminLeadPipelinePage from "@/pages/admin-lead-pipeline";
 import AdminCeoHeartbeatPage from "@/pages/admin-ceo-heartbeat";
 import AdminSoftwareImprovementPage from "@/pages/admin-software-improvement";
+import AdminAgentMailPage from "@/pages/admin-agentmail";
 import AdminAthleteIntelligencePage from "@/pages/admin-athlete-intelligence";
 import AdminCoachCapacityPage from "@/pages/admin-coach-capacity";
 import AdminSchedulingCommandCenterPage from "@/pages/admin-scheduling-command-center";
@@ -520,6 +521,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/marketplace-proof" component={AdminMarketplaceProofPage} />
                   <Route path="/admin/ceo-heartbeat" component={AdminCeoHeartbeatPage} />
                   <Route path="/admin/software-improvement" component={AdminSoftwareImprovementPage} />
+                  <Route path="/admin/agentmail" component={AdminAgentMailPage} />
                   <Route path="/admin/athlete-intelligence" component={AdminAthleteIntelligencePage} />
                   <Route path="/admin/coach-capacity" component={AdminCoachCapacityPage} />
                   <Route path="/admin/scheduling-command-center" component={AdminSchedulingCommandCenterPage} />
