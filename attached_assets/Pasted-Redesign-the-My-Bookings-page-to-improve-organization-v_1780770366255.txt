@@ -1,0 +1,238 @@
+Redesign the My Bookings page to improve organization, visibility, and booking type coverage.
+
+Target page:
+My Bookings
+
+Current issues:
+1. The page appears to only show Semi-Private sessions.
+2. It should also show:
+   - 1-on-1 sessions
+   - group sessions
+   - assessments
+   - recovery sessions
+   - team training sessions if applicable
+3. Cards are too description-heavy.
+4. Bookings should be easier to scan by coach, date, and session type.
+
+Goal:
+Make My Bookings a clear training schedule hub.
+
+--------------------------------------------------
+PHASE 1 — DATA COVERAGE AUDIT
+--------------------------------------------------
+
+Inspect the current My Bookings data source and confirm why only Semi-Private sessions appear.
+
+Check:
+- API route used by My Bookings
+- booking/session query filters
+- session type filters
+- status filters
+- coach/user ownership filters
+- whether 1-on-1 sessions are stored in a different table or endpoint
+- whether group/open sessions use a separate data model
+
+Required:
+My Bookings should include all sessions tied to the current user/athlete/client.
+
+Include:
+- 1-on-1
+- Semi-Private
+- Group
+- Team Training
+- Assessment
+- Recovery
+- Completed
+- Cancelled
+- Past
+
+Do not duplicate records.
+
+--------------------------------------------------
+PHASE 2 — ORGANIZATION BY COACH
+--------------------------------------------------
+
+Add grouping options:
+
+Default view:
+Upcoming by Date
+
+Additional toggle:
+Group by Coach
+
+When grouped by coach:
+
+Coach Hunter Thaxton
+- Mon Jun 8 · 11:00 AM · Track & Field · Semi-Private
+- Tue Jun 9 · 9:00 AM · 1-on-1 Speed Session
+
+Coach Bryan Jones
+- Wed Jun 10 · 6:00 AM · Private Training
+
+Each coach group should show:
+- coach name
+- number of upcoming sessions
+- next session date
+- compact list of bookings
+
+--------------------------------------------------
+PHASE 3 — FILTERS / TABS
+--------------------------------------------------
+
+Keep Upcoming / Past tabs.
+
+Add filter chips:
+
+All
+1-on-1
+Semi-Private
+Group
+Team Training
+Assessment
+Recovery
+Cancelled
+
+Add sort/group selector:
+
+Sort:
+- Date
+- Coach
+- Type
+- Status
+
+Mobile-friendly.
+
+--------------------------------------------------
+PHASE 4 — CARD REDESIGN
+--------------------------------------------------
+
+Current issue:
+Cards show long descriptions directly in the main list. This makes the page hard to scan.
+
+New card hierarchy:
+
+Header:
+Session Type + Status Badge
+
+Example:
+1-on-1 Speed Session        CONFIRMED
+Semi-Private Track Session  CONFIRMED
+
+Primary details:
+Date
+Time
+Coach
+Location
+Sport / Focus
+
+Example:
+
+Mon, Jun 8
+11:00 AM – 12:00 PM
+Coach Hunter Thaxton
+Bluffton High School
+Track & Field · Advanced
+
+Actions:
+[View Details]
+[Reschedule] if allowed
+[Cancel] if allowed
+
+Description:
+Do not show full long description in the list.
+Show only a short 1-line summary if needed.
+Full description belongs inside details drawer/modal.
+
+--------------------------------------------------
+PHASE 5 — DETAILS DRAWER
+--------------------------------------------------
+
+When tapping View Details, show:
+
+- Session type
+- Status
+- Date
+- Time
+- Coach
+- Location
+- Sport
+- Skill level
+- Age group if relevant
+- Registered athletes if relevant
+- Description collapsed by default:
+  [Show Description]
+- Actions:
+  - Add to Calendar if available
+  - Message Coach if available
+  - Reschedule if allowed
+  - Cancel if allowed
+
+Drawer/modal must be scrollable on mobile:
+- max-h-[85dvh]
+- overflow-y-auto
+- sticky footer for actions if possible
+
+--------------------------------------------------
+PHASE 6 — COMPACT EMPTY STATES
+--------------------------------------------------
+
+If no bookings:
+
+Upcoming:
+“No upcoming sessions.”
+
+Past:
+“No past sessions.”
+
+If filter has no results:
+“No [type] sessions found.”
+
+Keep empty states compact.
+
+--------------------------------------------------
+PHASE 7 — MOBILE UX
+--------------------------------------------------
+
+Requirements:
+- No horizontal scrolling
+- Cards fit 375px and 390px screens
+- Long location names wrap instead of overflowing
+- Long descriptions do not appear in main list
+- Coach grouping should be easy to expand/collapse
+- Floating agent button should not cover action buttons
+
+--------------------------------------------------
+PHASE 8 — SUMMARY STRIP
+--------------------------------------------------
+
+Add compact summary below the header:
+
+Upcoming
+This Week
+Completed
+Cancelled
+
+Example:
+162 Upcoming · 38 This Week · 25 Past
+
+Do not use giant KPI cards.
+
+--------------------------------------------------
+PHASE 9 — DELIVERABLES
+--------------------------------------------------
+
+After implementation, summarize:
+1. Files changed
+2. Data source issue found
+3. Why only semi-private sessions were showing
+4. How 1-on-1/group/team sessions are included now
+5. New grouping/sorting behavior
+6. Card layout changes
+7. Details drawer changes
+8. Mobile improvements
+
+Important:
+Do not remove existing booking functionality.
+Do not break open group session registration.
+Do not duplicate bookings.
+Focus on organization, readability, and complete session coverage.
