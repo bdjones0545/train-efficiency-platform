@@ -1,0 +1,385 @@
+Build the Communication Intelligence Dashboard for TrainEfficiency.
+
+Goal:
+
+Create a leadership-level command center that sits above Gmail, AgentMail, SendGrid, Attention Inbox, CEO Heartbeat, Follow-Ups, Reply Queues, and the Unified Email Audit Log.
+
+This dashboard should answer:
+
+“What is happening across all communications in the business right now?”
+
+This is an intelligence and visibility layer.
+
+Do not create any new sending capabilities.
+
+Use existing data.
+
+⸻
+
+PHASE 1 — DISCOVER EXISTING DATA SOURCES
+
+Inspect:
+
+* outbound_email_audit_log
+* agent_mail_inbound_messages
+* agent_mail_reply_queue
+* agent_mail_reply_outcomes
+* agent_mail_followups
+* gmail_agent_actions
+* attentionItems
+* agent_operating_timeline
+* teamTrainingProspects
+* employmentApplicants
+* ai_revenue_events
+* communication_logs
+* email_trigger_events
+* lead intelligence tables
+* autonomy policy tables
+
+Map every available communication signal.
+
+Do not duplicate existing metrics.
+
+⸻
+
+PHASE 2 — COMMUNICATION INTELLIGENCE SERVICE
+
+Create:
+
+server/services/communication-intelligence-service.ts
+
+Functions:
+
+* getCommunicationOverview()
+* getChannelPerformance()
+* getConversationHealth()
+* getApprovalMetrics()
+* getResponseMetrics()
+* getLeadCommunicationMetrics()
+* getHiringCommunicationMetrics()
+* getSupportCommunicationMetrics()
+* getRevenueCommunicationMetrics()
+* getStalledConversationMetrics()
+* getCommunicationRisks()
+
+Return dashboard-ready objects.
+
+⸻
+
+PHASE 3 — EXECUTIVE KPI LAYER
+
+Create top-level metrics:
+
+COMMUNICATION HEALTH
+
+* Total Active Conversations
+* New Conversations Today
+* Replies Sent Today
+* Follow-Ups Sent Today
+* Pending Approvals
+* Overdue Approvals
+* Stalled Conversations
+* Failed Sends
+* Blocked Sends
+
+REVENUE
+
+* Open Lead Conversations
+* Pricing Conversations
+* Revenue Opportunities
+* High-Intent Leads
+* Follow-Ups Awaiting Review
+* Lead Response Rate
+
+HIRING
+
+* Active Applicants
+* Applicant Conversations
+* Waiting On Candidate
+* Waiting On Internal Review
+
+SUPPORT
+
+* Open Support Threads
+* Escalated Issues
+* Billing Issues
+* Bug Reports
+
+⸻
+
+PHASE 4 — CHANNEL PERFORMANCE
+
+Show performance by channel:
+
+AgentMail
+Gmail
+SendGrid
+
+Metrics:
+
+* outbound volume
+* inbound volume
+* approval rate
+* send rate
+* response rate
+* blocked rate
+* failure rate
+* average response time
+
+Create comparison cards.
+
+⸻
+
+PHASE 5 — CONVERSATION HEALTH ENGINE
+
+Build conversation scoring.
+
+Score 0-100.
+
+Signals:
+
+* replied recently
+* approved follow-up completed
+* active thread
+* booked meeting
+* converted lead
+
+Negative:
+
+* no response 7+ days
+* overdue follow-up
+* repeated ignored outreach
+* failed sends
+* unresolved support issue
+
+Categories:
+
+Healthy
+At Risk
+Stalled
+Critical
+
+⸻
+
+PHASE 6 — STALLED CONVERSATION DETECTION
+
+Create detection logic.
+
+Flag:
+
+* leads not contacted recently
+* leads awaiting response
+* applicants with no activity
+* support tickets untouched
+* conversations awaiting approval too long
+
+Output:
+
+Communication Recovery Queue
+
+Include:
+
+* contact
+* type
+* last activity
+* suggested action
+* urgency
+
+⸻
+
+PHASE 7 — APPROVAL INTELLIGENCE
+
+Aggregate:
+
+Reply Queue
+Follow-Up Queue
+AI Approvals
+Attention Inbox
+
+Show:
+
+* pending approvals
+* average approval time
+* rejected drafts
+* approval bottlenecks
+* most active approvers
+
+Identify:
+
+“Approval bottleneck risk”
+
+⸻
+
+PHASE 8 — CEO HEARTBEAT INTEGRATION
+
+Add communication section to CEO Heartbeat.
+
+Display:
+
+* Communication Health Score
+* Open Risks
+* Stalled Conversations
+* Pending Approvals
+* Revenue Conversations
+* Hiring Conversations
+* Support Conversations
+
+Generate:
+
+Best Action Today
+
+Examples:
+
+“12 high-intent leads waiting on reply approval.”
+
+“3 support tickets escalated for 4+ days.”
+
+“7 pricing conversations stalled.”
+
+⸻
+
+PHASE 9 — COMMUNICATION RISK ENGINE
+
+Detect:
+
+* blocked send spikes
+* failed send spikes
+* approval backlog
+* channel outages
+* duplicate communication attempts
+* suppression list conflicts
+* policy engine failures
+
+Severity:
+
+Low
+Medium
+High
+Critical
+
+Create risk cards.
+
+⸻
+
+PHASE 10 — REVENUE INTELLIGENCE
+
+Connect communication activity to revenue.
+
+Show:
+
+* conversations by stage
+* conversations leading to meetings
+* conversations leading to contracts
+* response rates by lead type
+* follow-up effectiveness
+* channel effectiveness
+
+Answer:
+
+Which communication activities produce revenue?
+
+⸻
+
+PHASE 11 — HIRING INTELLIGENCE
+
+Track:
+
+* candidate response rates
+* hiring funnel communication
+* coach recruiting effectiveness
+* time-to-response
+* time-to-hire
+
+⸻
+
+PHASE 12 — SUPPORT INTELLIGENCE
+
+Track:
+
+* support volume
+* issue resolution speed
+* bug report volume
+* escalation rates
+* unresolved issue age
+
+⸻
+
+PHASE 13 — ADMIN UI
+
+Create:
+
+/admin/communication-intelligence
+
+Sections:
+
+1. Executive Overview
+2. Communication Health
+3. Revenue Communications
+4. Hiring Communications
+5. Support Communications
+6. Channel Performance
+7. Approval Intelligence
+8. Recovery Queue
+9. Communication Risks
+10. Audit Explorer
+
+Use existing dashboard styling.
+
+Mobile responsive.
+
+⸻
+
+PHASE 14 — API ROUTES
+
+Add:
+
+GET /api/communication-intelligence/overview
+GET /api/communication-intelligence/channels
+GET /api/communication-intelligence/health
+GET /api/communication-intelligence/revenue
+GET /api/communication-intelligence/hiring
+GET /api/communication-intelligence/support
+GET /api/communication-intelligence/approvals
+GET /api/communication-intelligence/recovery
+GET /api/communication-intelligence/risks
+
+⸻
+
+PHASE 15 — TESTING
+
+Validate using existing:
+
+AgentMail inbound
+AgentMail replies
+AgentMail follow-ups
+Gmail drafts
+SendGrid sends
+Audit logs
+Attention Inbox
+
+Verify metrics reconcile correctly.
+
+⸻
+
+DELIVERABLES
+
+After implementation provide:
+
+1. Files created
+2. Files modified
+3. API routes added
+4. Dashboard sections
+5. KPI definitions
+6. Risk engine rules
+7. Conversation health scoring logic
+8. Revenue intelligence logic
+9. Recovery queue logic
+10. CEO Heartbeat additions
+
+Critical Rule:
+
+This dashboard is read-only intelligence.
+
+It must not send, approve, modify, or execute communications.
+
+Its purpose is to give leadership complete visibility into the communication ecosystem.

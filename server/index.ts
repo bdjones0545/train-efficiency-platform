@@ -540,6 +540,9 @@ app.use((req, res, next) => {
   const { registerEmailAuditRoutes } = await import("./email-audit-routes");
   registerEmailAuditRoutes(app);
 
+  const { registerCommunicationIntelligenceRoutes } = await import("./communication-intelligence-routes");
+  registerCommunicationIntelligenceRoutes(app);
+
   const { startAttendanceReportCron } = await import("./attendance-report-cron");
   startAttendanceReportCron();
 
