@@ -1280,7 +1280,7 @@ export function AppSidebar() {
       items: [
         { title: "Coaches", url: "/coaches", icon: UserCog, testId: "nav-coaches" },
         { title: "Schedule", url: "/scheduling", icon: CalendarDays, testId: "nav-scheduling" },
-        { title: "Teams", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
+        { title: "Group Sessions", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
         { title: "Team Training", url: "/team-training", icon: Dumbbell, testId: "nav-team-training" },
         { title: "My Bookings", url: "/bookings", icon: Calendar, testId: "nav-my-bookings" },
       ],
@@ -1304,7 +1304,7 @@ export function AppSidebar() {
       icon: Users,
       items: [
         { title: "Athletes", url: "/coach/users", icon: Users, testId: "nav-users" },
-        { title: "Teams", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
+        { title: "Group Sessions", url: "/sessions", icon: UsersRound, testId: "nav-group-sessions" },
         { title: "Scheduling", url: "/scheduling", icon: CalendarDays, testId: "nav-scheduling" },
         { title: "Team Training", url: "/team-training", icon: Dumbbell, testId: "nav-team-training" },
         { title: "My Bookings", url: "/bookings", icon: Calendar, testId: "nav-my-bookings" },

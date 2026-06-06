@@ -237,7 +237,7 @@ export default function EfficiencyStrengthPage() {
               <a href="/sessions">
                 <Button variant="outline" size="lg" data-testid="button-view-sessions">
                   <Users className="h-4 w-4 mr-2" />
-                  View Teams
+                  View Group Sessions
                 </Button>
               </a>
             </div>

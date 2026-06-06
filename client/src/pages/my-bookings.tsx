@@ -878,7 +878,7 @@ export default function MyBookingsPage() {
                 <Users className="h-8 w-8 mx-auto mb-2 opacity-40" />
                 <p className="text-sm">No open sessions available right now.</p>
                 <Button variant="outline" size="sm" className="mt-3" onClick={() => navigate("/sessions")} data-testid="button-browse-sessions">
-                  Browse Teams
+                  Browse Group Sessions
                 </Button>
               </div>
             ) : (
