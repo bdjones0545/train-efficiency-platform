@@ -1,0 +1,230 @@
+Full System Audit — TrainEfficiency Integrations, Agent Architecture, and Hermes Readiness
+
+Perform a full technical audit of the current TrainEfficiency system.
+
+Audit these areas:
+
+1. CEO Heartbeat / Executive Layer
+
+* Where the CEO Heartbeat runs
+* Frequency
+* What agents/services it calls
+* What data it reads
+* What actions it triggers
+* What it writes to database
+* What it writes to Obsidian
+* Any failure handling, cooldowns, or dead-letter behavior
+
+2. Agent System
+    Audit all current agents:
+
+* Executive Agent
+* Revenue Agent
+* Growth Agent
+* Scheduling Agent
+* Retention Agent
+* Software Improvement Agent
+* Auto-Execution Engine
+* Any additional agents or cron services
+
+For each agent, identify:
+
+* File path
+* Trigger mechanism
+* Responsibilities
+* Inputs
+* Outputs
+* Tools used
+* Database tables used
+* Obsidian writes
+* AgentMail usage
+* TrainChat API usage
+* Current gaps
+
+3. Obsidian Integration
+    Audit:
+
+* Service files
+* API routes
+* Environment variables
+* Folder structure
+* Note writing functions
+* Search functions
+* Similarity functions
+* Frontmatter classification
+* Which agents write to Obsidian
+* Which agents search Obsidian before acting
+* Error handling
+* Auth handling
+* ngrok/tunnel assumptions
+
+Confirm:
+
+* CEO Heartbeat reports
+* Agent decisions
+* Software KB
+* Hermes learnings
+* CEO reviews
+* Playbooks
+* Strategic plans
+    are all writing correctly.
+
+4. AgentMail Integration
+    Audit:
+
+* Where AgentMail is implemented
+* Which agents use it
+* Which mailboxes exist or are assumed
+* What emails are sent
+* What emails are received/read
+* How conversations are stored
+* Whether email outcomes are tracked
+* Whether AgentMail connects to outcome attribution
+* Whether AgentMail content is written to Obsidian
+* Current gaps
+
+5. Outcome Intelligence Layer
+    Audit:
+
+* Decision outcome tables
+* Agent performance scoring
+* CEO daily reviews
+* Playbook promotion
+* Outcome attribution
+* Revenue attribution
+* Forecast accuracy tracking
+
+Confirm whether outcomes feed back into:
+
+* Agent recommendations
+* Autonomy scoring
+* Obsidian memory
+* Playbook generation
+
+6. Autonomy & Trust Layer
+    Audit:
+
+* Decision trust registry
+* Autonomy scoring formula
+* Risk ceilings
+* Autonomous action queue
+* Override learning
+* Approval/rejection flows
+* CEO Command Center widgets
+* Auto-execution safety controls
+
+Identify:
+
+* What can auto-execute today
+* What requires approval
+* What is blocked by risk level
+* Where human overrides are stored
+
+7. Predictive Intelligence / Business Twin
+    Audit:
+
+* Business twin state
+* Forecast tables
+* Risk signals
+* Opportunity signals
+* Scenario simulations
+* Strategic plans
+* Forecast accuracy tracking
+* Business OS Score
+
+Confirm:
+
+* What real data powers the twin
+* Which forecasts are heuristic vs data-driven
+* Which agents consume the forecast data
+* What gets written to Obsidian
+
+8. External Tools & Integrations
+    Audit all current external integrations:
+
+* Obsidian
+* AgentMail
+* TrainChat API
+* SendGrid
+* Stripe
+* Google Calendar, Gmail, Slack, CRM, Sheets, or any placeholders
+* Composio or planned tool layer
+* Codex/software improvement hooks
+* Any environment variables required
+
+For each:
+
+* Current status
+* Files/routes involved
+* What works
+* What is mocked/placeholder
+* What is missing
+
+9. Database Architecture
+    List every table related to:
+
+* Agents
+* Workflows
+* Outcomes
+* Autonomy
+* Obsidian
+* Forecasting
+* Communications
+* Software improvement
+* Playbooks
+* Business twin
+
+For each table:
+
+* Purpose
+* Key columns
+* Which services write to it
+* Which services read from it
+
+10. Hermes Readiness Audit
+    Before building Hermes, determine:
+
+* What data Hermes should consume
+* Which events should trigger Hermes
+* Which tables Hermes should read
+* Which tables Hermes should write
+* Which Obsidian folders Hermes should write to
+* Which agent decisions Hermes should influence
+* How Hermes should promote learnings into playbooks
+* How Hermes should adjust autonomy/trust recommendations
+* How Hermes should connect to AgentMail outcomes
+* How Hermes should connect to forecast accuracy
+
+Define the recommended Hermes architecture.
+
+11. Gaps, Risks, and Recommendations
+    Identify:
+
+* Duplicate systems
+* Unused routes
+* Unconnected dashboards
+* Fake or placeholder data
+* Missing auth/org scoping
+* Missing error handling
+* Missing audit trails
+* Missing outcome feedback loops
+* Areas where agents appear connected but are not actually wired into live data
+
+12. Final Deliverable
+    Produce a structured audit report with these sections:
+
+A. Executive Summary
+B. Current Architecture Map
+C. Agent-by-Agent Breakdown
+D. Tool Integration Matrix
+E. Database/Table Map
+F. Obsidian Memory Flow
+G. AgentMail Communication Flow
+H. Outcome → Trust → Forecast Feedback Loop
+I. Hermes Readiness Score
+J. Critical Gaps
+K. Recommended Next Build: Hermes Integration Plan
+
+Be specific. Include file paths, route paths, database table names, service names, cron intervals, and exact places where data flows or fails to flow.
+
+Do not build Hermes yet. This is an audit only.
