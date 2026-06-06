@@ -1,0 +1,122 @@
+Fix mobile horizontal scrolling on the Outreach Center page.
+
+Target page:
+Outreach Center
+
+Current issue:
+The page looks good overall, but on mobile the user can scroll left-to-right. This usually means one or more containers/cards/filters/tabs have fixed widths or min-widths that exceed the viewport.
+
+Goal:
+Remove all horizontal overflow on mobile while preserving current layout and functionality.
+
+Requirements:
+
+1. Page root safety
+Add mobile overflow protection to the Outreach Center root container:
+- w-full
+- max-w-full
+- overflow-x-hidden
+
+Also inspect parent wrappers for width classes causing overflow.
+
+2. Top action buttons
+Current buttons:
+- Refresh
+- Athlete Leads
+- Team Training
+
+On mobile, ensure they wrap or stack cleanly:
+- grid grid-cols-1 sm:grid-cols-3
+OR
+- flex flex-wrap with w-full buttons
+
+No button row should force horizontal scrolling.
+
+3. KPI grid
+Ensure the metric cards fit mobile:
+- grid-cols-2 on mobile
+- w-full
+- min-w-0
+- no fixed widths
+
+4. Search + Filters row
+Current search + filter button may be too wide.
+
+On mobile:
+- search input should be w-full min-w-0
+- filter button should either stack below or use shrink-0 without causing overflow
+- container should be flex-col sm:flex-row
+
+5. Tabs row
+The tabs:
+- All
+- Athlete Leads
+- Team Training
+
+may be causing overflow.
+
+On mobile:
+- allow horizontal scroll only inside the tab strip if necessary, not the whole page
+- use overflow-x-auto on the tab container
+- hide scrollbar if desired
+- prevent page-level horizontal scrolling
+
+6. Lead cards
+Ensure every lead card uses:
+- w-full
+- max-w-full
+- min-w-0
+- overflow-hidden where needed
+
+Long content must not force width:
+- long campaign IDs should truncate
+- school names should wrap or truncate safely
+- parent names should not overflow
+- badges should wrap
+
+7. Card header
+The card header currently has:
+- lead type badge
+- name
+- status
+- score
+- dropdown icon
+
+On small screens, allow wrapping:
+Top row:
+- lead type badge + status/score
+
+Second row:
+- name + dropdown
+
+or another responsive layout that avoids overflow.
+
+8. Floating agent button
+Ensure it does not create or contribute to horizontal overflow.
+
+9. Test widths
+Verify no horizontal scrolling on:
+- 375px
+- 390px
+- 414px
+
+Test with:
+- long athlete names
+- long school names
+- long campaign IDs
+- Team Training tab selected
+- Athlete Leads tab selected
+- All tab selected
+
+10. Deliverables
+After implementation summarize:
+- file changed
+- exact overflow source found
+- layout changes made
+- confirmation page-level horizontal scroll is removed
+- desktop behavior preserved
+
+Important:
+Do not redesign the page.
+Do not remove functionality.
+Only fix responsive overflow and mobile layout safety.

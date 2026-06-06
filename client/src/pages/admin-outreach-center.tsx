@@ -170,14 +170,14 @@ function AthleteLeadCard({ lead, onUpdate }: { lead: LeadCaptureSubmission; onUp
             {lead.grade && <span>· Grade {lead.grade}</span>}
             {lead.school && <span className="flex items-center gap-0.5"><MapPin className="h-2.5 w-2.5" /> {lead.school}</span>}
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
             <SourceBadge source={source} />
             {(lead.utmCampaign || lead.utmSource) && (
-              <span className="text-[10px] text-muted-foreground">
-                Campaign: {lead.utmCampaign || lead.utmSource}
+              <span className="text-[10px] text-muted-foreground truncate max-w-[140px]">
+                {lead.utmCampaign || lead.utmSource}
               </span>
             )}
-            <span className="text-[10px] text-muted-foreground ml-auto">{timeAgo(lead.createdAt?.toString())}</span>
+            <span className="text-[10px] text-muted-foreground">{timeAgo(lead.createdAt?.toString())}</span>
           </div>
         </div>
         <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0"
@@ -288,14 +288,14 @@ function TeamTrainingCard({ prospect }: { prospect: TeamTrainingProspect }) {
               </span>
             )}
           </div>
-          <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap min-w-0">
             <SourceBadge source={source} />
             {prospect.estimatedValue != null && prospect.estimatedValue > 0 && (
               <span className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
                 ${prospect.estimatedValue.toLocaleString()} est.
               </span>
             )}
-            <span className="text-[10px] text-muted-foreground ml-auto">{timeAgo(prospect.createdAt?.toString())}</span>
+            <span className="text-[10px] text-muted-foreground">{timeAgo(prospect.createdAt?.toString())}</span>
           </div>
         </div>
         <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0"
@@ -571,14 +571,14 @@ export default function AdminOutreachCenterPage() {
   }
 
   return (
-    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
+    <div className="w-full max-w-full overflow-x-hidden p-4 sm:p-6 max-w-5xl mx-auto space-y-5">
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
-        <div>
+        <div className="min-w-0">
           <h1 className="text-2xl font-serif font-bold" data-testid="text-page-title">Outreach Center</h1>
           <p className="text-sm text-muted-foreground mt-0.5">All leads — athletes, teams, organizations — in one view</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button size="sm" variant="outline" onClick={() => {
             queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads"] });
             queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
@@ -609,14 +609,14 @@ export default function AdminOutreachCenterPage() {
 
       {/* Search + Filters */}
       <div className="space-y-2">
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="relative flex-1 min-w-[200px]">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Search name, school, sport, city…"
               value={searchText} onChange={e => setSearchText(e.target.value)}
-              className="pl-9" data-testid="input-search" />
+              className="pl-9 w-full" data-testid="input-search" />
           </div>
-          <Button size="sm" variant="outline" onClick={() => setShowFilters(f => !f)} data-testid="button-toggle-filters">
+          <Button size="sm" variant="outline" className="shrink-0 self-start sm:self-auto" onClick={() => setShowFilters(f => !f)} data-testid="button-toggle-filters">
             <Filter className="h-3.5 w-3.5 mr-1.5" />
             Filters
             {(filterStatus !== "all" || filterSport !== "all" || filterCity !== "all") && (
@@ -626,9 +626,9 @@ export default function AdminOutreachCenterPage() {
         </div>
 
         {showFilters && (
-          <div className="flex items-center gap-2 flex-wrap p-3 bg-muted/30 rounded-lg border" data-testid="filter-bar">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 p-3 bg-muted/30 rounded-lg border" data-testid="filter-bar">
             <Select value={filterSport} onValueChange={setFilterSport}>
-              <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-sport">
+              <SelectTrigger className="h-8 w-full text-xs" data-testid="select-sport">
                 <SelectValue placeholder="Sport" />
               </SelectTrigger>
               <SelectContent>
@@ -639,7 +639,7 @@ export default function AdminOutreachCenterPage() {
 
             {(activeTab === "all" || activeTab === "individual_athlete_lead") && (
               <Select value={filterStatus} onValueChange={setFilterStatus}>
-                <SelectTrigger className="h-8 w-40 text-xs" data-testid="select-status">
+                <SelectTrigger className="h-8 w-full text-xs" data-testid="select-status">
                   <SelectValue placeholder="Status" />
                 </SelectTrigger>
                 <SelectContent>
@@ -653,7 +653,7 @@ export default function AdminOutreachCenterPage() {
 
             {(activeTab === "all" || activeTab === "team" || activeTab === "organization_prospect") && cities.length > 0 && (
               <Select value={filterCity} onValueChange={setFilterCity}>
-                <SelectTrigger className="h-8 w-36 text-xs" data-testid="select-city">
+                <SelectTrigger className="h-8 w-full text-xs" data-testid="select-city">
                   <SelectValue placeholder="City" />
                 </SelectTrigger>
                 <SelectContent>
@@ -664,7 +664,7 @@ export default function AdminOutreachCenterPage() {
             )}
 
             {(filterStatus !== "all" || filterSport !== "all" || filterCity !== "all") && (
-              <Button size="sm" variant="ghost" className="h-8 text-xs text-muted-foreground"
+              <Button size="sm" variant="ghost" className="h-8 text-xs text-muted-foreground justify-start sm:justify-center"
                 onClick={() => { setFilterStatus("all"); setFilterSport("all"); setFilterCity("all"); }}
                 data-testid="button-clear-filters">
                 Clear filters
