@@ -268,6 +268,28 @@ function timeUntil(dt: string | null | undefined): string {
   return `in ${Math.floor(h / 24)}d`;
 }
 
+// ─── AI Summary Collapsible ───────────────────────────────────────────────────
+
+function AiSummaryCollapsible({ text }: { text: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const isLong = text.length > 200;
+  return (
+    <div className="max-w-full overflow-hidden">
+      <p className={`text-sm text-zinc-300 leading-relaxed whitespace-normal break-words overflow-hidden max-w-full ${!expanded && isLong ? "line-clamp-3" : ""}`}>
+        {text}
+      </p>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(e => !e)}
+          className="mt-1.5 text-[11px] text-orange-400/80 hover:text-orange-400 underline"
+        >
+          {expanded ? "Show less" : "Show full summary"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ─── Scheduling Context Panel ─────────────────────────────────────────────────
 
 const SCHED_STATUS_LABELS: Record<string, { label: string; color: string; bg: string }> = {
@@ -604,17 +626,19 @@ function ProcessingTimeline({ log, durationMs }: { log: any[]; durationMs: numbe
         {/* Step log */}
         <div className="space-y-1 pt-1">
           {steps.map((entry: any, i: number) => (
-            <div key={i} className="flex items-center gap-2 text-[11px]">
-              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${entry.status === "ok" ? "bg-emerald-500" : entry.status === "error" ? "bg-red-500" : "bg-zinc-500"}`} />
-              <span className="text-zinc-400 font-medium w-36 flex-shrink-0">{entry.step}</span>
-              {entry.detail && <span className="text-zinc-500 truncate">{entry.detail}</span>}
-              <span className="ml-auto text-zinc-600 flex-shrink-0">{formatDateTime(entry.timestamp)}</span>
+            <div key={i} className="flex items-start gap-2 text-[11px] min-w-0">
+              <span className={`w-2 h-2 rounded-full flex-shrink-0 mt-0.5 ${entry.status === "ok" ? "bg-emerald-500" : entry.status === "error" ? "bg-red-500" : "bg-zinc-500"}`} />
+              <div className="flex-1 min-w-0">
+                <span className="text-zinc-400 font-medium break-all">{entry.step}</span>
+                {entry.detail && <span className="ml-1 text-zinc-500 break-words">{entry.detail}</span>}
+                <span className="ml-1 text-zinc-600">{formatDateTime(entry.timestamp)}</span>
+              </div>
             </div>
           ))}
         </div>
         {/* Named timestamps */}
         {timeline && (
-          <div className="mt-2 pt-2 border-t border-zinc-700/50 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px]">
+          <div className="mt-2 pt-2 border-t border-zinc-700/50 grid grid-cols-1 sm:grid-cols-2 gap-y-1 gap-x-4 text-[11px]">
             {[
               ["Intake received",     timeline.intake_received],
               ["Scoring done",        timeline.scoring_completed],
@@ -625,9 +649,9 @@ function ProcessingTimeline({ log, durationMs }: { log: any[]; durationMs: numbe
               ["Follow-up scheduled", timeline.follow_up_scheduled],
               ["Pipeline complete",   timeline.processing_completed],
             ].map(([label, dt]) => dt && (
-              <div key={label as string} className="flex items-center gap-1.5">
-                <span className="text-zinc-600">{label}:</span>
-                <span className="text-zinc-400">{formatDateTime(dt as string)}</span>
+              <div key={label as string} className="flex items-baseline gap-1 min-w-0">
+                <span className="text-zinc-600 shrink-0">{label}:</span>
+                <span className="text-zinc-400 truncate">{formatDateTime(dt as string)}</span>
               </div>
             ))}
             {timeline.processing_duration_ms != null && (
@@ -692,38 +716,38 @@ function FollowUpSchedule({ intel }: { intel: IntelligenceProfile }) {
       <p className="text-xs font-semibold text-cyan-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
         <Bell className="h-3.5 w-3.5" /> Follow-up Schedule
       </p>
-      <div className="grid grid-cols-2 gap-3 text-xs">
-        <div>
-          <span className="text-zinc-500">Stage: </span>
-          <span className={`font-semibold ${cfg.color}`}>{cfg.label}</span>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+        <div className="flex items-baseline gap-1 min-w-0">
+          <span className="text-zinc-500 shrink-0">Stage:</span>
+          <span className={`font-semibold ${cfg.color} truncate`}>{cfg.label}</span>
         </div>
-        <div>
-          <span className="text-zinc-500">Next due: </span>
-          <span className={`font-semibold ${isDue ? "text-red-400" : "text-zinc-300"}`}>
-            {intel.nextFollowUpAt ? `${timeUntil(intel.nextFollowUpAt)} (${formatDateTime(intel.nextFollowUpAt)})` : "—"}
+        <div className="flex items-baseline gap-1 min-w-0">
+          <span className="text-zinc-500 shrink-0">Next due:</span>
+          <span className={`font-semibold ${isDue ? "text-red-400" : "text-zinc-300"} truncate`}>
+            {intel.nextFollowUpAt ? `${timeUntil(intel.nextFollowUpAt)}` : "—"}
           </span>
         </div>
         {intel.intakeProcessedAt && (
-          <div>
-            <span className="text-zinc-500">Intake processed: </span>
-            <span className="text-zinc-300">{formatDateTime(intel.intakeProcessedAt)}</span>
+          <div className="flex items-baseline gap-1 min-w-0">
+            <span className="text-zinc-500 shrink-0">Intake processed:</span>
+            <span className="text-zinc-300 truncate">{formatDateTime(intel.intakeProcessedAt)}</span>
           </div>
         )}
         {intel.lastInteractionAt && (
-          <div>
-            <span className="text-zinc-500">Last interaction: </span>
+          <div className="flex items-baseline gap-1 min-w-0">
+            <span className="text-zinc-500 shrink-0">Last interaction:</span>
             <span className="text-zinc-300">{timeAgo(intel.lastInteractionAt)}</span>
           </div>
         )}
         {intel.processingDurationMs != null && (
-          <div>
-            <span className="text-zinc-500">Pipeline time: </span>
+          <div className="flex items-baseline gap-1 min-w-0">
+            <span className="text-zinc-500 shrink-0">Pipeline time:</span>
             <span className="text-emerald-400 font-semibold">{intel.processingDurationMs}ms</span>
           </div>
         )}
         {intel.updatedAt && (
-          <div>
-            <span className="text-zinc-500">Last automation: </span>
+          <div className="flex items-baseline gap-1 min-w-0">
+            <span className="text-zinc-500 shrink-0">Last automation:</span>
             <span className="text-zinc-300">{timeAgo(intel.updatedAt)}</span>
           </div>
         )}
@@ -793,15 +817,15 @@ function LeadDetailModal({
 
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto bg-zinc-900 border-zinc-700 text-zinc-100">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2 text-white">
-            <User className="h-4 w-4 text-orange-400" />
-            {sub?.athleteName || intel.normalizedProfileJson?.athleteName || "Lead Detail"}
+      <DialogContent className="w-full sm:max-w-2xl max-h-[85dvh] sm:max-h-[90dvh] flex flex-col p-0 gap-0 bg-zinc-900 border-zinc-700 text-zinc-100 overflow-x-hidden rounded-t-2xl sm:rounded-lg fixed bottom-0 sm:bottom-auto sm:top-1/2 sm:-translate-y-1/2 translate-y-0 sm:translate-x-[-50%] left-0 sm:left-1/2">
+        <DialogHeader className="flex-shrink-0 px-4 pt-4 pb-3 border-b border-zinc-700/60">
+          <DialogTitle className="flex items-center gap-2 text-white min-w-0">
+            <User className="h-4 w-4 text-orange-400 shrink-0" />
+            <span className="truncate">{sub?.athleteName || intel.normalizedProfileJson?.athleteName || "Lead Detail"}</span>
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-4 space-y-4">
           {/* Badges */}
           <div className="flex flex-wrap gap-2">
             <TemperatureBadge temp={intel.temperature} />
@@ -831,14 +855,14 @@ function LeadDetailModal({
           )}
 
           {/* Pipeline Stage Selector */}
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-zinc-400 font-medium">Pipeline Stage:</span>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2">
+            <span className="text-xs text-zinc-400 font-medium shrink-0">Pipeline Stage:</span>
             <Select
               value={intel.pipelineStage}
               onValueChange={v => onStageChange(intel.id, v)}
               disabled={intel.suppressed || intel.unsubscribed}
             >
-              <SelectTrigger data-testid="select-pipeline-stage" className="h-7 w-44 bg-zinc-800 border-zinc-600 text-xs text-zinc-200">
+              <SelectTrigger data-testid="select-pipeline-stage" className="h-8 w-full sm:w-48 bg-zinc-800 border-zinc-600 text-xs text-zinc-200">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-zinc-800 border-zinc-600">
@@ -851,11 +875,11 @@ function LeadDetailModal({
 
           {/* AI Summary */}
           {intel.aiSummary && (
-            <div className="rounded-lg bg-zinc-800/60 border border-zinc-700 p-4">
+            <div className="rounded-lg bg-zinc-800/60 border border-zinc-700 p-4 max-w-full">
               <p className="text-xs font-semibold text-orange-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                 <Brain className="h-3.5 w-3.5" /> AI Context Summary
               </p>
-              <p className="text-sm text-zinc-300 leading-relaxed">{intel.aiSummary}</p>
+              <AiSummaryCollapsible text={intel.aiSummary} />
             </div>
           )}
 
@@ -891,17 +915,17 @@ function LeadDetailModal({
             <p className="text-xs font-semibold text-blue-400 uppercase tracking-wide mb-3 flex items-center gap-1.5">
               <User className="h-3.5 w-3.5" /> Intake Intelligence
             </p>
-            <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-sm">
-              {sub?.email && <div className="flex items-center gap-2 col-span-2"><Mail className="h-3.5 w-3.5 text-zinc-500" /><span className="text-zinc-300">{sub.email}</span></div>}
-              {sub?.phone && <div className="flex items-center gap-2"><Phone className="h-3.5 w-3.5 text-zinc-500" /><span className="text-zinc-300">{sub.phone}</span></div>}
-              {(np?.sport || sub?.sport) && <div className="flex items-center gap-2"><Target className="h-3.5 w-3.5 text-zinc-500" /><span className="text-zinc-300">{np?.sport || sub?.sport}{np?.position ? ` / ${np.position}` : ""}</span></div>}
-              {(np?.school || sub?.school) && <div className="flex items-center gap-2"><MapPin className="h-3.5 w-3.5 text-zinc-500" /><span className="text-zinc-300">{np?.school || sub?.school}</span></div>}
-              {np?.age && <div className="flex items-center gap-2"><span className="text-zinc-500 text-xs w-3.5">Age</span><span className="text-zinc-300">{np.age}{np.grade ? ` / ${np.grade}` : ""}</span></div>}
-              {np?.commitmentLevel && <div className="flex items-center gap-2"><span className="text-zinc-500 text-xs">Commit:</span><span className="text-zinc-300 capitalize">{np.commitmentLevel}</span></div>}
+            <div className="space-y-1.5 text-sm">
+              {sub?.email && <div className="flex items-center gap-2 min-w-0"><Mail className="h-3.5 w-3.5 text-zinc-500 shrink-0" /><span className="text-zinc-300 break-all min-w-0">{sub.email}</span></div>}
+              {sub?.phone && <div className="flex items-center gap-2 min-w-0"><Phone className="h-3.5 w-3.5 text-zinc-500 shrink-0" /><span className="text-zinc-300">{sub.phone}</span></div>}
+              {(np?.sport || sub?.sport) && <div className="flex items-center gap-2 min-w-0"><Target className="h-3.5 w-3.5 text-zinc-500 shrink-0" /><span className="text-zinc-300 truncate">{np?.sport || sub?.sport}{np?.position ? ` / ${np.position}` : ""}</span></div>}
+              {(np?.school || sub?.school) && <div className="flex items-center gap-2 min-w-0"><MapPin className="h-3.5 w-3.5 text-zinc-500 shrink-0" /><span className="text-zinc-300 break-words min-w-0">{np?.school || sub?.school}</span></div>}
+              {np?.age && <div className="flex items-center gap-2 min-w-0"><span className="text-zinc-500 text-xs shrink-0">Age</span><span className="text-zinc-300">{np.age}{np.grade ? ` / ${np.grade}` : ""}</span></div>}
+              {np?.commitmentLevel && <div className="flex items-center gap-2 min-w-0"><span className="text-zinc-500 text-xs shrink-0">Commit:</span><span className="text-zinc-300 capitalize">{np.commitmentLevel}</span></div>}
               {np?.goals?.length > 0 && (
-                <div className="col-span-2 flex items-start gap-2 mt-1">
-                  <span className="text-zinc-500 text-xs mt-0.5">Goals:</span>
-                  <span className="text-zinc-300 text-xs">{np.goals.join(", ")}</span>
+                <div className="flex items-start gap-2 mt-1 min-w-0">
+                  <span className="text-zinc-500 text-xs mt-0.5 shrink-0">Goals:</span>
+                  <span className="text-zinc-300 text-xs break-words min-w-0">{np.goals.join(", ")}</span>
                 </div>
               )}
             </div>
@@ -1114,9 +1138,9 @@ function PipelineCard({ row, onClick }: { row: PipelineRow; onClick: () => void 
 
       {/* Campaign Source */}
       {intel.campaignSource && (
-        <div className="flex items-center gap-1.5 text-[11px] text-zinc-500">
-          <Megaphone className="h-3 w-3" />
-          <span>{intel.campaignSource}{intel.campaignName ? ` / ${intel.campaignName}` : ""}</span>
+        <div className="flex items-center gap-1.5 text-[11px] text-zinc-500 min-w-0">
+          <Megaphone className="h-3 w-3 shrink-0" />
+          <span className="truncate">{intel.campaignSource}{intel.campaignName ? ` / ${intel.campaignName}` : ""}</span>
         </div>
       )}
 
@@ -1165,7 +1189,7 @@ function StatsBar({ stats }: { stats: StatRow[] }) {
   const converted = stats.filter(r => r.pipelineStage === "converted").reduce((s, r) => s + Number(r.cnt), 0);
 
   return (
-    <div className="grid grid-cols-4 gap-3 mb-6">
+    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5 sm:mb-6">
       {[
         { label: "Total Leads", value: total, icon: User, color: "text-blue-400" },
         { label: "Hot Leads", value: hot, icon: Flame, color: "text-red-400" },
@@ -1187,12 +1211,118 @@ function StatsBar({ stats }: { stats: StatRow[] }) {
   );
 }
 
+// ─── Mobile Board View ────────────────────────────────────────────────────────
+
+function MobileBoardView({
+  rows,
+  onSelectRow,
+  mobileStage,
+  setMobileStage,
+}: {
+  rows: PipelineRow[];
+  onSelectRow: (row: PipelineRow) => void;
+  mobileStage: string;
+  setMobileStage: (s: string) => void;
+}) {
+  const visibleRows = mobileStage === "all"
+    ? rows
+    : rows.filter(r => r.intelligence.pipelineStage === mobileStage);
+
+  return (
+    <div className="space-y-3">
+      {/* Stage selector */}
+      <div className="space-y-2">
+        <p className="text-xs text-zinc-500 font-medium">Pipeline Stage</p>
+        <Select value={mobileStage} onValueChange={setMobileStage}>
+          <SelectTrigger
+            data-testid="select-mobile-pipeline-stage"
+            className="w-full bg-zinc-800 border-zinc-600 text-sm text-zinc-200 h-9"
+          >
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent className="bg-zinc-800 border-zinc-600">
+            <SelectItem value="all" className="text-sm text-zinc-200">
+              All Stages ({rows.length})
+            </SelectItem>
+            {STAGES.map(s => {
+              const cnt = rows.filter(r => r.intelligence.pipelineStage === s.key).length;
+              return (
+                <SelectItem key={s.key} value={s.key} className="text-sm text-zinc-200">
+                  {s.label} ({cnt})
+                </SelectItem>
+              );
+            })}
+          </SelectContent>
+        </Select>
+
+        {/* Quick stage chips */}
+        <div className="flex gap-1.5 overflow-x-auto scrollbar-hide pb-0.5 -mx-1 px-1">
+          <button
+            onClick={() => setMobileStage("all")}
+            className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+              mobileStage === "all"
+                ? "bg-zinc-700 border-zinc-500 text-zinc-100"
+                : "bg-transparent border-zinc-700 text-zinc-500"
+            }`}
+          >
+            All
+          </button>
+          {STAGES.map(s => {
+            const cnt = rows.filter(r => r.intelligence.pipelineStage === s.key).length;
+            if (!cnt && mobileStage !== s.key) return null;
+            return (
+              <button
+                key={s.key}
+                onClick={() => setMobileStage(s.key)}
+                className={`shrink-0 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-all ${
+                  mobileStage === s.key
+                    ? `${s.color} font-semibold`
+                    : "bg-transparent border-zinc-700 text-zinc-500"
+                }`}
+              >
+                {s.label} {cnt > 0 ? `(${cnt})` : ""}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Stage header when filtered */}
+      {mobileStage !== "all" && (
+        <div className={`rounded-lg px-3 py-2 border ${STAGES.find(s => s.key === mobileStage)?.color || ""}`}>
+          <span className="text-xs font-semibold">
+            {STAGES.find(s => s.key === mobileStage)?.label} — {visibleRows.length} lead{visibleRows.length !== 1 ? "s" : ""}
+          </span>
+        </div>
+      )}
+
+      {/* Lead cards */}
+      {visibleRows.length === 0 ? (
+        <div className="text-center py-12 text-zinc-500 border border-dashed border-zinc-700/50 rounded-lg">
+          <p className="text-sm">No leads in {mobileStage === "all" ? "pipeline" : STAGES.find(s => s.key === mobileStage)?.label}</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {visibleRows.map(row => (
+            <PipelineCard
+              key={row.intelligence.id}
+              row={row}
+              onClick={() => onSelectRow(row)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminLeadPipelinePage() {
   const { toast } = useToast();
   const [selectedRow, setSelectedRow] = useState<PipelineRow | null>(null);
   const [activeStageFilter, setActiveStageFilter] = useState<string>("all");
+  const [mobileStage, setMobileStage] = useState<string>("all");
   const [simLoading, setSimLoading] = useState(false);
   const [cronResult, setCronResult] = useState<any>(null);
 
@@ -1263,17 +1393,17 @@ export default function AdminLeadPipelinePage() {
   }));
 
   return (
-    <div className="p-6 max-w-[1600px] mx-auto">
+    <div className="w-full overflow-x-hidden p-4 sm:p-6 max-w-[1600px] mx-auto">
       {/* Header */}
-      <div className="flex items-start justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <TrendingUp className="h-6 w-6 text-orange-400" />
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-5 sm:mb-6">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold text-white flex items-center gap-2">
+            <TrendingUp className="h-5 w-5 sm:h-6 sm:w-6 text-orange-400 shrink-0" />
             Lead Pipeline
           </h1>
           <p className="text-sm text-zinc-500 mt-1">AI-powered lead intelligence and follow-up automation</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             data-testid="button-run-recovery-cron"
             size="sm"
@@ -1283,7 +1413,7 @@ export default function AdminLeadPipelinePage() {
             onClick={() => cronMutation.mutate()}
           >
             {cronMutation.isPending ? <Loader2 className="h-3 w-3 mr-1.5 animate-spin" /> : <Activity className="h-3 w-3 mr-1.5" />}
-            Run Recovery Cron
+            Recovery Cron
           </Button>
           {[0, 1].map(i => (
             <Button
@@ -1317,8 +1447,8 @@ export default function AdminLeadPipelinePage() {
       {/* Stats Bar */}
       {stats.length > 0 && <StatsBar stats={stats} />}
 
-      {/* Stage Filter */}
-      <div className="flex gap-2 mb-5 flex-wrap">
+      {/* Stage Filter — desktop only (mobile uses MobileBoardView selector) */}
+      <div className="hidden md:flex gap-2 mb-5 flex-wrap">
         <button
           data-testid="filter-stage-all"
           onClick={() => setActiveStageFilter("all")}
@@ -1350,9 +1480,25 @@ export default function AdminLeadPipelinePage() {
         })}
       </div>
 
-      {/* Kanban Board */}
+      {/* ── Mobile Board (< md) ── */}
       {isLoading ? (
-        <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+        <div className="md:hidden space-y-2">
+          {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 bg-zinc-800 rounded-lg" />)}
+        </div>
+      ) : (
+        <div className="md:hidden">
+          <MobileBoardView
+            rows={rows}
+            onSelectRow={setSelectedRow}
+            mobileStage={mobileStage}
+            setMobileStage={setMobileStage}
+          />
+        </div>
+      )}
+
+      {/* ── Desktop Kanban (≥ md) ── */}
+      {isLoading ? (
+        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
           {STAGES.slice(0, 4).map(s => (
             <div key={s.key} className="space-y-2">
               <Skeleton className="h-6 bg-zinc-700" />
@@ -1361,7 +1507,7 @@ export default function AdminLeadPipelinePage() {
           ))}
         </div>
       ) : activeStageFilter === "all" ? (
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
+        <div className="hidden md:grid md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-4">
           {stageGroups.map(group => (
             <div key={group.key} className="min-w-0">
               <div className={`rounded-t-lg px-3 py-2 border-t border-x mb-2 ${group.color}`}>
@@ -1387,7 +1533,7 @@ export default function AdminLeadPipelinePage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        <div className="hidden md:grid md:grid-cols-2 lg:grid-cols-3 gap-3">
           {filteredRows.length === 0 ? (
             <div className="col-span-3 text-center py-16 text-zinc-500">
               No leads in <span className="font-medium">{STAGES.find(s => s.key === activeStageFilter)?.label}</span>

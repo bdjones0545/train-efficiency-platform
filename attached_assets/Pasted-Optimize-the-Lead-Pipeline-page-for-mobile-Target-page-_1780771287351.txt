@@ -1,0 +1,237 @@
+Optimize the Lead Pipeline page for mobile.
+
+Target page:
+Lead Pipeline / Athlete Intake Pipeline board
+
+Current issues:
+- Mobile layout allows horizontal scrolling.
+- Kanban columns are too narrow and force side-to-side movement.
+- Lead detail drawer/modal is too wide and content overflows horizontally.
+- AI Context Summary text runs off-screen.
+- Tags/badges overflow in a single row.
+- Pipeline stage selector and metadata are not mobile-friendly.
+
+Goal:
+Make the Lead Pipeline usable as a mobile sales inbox.
+
+--------------------------------------------------
+PHASE 1 — REMOVE PAGE-LEVEL HORIZONTAL SCROLL
+--------------------------------------------------
+
+At the page root and main containers add:
+- w-full
+- max-w-full
+- overflow-x-hidden
+
+Audit for:
+- fixed widths
+- min-w-[...] values
+- grid columns that exceed viewport
+- flex rows that do not wrap
+
+The full page must not scroll horizontally on 375px, 390px, or 414px screens.
+
+--------------------------------------------------
+PHASE 2 — MOBILE BOARD VIEW
+--------------------------------------------------
+
+Current desktop kanban columns are not ideal on mobile.
+
+On mobile, replace horizontal kanban with a stage selector + vertical list.
+
+Mobile layout:
+
+Pipeline Stage:
+[ New Lead ▼ ]
+
+Then show leads in that selected stage as vertical cards.
+
+Optional chips:
+New Lead | Contacted | Eval Scheduled | Enrolled | Lost
+
+Only one stage visible at a time on mobile.
+
+Desktop can keep current kanban board.
+
+Breakpoint:
+- mobile: vertical stage list below md
+- desktop: kanban board md and above
+
+--------------------------------------------------
+PHASE 3 — MOBILE LEAD CARD CLEANUP
+--------------------------------------------------
+
+Each mobile lead card should show:
+
+Header:
+- athlete name
+- score
+- temperature badge
+
+Details:
+- sport
+- school
+- age/grade
+- source
+
+Primary action:
+- Send Follow-Up or Schedule Eval
+
+Secondary:
+- More
+
+Avoid showing long AI summaries on the board card.
+
+Example:
+
+Zoey
+85/100 · Warm
+
+Track & Field · Age 15
+Rockwall-Heath High School
+Source: IG
+
+[Send Follow-Up] [More]
+
+--------------------------------------------------
+PHASE 4 — DETAIL DRAWER MOBILE FIX
+--------------------------------------------------
+
+The lead detail drawer/modal currently overflows horizontally.
+
+On mobile:
+- use full-screen drawer or bottom sheet
+- width: 100vw
+- max-width: 100%
+- max-height: 90dvh
+- overflow-y-auto
+- overflow-x-hidden
+
+Header should stay readable:
+- name
+- score
+- status
+- close button
+
+Footer actions should be sticky if possible:
+- Send Follow-Up
+- Schedule Eval
+- Convert to Athlete
+
+--------------------------------------------------
+PHASE 5 — AI CONTEXT SUMMARY FIX
+--------------------------------------------------
+
+AI Context Summary currently runs off-screen.
+
+Fix:
+- whitespace-normal
+- break-words
+- overflow-hidden
+- max-w-full
+- no fixed width
+
+On mobile, collapse long summaries by default:
+
+AI Context Summary
+[Show Summary]
+
+Expanded text should wrap properly.
+
+--------------------------------------------------
+PHASE 6 — BADGES / TAGS WRAP
+--------------------------------------------------
+
+Temperature, score, urgency, sport tags, source tags, and goal tags should wrap safely.
+
+Use:
+- flex-wrap
+- min-w-0
+- max-w-full
+
+Do not allow tags to create horizontal overflow.
+
+--------------------------------------------------
+PHASE 7 — PIPELINE STAGE SELECTOR
+--------------------------------------------------
+
+On mobile, make the stage selector full width.
+
+Example:
+
+Pipeline Stage
+[ New Lead ▼ ]
+
+Avoid inline label + dropdown if it causes overflow.
+
+--------------------------------------------------
+PHASE 8 — FOLLOW-UP SCHEDULE CARD
+--------------------------------------------------
+
+Follow-up Schedule section should stack on mobile.
+
+Avoid two-column text that runs off-screen.
+
+Show:
+
+Stage: 7-day Due
+Intake processed: May 31 at 10:13 AM
+Last automation: 2d ago
+Next due: now
+
+--------------------------------------------------
+PHASE 9 — MOBILE ACTION PRIORITY
+--------------------------------------------------
+
+In detail view, prioritize actions:
+
+Primary:
+- Send Follow-Up
+
+Secondary:
+- Schedule Eval
+- Convert to Athlete
+- Archive
+
+Danger:
+- Delete
+
+Do not place too many buttons in one row on mobile.
+
+--------------------------------------------------
+PHASE 10 — TEST CASES
+--------------------------------------------------
+
+Test on:
+- 375px
+- 390px
+- 414px
+
+Test:
+- long athlete name
+- long school name
+- long AI summary
+- many tags
+- campaign ID
+- dropdown stage selector
+- detail drawer open
+
+--------------------------------------------------
+DELIVERABLES
+--------------------------------------------------
+
+After implementation summarize:
+1. Files changed
+2. Overflow sources found
+3. Mobile board behavior
+4. Detail drawer changes
+5. Text wrapping fixes
+6. Badge/tag wrapping fixes
+7. Desktop behavior preserved
+
+Important:
+Do not remove pipeline functionality.
+Do not remove AI summary.
+Do not remove follow-up schedule.
+Do not remove kanban on desktop.
+Only make the mobile experience clean and usable.
