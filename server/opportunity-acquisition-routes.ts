@@ -1106,6 +1106,218 @@ export async function registerOpportunityAcquisitionRoutes(
     }
   });
 
+  // ── POST /api/opportunity-acquisition/learning/run ───────────────────────────
+  app.post("/api/opportunity-acquisition/learning/run", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+      const { runOpportunityLearningAnalysis } = await import("./services/opportunity-learning-agent");
+      const result = await runOpportunityLearningAnalysis(orgId);
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      console.error("[opportunity/learning/run]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/learning/metrics ────────────────────────
+  app.get("/api/opportunity-acquisition/learning/metrics", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json({});
+      const { ensureLearningTables } = await import("./services/opportunity-learning-agent");
+      await ensureLearningTables();
+
+      const sent = rows(await db.execute(sql`
+        SELECT COUNT(*) AS cnt FROM opportunity_outreach_executions
+        WHERE org_id = ${orgId} AND status IN ('sent','delivered','replied')
+      `));
+      const totalSent = n(sent[0]?.cnt ?? 0);
+
+      const replyData = rows(await db.execute(sql`
+        SELECT
+          COUNT(*) AS total,
+          COUNT(*) FILTER (WHERE classification IN ('interested','meeting_request','information_request','referral')) AS interested,
+          COUNT(*) FILTER (WHERE classification = 'meeting_request') AS meetings
+        FROM opportunity_reply_events WHERE org_id = ${orgId}
+      `));
+      const totalReplies = n(replyData[0]?.total ?? 0);
+      const totalInterested = n(replyData[0]?.interested ?? 0);
+      const totalMeetings = n(replyData[0]?.meetings ?? 0);
+
+      const outcomes = rows(await db.execute(sql`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'won')    AS won,
+          COUNT(*) FILTER (WHERE status = 'lost')   AS lost,
+          COUNT(*) FILTER (WHERE status = 'ghosted') AS ghosted
+        FROM opportunity_acquisition_opportunities WHERE org_id = ${orgId}
+      `));
+      const totalWon = n(outcomes[0]?.won ?? 0);
+      const totalLost = n(outcomes[0]?.lost ?? 0);
+      const totalGhosted = n(outcomes[0]?.ghosted ?? 0);
+
+      const pct = (a: number, b: number) => b === 0 ? 0 : Math.round((a / b) * 1000) / 10;
+
+      res.json({
+        totalSent, totalReplies, totalInterested, totalMeetings,
+        totalWon, totalLost, totalGhosted,
+        replyRate:      pct(totalReplies, totalSent),
+        interestedRate: pct(totalInterested, totalSent),
+        meetingRate:    pct(totalMeetings, totalSent),
+        winRate:        pct(totalWon, totalSent),
+        lossRate:       pct(totalLost, totalSent),
+        ghostRate:      pct(totalGhosted, totalSent),
+      });
+    } catch (e: any) {
+      console.error("[opportunity/learning/metrics]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/learning/insights ───────────────────────
+  app.get("/api/opportunity-acquisition/learning/insights", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json([]);
+      const { ensureLearningTables } = await import("./services/opportunity-learning-agent");
+      await ensureLearningTables();
+
+      const data = rows(await db.execute(sql`
+        SELECT * FROM opportunity_learning_insights
+        WHERE org_id = ${orgId}
+        ORDER BY confidence_score DESC, created_at DESC
+        LIMIT 20
+      `));
+
+      res.json(data.map((d: any) => ({
+        id:              d.id,
+        insight:         d.insight,
+        category:        d.category ?? "general",
+        confidenceScore: Number(d.confidence_score ?? 0.5),
+        supportingData:  typeof d.supporting_data === "object" ? d.supporting_data : {},
+        createdAt:       d.created_at,
+      })));
+    } catch (e: any) {
+      console.error("[opportunity/learning/insights]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/learning/performance ────────────────────
+  app.get("/api/opportunity-acquisition/learning/performance", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json({ sources: [], types: [], positioning: [], subjects: [] });
+      const { ensureLearningTables } = await import("./services/opportunity-learning-agent");
+      await ensureLearningTables();
+
+      const pct = (a: number, b: number) => b === 0 ? 0 : Math.round((a / b) * 1000) / 10;
+
+      const sources = rows(await db.execute(sql`
+        SELECT o.source,
+          COUNT(DISTINCT e.id)                                                   AS sent,
+          COUNT(DISTINCT r.id)                                                   AS replies,
+          COUNT(DISTINCT r.id) FILTER (WHERE r.classification='meeting_request') AS meetings,
+          COUNT(DISTINCT o.id) FILTER (WHERE o.status='won')                    AS wins
+        FROM opportunity_acquisition_opportunities o
+        LEFT JOIN opportunity_outreach_executions e ON e.opportunity_id=o.id AND e.org_id=${orgId}
+        LEFT JOIN opportunity_reply_events r ON r.opportunity_id=o.id AND r.org_id=${orgId}
+        WHERE o.org_id=${orgId} AND o.source IS NOT NULL AND o.source!=''
+        GROUP BY o.source ORDER BY replies DESC, sent DESC
+      `));
+
+      const types = rows(await db.execute(sql`
+        SELECT o.type,
+          COUNT(DISTINCT e.id) AS sent,
+          COUNT(DISTINCT r.id) AS replies,
+          COUNT(DISTINCT r.id) FILTER (WHERE r.classification='meeting_request') AS meetings,
+          COUNT(DISTINCT o.id) FILTER (WHERE o.status='won') AS wins
+        FROM opportunity_acquisition_opportunities o
+        LEFT JOIN opportunity_outreach_executions e ON e.opportunity_id=o.id AND e.org_id=${orgId}
+        LEFT JOIN opportunity_reply_events r ON r.opportunity_id=o.id AND r.org_id=${orgId}
+        WHERE o.org_id=${orgId}
+        GROUP BY o.type ORDER BY replies DESC
+      `));
+
+      const positioning = rows(await db.execute(sql`
+        SELECT d.positioning_angle AS angle,
+          COUNT(DISTINCT e.id) AS sent,
+          COUNT(DISTINCT r.id) AS replies,
+          COUNT(DISTINCT r.id) FILTER (WHERE r.classification='meeting_request') AS meetings,
+          COUNT(DISTINCT o.id) FILTER (WHERE o.status='won') AS wins
+        FROM opportunity_outreach_drafts d
+        JOIN opportunity_acquisition_opportunities o ON o.id=d.opportunity_id AND o.org_id=${orgId}
+        LEFT JOIN opportunity_outreach_executions e ON e.draft_id=d.id AND e.org_id=${orgId}
+        LEFT JOIN opportunity_reply_events r ON r.opportunity_id=o.id AND r.org_id=${orgId}
+        WHERE d.org_id=${orgId} AND d.positioning_angle IS NOT NULL AND d.positioning_angle!=''
+        GROUP BY d.positioning_angle ORDER BY replies DESC
+      `));
+
+      const subjects = rows(await db.execute(sql`
+        SELECT e.subject,
+          COUNT(DISTINCT e.id) AS sent,
+          COUNT(DISTINCT r.id) AS replies,
+          COUNT(DISTINCT r.id) FILTER (WHERE r.classification='meeting_request') AS meetings,
+          COUNT(DISTINCT o.id) FILTER (WHERE o.status='won') AS wins
+        FROM opportunity_outreach_executions e
+        JOIN opportunity_acquisition_opportunities o ON o.id=e.opportunity_id AND o.org_id=${orgId}
+        LEFT JOIN opportunity_reply_events r ON r.execution_id=e.id AND r.org_id=${orgId}
+        WHERE e.org_id=${orgId}
+        GROUP BY e.subject ORDER BY replies DESC, sent DESC LIMIT 30
+      `));
+
+      const map = (rows: any[], keyField: string) => rows.map((d: any) => {
+        const sent = n(d.sent); const replies = n(d.replies);
+        const meetings = n(d.meetings); const wins = n(d.wins);
+        return { [keyField]: d[keyField], sent, replies, meetings, wins,
+          replyRate: pct(replies, sent), meetingRate: pct(meetings, sent), winRate: pct(wins, sent) };
+      });
+
+      res.json({
+        sources:     map(sources, "source"),
+        types:       map(types, "type"),
+        positioning: positioning.map((d: any) => {
+          const sent = n(d.sent); const replies = n(d.replies);
+          const meetings = n(d.meetings); const wins = n(d.wins);
+          return { angle: d.angle, sent, replies, meetings, wins,
+            replyRate: pct(replies, sent), meetingRate: pct(meetings, sent), winRate: pct(wins, sent) };
+        }),
+        subjects:    subjects.map((d: any) => {
+          const sent = n(d.sent); const replies = n(d.replies); const meetings = n(d.meetings);
+          return { subject: d.subject, sent, replies, meetings, wins: n(d.wins),
+            replyRate: pct(replies, sent), meetingRate: pct(meetings, sent) };
+        }),
+      });
+    } catch (e: any) {
+      console.error("[opportunity/learning/performance]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── PATCH /api/opportunity-acquisition/opportunities/:id/outcome ──────────────
+  app.patch("/api/opportunity-acquisition/opportunities/:id/outcome", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+      const { id } = req.params;
+      const { outcome } = req.body;
+      if (!["won","lost","ghosted","in_progress"].includes(outcome)) {
+        return res.status(400).json({ message: "Invalid outcome" });
+      }
+      await db.execute(sql`
+        UPDATE opportunity_acquisition_opportunities
+        SET status = ${outcome}, final_outcome = ${outcome}
+        WHERE id = ${id} AND org_id = ${orgId}
+      `);
+      const { recordOutcomeLearningSignal } = await import("./services/opportunity-learning-agent");
+      await recordOutcomeLearningSignal(orgId, id, outcome);
+      res.json({ success: true, outcome });
+    } catch (e: any) {
+      console.error("[opportunity/outcome]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ── POST /api/opportunity-acquisition/run-scan (legacy alias) ────────────────
   app.post("/api/opportunity-acquisition/run-scan", ...auth, async (req: any, res) => {
     try {

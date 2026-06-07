@@ -1,0 +1,512 @@
+Phase 9 — Hermes Learning Layer
+
+Goal:
+Transform Opportunity Acquisition from an execution engine into a self-improving acquisition system.
+
+Current State:
+
+Discovery
+→ Qualification
+→ Outreach
+→ Execution
+→ Replies
+→ Follow-Ups
+
+New State:
+
+Discovery
+→ Qualification
+→ Outreach
+→ Execution
+→ Replies
+→ Outcomes
+→ Learning
+→ Optimization
+
+The system should begin learning what actually produces replies, meetings, referrals, and wins.
+
+Important:
+
+Do NOT automatically change agent behavior yet.
+
+Hermes should generate recommendations and analytics first.
+
+Human review remains required.
+
+⸻
+
+DATABASE
+
+Create table:
+
+opportunity_learning_signals
+
+Columns:
+
+id
+org_id
+
+opportunity_id
+
+source
+industry
+company_size
+opportunity_type
+
+fit_score
+
+positioning_angle
+outreach_subject
+
+reply_received
+interested
+meeting_requested
+referral_received
+won
+lost
+ghosted
+
+final_outcome
+
+created_at
+
+⸻
+
+OUTCOME TYPES
+
+Supported outcomes:
+
+won
+
+lost
+
+ghosted
+
+meeting_requested
+
+information_request
+
+referral
+
+interested
+
+in_progress
+
+⸻
+
+LEARNING AGENT
+
+Create:
+
+server/services/opportunity-learning-agent.ts
+
+Primary function:
+
+runOpportunityLearningAnalysis(orgId)
+
+Responsibilities:
+
+Analyze all historical:
+
+* opportunities
+* executions
+* replies
+* outcomes
+
+Generate:
+
+* source performance
+* opportunity type performance
+* positioning performance
+* subject line performance
+* conversion performance
+
+⸻
+
+LEARNING METRICS
+
+Calculate:
+
+Reply Rate
+
+Replies / Sent
+
+Interested Rate
+
+Interested / Sent
+
+Meeting Rate
+
+Meetings / Sent
+
+Referral Rate
+
+Referrals / Sent
+
+Win Rate
+
+Won / Sent
+
+Loss Rate
+
+Lost / Sent
+
+Ghost Rate
+
+Ghosted / Sent
+
+⸻
+
+SOURCE PERFORMANCE
+
+Generate ranking:
+
+Example:
+
+TeamWork Online
+Reply Rate: 28%
+
+LinkedIn
+Reply Rate: 18%
+
+Indeed
+Reply Rate: 9%
+
+Store:
+
+reply_rate
+interested_rate
+meeting_rate
+win_rate
+
+⸻
+
+POSITIONING ANALYSIS
+
+Analyze:
+
+positioning_angle
+
+Examples:
+
+AI-Assisted Coaching
+
+Reduce Admin Load
+
+Athlete Education
+
+Programming Support
+
+Generate:
+
+sent_count
+reply_rate
+meeting_rate
+win_rate
+
+⸻
+
+SUBJECT LINE ANALYSIS
+
+Track:
+
+subject
+sent_count
+reply_rate
+meeting_rate
+
+Identify:
+
+Top Performing Subjects
+
+Lowest Performing Subjects
+
+⸻
+
+OPPORTUNITY TYPE ANALYSIS
+
+Track:
+
+Remote Coaching
+
+Consulting
+
+Programming
+
+Wellness
+
+Partnerships
+
+Calculate:
+
+reply_rate
+meeting_rate
+win_rate
+
+⸻
+
+INSIGHTS ENGINE
+
+Generate Hermes insights.
+
+Example:
+
+“Remote coaching opportunities generate 2.7x more replies than wellness opportunities.”
+
+“TeamWork Online currently has the highest win rate.”
+
+“Subject lines referencing operational support outperform AI-focused language.”
+
+Store:
+
+insight
+confidence_score
+supporting_metrics
+
+⸻
+
+DATABASE
+
+Create table:
+
+opportunity_learning_insights
+
+Columns:
+
+id
+org_id
+
+insight
+
+category
+
+confidence_score
+
+supporting_data JSONB
+
+created_at
+
+⸻
+
+API ENDPOINTS
+
+POST /api/opportunity-acquisition/learning/run
+
+Runs learning analysis.
+
+GET /api/opportunity-acquisition/learning/metrics
+
+Returns:
+
+replyRate
+interestedRate
+meetingRate
+winRate
+lossRate
+ghostRate
+
+GET /api/opportunity-acquisition/learning/insights
+
+Returns Hermes insights.
+
+GET /api/opportunity-acquisition/learning/performance
+
+Returns:
+
+source rankings
+opportunity type rankings
+positioning rankings
+subject rankings
+
+⸻
+
+FRONTEND
+
+Add new tab:
+
+Learning
+
+Tabs become:
+
+Discovery
+Discovery Runs
+Qualification
+Outreach
+Pipeline
+Cycles
+Executions
+Replies
+Learning
+Agent Activity
+Settings
+
+⸻
+
+LEARNING TAB
+
+Top summary cards:
+
+Reply Rate
+
+Interested Rate
+
+Meeting Rate
+
+Win Rate
+
+Loss Rate
+
+Ghost Rate
+
+⸻
+
+PERFORMANCE SECTION
+
+Source Performance
+
+Table:
+
+Source
+Sent
+Replies
+Meetings
+Wins
+Reply Rate
+Win Rate
+
+⸻
+
+Opportunity Type Performance
+
+Table:
+
+Type
+Sent
+Replies
+Meetings
+Wins
+Reply Rate
+
+⸻
+
+Positioning Performance
+
+Table:
+
+Positioning Angle
+Sent
+Replies
+Meetings
+Wins
+Reply Rate
+
+⸻
+
+Subject Performance
+
+Table:
+
+Subject
+Sent
+Replies
+Meetings
+Wins
+Reply Rate
+
+⸻
+
+HERMES INSIGHTS PANEL
+
+Card feed:
+
+Hermes Insight
+
+Confidence Badge
+
+Supporting Metrics
+
+Example:
+
+“Remote coaching opportunities are producing 2.4x higher reply rates than consulting opportunities.”
+
+Confidence: 92%
+
+⸻
+
+OUTCOME MANAGEMENT
+
+Add ability to manually mark opportunities:
+
+Won
+
+Lost
+
+Ghosted
+
+These outcomes should feed:
+
+opportunity_learning_signals
+
+and future analytics.
+
+⸻
+
+CEO HEARTBEAT INTEGRATION
+
+Create service entrypoint:
+
+runOpportunityLearningAnalysis(orgId)
+
+Future CEO Heartbeat integration should be able to call it.
+
+Do not schedule automatically yet.
+
+⸻
+
+OPTIMIZATION PREPARATION
+
+Generate recommendations only.
+
+Do NOT automatically:
+
+* change discovery weights
+* modify qualification thresholds
+* alter outreach messaging
+
+Hermes should advise, not act.
+
+⸻
+
+AGENT EVENTS
+
+Log:
+
+Learning Analysis Started
+
+Learning Analysis Completed
+
+New Insight Generated
+
+Outcome Recorded
+
+⸻
+
+SUCCESS CRITERIA
+
+Phase 9 is complete when:
+
+* Learning signals are captured
+* Outcomes can be tracked
+* Performance analytics exist
+* Hermes insights are generated
+* Learning tab exists
+* Source rankings exist
+* Positioning rankings exist
+* Subject rankings exist
+* CEO Heartbeat can call learning analysis
+* No autonomous optimization occurs
+* Zero TypeScript errors
+
+Result:
+
+Opportunity Acquisition evolves from an AI business development engine into a learning acquisition system that continuously identifies what actually creates opportunities, meetings, and revenue.

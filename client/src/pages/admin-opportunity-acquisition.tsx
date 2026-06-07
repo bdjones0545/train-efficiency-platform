@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft, Target, Search, Plus, CheckCircle, AlertTriangle,
+  ArrowLeft, Target, Search, Plus, CheckCircle, XCircle, AlertTriangle,
   Clock, DollarSign, Star, Activity, Settings, BarChart3,
   Building2, MapPin, Zap, User, Shield, Radio, X, Loader2,
   Brain, Flag, ChevronRight, AlertCircle, ThumbsUp, Mail,
@@ -98,6 +98,22 @@ interface Execution {
   deliveryStatus: string; replyDetected: boolean;
   sentAt: string | null; deliveredAt: string | null; repliedAt: string | null;
   errorMessage: string | null; createdAt: string;
+}
+
+interface LearningMetrics {
+  totalSent: number; totalReplies: number; totalInterested: number;
+  totalMeetings: number; totalWon: number; totalLost: number; totalGhosted: number;
+  replyRate: number; interestedRate: number; meetingRate: number;
+  winRate: number; lossRate: number; ghostRate: number;
+}
+interface SourcePerf  { source: string; sent: number; replies: number; meetings: number; wins: number; replyRate: number; meetingRate: number; winRate: number; }
+interface TypePerf    { type: string;   sent: number; replies: number; meetings: number; wins: number; replyRate: number; meetingRate: number; winRate: number; }
+interface PosPerf     { angle: string;  sent: number; replies: number; meetings: number; wins: number; replyRate: number; meetingRate: number; winRate: number; }
+interface SubPerf     { subject: string; sent: number; replies: number; meetings: number; wins: number; replyRate: number; meetingRate: number; }
+interface LearningPerf { sources: SourcePerf[]; types: TypePerf[]; positioning: PosPerf[]; subjects: SubPerf[]; }
+interface LearningInsight {
+  id: string; insight: string; category: string;
+  confidenceScore: number; supportingData: Record<string, unknown>; createdAt: string;
 }
 
 type ReplyClassification =
@@ -1430,6 +1446,309 @@ function PipelineTab({ opportunities }: { opportunities: Opportunity[] }) {
   );
 }
 
+// ─── Learning Tab ─────────────────────────────────────────────────────────────
+
+interface LearningTabProps {
+  metrics:         LearningMetrics | null;
+  insights:        LearningInsight[];
+  perf:            LearningPerf | null;
+  metricsLoading:  boolean;
+  insightsLoading: boolean;
+  perfLoading:     boolean;
+  onRunAnalysis:   () => void;
+  isRunning:       boolean;
+  opportunities:   Opportunity[];
+  onRecordOutcome: (id: string, outcome: string) => void;
+  isRecordingOutcome: boolean;
+}
+
+const CATEGORY_CONFIG: Record<string, { label: string; color: string }> = {
+  source:      { label: "Source",      color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+  type:        { label: "Type",        color: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" },
+  positioning: { label: "Positioning", color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
+  subject:     { label: "Subject",     color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
+  conversion:  { label: "Conversion",  color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" },
+  general:     { label: "General",     color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300" },
+};
+
+function RateCell({ value }: { value: number }) {
+  const color = value >= 20 ? "text-emerald-600 dark:text-emerald-400"
+    : value >= 10 ? "text-amber-600 dark:text-amber-400"
+    : "text-muted-foreground";
+  return <span className={`font-semibold ${color}`}>{value}%</span>;
+}
+
+function LearningMetricCard({ label, value, sub, icon: Icon, color }: {
+  label: string; value: string; sub: string; icon: React.ElementType; color: string;
+}) {
+  return (
+    <Card className="border shadow-sm">
+      <CardContent className="pt-4 pb-4 px-4">
+        <div className="flex items-start justify-between">
+          <div>
+            <p className="text-xs text-muted-foreground">{label}</p>
+            <p className={`text-2xl font-bold mt-0.5 ${color}`}>{value}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>
+          </div>
+          <div className={`p-2 rounded-lg bg-muted`}><Icon className={`h-4 w-4 ${color}`} /></div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface PerfCol { header: string; key: string; rate?: boolean; }
+
+function PerfTable({
+  title, data, loading, keyField, columns
+}: {
+  title: string;
+  data: Record<string, unknown>[];
+  loading: boolean;
+  keyField: string;
+  columns: PerfCol[];
+}) {
+  if (loading) return <Card className="border shadow-sm"><CardContent className="pt-6 pb-6 flex justify-center"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></CardContent></Card>;
+  return (
+    <Card className="border shadow-sm">
+      <CardHeader className="pb-2 pt-4 px-4">
+        <CardTitle className="text-sm font-semibold">{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="px-4 pb-4">
+        {!data.length ? (
+          <p className="text-xs text-muted-foreground text-center py-4">No data yet — run learning analysis or send outreach first.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-border/50">
+                  {columns.map(c => (
+                    <th key={c.key} className="text-left py-2 px-2 text-muted-foreground font-medium">{c.header}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {data.map((row, i) => (
+                  <tr key={String(row[keyField] ?? i)} className="border-b border-border/30 hover:bg-muted/30 transition-colors">
+                    {columns.map(c => (
+                      <td key={c.key} className="py-2 px-2">
+                        {c.rate ? <RateCell value={Number(row[c.key] ?? 0)} /> : String(row[c.key] ?? "—")}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function LearningTab({
+  metrics, insights, perf,
+  metricsLoading, insightsLoading, perfLoading,
+  onRunAnalysis, isRunning,
+  opportunities, onRecordOutcome, isRecordingOutcome,
+}: LearningTabProps) {
+  const m = metrics;
+
+  return (
+    <div className="space-y-5">
+      {/* Safety banner */}
+      <div className="flex items-start gap-2 rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/30 px-3 py-2.5 text-xs text-blue-700 dark:text-blue-300">
+        <Brain className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+        <p><strong>Hermes Learning Layer</strong> — generates analytics and recommendations only. No automatic changes to discovery weights, qualification thresholds, or outreach messaging. Human review required before any optimization.</p>
+      </div>
+
+      {/* Run analysis button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Acquisition Learning Analysis</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Hermes analyzes all historical signals to surface what drives replies, meetings, and wins.</p>
+        </div>
+        <Button
+          size="sm" className="gap-1.5 text-xs" disabled={isRunning} onClick={onRunAnalysis}
+          data-testid="button-run-learning"
+        >
+          {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Brain className="h-3.5 w-3.5" />}
+          {isRunning ? "Analyzing…" : "Run Learning Analysis"}
+        </Button>
+      </div>
+
+      {/* 6 metric cards */}
+      {metricsLoading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          {Array.from({ length: 6 }).map((_, i) => <Card key={i} className="border shadow-sm animate-pulse h-24" />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <LearningMetricCard label="Reply Rate"     value={`${m?.replyRate ?? 0}%`}     sub={`${m?.totalReplies ?? 0} of ${m?.totalSent ?? 0} sent`}   icon={Mail}       color="text-blue-600 dark:text-blue-400" />
+          <LearningMetricCard label="Interested Rate" value={`${m?.interestedRate ?? 0}%`} sub={`${m?.totalInterested ?? 0} interested`}               icon={TrendingUp}  color="text-violet-600 dark:text-violet-400" />
+          <LearningMetricCard label="Meeting Rate"   value={`${m?.meetingRate ?? 0}%`}   sub={`${m?.totalMeetings ?? 0} meetings`}                     icon={Target}      color="text-emerald-600 dark:text-emerald-400" />
+          <LearningMetricCard label="Win Rate"       value={`${m?.winRate ?? 0}%`}       sub={`${m?.totalWon ?? 0} won`}                               icon={CheckCircle} color="text-emerald-600 dark:text-emerald-400" />
+          <LearningMetricCard label="Loss Rate"      value={`${m?.lossRate ?? 0}%`}      sub={`${m?.totalLost ?? 0} lost`}                             icon={XCircle}     color="text-rose-600 dark:text-rose-400" />
+          <LearningMetricCard label="Ghost Rate"     value={`${m?.ghostRate ?? 0}%`}     sub={`${m?.totalGhosted ?? 0} ghosted`}                       icon={Clock}       color="text-gray-500 dark:text-gray-400" />
+        </div>
+      )}
+
+      {/* Performance tables */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <PerfTable
+          title="Source Performance" data={(perf?.sources ?? []) as Record<string, unknown>[]}
+          loading={perfLoading} keyField="source"
+          columns={[
+            { header: "Source",     key: "source" },
+            { header: "Sent",       key: "sent" },
+            { header: "Replies",    key: "replies" },
+            { header: "Meetings",   key: "meetings" },
+            { header: "Reply Rate", key: "replyRate",   rate: true },
+            { header: "Win Rate",   key: "winRate",     rate: true },
+          ]}
+        />
+        <PerfTable
+          title="Opportunity Type Performance" data={(perf?.types ?? []) as Record<string, unknown>[]}
+          loading={perfLoading} keyField="type"
+          columns={[
+            { header: "Type",       key: "type" },
+            { header: "Sent",       key: "sent" },
+            { header: "Replies",    key: "replies" },
+            { header: "Meetings",   key: "meetings" },
+            { header: "Reply Rate", key: "replyRate",   rate: true },
+            { header: "Win Rate",   key: "winRate",     rate: true },
+          ]}
+        />
+        <PerfTable
+          title="Positioning Performance" data={(perf?.positioning ?? []) as Record<string, unknown>[]}
+          loading={perfLoading} keyField="angle"
+          columns={[
+            { header: "Angle",        key: "angle" },
+            { header: "Sent",         key: "sent" },
+            { header: "Replies",      key: "replies" },
+            { header: "Meetings",     key: "meetings" },
+            { header: "Reply Rate",   key: "replyRate",   rate: true },
+            { header: "Meeting Rate", key: "meetingRate", rate: true },
+          ]}
+        />
+        <PerfTable
+          title="Subject Line Performance" data={(perf?.subjects ?? []) as Record<string, unknown>[]}
+          loading={perfLoading} keyField="subject"
+          columns={[
+            { header: "Subject",    key: "subject" },
+            { header: "Sent",       key: "sent" },
+            { header: "Replies",    key: "replies" },
+            { header: "Reply Rate", key: "replyRate",   rate: true },
+            { header: "Mtg Rate",   key: "meetingRate", rate: true },
+          ]}
+        />
+      </div>
+
+      {/* Hermes Insights panel */}
+      <Card className="border shadow-sm">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Brain className="h-4 w-4 text-primary" />Hermes Insights
+            <Badge variant="secondary" className="text-[10px] px-1.5">{insights.length}</Badge>
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">AI-generated insights from your acquisition history. Run analysis first to generate.</p>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          {insightsLoading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-20 rounded-md bg-muted animate-pulse" />)}
+            </div>
+          ) : !insights.length ? (
+            <div className="rounded-md border border-dashed p-8 text-center text-muted-foreground">
+              <Brain className="h-6 w-6 mx-auto mb-2 opacity-30" />
+              <p className="text-sm font-medium">No insights yet</p>
+              <p className="text-xs mt-1">Run Learning Analysis above to generate Hermes insights.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {insights.map(ins => {
+                const cat = CATEGORY_CONFIG[ins.category] ?? CATEGORY_CONFIG.general;
+                const conf = Math.round(ins.confidenceScore * 100);
+                const confColor = conf >= 80 ? "text-emerald-600 dark:text-emerald-400"
+                  : conf >= 60 ? "text-amber-600 dark:text-amber-400"
+                  : "text-muted-foreground";
+                const supportKeys = Object.entries(ins.supportingData ?? {}).slice(0, 3);
+                return (
+                  <div key={ins.id} className="rounded-lg border border-border/50 bg-muted/20 p-3 space-y-1.5" data-testid={`insight-card-${ins.id}`}>
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-xs leading-relaxed font-medium flex-1">{ins.insight}</p>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-semibold ${cat.color}`}>{cat.label}</span>
+                        <span className={`text-[11px] font-semibold ${confColor}`}>{conf}% confidence</span>
+                      </div>
+                    </div>
+                    {supportKeys.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {supportKeys.map(([k, v]) => (
+                          <span key={k} className="text-[10px] bg-muted rounded px-1.5 py-0.5 text-muted-foreground">
+                            {k}: {String(v)}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Outcome Management */}
+      <Card className="border shadow-sm">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Target className="h-4 w-4 text-muted-foreground" />Outcome Management
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">Manually mark opportunity outcomes to feed learning signals and improve future analysis.</p>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          {!opportunities.length ? (
+            <p className="text-xs text-muted-foreground text-center py-4">No opportunities yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {opportunities.slice(0, 20).map(opp => (
+                <div key={opp.id} className="flex items-center justify-between gap-3 rounded-md border border-border/50 bg-muted/20 px-3 py-2" data-testid={`outcome-row-${opp.id}`}>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{opp.title}</p>
+                    <p className="text-[11px] text-muted-foreground truncate">{opp.company} · {opp.source}</p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {opp.status === "won" ? (
+                      <Badge className="text-[10px] bg-emerald-500 text-white gap-1"><CheckCircle className="h-2.5 w-2.5" />Won</Badge>
+                    ) : opp.status === "lost" ? (
+                      <Badge className="text-[10px] bg-rose-500 text-white gap-1"><XCircle className="h-2.5 w-2.5" />Lost</Badge>
+                    ) : opp.status === "ghosted" ? (
+                      <Badge variant="secondary" className="text-[10px] gap-1"><Clock className="h-2.5 w-2.5" />Ghosted</Badge>
+                    ) : (
+                      <>
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400" disabled={isRecordingOutcome} onClick={() => onRecordOutcome(opp.id, "won")} data-testid={`button-outcome-won-${opp.id}`}>
+                          <CheckCircle className="h-2.5 w-2.5" />Won
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1 border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-700 dark:text-rose-400" disabled={isRecordingOutcome} onClick={() => onRecordOutcome(opp.id, "lost")} data-testid={`button-outcome-lost-${opp.id}`}>
+                          <XCircle className="h-2.5 w-2.5" />Lost
+                        </Button>
+                        <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1" disabled={isRecordingOutcome} onClick={() => onRecordOutcome(opp.id, "ghosted")} data-testid={`button-outcome-ghosted-${opp.id}`}>
+                          <Clock className="h-2.5 w-2.5" />Ghosted
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Agent Activity Tab ───────────────────────────────────────────────────────
 
 function AgentActivityTab({ events, isLoading }: { events: AgentEvent[]; isLoading: boolean }) {
@@ -1687,20 +2006,26 @@ export default function AdminOpportunityAcquisitionPage() {
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/cycles"] });
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/cycles/latest"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/learning/metrics"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/learning/insights"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/learning/performance"] });
   }
 
-  const summaryQ     = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
-  const oppsQ        = useQuery<Opportunity[]>({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
-  const eventsQ      = useQuery<AgentEvent[]>({ queryKey: ["/api/opportunity-acquisition/events"] });
-  const settingsQ    = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
-  const assessQ      = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
-  const draftsQ      = useQuery<OutreachDraft[]>({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
-  const runsQ        = useQuery<DiscoveryRun[]>({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
-  const statsQ       = useQuery<DiscoveryStats>({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
-  const cyclesQ      = useQuery<AcquisitionCycle[]>({ queryKey: ["/api/opportunity-acquisition/cycles"] });
-  const latestCycleQ = useQuery<AcquisitionCycle | null>({ queryKey: ["/api/opportunity-acquisition/cycles/latest"] });
-  const executionsQ  = useQuery<Execution[]>({ queryKey: ["/api/opportunity-acquisition/outreach-executions"] });
-  const repliesQ     = useQuery<ReplyEvent[]>({ queryKey: ["/api/opportunity-acquisition/replies"] });
+  const summaryQ         = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
+  const oppsQ            = useQuery<Opportunity[]>({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
+  const eventsQ          = useQuery<AgentEvent[]>({ queryKey: ["/api/opportunity-acquisition/events"] });
+  const settingsQ        = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
+  const assessQ          = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
+  const draftsQ          = useQuery<OutreachDraft[]>({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
+  const runsQ            = useQuery<DiscoveryRun[]>({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
+  const statsQ           = useQuery<DiscoveryStats>({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
+  const cyclesQ          = useQuery<AcquisitionCycle[]>({ queryKey: ["/api/opportunity-acquisition/cycles"] });
+  const latestCycleQ     = useQuery<AcquisitionCycle | null>({ queryKey: ["/api/opportunity-acquisition/cycles/latest"] });
+  const executionsQ      = useQuery<Execution[]>({ queryKey: ["/api/opportunity-acquisition/outreach-executions"] });
+  const repliesQ         = useQuery<ReplyEvent[]>({ queryKey: ["/api/opportunity-acquisition/replies"] });
+  const learningMetricsQ = useQuery<LearningMetrics>({ queryKey: ["/api/opportunity-acquisition/learning/metrics"] });
+  const learningInsightsQ = useQuery<LearningInsight[]>({ queryKey: ["/api/opportunity-acquisition/learning/insights"] });
+  const learningPerfQ    = useQuery<LearningPerf>({ queryKey: ["/api/opportunity-acquisition/learning/performance"] });
 
   const runCycle = useMutation({
     mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/run-cycle", {}),
@@ -1811,6 +2136,31 @@ export default function AdminOpportunityAcquisitionPage() {
     },
   });
 
+  const runLearning = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/learning/run", {}),
+    onSuccess: (data: any) => {
+      toast({
+        title: "Learning analysis complete",
+        description: `${data?.insightsGenerated ?? 0} Hermes insights generated. ${data?.metrics?.replyRate ?? 0}% reply rate.`,
+      });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/learning/metrics"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/learning/insights"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/learning/performance"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+    },
+    onError: (e: any) => toast({ title: "Learning analysis failed", description: e?.message ?? "Try again", variant: "destructive" }),
+  });
+
+  const recordOutcome = useMutation({
+    mutationFn: ({ id, outcome }: { id: string; outcome: string }) =>
+      apiRequest("PATCH", `/api/opportunity-acquisition/opportunities/${id}/outcome`, { outcome }),
+    onSuccess: (_data, { outcome }) => {
+      toast({ title: `Outcome recorded: ${outcome}`, description: "Learning signal captured." });
+      invalidateAll();
+    },
+    onError: () => toast({ title: "Failed to record outcome", variant: "destructive" }),
+  });
+
   const opportunities: Opportunity[]  = oppsQ.data ?? [];
   const events: AgentEvent[]          = eventsQ.data ?? [];
   const assessments: Assessment[]     = assessQ.data ?? [];
@@ -1907,6 +2257,9 @@ export default function AdminOpportunityAcquisitionPage() {
               <Inbox className="h-3 w-3" />Replies
               {replyCount > 0 && <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-violet-500 text-white">{replyCount}</Badge>}
             </TabsTrigger>
+            <TabsTrigger value="learning" className="text-xs gap-1" data-testid="tab-learning">
+              <Brain className="h-3 w-3" />Learning
+            </TabsTrigger>
             <TabsTrigger value="agent-activity"  className="text-xs gap-1" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
             <TabsTrigger value="settings"        className="text-xs gap-1" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
           </TabsList>
@@ -1967,6 +2320,22 @@ export default function AdminOpportunityAcquisitionPage() {
               onReprocess={id => reprocessClassification.mutate(id)}
               generatingId={generatingFollowupId}
               reprocessingId={reprocessingId}
+            />
+          </TabsContent>
+
+          <TabsContent value="learning" className="mt-4">
+            <LearningTab
+              metrics={learningMetricsQ.data ?? null}
+              insights={learningInsightsQ.data ?? []}
+              perf={learningPerfQ.data ?? null}
+              metricsLoading={learningMetricsQ.isLoading}
+              insightsLoading={learningInsightsQ.isLoading}
+              perfLoading={learningPerfQ.isLoading}
+              onRunAnalysis={() => runLearning.mutate()}
+              isRunning={runLearning.isPending}
+              opportunities={opportunities}
+              onRecordOutcome={(id, outcome) => recordOutcome.mutate({ id, outcome })}
+              isRecordingOutcome={recordOutcome.isPending}
             />
           </TabsContent>
 
