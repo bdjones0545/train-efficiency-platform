@@ -1,0 +1,187 @@
+TrainEfficiency UX Simplification
+Phase 1 — Navigation Cleanup
+
+Objective
+
+Reduce cognitive load without changing business logic, APIs, permissions, workflows, or database structures.
+
+This phase is strictly a UI and information architecture refactor.
+
+Do not remove features.
+Do not delete routes.
+Do not change backend behavior.
+
+Audit current sidebar and navigation implementation and execute the following changes.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. New Primary Navigation
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Replace the current navigation structure with:
+
+🏠 HOME
+
+OPERATIONS
+• Schedule
+• Athletes
+• Outreach
+
+GROWTH
+• Leads
+• Pipeline
+• Revenue
+
+✅ APPROVALS
+
+📈 INSIGHTS
+• Learning
+• Forecasting
+
+⚙ SETTINGS
+
+🛠 ENGINEERING (Admin only)
+
+Engineering contains:
+
+• System Health
+• Automations
+• AI Permissions
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+2. Rename Existing Navigation Labels
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Current → New
+
+AgentMail → Outreach
+
+Software Improvement → System Issues
+
+Autonomous Action Queue → Pending Actions
+
+Hermes → Organization Learning
+
+Obsidian → Organization Learning
+
+Communication Intelligence → Outreach Analytics
+
+CEO Heartbeat → Business Overview
+
+Autonomy Trust → AI Permissions
+
+Gmail Draft Review → Email Approvals
+
+Slack Alert Review → Alerts
+
+Autonomy Controls → Automation Settings
+
+Agent Ops Monitor → Workforce Health
+
+Ecosystem Health → Integration Status
+
+Coach Capacity → Scheduling Load
+
+Scheduling Command Center → Schedule Overview
+
+Scheduling Opportunity Inbox → Scheduling Leads
+
+Attention Inbox → Inbox
+
+Workflow Orchestrator → Automations
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+3. Move Items Into Engineering
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Hide from standard navigation.
+
+Visible only inside Engineering.
+
+Move:
+
+• Workflow Builder
+• Workflow Orchestrator
+• Agent Tools
+• Autonomy Controls
+• Email Audit
+• Ecosystem Health
+• Agent Ops Monitor
+• Developer utilities
+• Internal diagnostics
+
+Engineering should be collapsed by default.
+
+Visible only to ADMIN users.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+4. Remove Navigation Complexity
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Remove:
+
+• Workspace Mode toggle
+• Quick Access system
+• Sidebar pinning
+• Duplicate dashboard links
+
+Keep functionality intact.
+
+Only remove UI surface area.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+5. Dashboard Consolidation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Identify and mark for future replacement:
+
+• /command-center
+• /admin/dashboard
+• /coach
+
+Do NOT remove them yet.
+
+Add TODO annotations:
+
+“Phase 2 Home Screen migration target.”
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+6. Route Visibility Rules
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Coach Navigation Target:
+
+≤ 12 visible sidebar items
+
+Admin Navigation Target:
+
+≤ 20 visible sidebar items
+
+Anything beyond those limits should be moved into:
+
+• Tabs
+• Settings
+• Engineering
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+7. Deliverables
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Return:
+
+1. Files modified
+2. Before/after navigation map
+3. Sidebar item counts
+4. Role visibility matrix
+5. Screenshots
+6. Mobile screenshots
+7. Accessibility review
+8. Any routes that could not be migrated cleanly
+
+Do not begin Home Screen redesign.
+
+Do not build new components.
+
+Do not modify backend logic.
+
+Only complete Navigation Cleanup.
