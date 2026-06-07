@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
@@ -65,12 +65,15 @@ export default function SetupWizardPage() {
       return res.json();
     },
     enabled: !!orgId,
-    onSuccess: (data) => {
-      if (data.name) setOrgName(data.name);
-      if (data.organizationType) setOrgType(data.organizationType as OrgType);
-      if (data.primarySport) setPrimarySport(data.primarySport);
-    },
-  } as any);
+  });
+
+  // Pre-populate form when org data loads (TanStack Query v5: no onSuccess)
+  useEffect(() => {
+    if (!org) return;
+    if (org.name) setOrgName((prev) => prev || org.name);
+    if (org.organizationType) setOrgType(org.organizationType as OrgType);
+    if (org.primarySport) setPrimarySport((prev) => prev || org.primarySport!);
+  }, [org]);
 
   const updateOrgMutation = useMutation({
     mutationFn: (data: Record<string, unknown>) =>

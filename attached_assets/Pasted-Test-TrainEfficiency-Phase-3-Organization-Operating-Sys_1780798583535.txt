@@ -1,0 +1,90 @@
+Test TrainEfficiency Phase 3 Organization Operating System.
+
+Do not build new features.
+Do not modify business logic unless a bug is found.
+Focus on validation, QA, and small fixes only.
+
+Test three organization profiles:
+
+1. Hockey Academy
+- organizationType: sports_academy
+- primarySport: Hockey
+- improvementGoals: Athlete Development, Scheduling, Recruiting
+
+2. High School Football Program
+- organizationType: high_school_program
+- primarySport: Football
+- improvementGoals: Team Operations, Recruiting, Athlete Development
+
+3. Private Coach
+- organizationType: private_coach
+- primarySport: General Performance
+- improvementGoals: Scheduling, Revenue Growth
+
+For each profile, verify:
+
+1. Setup Wizard
+- /setup loads correctly
+- Step 1 saves organization name, organizationType, and primarySport
+- Step 2 saves improvementGoals
+- Step 3 can be skipped without breaking flow
+- Step 4 shows the correct recommended first action
+- onboardingCompleted updates correctly
+
+2. Sidebar Labels
+Confirm labels change correctly based on org type:
+- Athletes → Players / Roster / Clients where appropriate
+- Revenue → Fundraising / Program Revenue / Revenue where appropriate
+- Leads → Recruiting / Prospects / Client Leads where appropriate
+- Pipeline → Recruiting Pipeline / Sales Pipeline where appropriate
+
+3. Home Screen Personalization
+Verify the Home page changes language correctly:
+- Business Snapshot title
+- Revenue card label
+- Leads card label
+- Utilization card label
+- Retention card label
+
+4. Route Stability
+Confirm all routes still work:
+- /
+- /setup
+- /operations/scheduling
+- /operations/athletes
+- /growth/leads
+- /growth/pipeline
+- /growth/revenue
+- /approvals
+- /insights or /intelligence if still used
+- /settings/*
+
+5. Regression Check
+Confirm existing performance facility behavior is unchanged:
+- Default org type remains performance_facility
+- Existing EST-style labels still work
+- Existing routes still load
+- Existing permissions still work
+
+6. Copy Audit
+Search the frontend for hardcoded user-facing terms that may need preset mapping:
+- Athlete
+- Athletes
+- Revenue
+- Leads
+- Pipeline
+- Coach
+- Session
+- Team Training
+
+Return:
+- Pass/fail checklist
+- Bugs found
+- Files requiring fixes
+- Recommended small fixes
+- Any labels still hardcoded
+- TypeScript result
+- Server status
+
+Only apply fixes if they are clearly bugs in Phase 3.
+Do not start Phase 4.

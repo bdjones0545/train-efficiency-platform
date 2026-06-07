@@ -829,19 +829,19 @@ export function AppSidebar() {
         testId: "nav-coaches",
       },
       {
-        title: "Schedule",
+        title: preset.nav.schedule,
         url: "/scheduling",
         icon: CalendarDays,
         testId: "nav-schedule",
       },
       {
-        title: "Group Sessions",
+        title: preset.nav.groupSessions,
         url: "/sessions",
         icon: UsersRound,
         testId: "nav-group-sessions",
       },
       {
-        title: "Team Training",
+        title: preset.nav.teamTraining,
         url: "/team-training",
         icon: Zap,
         testId: "nav-team-training",
@@ -855,17 +855,17 @@ export function AppSidebar() {
     ],
   };
 
-  // CLIENT flat list — unchanged
+  // CLIENT flat list
   const clientItems: NavItem[] = [
     { title: "Coaches", url: "/coaches", icon: Users, testId: "nav-coaches" },
     {
-      title: "Teams",
+      title: preset.nav.groupSessions,
       url: "/sessions",
       icon: UsersRound,
       testId: "nav-group-sessions",
     },
     {
-      title: "Team Training",
+      title: preset.nav.teamTraining,
       url: "/team-training",
       icon: Zap,
       testId: "nav-team-training",
