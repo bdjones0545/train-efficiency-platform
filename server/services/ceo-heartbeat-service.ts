@@ -624,32 +624,40 @@ async function coordinateAgents(orgId: string, heartbeatId: string): Promise<{
     errors.push(`workflow_orchestrator: ${err.message}`);
   }
 
-  // 6. Opportunity Acquisition Coordinator — department health review
+  // 6. Department Registry — loop through all registered departments
   try {
-    const { coordinateOpportunityAcquisition } = await import("./opportunity-executive-coordinator");
-    const oppResult = await coordinateOpportunityAcquisition(orgId);
-    agentsCoordinated++;
-    if (oppResult.review) {
-      actionsEvaluated += oppResult.review.checksRun;
+    const { departmentRegistry } = await import("./department-registry");
+    const deptResult = await departmentRegistry.runAllHeartbeatReviews(orgId);
+    agentsCoordinated += deptResult.departmentsRun;
+    actionsEvaluated  += deptResult.totalChecks;
+    errors.push(...deptResult.errors);
+
+    for (const result of deptResult.results) {
       await writeTimeline({
-        orgId, heartbeatId, agentName: "opportunity_coordinator",
-        systemName: "CEO Heartbeat", actionType: "heartbeat_cycle",
-        actionStatus: "completed",
-        summary: `Opportunity Acquisition: ${oppResult.review.checksRun} checks (${oppResult.review.checksPassed} passed), ${oppResult.review.alertsCreated} alert(s) created`,
+        orgId, heartbeatId,
+        agentName: result.departmentId,
+        systemName: "CEO Heartbeat",
+        actionType: "heartbeat_cycle",
+        actionStatus: result.error ? "failed" : "completed",
+        summary: result.error
+          ? `${result.departmentName}: coordinator failed — ${result.error}`
+          : `${result.departmentName}: ${result.checksRun} checks (${result.checksPassed} passed), ${result.alertsCreated} alert(s)`,
+        errorMessage: result.error,
         metadata: {
-          checksRun: oppResult.review.checksRun,
-          checksPassed: oppResult.review.checksPassed,
-          alertsCreated: oppResult.review.alertsCreated,
-          bestAction: oppResult.review.bestAction?.title ?? null,
+          checksRun:    result.checksRun,
+          checksPassed: result.checksPassed,
+          alertsCreated: result.alertsCreated,
+          bestAction:   result.bestAction?.title ?? null,
+          department:   result.departmentId,
         },
       });
     }
   } catch (err: any) {
-    errors.push(`opportunity_coordinator: ${err.message}`);
+    errors.push(`department_registry: ${err.message}`);
     await writeTimeline({
-      orgId, heartbeatId, agentName: "opportunity_coordinator",
+      orgId, heartbeatId, agentName: "department_registry",
       systemName: "CEO Heartbeat", actionType: "heartbeat_cycle",
-      actionStatus: "failed", summary: "Opportunity Acquisition Coordinator failed",
+      actionStatus: "failed", summary: "Department Registry loop failed",
       errorMessage: err.message,
     });
   }

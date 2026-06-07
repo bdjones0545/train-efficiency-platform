@@ -1,0 +1,404 @@
+Department Framework Extraction — TrainEfficiency Department OS v1
+
+Goal:
+Extract the reusable architecture behind Opportunity Acquisition and turn it into a generalized Department Framework that any future AI-powered department can use.
+
+This is not a new department.
+
+This is a platform-level architectural refactor.
+
+The objective is:
+
+Build Once
+Deploy Everywhere
+
+Opportunity Acquisition becomes the first implementation of a reusable Department OS.
+
+⸻
+
+WHY THIS PHASE EXISTS
+
+Opportunity Acquisition proved a pattern:
+
+Discovery
+→ Qualification
+→ Outreach
+→ Execution
+→ Replies
+→ Outcomes
+→ Learning
+→ Executive Intelligence
+→ Heartbeat Coordination
+
+That pattern is not specific to opportunity acquisition.
+
+Future departments will need the same lifecycle.
+
+Examples:
+
+Hiring Department
+
+Candidate Discovery
+→ Screening
+→ Outreach
+→ Interviews
+→ Hiring
+→ Learning
+
+⸻
+
+Partnership Department
+
+Partner Discovery
+→ Qualification
+→ Outreach
+→ Meetings
+→ Deals
+→ Learning
+
+⸻
+
+Sponsorship Department
+
+Sponsor Discovery
+→ Qualification
+→ Outreach
+→ Negotiation
+→ Contracts
+→ Learning
+
+⸻
+
+Customer Success Department
+
+Risk Discovery
+→ Qualification
+→ Intervention
+→ Follow-up
+→ Outcomes
+→ Learning
+
+⸻
+
+The goal is to make every future department inherit the same framework.
+
+⸻
+
+CORE FRAMEWORK
+
+Create:
+
+server/frameworks/department-os/
+
+Structure:
+
+department-os/
+├── department-types.ts
+├── department-lifecycle.ts
+├── department-events.ts
+├── department-learning.ts
+├── department-executive.ts
+├── department-coordinator.ts
+├── department-health.ts
+├── department-recommendations.ts
+└── index.ts
+
+⸻
+
+DEPARTMENT DEFINITION
+
+Create:
+
+DepartmentDefinition
+
+Example:
+
+interface DepartmentDefinition {
+id: string;
+name: string;
+
+discoveryEnabled: boolean;
+qualificationEnabled: boolean;
+outreachEnabled: boolean;
+executionEnabled: boolean;
+learningEnabled: boolean;
+executiveEnabled: boolean;
+
+coordinator: Function;
+heartbeatReview: Function;
+}
+
+⸻
+
+DEPARTMENT LIFECYCLE
+
+Create reusable lifecycle stages:
+
+enum DepartmentStage {
+DISCOVERY,
+QUALIFICATION,
+OUTREACH,
+EXECUTION,
+REPLIES,
+OUTCOMES,
+LEARNING,
+EXECUTIVE,
+COORDINATION
+}
+
+⸻
+
+DEPARTMENT EVENTS
+
+Create generic event system.
+
+Current:
+
+Opportunity-specific events.
+
+Refactor toward:
+
+DepartmentEvent
+
+Fields:
+
+department
+
+eventType
+
+severity
+
+title
+
+description
+
+metadata
+
+createdAt
+
+⸻
+
+DEPARTMENT HEALTH CHECKS
+
+Create reusable health model.
+
+interface DepartmentHealthCheck {
+id: string;
+department: string;
+severity: string;
+passed: boolean;
+title: string;
+recommendation: string;
+}
+
+Used by:
+
+Opportunity Acquisition
+Future Hiring Department
+Future Partnership Department
+
+⸻
+
+DEPARTMENT LEARNING
+
+Create shared learning contracts.
+
+interface LearningSignal {
+department: string;
+source: string;
+category: string;
+outcome: string;
+score: number;
+}
+
+⸻
+
+DEPARTMENT EXECUTIVE LAYER
+
+Create reusable:
+
+ExecutiveBrief
+
+Recommendation
+
+BestAction
+
+interfaces.
+
+Current Opportunity Executive Agent should use these.
+
+⸻
+
+DEPARTMENT RECOMMENDATIONS
+
+Create reusable recommendation engine models.
+
+interface DepartmentRecommendation {
+department: string;
+category: string;
+recommendation: string;
+confidenceScore: number;
+supportingData: unknown;
+status: string;
+}
+
+⸻
+
+DEPARTMENT COORDINATOR
+
+Create generic coordinator contract.
+
+interface DepartmentCoordinator {
+runHeartbeatReview(orgId: number): Promise;
+generateSummary(orgId: number): Promise;
+generateBestAction(orgId: number): Promise;
+}
+
+Opportunity Executive Coordinator should implement this.
+
+⸻
+
+CEO HEARTBEAT REGISTRY
+
+Create:
+
+server/services/department-registry.ts
+
+Purpose:
+
+Register departments.
+
+Example:
+
+Revenue
+
+Growth
+
+Retention
+
+Scheduling
+
+Opportunity Acquisition
+
+Future departments.
+
+⸻
+
+REGISTRY CONTRACT
+
+interface RegisteredDepartment {
+id: string;
+name: string;
+
+coordinator: DepartmentCoordinator;
+
+enabled: boolean;
+}
+
+⸻
+
+CEO HEARTBEAT REFACTOR
+
+Current:
+
+Hardcoded agents.
+
+Future:
+
+departmentRegistry.getEnabledDepartments()
+
+Loop through registered departments.
+
+Example:
+
+for (const department of departments) {
+await department.coordinator.runHeartbeatReview(orgId);
+}
+
+⸻
+
+FRONTEND FOUNDATION
+
+Create:
+
+shared/department-framework.ts
+
+Reusable types:
+
+DepartmentSummary
+
+DepartmentRecommendation
+
+DepartmentHealthCheck
+
+ExecutiveBrief
+
+BestAction
+
+⸻
+
+OPPORTUNITY ACQUISITION MIGRATION
+
+Do NOT change functionality.
+
+Refactor Opportunity Acquisition to:
+
+Implement Department Framework interfaces.
+
+No behavior changes.
+
+No UI changes.
+
+No workflow changes.
+
+Only architecture extraction.
+
+⸻
+
+SUCCESS CRITERIA
+
+Phase complete when:
+
+* Department OS framework exists
+* Department registry exists
+* Generic lifecycle exists
+* Generic health model exists
+* Generic executive model exists
+* Generic recommendation model exists
+* Opportunity Acquisition implements framework contracts
+* CEO Heartbeat can consume department registry
+* No functionality changes
+* No UI changes
+* Zero TypeScript errors
+
+⸻
+
+EXPECTED RESULT
+
+After this phase:
+
+Opportunity Acquisition is no longer a special case.
+
+It becomes:
+
+Department #1
+
+Built on top of:
+
+Department OS v1
+
+Future departments become dramatically faster to build:
+
+Hiring Department
+
+Partnership Department
+
+Sponsorship Department
+
+Customer Success Department
+
+Vendor Acquisition Department
+
+can all inherit the same lifecycle, learning, executive intelligence, and heartbeat integration framework.
+
+This creates the foundation for TrainEfficiency to evolve from a collection of agent systems into a true multi-department AI operating system.

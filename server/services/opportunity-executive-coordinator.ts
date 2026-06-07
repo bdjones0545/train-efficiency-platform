@@ -551,6 +551,94 @@ export async function coordinateOpportunityAcquisition(orgId: string): Promise<{
   }
 }
 
+// ─── Department OS Framework Adapter ──────────────────────────────────────────
+// Wraps the Opportunity Acquisition coordinator functions to satisfy the
+// DepartmentCoordinator interface from the Department OS framework.
+// No behavior changes — pure adapter pattern.
+
+import type { DepartmentCoordinator, HeartbeatReviewResult, DepartmentSummaryResult } from "../frameworks/department-os/department-coordinator";
+import type { BestAction } from "../frameworks/department-os/department-executive";
+import type { DepartmentHealthCheck } from "../frameworks/department-os/department-health";
+
+class OpportunityDepartmentCoordinatorImpl implements DepartmentCoordinator {
+  readonly departmentId   = "opportunity-acquisition";
+  readonly departmentName = "Opportunity Acquisition";
+
+  async runHeartbeatReview(orgId: string): Promise<HeartbeatReviewResult> {
+    try {
+      const result = await runOpportunityHeartbeatReview(orgId);
+      // Adapt internal health checks to framework DepartmentHealthCheck shape
+      const healthChecks: DepartmentHealthCheck[] = (result.healthChecks ?? []).map((c: OpportunityHealthCheck) => ({
+        id:             c.id,
+        department:     this.departmentId,
+        severity:       c.severity,
+        passed:         c.passed,
+        title:          c.label,
+        detail:         c.detail,
+        recommendation: c.passed ? "No action required." : `Resolve ${c.label.toLowerCase()} in the Opportunity Acquisition OS.`,
+        checkedAt:      new Date(),
+      }));
+
+      const bestAction: BestAction | null = result.bestAction
+        ? { department: this.departmentId, ...result.bestAction }
+        : null;
+
+      return {
+        departmentId:     this.departmentId,
+        departmentName:   this.departmentName,
+        checksRun:        result.checksRun,
+        checksPassed:     result.checksPassed,
+        alertsCreated:    result.alertsCreated,
+        bestAction,
+        executiveSummary: result.executiveSummary,
+        healthChecks,
+      };
+    } catch (err: any) {
+      return {
+        departmentId:     this.departmentId,
+        departmentName:   this.departmentName,
+        checksRun:        0,
+        checksPassed:     0,
+        alertsCreated:    0,
+        bestAction:       null,
+        executiveSummary: "",
+        healthChecks:     [],
+        error:            err.message,
+      };
+    }
+  }
+
+  async generateSummary(orgId: string): Promise<DepartmentSummaryResult> {
+    const summary = await getOpportunityHeartbeatSummary(orgId);
+    return {
+      departmentId:     this.departmentId,
+      departmentName:   this.departmentName,
+      executiveSummary: summary.executiveSummary,
+      metrics: {
+        opportunitiesFound:      summary.opportunitiesFound,
+        qualified:               summary.qualified,
+        replies:                 summary.replies,
+        meetings:                summary.meetings,
+        wins:                    summary.wins,
+        pendingDrafts:           summary.pendingDrafts,
+        pendingRecommendations:  summary.pendingRecommendations,
+      },
+      bestAction: summary.bestAction
+        ? { department: this.departmentId, ...summary.bestAction }
+        : null,
+      generatedAt: summary.generatedAt,
+    };
+  }
+
+  async generateBestAction(orgId: string): Promise<BestAction | null> {
+    const action = await generateBestAction(orgId);
+    if (!action) return null;
+    return { department: this.departmentId, ...action };
+  }
+}
+
+export const opportunityDepartmentCoordinator = new OpportunityDepartmentCoordinatorImpl();
+
 // ─── Callable cycle functions (automation preparation) ─────────────────────────
 
 export async function runOpportunityAcquisitionCycle(orgId: string): Promise<{ success: boolean; error?: string }> {
