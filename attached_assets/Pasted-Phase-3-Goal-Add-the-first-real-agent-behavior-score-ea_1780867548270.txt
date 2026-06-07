@@ -1,0 +1,96 @@
+Phase 3 Goal:
+Add the first real agent behavior: score each opportunity and generate a structured qualification assessment.
+
+Build:
+
+1. Qualification service
+Create:
+server/services/opportunity-qualification-agent.ts
+
+Function:
+qualifyOpportunity(orgId, opportunityId)
+
+It should analyze:
+- title
+- company
+- source
+- description
+- opportunity type
+- remote/local status
+- estimated value
+- existing notes
+
+Return:
+- fitScore
+- aiFulfillmentScore
+- revenuePotentialScore
+- riskScore
+- confidenceScore
+- recommendedAction
+- reasoning
+- aiCanFulfill[]
+- humanRequired[]
+- redFlags[]
+- nextSteps[]
+
+2. Persist assessment
+Insert/update:
+opportunity_qualification_assessments
+
+Also update:
+opportunity_acquisition_opportunities.fitScore
+opportunity_acquisition_opportunities.status = "qualified" when fitScore >= threshold
+
+3. Backend endpoints
+POST /api/opportunity-acquisition/opportunities/:id/qualify
+
+POST /api/opportunity-acquisition/qualify-all
+Only qualify opportunities with status:
+new
+or unqualified
+
+4. Frontend
+Add buttons:
+- Qualify on each Discovery card
+- Qualify All in Qualification tab
+
+When clicked:
+- Run mutation
+- Refresh opportunities
+- Refresh summary
+- Refresh events
+
+5. Agent Activity
+Log events:
+- Qualification Agent started
+- Qualification completed
+- High-value opportunity flagged
+- Low-fit opportunity rejected/review-needed
+
+6. UI
+Qualification tab should show real assessments from the database.
+
+If no assessment exists:
+Show empty state:
+“Select an opportunity and run qualification.”
+
+7. Safety/quality rule
+No outreach is sent in this phase.
+No external scraping yet.
+This only scores manually added opportunities.
+
+8. Suggested scoring logic for now
+Use deterministic scoring first, not LLM-only:
+
+Remote programming / online coaching / content/program design = high fit
+In-person-only / requires hands-on coaching = low fit
+Higher estimated value = higher revenue score
+Missing description = lower confidence
+Job requiring certification/legal supervision = higher human-required/risk
+
+Later we can upgrade to LLM analysis.
+
+Goal:
+Make the system feel like the agent is starting to think, without needing scraping or email yet.
+
+Zero TypeScript errors.

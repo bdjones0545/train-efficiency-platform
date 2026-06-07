@@ -11,12 +11,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Target, Search, Plus, CheckCircle, AlertTriangle,
   Clock, DollarSign, Star, Activity, Settings, BarChart3,
   Building2, MapPin, Zap, User, Shield, Eye, TrendingUp,
-  Bot, Radio, X, Loader2,
+  Bot, Radio, X, Loader2, Brain, Flag, ChevronRight,
+  AlertCircle, ThumbsUp,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -25,6 +27,8 @@ type OpportunityStatus =
   | "new" | "qualified" | "outreach_ready" | "contacted"
   | "interested" | "demo" | "won" | "lost";
 type OpportunityType = "coaching" | "consulting" | "partnership" | "content" | "training";
+type RiskLevel = "low" | "medium" | "high" | "critical";
+type RevPotential = "low" | "medium" | "high";
 
 interface Opportunity {
   id: string;
@@ -38,6 +42,26 @@ interface Opportunity {
   fitScore: number;
   notes: string;
   createdAt: string;
+}
+
+interface Assessment {
+  id: string;
+  opportunityId: string;
+  opportunityTitle: string;
+  fitScore: number;
+  aiFulfillmentScore: number;
+  revenuePotentialScore: number;
+  riskScore: number;
+  confidenceScore: number;
+  revenuePotential: RevPotential;
+  riskLevel: RiskLevel;
+  recommendedAction: string;
+  reasoning: string;
+  aiCanFulfill: string[];
+  humanRequired: string[];
+  redFlags: string[];
+  nextSteps: string[];
+  updatedAt: string;
 }
 
 interface AgentEvent {
@@ -55,7 +79,7 @@ interface Summary {
   pipelineValue: number;
 }
 
-interface Settings {
+interface OrgSettings {
   sources: Record<string, boolean>;
   qualRules: Record<string, boolean>;
   outreachRules: Record<string, boolean>;
@@ -83,6 +107,19 @@ const TYPE_CONFIG: Record<OpportunityType, { label: string; color: string }> = {
   training:    { label: "Training",    color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" },
 };
 
+const RISK_CONFIG: Record<RiskLevel, { label: string; color: string }> = {
+  low:      { label: "Low",      color: "text-emerald-600 dark:text-emerald-400" },
+  medium:   { label: "Medium",   color: "text-amber-600 dark:text-amber-400" },
+  high:     { label: "High",     color: "text-rose-500" },
+  critical: { label: "Critical", color: "text-rose-700 dark:text-rose-400 font-bold" },
+};
+
+const REV_CONFIG: Record<RevPotential, { label: string; color: string }> = {
+  low:    { label: "Low",    color: "text-muted-foreground" },
+  medium: { label: "Medium", color: "text-amber-600 dark:text-amber-400" },
+  high:   { label: "High",   color: "text-emerald-600 dark:text-emerald-400" },
+};
+
 const KANBAN_COLUMNS: { id: OpportunityStatus; label: string; color: string }[] = [
   { id: "new",            label: "New",            color: "border-slate-400" },
   { id: "qualified",      label: "Qualified",      color: "border-blue-400" },
@@ -96,9 +133,9 @@ const KANBAN_COLUMNS: { id: OpportunityStatus; label: string; color: string }[] 
 
 const EVENT_ICONS: Record<string, { icon: typeof Search; color: string }> = {
   scan:    { icon: Search,        color: "bg-blue-500" },
-  qualify: { icon: Star,          color: "bg-violet-500" },
+  qualify: { icon: Brain,         color: "bg-violet-500" },
   draft:   { icon: Zap,           color: "bg-amber-500" },
-  flag:    { icon: AlertTriangle, color: "bg-rose-500" },
+  flag:    { icon: Flag,          color: "bg-rose-500" },
   info:    { icon: Activity,      color: "bg-slate-400" },
   update:  { icon: BarChart3,     color: "bg-teal-500" },
 };
@@ -106,10 +143,17 @@ const EVENT_ICONS: Record<string, { icon: typeof Search; color: string }> = {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fitScoreColor(score: number): string {
-  if (score >= 90) return "text-emerald-600 dark:text-emerald-400";
-  if (score >= 75) return "text-blue-600 dark:text-blue-400";
-  if (score >= 60) return "text-amber-600 dark:text-amber-400";
+  if (score >= 80) return "text-emerald-600 dark:text-emerald-400";
+  if (score >= 65) return "text-blue-600 dark:text-blue-400";
+  if (score >= 45) return "text-amber-600 dark:text-amber-400";
   return "text-rose-500";
+}
+
+function fitBarColor(score: number): string {
+  if (score >= 80) return "bg-emerald-500";
+  if (score >= 65) return "bg-blue-500";
+  if (score >= 45) return "bg-amber-500";
+  return "bg-rose-500";
 }
 
 function timeAgo(iso: string): string {
@@ -132,11 +176,25 @@ function TypeBadge({ t }: { t: OpportunityType }) {
   return <Badge className={`text-[10px] px-1.5 py-0 h-4 font-medium ${cfg.color}`}>{cfg.label}</Badge>;
 }
 
+function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-xs">
+        <span className="text-muted-foreground">{label}</span>
+        <span className="font-semibold">{value}</span>
+      </div>
+      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+        <div className={`h-full rounded-full ${color}`} style={{ width: `${Math.min(value, 100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
 function CardSkeleton() {
   return (
     <div className="space-y-3">
       {[1, 2, 3].map(i => (
-        <Card key={i} className="border"><CardContent className="p-4"><Skeleton className="h-14 w-full" /></CardContent></Card>
+        <Card key={i} className="border"><CardContent className="p-4"><Skeleton className="h-16 w-full" /></CardContent></Card>
       ))}
     </div>
   );
@@ -151,6 +209,7 @@ function AddOpportunityModal({ onClose, onSaved }: AddModalProps) {
   const [form, setForm] = useState({
     title: "", company: "", source: "Manual", type: "coaching" as OpportunityType,
     location: "Remote" as "Remote" | "Hybrid" | "Local", estimatedValue: "", fitScore: "",
+    notes: "",
   });
 
   const mutation = useMutation({
@@ -160,11 +219,7 @@ function AddOpportunityModal({ onClose, onSaved }: AddModalProps) {
         estimatedValue: Number(data.estimatedValue) || 0,
         fitScore: Number(data.fitScore) || 0,
       }),
-    onSuccess: () => {
-      toast({ title: "Opportunity added" });
-      onSaved();
-      onClose();
-    },
+    onSuccess: () => { toast({ title: "Opportunity added" }); onSaved(); onClose(); },
     onError: () => toast({ title: "Failed to add opportunity", variant: "destructive" }),
   });
 
@@ -226,9 +281,13 @@ function AddOpportunityModal({ onClose, onSaved }: AddModalProps) {
               <Input className="h-8 text-xs" type="number" placeholder="60000" value={form.estimatedValue} onChange={e => set("estimatedValue")(e.target.value)} data-testid="input-opp-value" />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">Fit Score (0–100)</Label>
-              <Input className="h-8 text-xs" type="number" placeholder="80" value={form.fitScore} onChange={e => set("fitScore")(e.target.value)} data-testid="input-opp-fitscore" />
+              <Label className="text-xs">Fit Score (optional)</Label>
+              <Input className="h-8 text-xs" type="number" placeholder="Auto-scored" value={form.fitScore} onChange={e => set("fitScore")(e.target.value)} data-testid="input-opp-fitscore" />
             </div>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Notes / Description</Label>
+            <Input className="h-8 text-xs" placeholder="Any additional context…" value={form.notes} onChange={e => set("notes")(e.target.value)} data-testid="input-opp-notes" />
           </div>
           <div className="flex gap-2 pt-1">
             <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={onClose}>Cancel</Button>
@@ -246,12 +305,11 @@ function AddOpportunityModal({ onClose, onSaved }: AddModalProps) {
 
 function SummaryCards({ data, isLoading }: { data?: Summary; isLoading: boolean }) {
   const cards = [
-    { label: "Found Today",    value: data?.foundToday ?? 0,      icon: Search,     color: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-50 dark:bg-blue-900/20",    fmt: String },
-    { label: "Qualified",      value: data?.qualified ?? 0,        icon: Star,       color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", fmt: String },
-    { label: "Outreach Ready", value: data?.outreachReady ?? 0,    icon: Zap,        color: "text-amber-600 dark:text-amber-400",  bg: "bg-amber-50 dark:bg-amber-900/20",  fmt: String },
-    { label: "Pipeline Value", value: data?.pipelineValue ?? 0,    icon: DollarSign, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/20", fmt: (v: number) => `$${(v / 1000).toFixed(0)}K` },
+    { label: "Found Today",    value: data?.foundToday ?? 0,   icon: Search,     color: "text-blue-600 dark:text-blue-400",     bg: "bg-blue-50 dark:bg-blue-900/20",     fmt: (v: number) => String(v) },
+    { label: "Qualified",      value: data?.qualified ?? 0,    icon: Star,       color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", fmt: (v: number) => String(v) },
+    { label: "Outreach Ready", value: data?.outreachReady ?? 0,icon: Zap,        color: "text-amber-600 dark:text-amber-400",  bg: "bg-amber-50 dark:bg-amber-900/20",  fmt: (v: number) => String(v) },
+    { label: "Pipeline Value", value: data?.pipelineValue ?? 0,icon: DollarSign, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/20", fmt: (v: number) => v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${v}` },
   ];
-
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
       {cards.map(c => (
@@ -278,7 +336,18 @@ function SummaryCards({ data, isLoading }: { data?: Summary; isLoading: boolean 
 
 // ─── Discovery Tab ─────────────────────────────────────────────────────────────
 
-function DiscoveryTab({ opportunities, isLoading }: { opportunities: Opportunity[]; isLoading: boolean }) {
+function DiscoveryTab({
+  opportunities, assessments, isLoading,
+  onQualify, qualifyingId,
+}: {
+  opportunities: Opportunity[];
+  assessments: Assessment[];
+  isLoading: boolean;
+  onQualify: (id: string) => void;
+  qualifyingId: string | null;
+}) {
+  const assessedIds = new Set(assessments.map(a => a.opportunityId));
+
   if (isLoading) return <CardSkeleton />;
 
   if (!opportunities.length) {
@@ -293,137 +362,230 @@ function DiscoveryTab({ opportunities, isLoading }: { opportunities: Opportunity
 
   return (
     <div className="space-y-3">
-      {opportunities.map(opp => (
-        <Card key={opp.id} className="border shadow-sm hover:shadow-md transition-shadow" data-testid={`card-opportunity-${opp.id}`}>
-          <CardContent className="p-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-              <div className="flex-1 min-w-0 space-y-1.5">
-                <div className="flex flex-wrap items-center gap-1.5">
-                  <h3 className="text-sm font-semibold truncate" data-testid={`text-opp-title-${opp.id}`}>{opp.title}</h3>
-                  <StatusBadge s={opp.status} />
-                  <TypeBadge t={opp.type} />
+      {opportunities.map(opp => {
+        const hasAssessment = assessedIds.has(opp.id);
+        const isQualifying = qualifyingId === opp.id;
+        return (
+          <Card key={opp.id} className="border shadow-sm hover:shadow-md transition-shadow" data-testid={`card-opportunity-${opp.id}`}>
+            <CardContent className="p-4">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1 min-w-0 space-y-1.5">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <h3 className="text-sm font-semibold truncate" data-testid={`text-opp-title-${opp.id}`}>{opp.title}</h3>
+                    <StatusBadge s={opp.status} />
+                    <TypeBadge t={opp.type} />
+                    {hasAssessment && (
+                      <Badge className="text-[10px] px-1.5 py-0 h-4 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
+                        <Brain className="h-2.5 w-2.5 mr-0.5" />Scored
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {opp.company && <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{opp.company}</span>}
+                    <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{opp.location}</span>
+                    <span className="flex items-center gap-1"><Search className="h-3 w-3" />{opp.source}</span>
+                    <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{timeAgo(opp.createdAt)}</span>
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                  {opp.company && <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{opp.company}</span>}
-                  <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{opp.location}</span>
-                  <span className="flex items-center gap-1"><Search className="h-3 w-3" />{opp.source}</span>
-                  <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{timeAgo(opp.createdAt)}</span>
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-right">
+                    <p className="text-xs text-muted-foreground">Est. Value</p>
+                    <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
+                      {opp.estimatedValue ? `$${(opp.estimatedValue / 1000).toFixed(0)}K` : "—"}
+                    </p>
+                  </div>
+                  {opp.fitScore > 0 && (
+                    <div className="text-right">
+                      <p className="text-xs text-muted-foreground">Fit</p>
+                      <p className={`text-sm font-bold ${fitScoreColor(opp.fitScore)}`}>{opp.fitScore}</p>
+                    </div>
+                  )}
+                  <Button
+                    size="sm"
+                    variant={hasAssessment ? "outline" : "default"}
+                    className="gap-1.5 text-xs shrink-0"
+                    disabled={isQualifying}
+                    onClick={() => onQualify(opp.id)}
+                    data-testid={`button-qualify-${opp.id}`}
+                  >
+                    {isQualifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
+                    {hasAssessment ? "Re-score" : "Qualify"}
+                  </Button>
                 </div>
               </div>
-              <div className="flex items-center gap-4 shrink-0">
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Est. Value</p>
-                  <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                    {opp.estimatedValue ? `$${(opp.estimatedValue / 1000).toFixed(0)}K` : "—"}
-                  </p>
-                </div>
-                <div className="text-right">
-                  <p className="text-xs text-muted-foreground">Fit Score</p>
-                  <p className={`text-sm font-bold ${fitScoreColor(opp.fitScore)}`}>{opp.fitScore || "—"}</p>
-                </div>
-                <Button size="sm" variant="outline" className="gap-1.5 text-xs" data-testid={`button-review-${opp.id}`}>
-                  <Eye className="h-3 w-3" />Review
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      ))}
+            </CardContent>
+          </Card>
+        );
+      })}
     </div>
+  );
+}
+
+// ─── Assessment Card ──────────────────────────────────────────────────────────
+
+function AssessmentCard({ a }: { a: Assessment }) {
+  const risk = RISK_CONFIG[a.riskLevel] ?? RISK_CONFIG.medium;
+  const rev  = REV_CONFIG[a.revenuePotential] ?? REV_CONFIG.medium;
+
+  return (
+    <Card className="border shadow-sm">
+      <CardHeader className="pb-2 pt-4 px-4">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-sm font-semibold">{a.opportunityTitle}</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">Scored {timeAgo(a.updatedAt)} · {a.recommendedAction}</p>
+          </div>
+          <div className={`text-2xl font-bold ${fitScoreColor(a.fitScore)}`} data-testid={`text-fit-score-${a.opportunityId}`}>{a.fitScore}</div>
+        </div>
+        {/* Score bars */}
+        <div className="mt-3 space-y-2">
+          <ScoreBar label="AI Fulfillment"     value={a.aiFulfillmentScore}    color={fitBarColor(a.aiFulfillmentScore)} />
+          <ScoreBar label="Revenue Potential"  value={a.revenuePotentialScore} color="bg-emerald-500" />
+          <ScoreBar label="Confidence"         value={a.confidenceScore}       color="bg-blue-500" />
+          <div className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-muted-foreground">Risk Score</span>
+              <span className={`font-semibold ${risk.color}`}>{risk.label} ({a.riskScore})</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+              <div className="h-full rounded-full bg-rose-400" style={{ width: `${Math.min(a.riskScore, 100)}%` }} />
+            </div>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 space-y-4">
+        {/* Reasoning */}
+        {a.reasoning && (
+          <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground italic leading-relaxed">
+            {a.reasoning}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {/* AI Can Fulfill */}
+          <div className="rounded-lg border p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <Bot className="h-3.5 w-3.5 text-blue-500" />
+              <h4 className="text-xs font-semibold text-blue-700 dark:text-blue-300">AI Can Fulfill</h4>
+            </div>
+            <ul className="space-y-1">
+              {a.aiCanFulfill.map(item => (
+                <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                  <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />{item}
+                </li>
+              ))}
+              {!a.aiCanFulfill.length && <li className="text-xs text-muted-foreground italic">None identified</li>}
+            </ul>
+          </div>
+
+          {/* Human Required */}
+          <div className="rounded-lg border p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <User className="h-3.5 w-3.5 text-amber-500" />
+              <h4 className="text-xs font-semibold text-amber-700 dark:text-amber-300">Human Required</h4>
+            </div>
+            <ul className="space-y-1">
+              {a.humanRequired.map(item => (
+                <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />{item}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        {/* Red Flags + Next Steps */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {a.redFlags.length > 0 && (
+            <div className="rounded-lg border border-rose-200 dark:border-rose-800 p-3 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <AlertCircle className="h-3.5 w-3.5 text-rose-500" />
+                <h4 className="text-xs font-semibold text-rose-700 dark:text-rose-400">Red Flags</h4>
+              </div>
+              <ul className="space-y-1">
+                {a.redFlags.map(f => (
+                  <li key={f} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <Flag className="h-3 w-3 text-rose-400 shrink-0 mt-0.5" />{f}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {a.nextSteps.length > 0 && (
+            <div className="rounded-lg border p-3 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <ThumbsUp className="h-3.5 w-3.5 text-teal-500" />
+                <h4 className="text-xs font-semibold text-teal-700 dark:text-teal-300">Next Steps</h4>
+              </div>
+              <ul className="space-y-1">
+                {a.nextSteps.map((s, i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <ChevronRight className="h-3 w-3 text-teal-400 shrink-0 mt-0.5" />{s}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+
+        {/* Summary row */}
+        <div className="flex flex-wrap items-center gap-3 pt-1 text-xs border-t">
+          <span className="text-muted-foreground">Revenue: <span className={`font-semibold ${rev.color}`}>{rev.label}</span></span>
+          <span className="text-muted-foreground">Risk: <span className={`font-semibold ${risk.color}`}>{risk.label}</span></span>
+          <span className="text-muted-foreground">Confidence: <span className="font-semibold">{a.confidenceScore}/100</span></span>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
 // ─── Qualification Tab ────────────────────────────────────────────────────────
 
-function QualificationTab({ opportunities }: { opportunities: Opportunity[] }) {
-  const opp = opportunities[0] ?? null;
-
-  if (!opp) {
-    return (
-      <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
-        <Star className="h-8 w-8 mx-auto mb-2 opacity-30" />
-        <p className="font-medium text-sm">No opportunities to qualify</p>
-        <p className="text-xs mt-1">Add opportunities in the Discovery tab first.</p>
-      </div>
-    );
-  }
-
-  const aiCanFulfill = ["Program design", "Exercise selection", "Progression logic", "Athlete education", "Reporting"];
-  const humanRequired = ["Sales approval", "Relationship ownership", "Contract review"];
+function QualificationTab({
+  assessments, isLoading, onQualifyAll, qualifyAllPending,
+}: {
+  assessments: Assessment[];
+  isLoading: boolean;
+  onQualifyAll: () => void;
+  qualifyAllPending: boolean;
+}) {
+  if (isLoading) return <CardSkeleton />;
 
   return (
     <div className="space-y-4">
-      <Card className="border shadow-sm">
-        <CardHeader className="pb-2 pt-4 px-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle className="text-sm font-semibold">{opp.title}</CardTitle>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                {opp.company && `${opp.company} · `}{opp.location}
-                {opp.estimatedValue ? ` · $${(opp.estimatedValue / 1000).toFixed(0)}K` : ""}
-              </p>
-            </div>
-            <StatusBadge s={opp.status} />
-          </div>
-        </CardHeader>
-        <CardContent className="px-4 pb-4">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 mt-2">
-            <div className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-blue-500" />
-                <h4 className="text-xs font-semibold text-blue-700 dark:text-blue-300">AI Can Fulfill</h4>
-              </div>
-              <ul className="space-y-1.5">
-                {aiCanFulfill.map(item => (
-                  <li key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0" />{item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center gap-2">
-                <User className="h-4 w-4 text-amber-500" />
-                <h4 className="text-xs font-semibold text-amber-700 dark:text-amber-300">Human Required</h4>
-              </div>
-              <ul className="space-y-1.5">
-                {humanRequired.map(item => (
-                  <li key={item} className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0" />{item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-            <div className="rounded-lg border p-3 space-y-3">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="h-4 w-4 text-violet-500" />
-                <h4 className="text-xs font-semibold text-violet-700 dark:text-violet-300">Assessment</h4>
-              </div>
-              <div className="space-y-2">
-                {[
-                  { label: "Revenue Potential", value: "High",   color: "text-emerald-600 dark:text-emerald-400" },
-                  { label: "Risk Level",         value: "Low",    color: "text-teal-600 dark:text-teal-400" },
-                  { label: "Fit Score",          value: opp.fitScore ? `${opp.fitScore}/100` : "—", color: fitScoreColor(opp.fitScore) },
-                ].map(row => (
-                  <div key={row.label} className="flex items-center justify-between text-xs">
-                    <span className="text-muted-foreground">{row.label}</span>
-                    <span className={`font-semibold ${row.color}`}>{row.value}</span>
-                  </div>
-                ))}
-                <div className="pt-1 border-t">
-                  <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Recommended Action</p>
-                  <p className="text-xs font-semibold text-blue-600 dark:text-blue-400 mt-0.5">Proceed to Outreach</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-      <div className="rounded-md border border-dashed p-8 text-center text-muted-foreground text-sm">
-        <Target className="h-8 w-8 mx-auto mb-2 opacity-30" />
-        <p className="font-medium">Showing most recent opportunity above</p>
-        <p className="text-xs mt-1">Full qualification engine coming in Phase 3.</p>
+      {/* Header bar */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Qualification Assessments</h3>
+          <p className="text-xs text-muted-foreground">
+            {assessments.length > 0
+              ? `${assessments.length} assessment${assessments.length !== 1 ? "s" : ""} generated`
+              : "No assessments yet — qualify an opportunity to see results here"}
+          </p>
+        </div>
+        <Button
+          size="sm"
+          className="text-xs gap-1.5 shrink-0"
+          onClick={onQualifyAll}
+          disabled={qualifyAllPending}
+          data-testid="button-qualify-all"
+        >
+          {qualifyAllPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
+          Qualify All New
+        </Button>
       </div>
+
+      {assessments.length === 0 ? (
+        <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
+          <Brain className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="font-medium text-sm">No assessments yet</p>
+          <p className="text-xs mt-1">Click "Qualify" on any opportunity in the Discovery tab, or use "Qualify All New" above.</p>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {assessments.map(a => <AssessmentCard key={a.id} a={a} />)}
+        </div>
+      )}
     </div>
   );
 }
@@ -471,17 +633,15 @@ function PipelineTab({ opportunities }: { opportunities: Opportunity[] }) {
 
 function AgentActivityTab({ events, isLoading }: { events: AgentEvent[]; isLoading: boolean }) {
   if (isLoading) return <CardSkeleton />;
-
   if (!events.length) {
     return (
       <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
         <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
         <p className="font-medium text-sm">No agent activity yet</p>
-        <p className="text-xs mt-1">Run a discovery scan to generate the first event.</p>
+        <p className="text-xs mt-1">Run a discovery scan or qualify an opportunity to generate events.</p>
       </div>
     );
   }
-
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between">
@@ -519,60 +679,44 @@ function AgentActivityTab({ events, isLoading }: { events: AgentEvent[]; isLoadi
 
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
 
-const DEFAULT_SETTINGS: Settings = {
+const DEFAULT_SETTINGS: OrgSettings = {
   sources:       { linkedin: true, indeed: true, agentScan: false, directReferrals: true },
   qualRules:     { minFitScore70: true, remoteOnly: false, revenueMin40k: true, autoQualifyHigh: false },
   outreachRules: { requireHumanApproval: true, autoSendHighConf: false, ccFounder: true },
   agentPerms:    { discovery: "scan_only", qualification: "score_qualify", outreach: "draft_only", executive: "flag_escalate" },
 };
 
-function SettingsTab({ settings: serverSettings, isLoading }: { settings?: Settings | null; isLoading: boolean }) {
+function SettingsTab({ settings: serverSettings, isLoading }: { settings?: OrgSettings | null; isLoading: boolean }) {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [local, setLocal] = useState<Settings | null>(null);
-
-  const effective: Settings = local ?? serverSettings ?? DEFAULT_SETTINGS;
+  const [local, setLocal] = useState<OrgSettings | null>(null);
+  const effective: OrgSettings = local ?? serverSettings ?? DEFAULT_SETTINGS;
 
   const saveSettings = useMutation({
-    mutationFn: (data: Settings) => apiRequest("PATCH", "/api/opportunity-acquisition/settings", data),
-    onSuccess: () => {
-      toast({ title: "Settings saved" });
-      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/settings"] });
-    },
+    mutationFn: (data: OrgSettings) => apiRequest("PATCH", "/api/opportunity-acquisition/settings", data),
+    onSuccess: () => { toast({ title: "Settings saved" }); qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/settings"] }); },
     onError: () => toast({ title: "Failed to save settings", variant: "destructive" }),
   });
 
-  function toggleSource(key: string) {
+  const toggle = (section: keyof OrgSettings, key: string) => () => {
     setLocal(prev => {
       const base = prev ?? effective;
-      return { ...base, sources: { ...base.sources, [key]: !base.sources[key] } };
+      const s = base[section] as Record<string, boolean | string>;
+      return { ...base, [section]: { ...s, [key]: !s[key] } };
     });
-  }
-  function toggleQual(key: string) {
-    setLocal(prev => {
-      const base = prev ?? effective;
-      return { ...base, qualRules: { ...base.qualRules, [key]: !base.qualRules[key] } };
-    });
-  }
-  function toggleOutreach(key: string) {
-    setLocal(prev => {
-      const base = prev ?? effective;
-      return { ...base, outreachRules: { ...base.outreachRules, [key]: !base.outreachRules[key] } };
-    });
-  }
-  function setAgentPerm(key: string, val: string) {
+  };
+  const setPerm = (key: string, val: string) => {
     setLocal(prev => {
       const base = prev ?? effective;
       return { ...base, agentPerms: { ...base.agentPerms, [key]: val } };
     });
-  }
+  };
 
   if (isLoading) return <CardSkeleton />;
 
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Sources */}
         <Card className="border shadow-sm">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2"><Radio className="h-4 w-4 text-muted-foreground" />Opportunity Sources</CardTitle>
@@ -589,72 +733,69 @@ function SettingsTab({ settings: serverSettings, isLoading }: { settings?: Setti
                   <p className="text-xs font-medium">{s.label}</p>
                   <p className="text-[11px] text-muted-foreground">{s.desc}</p>
                 </div>
-                <Switch checked={!!effective.sources[s.key]} onCheckedChange={() => toggleSource(s.key)} data-testid={`toggle-source-${s.key}`} />
+                <Switch checked={!!effective.sources[s.key]} onCheckedChange={toggle("sources", s.key)} data-testid={`toggle-source-${s.key}`} />
               </div>
             ))}
           </CardContent>
         </Card>
 
-        {/* Qualification Rules */}
         <Card className="border shadow-sm">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2"><Star className="h-4 w-4 text-muted-foreground" />Qualification Rules</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-3">
             {[
-              { key: "minFitScore70",    label: "Minimum Fit Score 70+",    desc: "Discard opportunities below threshold" },
-              { key: "remoteOnly",       label: "Remote-Only Filter",       desc: "Only qualify remote opportunities" },
-              { key: "revenueMin40k",    label: "Revenue Minimum $40K",     desc: "Skip low-value opportunities" },
-              { key: "autoQualifyHigh",  label: "Auto-Qualify High Scores", desc: "Auto-move 90+ scores to Outreach Ready" },
+              { key: "minFitScore70",   label: "Minimum Fit Score 70+",    desc: "Discard opportunities below threshold" },
+              { key: "remoteOnly",      label: "Remote-Only Filter",       desc: "Only qualify remote opportunities" },
+              { key: "revenueMin40k",   label: "Revenue Minimum $40K",     desc: "Skip low-value opportunities" },
+              { key: "autoQualifyHigh", label: "Auto-Qualify High Scores", desc: "Auto-move 90+ scores to Outreach Ready" },
             ].map(r => (
               <div key={r.key} className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium">{r.label}</p>
                   <p className="text-[11px] text-muted-foreground">{r.desc}</p>
                 </div>
-                <Switch checked={!!effective.qualRules[r.key]} onCheckedChange={() => toggleQual(r.key)} data-testid={`toggle-qual-${r.key}`} />
+                <Switch checked={!!effective.qualRules[r.key]} onCheckedChange={toggle("qualRules", r.key)} data-testid={`toggle-qual-${r.key}`} />
               </div>
             ))}
           </CardContent>
         </Card>
 
-        {/* Outreach Approval Rules */}
         <Card className="border shadow-sm">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2"><Shield className="h-4 w-4 text-muted-foreground" />Outreach Approval Rules</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-3">
             {[
-              { key: "requireHumanApproval",   label: "Require Human Approval",    desc: "All outreach must be approved before send" },
-              { key: "autoSendHighConf",        label: "Auto-Send High Confidence", desc: "Auto-send when fit score ≥ 95" },
-              { key: "ccFounder",               label: "CC Founder on Outreach",    desc: "Add founder to every outreach email" },
+              { key: "requireHumanApproval", label: "Require Human Approval",    desc: "All outreach must be approved before send" },
+              { key: "autoSendHighConf",     label: "Auto-Send High Confidence", desc: "Auto-send when fit score ≥ 95" },
+              { key: "ccFounder",            label: "CC Founder on Outreach",    desc: "Add founder to every outreach email" },
             ].map(r => (
               <div key={r.key} className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-xs font-medium">{r.label}</p>
                   <p className="text-[11px] text-muted-foreground">{r.desc}</p>
                 </div>
-                <Switch checked={!!effective.outreachRules[r.key]} onCheckedChange={() => toggleOutreach(r.key)} data-testid={`toggle-outreach-${r.key}`} />
+                <Switch checked={!!effective.outreachRules[r.key]} onCheckedChange={toggle("outreachRules", r.key)} data-testid={`toggle-outreach-${r.key}`} />
               </div>
             ))}
           </CardContent>
         </Card>
 
-        {/* Agent Permissions */}
         <Card className="border shadow-sm">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2"><Bot className="h-4 w-4 text-muted-foreground" />Agent Permissions</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-3">
             {[
-              { key: "discovery",      label: "Discovery Agent" },
-              { key: "qualification",  label: "Qualification Agent" },
-              { key: "outreach",       label: "Outreach Agent" },
-              { key: "executive",      label: "Executive Agent" },
+              { key: "discovery",     label: "Discovery Agent" },
+              { key: "qualification", label: "Qualification Agent" },
+              { key: "outreach",      label: "Outreach Agent" },
+              { key: "executive",     label: "Executive Agent" },
             ].map(a => (
               <div key={a.key} className="flex items-center justify-between gap-3">
                 <p className="text-xs font-medium">{a.label}</p>
-                <Select value={effective.agentPerms[a.key] ?? "disabled"} onValueChange={v => setAgentPerm(a.key, v)}>
+                <Select value={effective.agentPerms[a.key] ?? "disabled"} onValueChange={v => setPerm(a.key, v)}>
                   <SelectTrigger className="h-7 text-xs w-36" data-testid={`select-agent-${a.key}`}><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="scan_only">Scan Only</SelectItem>
@@ -672,15 +813,8 @@ function SettingsTab({ settings: serverSettings, isLoading }: { settings?: Setti
       </div>
 
       <div className="flex justify-end">
-        <Button
-          size="sm"
-          className="text-xs gap-1.5"
-          disabled={!local || saveSettings.isPending}
-          onClick={() => saveSettings.mutate(effective)}
-          data-testid="button-save-settings"
-        >
-          {saveSettings.isPending && <Loader2 className="h-3 w-3 animate-spin" />}
-          Save Settings
+        <Button size="sm" className="text-xs gap-1.5" disabled={!local || saveSettings.isPending} onClick={() => saveSettings.mutate(effective)} data-testid="button-save-settings">
+          {saveSettings.isPending && <Loader2 className="h-3 w-3 animate-spin" />}Save Settings
         </Button>
       </div>
     </div>
@@ -690,26 +824,24 @@ function SettingsTab({ settings: serverSettings, isLoading }: { settings?: Setti
 // ─── Page Root ────────────────────────────────────────────────────────────────
 
 export default function AdminOpportunityAcquisitionPage() {
-  const [activeTab, setActiveTab] = useState("discovery");
+  const [activeTab, setActiveTab]     = useState("discovery");
   const [showAddModal, setShowAddModal] = useState(false);
+  const [qualifyingId, setQualifyingId] = useState<string | null>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
-  const summaryQ = useQuery<Summary>({
-    queryKey: ["/api/opportunity-acquisition/summary"],
-  });
+  function invalidateAll() {
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/summary"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/assessments"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+  }
 
-  const oppsQ = useQuery<Opportunity[]>({
-    queryKey: ["/api/opportunity-acquisition/opportunities"],
-  });
-
-  const eventsQ = useQuery<AgentEvent[]>({
-    queryKey: ["/api/opportunity-acquisition/events"],
-  });
-
-  const settingsQ = useQuery<Settings | null>({
-    queryKey: ["/api/opportunity-acquisition/settings"],
-  });
+  const summaryQ   = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
+  const oppsQ      = useQuery<Opportunity[]>({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
+  const eventsQ    = useQuery<AgentEvent[]>({ queryKey: ["/api/opportunity-acquisition/events"] });
+  const settingsQ  = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
+  const assessQ    = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
 
   const runScan = useMutation({
     mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/run-scan", {}),
@@ -722,18 +854,41 @@ export default function AdminOpportunityAcquisitionPage() {
     onError: () => toast({ title: "Scan failed", variant: "destructive" }),
   });
 
+  const qualifyOne = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/opportunity-acquisition/opportunities/${id}/qualify`, {}),
+    onMutate: (id) => setQualifyingId(id),
+    onSuccess: (_data, id) => {
+      toast({ title: "Qualification complete", description: "Fit score updated." });
+      setQualifyingId(null);
+      invalidateAll();
+      setActiveTab("qualification");
+    },
+    onError: () => {
+      setQualifyingId(null);
+      toast({ title: "Qualification failed", variant: "destructive" });
+    },
+  });
+
+  const qualifyAll = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/qualify-all", {}),
+    onSuccess: (data: any) => {
+      toast({ title: `Qualified ${data?.qualified ?? 0} opportunities` });
+      invalidateAll();
+      setActiveTab("qualification");
+    },
+    onError: () => toast({ title: "Qualify All failed", variant: "destructive" }),
+  });
+
   const opportunities: Opportunity[] = oppsQ.data ?? [];
-  const events: AgentEvent[] = eventsQ.data ?? [];
+  const events: AgentEvent[]         = eventsQ.data ?? [];
+  const assessments: Assessment[]    = assessQ.data ?? [];
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
       {showAddModal && (
         <AddOpportunityModal
           onClose={() => setShowAddModal(false)}
-          onSaved={() => {
-            qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
-            qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/summary"] });
-          }}
+          onSaved={invalidateAll}
         />
       )}
 
@@ -757,55 +912,55 @@ export default function AdminOpportunityAcquisitionPage() {
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5 text-xs"
-              onClick={() => setShowAddModal(true)}
-              data-testid="button-add-opportunity"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Add Opportunity
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowAddModal(true)} data-testid="button-add-opportunity">
+              <Plus className="h-3.5 w-3.5" />Add Opportunity
             </Button>
-            <Button
-              size="sm"
-              className="gap-1.5 text-xs"
-              disabled={runScan.isPending}
-              onClick={() => runScan.mutate()}
-              data-testid="button-run-discovery"
-            >
+            <Button size="sm" className="gap-1.5 text-xs" disabled={runScan.isPending} onClick={() => runScan.mutate()} data-testid="button-run-discovery">
               {runScan.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
               Run Discovery Scan
             </Button>
           </div>
         </div>
 
-        {/* Summary Cards */}
         <SummaryCards data={summaryQ.data} isLoading={summaryQ.isLoading} />
 
-        {/* Main Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full sm:w-auto flex overflow-x-auto" data-testid="tabs-main">
-            <TabsTrigger value="discovery"      className="text-xs gap-1.5" data-testid="tab-discovery"><Search className="h-3 w-3" />Discovery</TabsTrigger>
-            <TabsTrigger value="qualification"  className="text-xs gap-1.5" data-testid="tab-qualification"><Star className="h-3 w-3" />Qualification</TabsTrigger>
-            <TabsTrigger value="pipeline"       className="text-xs gap-1.5" data-testid="tab-pipeline"><TrendingUp className="h-3 w-3" />Pipeline</TabsTrigger>
-            <TabsTrigger value="agent-activity" className="text-xs gap-1.5" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
-            <TabsTrigger value="settings"       className="text-xs gap-1.5" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
+            <TabsTrigger value="discovery"      className="text-xs gap-1" data-testid="tab-discovery"><Search className="h-3 w-3" />Discovery</TabsTrigger>
+            <TabsTrigger value="qualification"  className="text-xs gap-1" data-testid="tab-qualification"><Brain className="h-3 w-3" />Qualification</TabsTrigger>
+            <TabsTrigger value="pipeline"       className="text-xs gap-1" data-testid="tab-pipeline"><TrendingUp className="h-3 w-3" />Pipeline</TabsTrigger>
+            <TabsTrigger value="agent-activity" className="text-xs gap-1" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
+            <TabsTrigger value="settings"       className="text-xs gap-1" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="discovery"      className="mt-4">
-            <DiscoveryTab opportunities={opportunities} isLoading={oppsQ.isLoading} />
+          <TabsContent value="discovery" className="mt-4">
+            <DiscoveryTab
+              opportunities={opportunities}
+              assessments={assessments}
+              isLoading={oppsQ.isLoading}
+              onQualify={(id) => qualifyOne.mutate(id)}
+              qualifyingId={qualifyingId}
+            />
           </TabsContent>
-          <TabsContent value="qualification"  className="mt-4">
-            <QualificationTab opportunities={opportunities} />
+
+          <TabsContent value="qualification" className="mt-4">
+            <QualificationTab
+              assessments={assessments}
+              isLoading={assessQ.isLoading}
+              onQualifyAll={() => qualifyAll.mutate()}
+              qualifyAllPending={qualifyAll.isPending}
+            />
           </TabsContent>
-          <TabsContent value="pipeline"       className="mt-4">
+
+          <TabsContent value="pipeline" className="mt-4">
             <PipelineTab opportunities={opportunities} />
           </TabsContent>
+
           <TabsContent value="agent-activity" className="mt-4">
             <AgentActivityTab events={events} isLoading={eventsQ.isLoading} />
           </TabsContent>
-          <TabsContent value="settings"       className="mt-4">
+
+          <TabsContent value="settings" className="mt-4">
             <SettingsTab settings={settingsQ.data} isLoading={settingsQ.isLoading} />
           </TabsContent>
         </Tabs>

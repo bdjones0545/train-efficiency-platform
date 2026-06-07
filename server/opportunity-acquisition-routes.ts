@@ -54,15 +54,24 @@ async function createTables() {
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS opportunity_qualification_assessments (
-      id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id          TEXT NOT NULL,
-      opportunity_id  TEXT NOT NULL,
-      ai_can_fulfill  JSONB NOT NULL DEFAULT '[]',
-      human_required  JSONB NOT NULL DEFAULT '[]',
-      revenue_potential TEXT NOT NULL DEFAULT 'medium',
-      risk_level      TEXT NOT NULL DEFAULT 'medium',
-      recommended_action TEXT NOT NULL DEFAULT 'Review manually',
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id                      TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      org_id                  TEXT NOT NULL,
+      opportunity_id          TEXT NOT NULL UNIQUE,
+      ai_can_fulfill          JSONB NOT NULL DEFAULT '[]',
+      human_required          JSONB NOT NULL DEFAULT '[]',
+      revenue_potential       TEXT NOT NULL DEFAULT 'medium',
+      risk_level              TEXT NOT NULL DEFAULT 'medium',
+      recommended_action      TEXT NOT NULL DEFAULT 'Review manually',
+      fit_score               INTEGER NOT NULL DEFAULT 0,
+      ai_fulfillment_score    INTEGER NOT NULL DEFAULT 0,
+      revenue_potential_score INTEGER NOT NULL DEFAULT 0,
+      risk_score              INTEGER NOT NULL DEFAULT 0,
+      confidence_score        INTEGER NOT NULL DEFAULT 0,
+      reasoning               TEXT NOT NULL DEFAULT '',
+      red_flags               JSONB NOT NULL DEFAULT '[]',
+      next_steps              JSONB NOT NULL DEFAULT '[]',
+      created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
@@ -335,6 +344,124 @@ export async function registerOpportunityAcquisitionRoutes(
       res.json({ success: true });
     } catch (e: any) {
       console.error("[opportunity/settings/save]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/assessments ────────────────────────────
+  app.get("/api/opportunity-acquisition/assessments", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json([]);
+
+      const assessments = rows(await db.execute(sql`
+        SELECT a.*, o.title AS opportunity_title
+        FROM opportunity_qualification_assessments a
+        JOIN opportunity_acquisition_opportunities o ON o.id = a.opportunity_id
+        WHERE a.org_id = ${orgId}
+        ORDER BY a.updated_at DESC
+        LIMIT 100
+      `));
+
+      res.json(assessments.map((a: any) => ({
+        id:                   a.id,
+        opportunityId:        a.opportunity_id,
+        opportunityTitle:     a.opportunity_title,
+        fitScore:             n(a.fit_score),
+        aiFulfillmentScore:   n(a.ai_fulfillment_score),
+        revenuePotentialScore:n(a.revenue_potential_score),
+        riskScore:            n(a.risk_score),
+        confidenceScore:      n(a.confidence_score),
+        revenuePotential:     a.revenue_potential,
+        riskLevel:            a.risk_level,
+        recommendedAction:    a.recommended_action,
+        reasoning:            a.reasoning,
+        aiCanFulfill:         a.ai_can_fulfill ?? [],
+        humanRequired:        a.human_required ?? [],
+        redFlags:             a.red_flags ?? [],
+        nextSteps:            a.next_steps ?? [],
+        updatedAt:            a.updated_at,
+      })));
+    } catch (e: any) {
+      console.error("[opportunity/assessments]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/opportunity-acquisition/opportunities/:id/qualify ──────────────
+  app.post("/api/opportunity-acquisition/opportunities/:id/qualify", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { id } = req.params;
+
+      // Log started event
+      await db.execute(sql`
+        INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+        VALUES (${orgId}, 'Qualification Agent', ${`Qualification started for opportunity ${id}.`}, 'qualify')
+      `);
+
+      const { qualifyOpportunity } = await import("./services/opportunity-qualification-agent");
+      const result = await qualifyOpportunity(orgId, id);
+
+      // Log completion events
+      await db.execute(sql`
+        INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+        VALUES (${orgId}, 'Qualification Agent',
+          ${`Qualification complete for "${result.opportunityTitle}" — fit score ${result.fitScore}/100. Action: ${result.recommendedAction}.`},
+          'qualify')
+      `);
+
+      if (result.fitScore >= 80) {
+        await db.execute(sql`
+          INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+          VALUES (${orgId}, 'Executive Agent',
+            ${`High-value opportunity flagged: "${result.opportunityTitle}" scored ${result.fitScore}/100.`},
+            'flag')
+        `);
+      }
+
+      if (result.fitScore < 45) {
+        await db.execute(sql`
+          INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+          VALUES (${orgId}, 'Qualification Agent',
+            ${`Low-fit opportunity: "${result.opportunityTitle}" scored ${result.fitScore}/100 — marked for review.`},
+            'info')
+        `);
+      }
+
+      res.json({ success: true, result });
+    } catch (e: any) {
+      console.error("[opportunity/qualify]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/opportunity-acquisition/qualify-all ────────────────────────────
+  app.post("/api/opportunity-acquisition/qualify-all", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      await db.execute(sql`
+        INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+        VALUES (${orgId}, 'Qualification Agent', 'Bulk qualification run started.', 'qualify')
+      `);
+
+      const { qualifyAllPending } = await import("./services/opportunity-qualification-agent");
+      const { qualified, results } = await qualifyAllPending(orgId);
+
+      await db.execute(sql`
+        INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+        VALUES (${orgId}, 'Qualification Agent',
+          ${`Bulk qualification complete — ${qualified} opportunit${qualified === 1 ? "y" : "ies"} scored.`},
+          'qualify')
+      `);
+
+      res.json({ success: true, qualified, results });
+    } catch (e: any) {
+      console.error("[opportunity/qualify-all]", e);
       res.status(500).json({ message: e.message });
     }
   });
