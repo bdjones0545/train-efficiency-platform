@@ -1,0 +1,134 @@
+Create a new TrainEfficiency page called Opportunity Acquisition.
+
+Goal:
+Build the first UI/structure for an Opportunity Acquisition OS where AI agents discover job/business opportunities, qualify them, prepare outreach, and move them through a pipeline.
+
+Do not build scraping or external integrations yet. This phase is UI + data structure + mock workflow.
+
+Add route:
+ /opportunity-acquisition
+
+Add sidebar item:
+ Growth or Intelligence section
+ Label: Opportunity Acquisition
+ Icon: target / briefcase / radar style icon
+
+Page layout:
+
+1. Header
+Title: Opportunity Acquisition
+Subtitle: AI agents find, qualify, and convert external opportunities into revenue.
+
+Primary button:
+Run Discovery Scan
+
+Secondary button:
+Add Opportunity Manually
+
+2. Summary cards
+- Found Today
+- Qualified
+- Outreach Ready
+- Pipeline Value
+
+Use mock values for now.
+
+3. Main tabs
+Tabs:
+- Discovery
+- Qualification
+- Pipeline
+- Agent Activity
+- Settings
+
+4. Discovery tab
+Show a table/card list of mock opportunities:
+Fields:
+- Opportunity title
+- Source
+- Company
+- Type
+- Remote / Hybrid / Local
+- Estimated value
+- Status
+- Fit score
+- CTA: Review
+
+Example opportunities:
+- Remote Strength Programming Coach
+- Online Athlete Development Specialist
+- Corporate Wellness Programming Partner
+- Sports Performance Content Coach
+- Youth Athlete Training Consultant
+
+5. Qualification tab
+Show selected/mock opportunity assessment cards:
+Sections:
+- AI Fulfillment Fit
+- Human Required
+- Revenue Potential
+- Risk Level
+- Recommended Action
+
+Use checkmarks and warning badges.
+
+Example:
+AI can fulfill:
+- Program design
+- Exercise selection
+- Progression logic
+- Athlete education
+- Reporting
+
+Human required:
+- Sales approval
+- Relationship ownership
+- Contract review
+
+6. Pipeline tab
+Create kanban columns:
+- New
+- Qualified
+- Outreach Ready
+- Contacted
+- Interested
+- Demo
+- Won
+- Lost
+
+Use mock draggable-looking cards, but actual drag/drop is optional for this phase.
+
+7. Agent Activity tab
+Timeline feed:
+- Discovery Agent found 5 opportunities
+- Qualification Agent scored 3 opportunities
+- Outreach Agent drafted 2 messages
+- Executive Agent flagged 1 high-value opportunity
+
+8. Settings tab
+Create configuration cards:
+- Opportunity Sources
+- Qualification Rules
+- Outreach Approval Rules
+- Agent Permissions
+
+Use toggles/selects visually, but they do not need backend functionality yet.
+
+Design:
+Match existing TrainEfficiency UI.
+Use shadcn/ui components already in the project.
+Use responsive layout.
+Mobile-friendly cards.
+No TypeScript errors.
+No backend required unless needed for route registration.
+
+Important:
+This is a foundation page. Keep data mocked locally for now.
+Structure the code so later phases can easily replace mock data with real database/API data.
+
+Deliverables:
+- New page component
+- Route added
+- Sidebar navigation item added
+- Clean responsive UI
+- Zero TypeScript errors
