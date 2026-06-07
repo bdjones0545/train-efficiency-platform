@@ -29064,5 +29064,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerOpportunityAcquisitionRoutes } = await import("./opportunity-acquisition-routes");
   await registerOpportunityAcquisitionRoutes(app, isAuthenticated, requireRole);
 
+  const { registerHiringRoutes } = await import("./hiring-routes");
+  registerHiringRoutes(app, isAuthenticated, requireRole);
+
   return httpServer;
 }

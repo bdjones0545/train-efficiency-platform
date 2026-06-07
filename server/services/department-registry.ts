@@ -177,3 +177,24 @@ import("./opportunity-executive-coordinator")
   .catch((err: any) => {
     console.warn("[DepartmentRegistry] Could not register Opportunity Acquisition:", err.message);
   });
+
+// ─── Auto-registration of Hiring (Department #2) ──────────────────────────────
+
+import("./hiring-department-coordinator")
+  .then(({ hiringDepartmentCoordinator }) => {
+    departmentRegistry.register(hiringDepartmentCoordinator, {
+      name:                  "Hiring Department",
+      description:           "Manages the full candidate lifecycle from discovery to hire. Includes AI assessment, outreach drafts, pipeline management, learning, and executive intelligence.",
+      version:               "1.0.0",
+      enabled:               true,
+      discoveryEnabled:      true,
+      qualificationEnabled:  true,
+      outreachEnabled:       true,
+      executionEnabled:      true,
+      learningEnabled:       true,
+      executiveEnabled:      true,
+    });
+  })
+  .catch((err: any) => {
+    console.warn("[DepartmentRegistry] Could not register Hiring Department:", err.message);
+  });

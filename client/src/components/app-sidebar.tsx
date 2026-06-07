@@ -50,6 +50,7 @@ import {
   BookOpen,
   Mail,
   Plug,
+  Briefcase,
 } from "lucide-react";
 import { setLastOrgSlug } from "@/lib/logout";
 import type { UserProfile } from "@shared/schema";
@@ -628,6 +629,12 @@ export function AppSidebar() {
               url: "/admin/opportunity-acquisition",
               icon: Target,
               testId: "nav-opportunity-acquisition",
+            },
+            {
+              title: "Hiring Department",
+              url: "/admin/hiring",
+              icon: Briefcase,
+              testId: "nav-hiring-department",
             },
           ]
         : []),

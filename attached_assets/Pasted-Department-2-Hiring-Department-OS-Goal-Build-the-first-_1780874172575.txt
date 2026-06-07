@@ -1,0 +1,509 @@
+Department #2 — Hiring Department OS
+
+Goal:
+Build the first non-Opportunity department using Department OS v1.
+
+This is not primarily a hiring feature.
+
+This is a validation of the Department Framework.
+
+Success is measured by how little custom infrastructure is required.
+
+The Hiring Department should inherit:
+
+* Department Lifecycle
+* Department Events
+* Department Health Checks
+* Department Learning
+* Executive Intelligence
+* CEO Heartbeat Integration
+* Department Registry
+
+from Department OS v1.
+
+⸻
+
+MISSION
+
+Create a Hiring Department capable of:
+
+Candidate Discovery
+→ Qualification
+→ Outreach
+→ Replies
+→ Interview Pipeline
+→ Hiring Outcomes
+→ Learning
+→ Executive Intelligence
+
+The department should help organizations recruit:
+
+* Coaches
+* Trainers
+* Interns
+* Staff
+* Contractors
+
+Initially through manual candidate creation and internal workflow.
+
+No external job scraping yet.
+
+No automated hiring decisions.
+
+⸻
+
+ROUTES
+
+Create:
+
+/admin/hiring
+
+Add sidebar item:
+
+Operations or Growth section
+
+Label:
+
+Hiring Department
+
+Icon:
+
+Users / UserPlus / Briefcase
+
+⸻
+
+DATABASE
+
+Create tables:
+
+hiring_candidates
+
+Columns:
+
+id
+org_id
+
+first_name
+last_name
+
+email
+phone
+
+location
+
+position
+
+source
+
+experience_level
+
+resume_url
+
+notes
+
+status
+
+fit_score
+
+created_at
+
+updated_at
+
+⸻
+
+hiring_assessments
+
+Columns:
+
+id
+org_id
+
+candidate_id
+
+fit_score
+
+experience_score
+
+culture_score
+
+confidence_score
+
+recommended_action
+
+reasoning
+
+strengths JSONB
+
+concerns JSONB
+
+next_steps JSONB
+
+created_at
+
+⸻
+
+hiring_outreach_drafts
+
+Columns:
+
+id
+org_id
+
+candidate_id
+
+subject
+
+body
+
+status
+
+positioning_angle
+
+confidence_score
+
+created_at
+
+⸻
+
+hiring_interviews
+
+Columns:
+
+id
+org_id
+
+candidate_id
+
+scheduled_at
+
+status
+
+notes
+
+created_at
+
+⸻
+
+hiring_learning_signals
+
+Columns:
+
+id
+org_id
+
+candidate_id
+
+source
+
+position
+
+fit_score
+
+interviewed
+
+hired
+
+rejected
+
+created_at
+
+⸻
+
+hiring_executive_briefs
+
+hiring_recommendations
+
+Use same patterns as Opportunity Acquisition.
+
+⸻
+
+PIPELINE
+
+Candidate statuses:
+
+new
+
+qualified
+
+outreach_ready
+
+contacted
+
+interested
+
+interview
+
+offer
+
+hired
+
+rejected
+
+⸻
+
+PHASE 1 UI
+
+Tabs:
+
+Candidates
+
+Assessments
+
+Outreach
+
+Pipeline
+
+Learning
+
+Executive Intelligence
+
+⸻
+
+CANDIDATES TAB
+
+Summary cards:
+
+Total Candidates
+
+Qualified
+
+Interviewing
+
+Hired
+
+Add Candidate button
+
+Candidate table:
+
+Name
+
+Position
+
+Source
+
+Status
+
+Fit Score
+
+Created
+
+⸻
+
+ASSESSMENT AGENT
+
+Create:
+
+server/services/hiring-assessment-agent.ts
+
+Function:
+
+assessCandidate()
+
+Initial deterministic scoring.
+
+Inputs:
+
+* experience level
+* position
+* notes
+* source
+
+Outputs:
+
+fit score
+
+reasoning
+
+strengths
+
+concerns
+
+recommended action
+
+⸻
+
+OUTREACH AGENT
+
+Create:
+
+server/services/hiring-outreach-agent.ts
+
+Generates outreach drafts.
+
+Examples:
+
+Interview invitation
+
+Follow-up
+
+Application request
+
+No sending yet.
+
+Draft generation only.
+
+⸻
+
+PIPELINE TAB
+
+Kanban:
+
+New
+
+Qualified
+
+Contacted
+
+Interested
+
+Interview
+
+Offer
+
+Hired
+
+Rejected
+
+⸻
+
+LEARNING AGENT
+
+Create:
+
+server/services/hiring-learning-agent.ts
+
+Track:
+
+Source performance
+
+Position performance
+
+Interview rate
+
+Hire rate
+
+Generate insights.
+
+⸻
+
+EXECUTIVE AGENT
+
+Create:
+
+server/services/hiring-executive-agent.ts
+
+Generate:
+
+Best Action Today
+
+Executive Brief
+
+Recommendations
+
+Examples:
+
+Schedule interviews with 3 qualified candidates.
+
+Review 2 pending offers.
+
+Coach referrals produce the highest hire rate.
+
+⸻
+
+DEPARTMENT COORDINATOR
+
+Create:
+
+server/services/hiring-department-coordinator.ts
+
+Implement:
+
+DepartmentCoordinator
+
+Methods:
+
+runHeartbeatReview()
+
+generateSummary()
+
+generateBestAction()
+
+⸻
+
+DEPARTMENT REGISTRY
+
+Register:
+
+Hiring Department
+
+using:
+
+departmentRegistry.register()
+
+No CEO Heartbeat changes allowed.
+
+Hiring should automatically appear through the framework.
+
+⸻
+
+ATTENTION INBOX
+
+Generate attention items:
+
+Interview overdue
+
+Candidate stalled
+
+Offer awaiting review
+
+No hires in 30 days
+
+Low candidate volume
+
+⸻
+
+CEO HEARTBEAT
+
+Hiring Department should automatically participate in:
+
+CEO Timeline
+
+Attention Inbox
+
+Department Registry
+
+Best Action Today
+
+Department Summary
+
+without custom CEO Heartbeat code.
+
+⸻
+
+SUCCESS CRITERIA
+
+Department #2 is complete when:
+
+* Hiring Department page exists
+* Candidate pipeline exists
+* Assessment Agent exists
+* Outreach Agent exists
+* Learning Agent exists
+* Executive Agent exists
+* DepartmentCoordinator implemented
+* Registered through Department OS
+* Appears in CEO Heartbeat automatically
+* Generates recommendations
+* Generates executive briefs
+* Uses Department Framework contracts
+* Zero TypeScript errors
+
+⸻
+
+VALIDATION GOAL
+
+The primary objective is not hiring functionality.
+
+The objective is proving that Department OS v1 can support a second department with minimal custom infrastructure.
+
+If Hiring Department can be built substantially faster than Opportunity Acquisition, Department OS has been validated and TrainEfficiency officially becomes a multi-department AI operating system.
