@@ -1426,6 +1426,20 @@ export async function registerOpportunityAcquisitionRoutes(
     }
   });
 
+  // ── GET /api/opportunity-acquisition/heartbeat-summary ───────────────────────
+  app.get("/api/opportunity-acquisition/heartbeat-summary", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+      const { getOpportunityHeartbeatSummary } = await import("./services/opportunity-executive-coordinator");
+      const summary = await getOpportunityHeartbeatSummary(orgId);
+      res.json(summary);
+    } catch (e: any) {
+      console.error("[opportunity/heartbeat-summary]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ── POST /api/opportunity-acquisition/run-scan (legacy alias) ────────────────
   app.post("/api/opportunity-acquisition/run-scan", ...auth, async (req: any, res) => {
     try {

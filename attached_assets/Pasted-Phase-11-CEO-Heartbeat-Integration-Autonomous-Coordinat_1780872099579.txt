@@ -1,0 +1,445 @@
+Phase 11 — CEO Heartbeat Integration & Autonomous Coordination
+
+Goal:
+Promote Opportunity Acquisition from a standalone operating system into a fully integrated organizational department inside TrainEfficiency.
+
+Current State:
+
+Opportunity Acquisition operates independently.
+
+Discovery
+→ Qualification
+→ Outreach
+→ Execution
+→ Replies
+→ Learning
+→ Executive Intelligence
+
+New State:
+
+CEO Heartbeat
+↓
+Opportunity Executive Coordinator
+↓
+Opportunity Acquisition OS
+↓
+Attention Inbox
+↓
+Executive Brief
+↓
+Best Action Today
+
+Opportunity Acquisition should become a continuous organizational capability rather than a page users must manually visit.
+
+Important:
+
+Do NOT enable autonomous outreach.
+
+Do NOT enable autonomous negotiation.
+
+Do NOT enable autonomous pricing.
+
+Do NOT enable autonomous meeting scheduling.
+
+CEO Heartbeat should coordinate and prioritize, not execute external communications.
+
+⸻
+
+BACKEND
+
+Create:
+
+server/services/opportunity-executive-coordinator.ts
+
+Primary function:
+
+coordinateOpportunityAcquisition(orgId)
+
+Responsibilities:
+
+Monitor:
+
+* discovery performance
+* qualification performance
+* outreach pipeline
+* execution pipeline
+* reply activity
+* learning insights
+* executive recommendations
+
+Generate:
+
+* attention signals
+* executive alerts
+* heartbeat summaries
+* best-action recommendations
+
+⸻
+
+OPPORTUNITY HEALTH CHECK
+
+Create evaluation checks:
+
+Approved Draft Aging
+
+Example:
+
+Approved draft older than 7 days.
+
+Severity:
+
+medium
+
+⸻
+
+Interested Opportunity Aging
+
+Example:
+
+Interested opportunity without follow-up for 5+ days.
+
+Severity:
+
+high
+
+⸻
+
+Meeting Request Waiting
+
+Example:
+
+Meeting request classified but not acknowledged.
+
+Severity:
+
+critical
+
+⸻
+
+Low Discovery Volume
+
+Example:
+
+No opportunities discovered in 7 days.
+
+Severity:
+
+medium
+
+⸻
+
+Learning Stale
+
+Example:
+
+Learning analysis not run in 14+ days.
+
+Severity:
+
+low
+
+⸻
+
+Executive Review Needed
+
+Example:
+
+Pending recommendations > threshold.
+
+Severity:
+
+medium
+
+⸻
+
+ATTENTION INBOX INTEGRATION
+
+Generate:
+
+opportunity-related attention items
+
+Examples:
+
+High Priority
+
+Meeting request requires response
+
+⸻
+
+Medium Priority
+
+3 approved drafts waiting to send
+
+⸻
+
+Low Priority
+
+Learning analysis has not run recently
+
+⸻
+
+Create items using the existing Attention Inbox architecture.
+
+Do not build a new alert system.
+
+⸻
+
+CEO HEARTBEAT INTEGRATION
+
+Add:
+
+Opportunity Acquisition Review
+
+to the CEO Heartbeat cycle.
+
+Create entrypoint:
+
+runOpportunityHeartbeatReview(orgId)
+
+Called from:
+
+coordinateOpportunityAcquisition(orgId)
+
+⸻
+
+BEST ACTION TODAY
+
+Generate Opportunity Acquisition candidates for:
+
+Best Action Today
+
+Examples:
+
+Send 4 approved outreach drafts
+
+Respond to 2 meeting requests
+
+Review 3 executive recommendations
+
+Run learning analysis
+
+Follow up with 5 interested opportunities
+
+⸻
+
+Return:
+
+title
+
+description
+
+priority
+
+route
+
+⸻
+
+CEO DASHBOARD INTEGRATION
+
+Create endpoint:
+
+GET /api/opportunity-acquisition/heartbeat-summary
+
+Returns:
+
+{
+opportunitiesFound,
+qualified,
+replies,
+meetings,
+wins,
+losses,
+pendingDrafts,
+pendingRecommendations,
+bestAction
+}
+
+⸻
+
+OPPORTUNITY SUMMARY CARD
+
+Add dashboard card:
+
+Opportunity Acquisition
+
+Metrics:
+
+Found
+
+Qualified
+
+Replies
+
+Meetings
+
+Wins
+
+Pending Drafts
+
+Best Action
+
+⸻
+
+EXECUTIVE BRIEF AGGREGATION
+
+Create service:
+
+generateOpportunityHeartbeatSummary()
+
+Summarizes:
+
+* discovery activity
+* reply activity
+* learning activity
+* executive recommendations
+
+Produces:
+
+short executive summary
+
+Example:
+
+“Opportunity Acquisition generated 8 new opportunities this week, resulting in 3 replies and 1 meeting request. TeamWork Online remains the strongest-performing source.”
+
+⸻
+
+AUTOMATION PREPARATION
+
+Add support for future CEO Heartbeat scheduling.
+
+Create callable functions:
+
+runOpportunityAcquisitionCycle(orgId)
+
+runOpportunityLearningAnalysis(orgId)
+
+runOpportunityExecutiveAnalysis(orgId)
+
+Expose health status for each.
+
+Do not automatically schedule yet.
+
+⸻
+
+AGENT EVENTS
+
+Log:
+
+Opportunity Review Started
+
+Opportunity Review Completed
+
+Attention Signal Created
+
+Best Action Generated
+
+Heartbeat Summary Generated
+
+⸻
+
+FRONTEND
+
+CEO HOME
+
+Add Opportunity Acquisition card.
+
+Display:
+
+Found
+
+Qualified
+
+Replies
+
+Meetings
+
+Wins
+
+Pending Drafts
+
+⸻
+
+BEST ACTION TODAY
+
+Allow Opportunity Acquisition recommendations to participate in the existing Best Action Today prioritization logic.
+
+⸻
+
+ATTENTION INBOX
+
+Opportunity-generated alerts should appear alongside:
+
+Revenue
+
+Growth
+
+Retention
+
+Scheduling
+
+without any special handling.
+
+⸻
+
+EXECUTIVE SUMMARY PANEL
+
+Display:
+
+Opportunity Acquisition Summary
+
+Latest heartbeat summary
+
+Timestamp
+
+Priority indicator
+
+⸻
+
+SAFETY CONTROLS
+
+CEO Heartbeat may:
+
+Monitor
+
+Summarize
+
+Recommend
+
+Prioritize
+
+Generate alerts
+
+CEO Heartbeat may not:
+
+Send outreach
+
+Reply to emails
+
+Approve drafts
+
+Modify recommendations
+
+Change discovery settings
+
+Execute external actions
+
+⸻
+
+SUCCESS CRITERIA
+
+Phase 11 is complete when:
+
+* Opportunity Executive Coordinator exists
+* CEO Heartbeat can review Opportunity Acquisition health
+* Attention Inbox receives opportunity alerts
+* Best Action Today can include opportunity actions
+* Opportunity dashboard card exists
+* Heartbeat summary endpoint exists
+* Executive brief aggregation exists
+* Agent events are logged
+* No autonomous external actions occur
+* Zero TypeScript errors
+
+Result:
+
+Opportunity Acquisition graduates from an isolated subsystem into a fully integrated department within the TrainEfficiency operating system, continuously contributing intelligence, alerts, and recommendations to organizational leadership.

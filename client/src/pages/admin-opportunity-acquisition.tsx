@@ -1471,7 +1471,7 @@ const REC_CATEGORY_CONFIG: Record<string, { label: string; color: string; icon: 
   general:    { label: "General",    color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",         icon: Target },
 };
 
-const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+const REC_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   pending:     { label: "Pending",     color: "bg-muted text-muted-foreground" },
   accepted:    { label: "Accepted",    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
   dismissed:   { label: "Dismissed",   color: "bg-gray-100 text-gray-500 dark:bg-gray-800" },
@@ -1489,7 +1489,7 @@ function RecommendationCard({
 }) {
   const cat = REC_CATEGORY_CONFIG[rec.category] ?? REC_CATEGORY_CONFIG.general;
   const CatIcon = cat.icon;
-  const st = STATUS_CONFIG[rec.status] ?? STATUS_CONFIG.pending;
+  const st = REC_STATUS_CONFIG[rec.status] ?? REC_STATUS_CONFIG.pending;
   const conf = Math.round(rec.confidenceScore);
   const confColor = conf >= 80 ? "text-emerald-600 dark:text-emerald-400"
     : conf >= 60 ? "text-amber-600 dark:text-amber-400"

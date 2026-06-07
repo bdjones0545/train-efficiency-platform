@@ -12,7 +12,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Activity, Play, Pause, RotateCcw, Zap, AlertTriangle, CheckCircle2,
   Clock, Brain, ShieldAlert, BarChart3, Filter, RefreshCw, TrendingUp,
-  XCircle, ChevronRight, Calendar, Users, Target, Settings
+  XCircle, ChevronRight, Calendar, Users, Target, Settings, Crosshair,
+  ArrowRight, Star
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -124,6 +125,11 @@ export default function AdminCeoHeartbeatPage() {
   const { data: auditData } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/audit-log", orgId],
     enabled: !!orgId,
+  });
+
+  const { data: oppSummary, isLoading: oppSummaryLoading } = useQuery<any>({
+    queryKey: ["/api/opportunity-acquisition/heartbeat-summary"],
+    refetchInterval: 120_000,
   });
 
   // ─── Mutations ──────────────────────────────────────────────────────────────
@@ -390,6 +396,100 @@ export default function AdminCeoHeartbeatPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Opportunity Acquisition Department Card */}
+      <Card className="border-indigo-200 dark:border-indigo-800">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Crosshair className="h-4 w-4 text-indigo-500" />
+              Opportunity Acquisition Department
+            </CardTitle>
+            <a href="/admin/opportunity-acquisition" className="text-xs text-indigo-500 hover:underline flex items-center gap-1">
+              Open OS <ArrowRight className="h-3 w-3" />
+            </a>
+          </div>
+          <p className="text-xs text-muted-foreground">Live pipeline status — monitored by CEO Heartbeat every 30 minutes</p>
+        </CardHeader>
+        <CardContent>
+          {oppSummaryLoading ? (
+            <div className="text-sm text-muted-foreground">Loading opportunity data…</div>
+          ) : !oppSummary ? (
+            <div className="text-sm text-muted-foreground">No data — run the CEO Heartbeat to generate.</div>
+          ) : (
+            <div className="space-y-4">
+              {/* Metric grid */}
+              <div className="grid grid-cols-3 md:grid-cols-6 gap-2">
+                {[
+                  { label: "Found",          value: oppSummary.opportunitiesFound ?? 0,  color: "text-blue-600" },
+                  { label: "Qualified",      value: oppSummary.qualified ?? 0,           color: "text-emerald-600" },
+                  { label: "Replies",        value: oppSummary.replies ?? 0,             color: "text-violet-600" },
+                  { label: "Meetings",       value: oppSummary.meetings ?? 0,            color: "text-amber-600" },
+                  { label: "Wins",           value: oppSummary.wins ?? 0,                color: "text-green-600" },
+                  { label: "Pending Drafts", value: oppSummary.pendingDrafts ?? 0,       color: (oppSummary.pendingDrafts ?? 0) > 0 ? "text-orange-500" : "text-gray-500" },
+                ].map(stat => (
+                  <div key={stat.label} className="text-center p-2 rounded-lg border bg-card"
+                    data-testid={`opp-stat-${stat.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                    <div className={`font-bold text-xl leading-none ${stat.color}`}>{stat.value}</div>
+                    <div className="text-[10px] text-muted-foreground mt-1">{stat.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Executive summary */}
+              {oppSummary.executiveSummary && (
+                <div className="text-xs text-muted-foreground bg-muted/40 rounded-md p-3 leading-relaxed">
+                  {oppSummary.executiveSummary}
+                </div>
+              )}
+
+              {/* Best Action Today */}
+              {oppSummary.bestAction && (
+                <div className={`flex items-start gap-3 p-3 rounded-lg border-l-4 ${
+                  oppSummary.bestAction.priority === "critical" ? "border-l-red-500 bg-red-50 dark:bg-red-950/20" :
+                  oppSummary.bestAction.priority === "high"     ? "border-l-orange-500 bg-orange-50 dark:bg-orange-950/20" :
+                  oppSummary.bestAction.priority === "medium"   ? "border-l-amber-500 bg-amber-50 dark:bg-amber-950/20" :
+                                                                   "border-l-blue-400 bg-blue-50 dark:bg-blue-950/20"
+                }`} data-testid="opp-best-action">
+                  <Star className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
+                    oppSummary.bestAction.priority === "critical" ? "text-red-500" :
+                    oppSummary.bestAction.priority === "high"     ? "text-orange-500" :
+                    oppSummary.bestAction.priority === "medium"   ? "text-amber-500" : "text-blue-400"
+                  }`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-semibold">{oppSummary.bestAction.title}</div>
+                    <div className="text-xs text-muted-foreground mt-0.5">{oppSummary.bestAction.description}</div>
+                  </div>
+                  <a href={oppSummary.bestAction.route}
+                    className="text-xs text-primary hover:underline flex-shrink-0 flex items-center gap-0.5">
+                    Act <ArrowRight className="h-3 w-3" />
+                  </a>
+                </div>
+              )}
+
+              {/* Health check alerts (failed only) */}
+              {(oppSummary.healthChecks ?? []).filter((c: any) => !c.passed).length > 0 && (
+                <div className="space-y-1">
+                  <div className="text-xs font-medium text-muted-foreground">Health Alerts</div>
+                  {(oppSummary.healthChecks as any[]).filter(c => !c.passed).map((check: any) => (
+                    <div key={check.id} className="flex items-center gap-2 text-xs py-1 px-2 rounded bg-muted/40"
+                      data-testid={`opp-health-${check.id}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        check.severity === "critical" ? "bg-red-500" :
+                        check.severity === "high"     ? "bg-orange-500" :
+                        check.severity === "medium"   ? "bg-amber-400" : "bg-blue-400"
+                      }`} />
+                      <span className="font-medium">{check.label}:</span>
+                      <span className="text-muted-foreground flex-1">{check.detail}</span>
+                      <Badge variant="outline" className="text-[9px] h-4 px-1 flex-shrink-0">{check.severity}</Badge>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Unified Timeline */}
       <Card>

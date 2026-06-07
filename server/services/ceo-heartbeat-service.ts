@@ -624,7 +624,37 @@ async function coordinateAgents(orgId: string, heartbeatId: string): Promise<{
     errors.push(`workflow_orchestrator: ${err.message}`);
   }
 
-  // 6. Software Improvement Agent — scan for engineering issues
+  // 6. Opportunity Acquisition Coordinator — department health review
+  try {
+    const { coordinateOpportunityAcquisition } = await import("./opportunity-executive-coordinator");
+    const oppResult = await coordinateOpportunityAcquisition(orgId);
+    agentsCoordinated++;
+    if (oppResult.review) {
+      actionsEvaluated += oppResult.review.checksRun;
+      await writeTimeline({
+        orgId, heartbeatId, agentName: "opportunity_coordinator",
+        systemName: "CEO Heartbeat", actionType: "heartbeat_cycle",
+        actionStatus: "completed",
+        summary: `Opportunity Acquisition: ${oppResult.review.checksRun} checks (${oppResult.review.checksPassed} passed), ${oppResult.review.alertsCreated} alert(s) created`,
+        metadata: {
+          checksRun: oppResult.review.checksRun,
+          checksPassed: oppResult.review.checksPassed,
+          alertsCreated: oppResult.review.alertsCreated,
+          bestAction: oppResult.review.bestAction?.title ?? null,
+        },
+      });
+    }
+  } catch (err: any) {
+    errors.push(`opportunity_coordinator: ${err.message}`);
+    await writeTimeline({
+      orgId, heartbeatId, agentName: "opportunity_coordinator",
+      systemName: "CEO Heartbeat", actionType: "heartbeat_cycle",
+      actionStatus: "failed", summary: "Opportunity Acquisition Coordinator failed",
+      errorMessage: err.message,
+    });
+  }
+
+  // 7. Software Improvement Agent — scan for engineering issues
   try {
     const { runSoftwareImprovementAgent, canRunSoftwareImprovementAgent } = await import("./software-improvement-agent");
     if (canRunSoftwareImprovementAgent(orgId)) {
