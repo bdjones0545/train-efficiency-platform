@@ -911,6 +911,201 @@ export async function registerOpportunityAcquisitionRoutes(
     }
   });
 
+  // ── GET /api/opportunity-acquisition/replies ─────────────────────────────────
+  app.get("/api/opportunity-acquisition/replies", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json([]);
+
+      const { ensureReplyEventsTable } = await import("./services/opportunity-reply-intelligence-agent");
+      await ensureReplyEventsTable();
+
+      const replies = rows(await db.execute(sql`
+        SELECT r.*,
+               o.title   AS opp_title,
+               o.company AS company
+        FROM   opportunity_reply_events r
+        JOIN   opportunity_acquisition_opportunities o ON o.id = r.opportunity_id
+        WHERE  r.org_id = ${orgId}
+        ORDER  BY r.received_at DESC NULLS LAST, r.created_at DESC
+        LIMIT  200
+      `));
+
+      res.json(replies.map((r: any) => ({
+        id:                  r.id,
+        orgId:               r.org_id,
+        opportunityId:       r.opportunity_id,
+        opportunityTitle:    r.opp_title ?? "",
+        company:             r.company ?? "",
+        executionId:         r.execution_id,
+        senderName:          r.sender_name ?? "",
+        senderEmail:         r.sender_email ?? "",
+        subject:             r.subject ?? "",
+        snippet:             r.snippet ?? "",
+        classification:      r.classification ?? "unclear",
+        confidenceScore:     Number(r.confidence_score ?? 0),
+        suggestedNextAction: r.suggested_next_action ?? "",
+        reasoning:           r.reasoning ?? "",
+        keyPoints:           Array.isArray(r.key_points) ? r.key_points : [],
+        urgency:             r.urgency ?? "low",
+        pipelineStatus:      r.pipeline_status ?? "",
+        followupDraftId:     r.followup_draft_id ?? null,
+        receivedAt:          r.received_at ?? null,
+        processedAt:         r.processed_at ?? null,
+        createdAt:           r.created_at,
+      })));
+    } catch (e: any) {
+      console.error("[opportunity/replies]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/replies/:id ──────────────────────────────
+  app.get("/api/opportunity-acquisition/replies/:id", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { id } = req.params;
+      const r = row0(await db.execute(sql`
+        SELECT r.*,
+               o.title   AS opp_title,
+               o.company AS company,
+               e.subject AS original_subject,
+               e.recipient_email
+        FROM   opportunity_reply_events r
+        JOIN   opportunity_acquisition_opportunities o ON o.id = r.opportunity_id
+        JOIN   opportunity_outreach_executions e ON e.id = r.execution_id
+        WHERE  r.id = ${id} AND r.org_id = ${orgId}
+      `));
+
+      if (!r) return res.status(404).json({ message: "Reply not found" });
+
+      res.json({
+        id:                  r.id,
+        opportunityId:       r.opportunity_id,
+        opportunityTitle:    r.opp_title ?? "",
+        company:             r.company ?? "",
+        executionId:         r.execution_id,
+        originalSubject:     r.original_subject ?? "",
+        recipientEmail:      r.recipient_email ?? "",
+        senderName:          r.sender_name ?? "",
+        senderEmail:         r.sender_email ?? "",
+        subject:             r.subject ?? "",
+        body:                r.body ?? "",
+        snippet:             r.snippet ?? "",
+        classification:      r.classification ?? "unclear",
+        confidenceScore:     Number(r.confidence_score ?? 0),
+        suggestedNextAction: r.suggested_next_action ?? "",
+        reasoning:           r.reasoning ?? "",
+        keyPoints:           Array.isArray(r.key_points) ? r.key_points : [],
+        urgency:             r.urgency ?? "low",
+        pipelineStatus:      r.pipeline_status ?? "",
+        followupDraftId:     r.followup_draft_id ?? null,
+        receivedAt:          r.received_at ?? null,
+        processedAt:         r.processed_at ?? null,
+        createdAt:           r.created_at,
+      });
+    } catch (e: any) {
+      console.error("[opportunity/replies/:id]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/opportunity-acquisition/replies/:id/generate-followup ───────────
+  app.post("/api/opportunity-acquisition/replies/:id/generate-followup", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { id } = req.params;
+      const { generateFollowUpRecommendation } = await import("./services/opportunity-followup-agent");
+      const result = await generateFollowUpRecommendation(orgId, id);
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      const status = (e as any)?.status ?? 500;
+      console.error("[opportunity/replies/generate-followup]", e);
+      res.status(status).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/opportunity-acquisition/replies/reprocess/:id ──────────────────
+  app.post("/api/opportunity-acquisition/replies/reprocess/:id", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { id } = req.params;
+
+      // Fetch existing reply event
+      const existing = row0(await db.execute(sql`
+        SELECT * FROM opportunity_reply_events WHERE id = ${id} AND org_id = ${orgId}
+      `));
+      if (!existing) return res.status(404).json({ message: "Reply not found" });
+
+      // Re-run classification on existing body
+      const { classifyReply } = await import("./services/opportunity-reply-intelligence-agent");
+      const result = await classifyReply(orgId, existing.execution_id, {
+        senderName:  existing.sender_name ?? "",
+        senderEmail: existing.sender_email ?? "",
+        subject:     existing.subject ?? "",
+        body:        existing.body ?? "",
+        receivedAt:  existing.received_at ?? new Date().toISOString(),
+      });
+
+      // Update existing row instead of creating new one (find the latest for this execution)
+      await db.execute(sql`
+        UPDATE opportunity_reply_events SET
+          classification       = ${result.classification},
+          confidence_score     = ${result.confidenceScore},
+          suggested_next_action = ${result.suggestedNextAction},
+          reasoning            = ${result.reasoning},
+          key_points           = ${result.keyPoints}::text[],
+          urgency              = ${result.urgency},
+          pipeline_status      = ${result.classification === "interested" ? "interested" :
+                                   result.classification === "meeting_request" ? "demo" :
+                                   result.classification === "not_interested" ? "lost" : "contacted"},
+          processed_at         = NOW()
+        WHERE id = ${id} AND org_id = ${orgId}
+      `);
+
+      // Invalidate the duplicate just inserted by classifyReply (keep original id)
+      await db.execute(sql`
+        DELETE FROM opportunity_reply_events
+        WHERE org_id = ${orgId}
+          AND execution_id = ${existing.execution_id}
+          AND id != ${id}
+          AND created_at > NOW() - INTERVAL '10 seconds'
+      `).catch(() => {});
+
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      const status = (e as any)?.status ?? 500;
+      console.error("[opportunity/replies/reprocess]", e);
+      res.status(status).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/opportunity-acquisition/ingest-reply (manual ingestion) ─────────
+  app.post("/api/opportunity-acquisition/ingest-reply", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { executionId, senderName = "", senderEmail, subject = "", body } = req.body;
+      if (!executionId || !senderEmail || !body) {
+        return res.status(400).json({ message: "executionId, senderEmail, body required" });
+      }
+
+      const { ingestReply } = await import("./services/opportunity-reply-monitor");
+      const result = await ingestReply(orgId, { executionId, senderName, senderEmail, subject, body });
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      console.error("[opportunity/ingest-reply]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ── POST /api/opportunity-acquisition/run-scan (legacy alias) ────────────────
   app.post("/api/opportunity-acquisition/run-scan", ...auth, async (req: any, res) => {
     try {

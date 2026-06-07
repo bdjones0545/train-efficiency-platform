@@ -19,7 +19,8 @@ import {
   Building2, MapPin, Zap, User, Shield, Radio, X, Loader2,
   Brain, Flag, ChevronRight, AlertCircle, ThumbsUp, Mail,
   ThumbsDown, CheckCheck, Eye, Pencil, TrendingUp, Bot,
-  Database, RefreshCw, Filter, Hash, PlayCircle,
+  Database, RefreshCw, Filter, Hash, PlayCircle, MessageSquare,
+  Inbox, Sparkles, RotateCcw, UserCheck,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -97,6 +98,23 @@ interface Execution {
   deliveryStatus: string; replyDetected: boolean;
   sentAt: string | null; deliveredAt: string | null; repliedAt: string | null;
   errorMessage: string | null; createdAt: string;
+}
+
+type ReplyClassification =
+  | "interested" | "objection" | "not_interested" | "meeting_request"
+  | "information_request" | "out_of_office" | "referral" | "unclear";
+
+interface ReplyEvent {
+  id: string; orgId: string; opportunityId: string;
+  opportunityTitle: string; company: string; executionId: string;
+  senderName: string; senderEmail: string;
+  subject: string; snippet: string;
+  classification: ReplyClassification;
+  confidenceScore: number; suggestedNextAction: string;
+  reasoning: string; keyPoints: string[];
+  urgency: "low" | "medium" | "high";
+  pipelineStatus: string; followupDraftId: string | null;
+  receivedAt: string | null; processedAt: string | null; createdAt: string;
 }
 
 interface OrgSettings {
@@ -187,6 +205,17 @@ const EXEC_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   delivered: { label: "Delivered", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
   replied:   { label: "Replied",   color: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" },
   failed:    { label: "Failed",    color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" },
+};
+
+const REPLY_CLASS_CONFIG: Record<string, { label: string; color: string; icon: typeof MessageSquare }> = {
+  interested:          { label: "Interested",          color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", icon: ThumbsUp },
+  meeting_request:     { label: "Meeting Request",     color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",             icon: UserCheck },
+  information_request: { label: "Info Request",        color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",             icon: MessageSquare },
+  referral:            { label: "Referral",            color: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300",     icon: User },
+  objection:           { label: "Objection",           color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",         icon: AlertTriangle },
+  not_interested:      { label: "Not Interested",      color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",             icon: ThumbsDown },
+  out_of_office:       { label: "Out of Office",       color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",            icon: Clock },
+  unclear:             { label: "Unclear",             color: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400",            icon: Flag },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -817,6 +846,243 @@ function ExecutionsTab({ executions, isLoading }: { executions: Execution[]; isL
   );
 }
 
+// ─── Replies Tab ─────────────────────────────────────────────────────────────
+
+function ClassBadge({ c }: { c: string }) {
+  const cfg = REPLY_CLASS_CONFIG[c] ?? REPLY_CLASS_CONFIG.unclear;
+  return <Badge className={`text-[10px] px-1.5 py-0 h-4 gap-1 ${cfg.color}`}><cfg.icon className="h-2.5 w-2.5" />{cfg.label}</Badge>;
+}
+
+function ReplyDetailPanel({
+  reply, onClose, onGenerateFollowup, onReprocess, generatingId, reprocessingId,
+}: {
+  reply: ReplyEvent;
+  onClose: () => void;
+  onGenerateFollowup: (id: string) => void;
+  onReprocess: (id: string) => void;
+  generatingId: string | null;
+  reprocessingId: string | null;
+}) {
+  const cfg = REPLY_CLASS_CONFIG[reply.classification] ?? REPLY_CLASS_CONFIG.unclear;
+  const isGenerating = generatingId === reply.id;
+  const isReprocessing = reprocessingId === reply.id;
+
+  return (
+    <Card className="border shadow-sm">
+      <CardHeader className="pb-2 pt-4 px-4">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-sm font-semibold flex items-center gap-2">
+            <Inbox className="h-4 w-4 text-primary" />Reply Detail
+          </CardTitle>
+          <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onClose} data-testid="button-close-reply-detail">
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="px-4 pb-4 space-y-4">
+        {/* Header meta */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div>
+            <p className="text-sm font-semibold">{reply.senderName || reply.senderEmail}</p>
+            <p className="text-xs text-muted-foreground font-mono">{reply.senderEmail}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{reply.company} — {reply.opportunityTitle}</p>
+          </div>
+          <div className="flex flex-wrap gap-1.5 items-center">
+            <ClassBadge c={reply.classification} />
+            <Badge className={`text-[10px] px-1.5 py-0 h-4 ${reply.urgency === "high" ? "bg-rose-100 text-rose-700" : reply.urgency === "medium" ? "bg-amber-100 text-amber-700" : "bg-slate-100 text-slate-600"}`}>
+              {reply.urgency} urgency
+            </Badge>
+          </div>
+        </div>
+
+        {/* Reply content */}
+        <div className="rounded-md border bg-muted/30 p-3 space-y-1.5">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-semibold">Reply Content</p>
+          <p className="text-xs font-medium">{reply.subject}</p>
+          <p className="text-xs text-foreground leading-relaxed whitespace-pre-wrap">{reply.snippet || "No preview available"}</p>
+        </div>
+
+        {/* Classification details */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="rounded-md border bg-muted/20 p-3 space-y-1">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-semibold">Classification</p>
+            <ClassBadge c={reply.classification} />
+            <p className="text-xs text-muted-foreground mt-1">{(reply.confidenceScore * 100).toFixed(0)}% confidence</p>
+          </div>
+          <div className="rounded-md border bg-muted/20 p-3 space-y-1">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-semibold">Suggested Action</p>
+            <p className="text-xs font-medium text-primary flex items-center gap-1"><ChevronRight className="h-3 w-3" />{reply.suggestedNextAction}</p>
+          </div>
+        </div>
+
+        {reply.reasoning && (
+          <div className="rounded-md bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800 p-2.5">
+            <p className="text-[10px] text-blue-500 font-semibold uppercase tracking-wide mb-1">AI Reasoning</p>
+            <p className="text-xs text-blue-700 dark:text-blue-300">{reply.reasoning}</p>
+          </div>
+        )}
+
+        {reply.keyPoints.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-semibold">Key Points</p>
+            <ul className="space-y-1">
+              {reply.keyPoints.map((kp, i) => (
+                <li key={i} className="flex items-start gap-1.5 text-xs"><ChevronRight className="h-3 w-3 text-muted-foreground shrink-0 mt-0.5" />{kp}</li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {reply.pipelineStatus && (
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-muted-foreground">Pipeline Status:</span>
+            <Badge className="text-[10px] px-1.5 py-0 h-4 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{reply.pipelineStatus}</Badge>
+          </div>
+        )}
+
+        {reply.followupDraftId && (
+          <div className="flex items-center gap-2 rounded-md bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800 p-2.5">
+            <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+            <p className="text-xs text-emerald-700 dark:text-emerald-300">Follow-up draft generated — review it in the Outreach tab.</p>
+          </div>
+        )}
+
+        <div className="flex flex-wrap gap-2 pt-1 border-t">
+          {!reply.followupDraftId && (
+            <Button size="sm" className="gap-1.5 text-xs h-7 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isGenerating} onClick={() => onGenerateFollowup(reply.id)} data-testid={`button-gen-followup-${reply.id}`}>
+              {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}Generate Follow-Up
+            </Button>
+          )}
+          <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" disabled={isReprocessing} onClick={() => onReprocess(reply.id)} data-testid={`button-reprocess-${reply.id}`}>
+            {isReprocessing ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}Reprocess Classification
+          </Button>
+        </div>
+
+        <div className="flex items-center gap-2 rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800 p-2 text-[10px] text-amber-700 dark:text-amber-300">
+          <Shield className="h-3 w-3 shrink-0" />
+          No autonomous replies. All follow-ups require human approval before sending.
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RepliesTab({
+  replies, isLoading, onGenerateFollowup, onReprocess, generatingId, reprocessingId,
+}: {
+  replies: ReplyEvent[]; isLoading: boolean;
+  onGenerateFollowup: (id: string) => void;
+  onReprocess: (id: string) => void;
+  generatingId: string | null;
+  reprocessingId: string | null;
+}) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selectedReply = replies.find(r => r.id === selectedId) ?? null;
+
+  if (isLoading) return <CardSkeleton />;
+
+  const total     = replies.length;
+  const interested = replies.filter(r => r.classification === "interested" || r.classification === "meeting_request").length;
+  const meetings   = replies.filter(r => r.classification === "meeting_request").length;
+  const lost       = replies.filter(r => r.classification === "not_interested").length;
+
+  const statCards = [
+    { label: "Total Replies",    value: total,     icon: Inbox,       color: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-50 dark:bg-blue-900/20" },
+    { label: "Interested",       value: interested, icon: ThumbsUp,    color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/20" },
+    { label: "Meeting Requests", value: meetings,  icon: UserCheck,   color: "text-blue-600 dark:text-blue-400",    bg: "bg-blue-50 dark:bg-blue-900/20" },
+    { label: "Lost",             value: lost,      icon: ThumbsDown,  color: "text-rose-500",                       bg: "bg-rose-50 dark:bg-rose-900/20" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {statCards.map(c => (
+          <Card key={c.label} className="border shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium">{c.label}</p>
+                  <p className="text-2xl font-bold mt-0.5" data-testid={`text-reply-${c.label.toLowerCase().replace(/ /g, "-")}`}>{c.value}</p>
+                </div>
+                <div className={`p-2 rounded-lg ${c.bg}`}><c.icon className={`h-4 w-4 ${c.color}`} /></div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {selectedReply && (
+        <ReplyDetailPanel
+          reply={selectedReply}
+          onClose={() => setSelectedId(null)}
+          onGenerateFollowup={onGenerateFollowup}
+          onReprocess={onReprocess}
+          generatingId={generatingId}
+          reprocessingId={reprocessingId}
+        />
+      )}
+
+      {replies.length === 0 ? (
+        <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
+          <Inbox className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="font-medium text-sm">No replies ingested yet</p>
+          <p className="text-xs mt-1">Send outreach in the Outreach tab. Replies will appear here once detected.</p>
+        </div>
+      ) : (
+        <Card className="border shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Received</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Company</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Sender</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Classification</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Confidence</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Pipeline</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {replies.map((reply, i) => {
+                  const isSelected = selectedId === reply.id;
+                  return (
+                    <tr
+                      key={reply.id}
+                      className={`border-b last:border-0 cursor-pointer transition-colors ${isSelected ? "bg-primary/5" : i % 2 === 0 ? "hover:bg-muted/30" : "bg-muted/20 hover:bg-muted/40"}`}
+                      onClick={() => setSelectedId(isSelected ? null : reply.id)}
+                      data-testid={`row-reply-${reply.id}`}
+                    >
+                      <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{fmtTime(reply.receivedAt)}</td>
+                      <td className="px-4 py-2.5 font-medium">{reply.company || "—"}</td>
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium">{reply.senderName || "—"}</p>
+                        <p className="text-muted-foreground font-mono text-[10px]">{reply.senderEmail}</p>
+                      </td>
+                      <td className="px-4 py-2.5"><ClassBadge c={reply.classification} /></td>
+                      <td className="px-4 py-2.5">
+                        <span className={`font-semibold ${reply.confidenceScore >= 0.7 ? "text-emerald-600 dark:text-emerald-400" : reply.confidenceScore >= 0.4 ? "text-amber-600" : "text-rose-500"}`}>
+                          {(reply.confidenceScore * 100).toFixed(0)}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {reply.pipelineStatus && <Badge className="text-[10px] px-1.5 py-0 h-4 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">{reply.pipelineStatus}</Badge>}
+                      </td>
+                      <td className="px-4 py-2.5">
+                        {reply.followupDraftId && <Badge className="text-[10px] px-1.5 py-0 h-4 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">draft ready</Badge>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ─── Discovery Runs Tab ───────────────────────────────────────────────────────
 
 function DiscoveryRunsTab({
@@ -1408,11 +1674,13 @@ export default function AdminOpportunityAcquisitionPage() {
   const [qualifyingId, setQualifyingId]                 = useState<string | null>(null);
   const [generatingOutreachId, setGeneratingOutreachId] = useState<string | null>(null);
   const [statusChangingId, setStatusChangingId]         = useState<string | null>(null);
+  const [generatingFollowupId, setGeneratingFollowupId] = useState<string | null>(null);
+  const [reprocessingId, setReprocessingId]             = useState<string | null>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
   function invalidateAll() {
-    ["opportunities", "summary", "assessments", "events", "outreach-drafts", "outreach-executions"].forEach(k =>
+    ["opportunities", "summary", "assessments", "events", "outreach-drafts", "outreach-executions", "replies"].forEach(k =>
       qc.invalidateQueries({ queryKey: [`/api/opportunity-acquisition/${k}`] })
     );
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
@@ -1432,6 +1700,7 @@ export default function AdminOpportunityAcquisitionPage() {
   const cyclesQ      = useQuery<AcquisitionCycle[]>({ queryKey: ["/api/opportunity-acquisition/cycles"] });
   const latestCycleQ = useQuery<AcquisitionCycle | null>({ queryKey: ["/api/opportunity-acquisition/cycles/latest"] });
   const executionsQ  = useQuery<Execution[]>({ queryKey: ["/api/opportunity-acquisition/outreach-executions"] });
+  const repliesQ     = useQuery<ReplyEvent[]>({ queryKey: ["/api/opportunity-acquisition/replies"] });
 
   const runCycle = useMutation({
     mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/run-cycle", {}),
@@ -1509,14 +1778,49 @@ export default function AdminOpportunityAcquisitionPage() {
     onError: () => { setStatusChangingId(null); toast({ title: "Failed to update draft", variant: "destructive" }); },
   });
 
+  const generateFollowup = useMutation({
+    mutationFn: (replyId: string) =>
+      apiRequest("POST", `/api/opportunity-acquisition/replies/${replyId}/generate-followup`, {}),
+    onMutate: (id) => setGeneratingFollowupId(id),
+    onSuccess: () => {
+      setGeneratingFollowupId(null);
+      toast({ title: "Follow-up draft generated", description: "Review it in the Outreach tab. No send action without approval." });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/replies"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+    },
+    onError: (e: any) => {
+      setGeneratingFollowupId(null);
+      toast({ title: "Failed to generate follow-up", description: e?.message ?? "Try again", variant: "destructive" });
+    },
+  });
+
+  const reprocessClassification = useMutation({
+    mutationFn: (replyId: string) =>
+      apiRequest("POST", `/api/opportunity-acquisition/replies/reprocess/${replyId}`, {}),
+    onMutate: (id) => setReprocessingId(id),
+    onSuccess: (data: any) => {
+      setReprocessingId(null);
+      toast({ title: `Reclassified: ${data?.classification ?? "unknown"}`, description: `Confidence: ${((data?.confidenceScore ?? 0) * 100).toFixed(0)}%` });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/replies"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+    },
+    onError: () => {
+      setReprocessingId(null);
+      toast({ title: "Reprocess failed", variant: "destructive" });
+    },
+  });
+
   const opportunities: Opportunity[]  = oppsQ.data ?? [];
   const events: AgentEvent[]          = eventsQ.data ?? [];
   const assessments: Assessment[]     = assessQ.data ?? [];
   const drafts: OutreachDraft[]       = draftsQ.data ?? [];
   const runs: DiscoveryRun[]          = runsQ.data ?? [];
   const executions: Execution[]       = executionsQ.data ?? [];
+  const replies: ReplyEvent[]         = repliesQ.data ?? [];
   const pendingDrafts                 = drafts.filter(d => d.status === "draft").length;
   const sentCount                     = executions.filter(e => e.status === "sent" || e.status === "delivered" || e.status === "replied").length;
+  const replyCount                    = replies.length;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -1599,6 +1903,10 @@ export default function AdminOpportunityAcquisitionPage() {
               <Mail className="h-3 w-3" />Executions
               {sentCount > 0 && <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-teal-500 text-white">{sentCount}</Badge>}
             </TabsTrigger>
+            <TabsTrigger value="replies"         className="text-xs gap-1" data-testid="tab-replies">
+              <Inbox className="h-3 w-3" />Replies
+              {replyCount > 0 && <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-violet-500 text-white">{replyCount}</Badge>}
+            </TabsTrigger>
             <TabsTrigger value="agent-activity"  className="text-xs gap-1" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
             <TabsTrigger value="settings"        className="text-xs gap-1" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
           </TabsList>
@@ -1650,6 +1958,16 @@ export default function AdminOpportunityAcquisitionPage() {
 
           <TabsContent value="executions" className="mt-4">
             <ExecutionsTab executions={executions} isLoading={executionsQ.isLoading} />
+          </TabsContent>
+
+          <TabsContent value="replies" className="mt-4">
+            <RepliesTab
+              replies={replies} isLoading={repliesQ.isLoading}
+              onGenerateFollowup={id => generateFollowup.mutate(id)}
+              onReprocess={id => reprocessClassification.mutate(id)}
+              generatingId={generatingFollowupId}
+              reprocessingId={reprocessingId}
+            />
           </TabsContent>
 
           <TabsContent value="agent-activity" className="mt-4">

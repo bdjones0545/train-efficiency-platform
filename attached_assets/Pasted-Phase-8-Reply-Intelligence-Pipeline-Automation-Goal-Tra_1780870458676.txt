@@ -1,0 +1,526 @@
+Phase 8 — Reply Intelligence & Pipeline Automation
+
+Goal:
+Transform Opportunity Acquisition from an outbound outreach system into a two-way conversation intelligence system.
+
+Current State:
+
+Discovery
+→ Qualification
+→ Outreach Draft
+→ Approval
+→ Send
+→ Track
+
+New State:
+
+Discovery
+→ Qualification
+→ Outreach Draft
+→ Approval
+→ Send
+→ Reply Detection
+→ Reply Intelligence
+→ Pipeline Automation
+→ Follow-Up Recommendation
+
+Important:
+
+Do NOT enable autonomous reply sending.
+
+Do NOT enable autonomous negotiation.
+
+Do NOT enable autonomous contract discussions.
+
+This phase is intelligence, classification, and workflow automation only.
+
+⸻
+
+DATABASE
+
+Create table:
+
+opportunity_reply_events
+
+Columns:
+
+id
+org_id
+
+opportunity_id
+execution_id
+
+sender_name
+sender_email
+
+subject
+body
+snippet
+
+classification
+
+confidence_score
+
+suggested_next_action
+
+received_at
+processed_at
+
+created_at
+
+⸻
+
+CLASSIFICATION TYPES
+
+Supported values:
+
+interested
+
+objection
+
+not_interested
+
+meeting_request
+
+information_request
+
+out_of_office
+
+referral
+
+unclear
+
+⸻
+
+REPLY INTELLIGENCE SERVICE
+
+Create:
+
+server/services/opportunity-reply-intelligence-agent.ts
+
+Primary function:
+
+classifyReply(
+orgId,
+executionId,
+emailContent
+)
+
+Use GPT-4o-mini.
+
+Return:
+
+{
+classification,
+confidenceScore,
+reasoning,
+suggestedNextAction,
+keyPoints,
+urgency
+}
+
+⸻
+
+CLASSIFICATION EXAMPLES
+
+Interested
+
+Examples:
+
+“This sounds interesting.”
+“Tell me more.”
+“We may have a need for this.”
+
+Suggested action:
+
+Generate Follow-Up
+
+⸻
+
+Meeting Request
+
+Examples:
+
+“Can we schedule a call?”
+“Let’s meet next week.”
+
+Suggested action:
+
+Schedule Meeting
+
+⸻
+
+Information Request
+
+Examples:
+
+“How much does it cost?”
+“What does TrainChat do?”
+
+Suggested action:
+
+Provide Information
+
+⸻
+
+Objection
+
+Examples:
+
+“We already have a coach.”
+“We use another system.”
+
+Suggested action:
+
+Address Objection
+
+⸻
+
+Not Interested
+
+Examples:
+
+“No thanks.”
+“Not a fit.”
+
+Suggested action:
+
+Close Opportunity
+
+⸻
+
+Referral
+
+Examples:
+
+“Talk to Sarah.”
+“Reach out to our director.”
+
+Suggested action:
+
+Create Referral Opportunity
+
+⸻
+
+Out Of Office
+
+Examples:
+
+“I’m away until June.”
+
+Suggested action:
+
+Follow Up Later
+
+⸻
+
+REPLY INGESTION
+
+Create service:
+
+server/services/opportunity-reply-monitor.ts
+
+Responsibilities:
+
+Detect replies associated with:
+
+opportunity_outreach_executions
+
+Store:
+
+sender
+subject
+body
+snippet
+
+Create reply event.
+
+Run classification.
+
+Persist results.
+
+⸻
+
+AGENTMAIL INTEGRATION
+
+Use existing AgentMail inboxes.
+
+Monitor:
+
+revenue@
+opportunities@
+partnerships@
+
+Associate replies to:
+
+message_id
+thread_id
+execution_id
+
+Architecture should support future inbox expansion.
+
+⸻
+
+PIPELINE AUTOMATION
+
+Automatic status updates:
+
+Classification
+→ Pipeline Status
+
+interested
+→ interested
+
+meeting_request
+→ demo
+
+information_request
+→ interested
+
+referral
+→ interested
+
+not_interested
+→ lost
+
+objection
+→ interested
+
+out_of_office
+→ contacted
+
+unclear
+→ contacted
+
+⸻
+
+FOLLOW-UP RECOMMENDATIONS
+
+Create:
+
+server/services/opportunity-followup-agent.ts
+
+Function:
+
+generateFollowUpRecommendation()
+
+Generate:
+
+subject
+body
+strategy
+reasoning
+
+Store as:
+
+suggested draft
+
+Do NOT send.
+
+Human review only.
+
+⸻
+
+API ENDPOINTS
+
+GET /api/opportunity-acquisition/replies
+
+Returns reply events newest first.
+
+GET /api/opportunity-acquisition/replies/:id
+
+Returns full reply detail.
+
+POST /api/opportunity-acquisition/replies/:id/generate-followup
+
+Generates follow-up draft.
+
+POST /api/opportunity-acquisition/replies/reprocess/:id
+
+Re-runs classification.
+
+⸻
+
+FRONTEND
+
+Add new tab:
+
+Replies
+
+Tabs become:
+
+Discovery
+Discovery Runs
+Qualification
+Outreach
+Pipeline
+Cycles
+Executions
+Replies
+Agent Activity
+Settings
+
+⸻
+
+REPLIES TAB
+
+Summary cards:
+
+Total Replies
+
+Interested
+
+Meeting Requests
+
+Lost
+
+Table:
+
+Received
+Company
+Sender
+Classification
+Confidence
+Pipeline Status
+
+Badge colors:
+
+Interested = green
+
+Meeting Request = blue
+
+Information Request = teal
+
+Referral = purple
+
+Objection = amber
+
+Not Interested = rose
+
+Out Of Office = gray
+
+Unclear = slate
+
+⸻
+
+REPLY DETAIL PANEL
+
+When clicked:
+
+Show:
+
+Reply Content
+
+Classification
+
+Confidence
+
+Reasoning
+
+Suggested Action
+
+Key Points
+
+Pipeline Status
+
+Buttons:
+
+Generate Follow-Up
+
+Reprocess Classification
+
+⸻
+
+FOLLOW-UP DRAFTS
+
+When generated:
+
+Show:
+
+Subject
+
+Body
+
+Strategy
+
+Reasoning
+
+Approval Required
+
+No send action in this phase.
+
+⸻
+
+AGENT EVENTS
+
+Log:
+
+Reply Detected
+
+Reply Classified
+
+Opportunity Marked Interested
+
+Opportunity Marked Lost
+
+Follow-Up Generated
+
+Classification Reprocessed
+
+⸻
+
+DASHBOARD METRICS
+
+Add new metrics:
+
+Replies Received
+
+Reply Rate
+
+Interested Rate
+
+Meeting Rate
+
+Loss Rate
+
+⸻
+
+SAFETY CONTROLS
+
+No autonomous replies.
+
+No autonomous follow-up sending.
+
+No autonomous negotiation.
+
+No autonomous pricing.
+
+No autonomous meeting scheduling.
+
+Everything remains:
+
+Human Approved
+
+Human Sent
+
+Human Controlled
+
+⸻
+
+SUCCESS CRITERIA
+
+Phase 8 is complete when:
+
+* Replies are ingested
+* Replies are classified
+* Pipeline statuses update automatically
+* Reply history exists
+* Follow-up recommendations are generated
+* Replies tab exists
+* Agent activity logs capture the workflow
+* No autonomous reply sending exists
+* Zero TypeScript errors
+
+Result:
+
+The Opportunity Acquisition OS evolves from an outbound acquisition engine into a conversation intelligence platform capable of understanding and advancing real business discussions.
