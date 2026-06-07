@@ -1318,6 +1318,114 @@ export async function registerOpportunityAcquisitionRoutes(
     }
   });
 
+  // ── POST /api/opportunity-acquisition/executive/run ──────────────────────────
+  app.post("/api/opportunity-acquisition/executive/run", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+      const { runOpportunityExecutiveAnalysis } = await import("./services/opportunity-executive-agent");
+      const result = await runOpportunityExecutiveAnalysis(orgId);
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      console.error("[opportunity/executive/run]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/executive/brief ─────────────────────────
+  app.get("/api/opportunity-acquisition/executive/brief", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json(null);
+      const { ensureExecutiveTables } = await import("./services/opportunity-executive-agent");
+      await ensureExecutiveTables();
+      const data = rows(await db.execute(sql`
+        SELECT * FROM opportunity_executive_briefs
+        WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 1
+      `));
+      if (!data.length) return res.json(null);
+      const d = data[0];
+      res.json({
+        id:               d.id,
+        orgId:            d.org_id,
+        summary:          d.summary ?? "",
+        bestActionToday:  d.best_action_today ?? "",
+        keyWins:          Array.isArray(d.key_wins) ? d.key_wins : [],
+        keyRisks:         Array.isArray(d.key_risks) ? d.key_risks : [],
+        keyOpportunities: Array.isArray(d.key_opportunities) ? d.key_opportunities : [],
+        supportingMetrics: typeof d.supporting_metrics === "object" ? d.supporting_metrics : {},
+        generatedAt:      d.generated_at,
+        createdAt:        d.created_at,
+      });
+    } catch (e: any) {
+      console.error("[opportunity/executive/brief]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/executive/recommendations ───────────────
+  app.get("/api/opportunity-acquisition/executive/recommendations", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json([]);
+      const { ensureExecutiveTables } = await import("./services/opportunity-executive-agent");
+      await ensureExecutiveTables();
+      const data = rows(await db.execute(sql`
+        SELECT * FROM opportunity_recommendations
+        WHERE org_id = ${orgId} ORDER BY confidence_score DESC, created_at DESC
+      `));
+      res.json(data.map((d: any) => ({
+        id:              d.id,
+        orgId:           d.org_id,
+        category:        d.category,
+        recommendation:  d.recommendation,
+        reasoning:       d.reasoning ?? "",
+        confidenceScore: Number(d.confidence_score ?? 50),
+        supportingData:  typeof d.supporting_data === "object" ? d.supporting_data : {},
+        status:          d.status ?? "pending",
+        createdAt:       d.created_at,
+        reviewedAt:      d.reviewed_at ?? null,
+      })));
+    } catch (e: any) {
+      console.error("[opportunity/executive/recommendations]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── PATCH /api/opportunity-acquisition/executive/recommendations/:id ─────────
+  app.patch("/api/opportunity-acquisition/executive/recommendations/:id", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+      const { id } = req.params;
+      const { status } = req.body;
+      if (!["pending","accepted","dismissed","implemented"].includes(status)) {
+        return res.status(400).json({ message: "Invalid status" });
+      }
+      await db.execute(sql`
+        UPDATE opportunity_recommendations
+        SET status = ${status}, reviewed_at = NOW()
+        WHERE id = ${id} AND org_id = ${orgId}
+      `);
+      // Log agent event
+      const actionMap: Record<string, string> = {
+        accepted: "Recommendation Accepted",
+        dismissed: "Recommendation Dismissed",
+        implemented: "Recommendation Implemented",
+      };
+      if (actionMap[status]) {
+        await db.execute(sql`
+          INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+          VALUES (${orgId}, 'Executive Intelligence Agent', ${actionMap[status]}, 'executive')
+        `).catch(() => {});
+      }
+      res.json({ success: true, status });
+    } catch (e: any) {
+      console.error("[opportunity/executive/recommendations/:id]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ── POST /api/opportunity-acquisition/run-scan (legacy alias) ────────────────
   app.post("/api/opportunity-acquisition/run-scan", ...auth, async (req: any, res) => {
     try {

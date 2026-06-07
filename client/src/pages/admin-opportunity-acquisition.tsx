@@ -116,6 +116,20 @@ interface LearningInsight {
   confidenceScore: number; supportingData: Record<string, unknown>; createdAt: string;
 }
 
+interface ExecutiveBrief {
+  id: string; orgId: string;
+  summary: string; bestActionToday: string;
+  keyWins: string[]; keyRisks: string[]; keyOpportunities: string[];
+  supportingMetrics: Record<string, unknown>;
+  generatedAt: string; createdAt: string;
+}
+interface Recommendation {
+  id: string; orgId: string; category: string;
+  recommendation: string; reasoning: string;
+  confidenceScore: number; supportingData: Record<string, unknown>;
+  status: string; createdAt: string; reviewedAt: string | null;
+}
+
 type ReplyClassification =
   | "interested" | "objection" | "not_interested" | "meeting_request"
   | "information_request" | "out_of_office" | "referral" | "unclear";
@@ -1446,6 +1460,289 @@ function PipelineTab({ opportunities }: { opportunities: Opportunity[] }) {
   );
 }
 
+// ─── Executive Intelligence Tab ───────────────────────────────────────────────
+
+const REC_CATEGORY_CONFIG: Record<string, { label: string; color: string; icon: React.ElementType }> = {
+  discovery:  { label: "Discovery",  color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",     icon: Search },
+  outreach:   { label: "Outreach",   color: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300", icon: Mail },
+  pipeline:   { label: "Pipeline",   color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",  icon: TrendingUp },
+  execution:  { label: "Execution",  color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300",     icon: PlayCircle },
+  learning:   { label: "Learning",   color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", icon: Brain },
+  general:    { label: "General",    color: "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300",         icon: Target },
+};
+
+const STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  pending:     { label: "Pending",     color: "bg-muted text-muted-foreground" },
+  accepted:    { label: "Accepted",    color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
+  dismissed:   { label: "Dismissed",   color: "bg-gray-100 text-gray-500 dark:bg-gray-800" },
+  implemented: { label: "Implemented", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+};
+
+function RecommendationCard({
+  rec,
+  onStatus,
+  isUpdating,
+}: {
+  rec: Recommendation;
+  onStatus: (id: string, status: string) => void;
+  isUpdating: boolean;
+}) {
+  const cat = REC_CATEGORY_CONFIG[rec.category] ?? REC_CATEGORY_CONFIG.general;
+  const CatIcon = cat.icon;
+  const st = STATUS_CONFIG[rec.status] ?? STATUS_CONFIG.pending;
+  const conf = Math.round(rec.confidenceScore);
+  const confColor = conf >= 80 ? "text-emerald-600 dark:text-emerald-400"
+    : conf >= 60 ? "text-amber-600 dark:text-amber-400"
+    : "text-muted-foreground";
+  const supportKeys = Object.entries(rec.supportingData ?? {}).slice(0, 4);
+  const isDismissed = rec.status === "dismissed";
+
+  return (
+    <div className={`rounded-lg border border-border/50 p-3 space-y-2 transition-all ${isDismissed ? "opacity-50 bg-muted/10" : "bg-muted/20"}`} data-testid={`rec-card-${rec.id}`}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-start gap-2 flex-1 min-w-0">
+          <div className={`p-1.5 rounded-md shrink-0 ${cat.color}`}><CatIcon className="h-3 w-3" /></div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold leading-snug">{rec.recommendation}</p>
+            {rec.reasoning && <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{rec.reasoning}</p>}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${cat.color}`}>{cat.label}</span>
+          <span className={`text-[10px] font-semibold ${confColor}`}>{conf}%</span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${st.color}`}>{st.label}</span>
+        </div>
+      </div>
+
+      {supportKeys.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {supportKeys.map(([k, v]) => (
+            <span key={k} className="text-[10px] bg-muted rounded px-1.5 py-0.5 text-muted-foreground">
+              {k}: {String(v)}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {rec.status === "pending" && (
+        <div className="flex items-center gap-1.5 pt-0.5">
+          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1 border-emerald-300 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-700 dark:text-emerald-400" disabled={isUpdating} onClick={() => onStatus(rec.id, "accepted")} data-testid={`button-accept-${rec.id}`}>
+            <CheckCircle className="h-2.5 w-2.5" />Accept
+          </Button>
+          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1 border-blue-300 text-blue-700 hover:bg-blue-50 dark:border-blue-700 dark:text-blue-400" disabled={isUpdating} onClick={() => onStatus(rec.id, "implemented")} data-testid={`button-implemented-${rec.id}`}>
+            <CheckCheck className="h-2.5 w-2.5" />Mark Implemented
+          </Button>
+          <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-muted-foreground hover:text-foreground" disabled={isUpdating} onClick={() => onStatus(rec.id, "dismissed")} data-testid={`button-dismiss-${rec.id}`}>
+            <XCircle className="h-2.5 w-2.5" />Dismiss
+          </Button>
+        </div>
+      )}
+      {rec.status === "accepted" && (
+        <div className="flex items-center gap-1.5 pt-0.5">
+          <Button size="sm" variant="outline" className="h-6 text-[10px] px-2 gap-1 border-blue-300 text-blue-700" disabled={isUpdating} onClick={() => onStatus(rec.id, "implemented")} data-testid={`button-implemented2-${rec.id}`}>
+            <CheckCheck className="h-2.5 w-2.5" />Mark Implemented
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ExecMetricCard({ label, value, sub, color }: { label: string; value: string; sub: string; color: string }) {
+  return (
+    <Card className="border shadow-sm">
+      <CardContent className="pt-4 pb-4 px-4">
+        <p className="text-xs text-muted-foreground">{label}</p>
+        <p className={`text-2xl font-bold mt-0.5 ${color}`}>{value}</p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">{sub}</p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function ExecutiveIntelligenceTab({
+  brief, recommendations,
+  briefLoading, recsLoading,
+  onRunAnalysis, isRunning,
+  onUpdateStatus, isUpdating,
+  metrics,
+}: {
+  brief:         ExecutiveBrief | null;
+  recommendations: Recommendation[];
+  briefLoading:  boolean;
+  recsLoading:   boolean;
+  onRunAnalysis: () => void;
+  isRunning:     boolean;
+  onUpdateStatus:(id: string, status: string) => void;
+  isUpdating:    boolean;
+  metrics:       LearningMetrics | null;
+}) {
+  const pending     = recommendations.filter(r => r.status === "pending");
+  const accepted    = recommendations.filter(r => r.status === "accepted");
+  const implemented = recommendations.filter(r => r.status === "implemented");
+  const dismissed   = recommendations.filter(r => r.status === "dismissed");
+
+  const m = metrics;
+  const sm = brief?.supportingMetrics ?? {};
+
+  return (
+    <div className="space-y-5">
+      {/* Safety banner */}
+      <div className="flex items-start gap-2 rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/30 px-3 py-2.5 text-xs text-amber-700 dark:text-amber-300">
+        <Shield className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+        <p><strong>Executive Intelligence</strong> — advisory only. Recommendations require human approval before any action. No automatic sends, setting changes, or approval of drafts.</p>
+      </div>
+
+      {/* Header + run button */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">Executive Intelligence Analysis</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">GPT-4o-mini analyzes your full pipeline to generate a brief and ranked recommendations.</p>
+        </div>
+        <Button size="sm" className="gap-1.5 text-xs" disabled={isRunning} onClick={onRunAnalysis} data-testid="button-run-executive">
+          {isRunning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+          {isRunning ? "Generating…" : "Run Executive Analysis"}
+        </Button>
+      </div>
+
+      {/* Today's Acquisition Brief */}
+      {briefLoading ? (
+        <Card className="border shadow-sm animate-pulse h-36" />
+      ) : brief ? (
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                <Star className="h-4 w-4 text-amber-500" />Today's Acquisition Brief
+              </CardTitle>
+              <span className="text-[10px] text-muted-foreground">
+                {new Date(brief.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+              </span>
+            </div>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            <p className="text-sm leading-relaxed">{brief.summary}</p>
+            <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2.5">
+              <p className="text-[11px] font-semibold text-primary mb-0.5 uppercase tracking-wide">Best Action Today</p>
+              <p className="text-sm font-medium">{brief.bestActionToday}</p>
+            </div>
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="border border-dashed shadow-sm">
+          <CardContent className="pt-8 pb-8 text-center text-muted-foreground">
+            <Zap className="h-6 w-6 mx-auto mb-2 opacity-30" />
+            <p className="text-sm font-medium">No executive brief yet</p>
+            <p className="text-xs mt-1">Run Executive Analysis above to generate your first brief.</p>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Executive summary cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <ExecMetricCard label="Reply Rate"    value={`${m?.replyRate ?? n(sm.replyRate)}%`}   sub={`${m?.totalReplies ?? "—"} replies`}        color="text-blue-600 dark:text-blue-400" />
+        <ExecMetricCard label="Meeting Rate"  value={`${m?.meetingRate ?? n(sm.meetingRate)}%`} sub={`${m?.totalMeetings ?? "—"} meetings`}      color="text-violet-600 dark:text-violet-400" />
+        <ExecMetricCard label="Win Rate"      value={`${m?.winRate ?? n(sm.winRate)}%`}        sub={`${m?.totalWon ?? "—"} won`}                color="text-emerald-600 dark:text-emerald-400" />
+        <ExecMetricCard label="Opps Found"    value={`${n(sm.totalOpportunities ?? m?.totalSent ?? 0)}`} sub="discovered"                       color="text-foreground" />
+        <ExecMetricCard label="Awaiting Send" value={`${n(sm.awaitingSend ?? 0)}`}            sub="approved drafts"                           color={n(sm.awaitingSend ?? 0) > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"} />
+        <ExecMetricCard label="Recommendations" value={`${pending.length}`}                   sub="pending review"                            color={pending.length > 0 ? "text-primary" : "text-muted-foreground"} />
+      </div>
+
+      {/* Key Wins / Risks / Opportunities */}
+      {brief && (
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+          {[
+            { label: "Key Wins",         items: brief.keyWins,          icon: CheckCircle, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/30 border-emerald-200 dark:border-emerald-800" },
+            { label: "Key Risks",         items: brief.keyRisks,         icon: AlertTriangle, color: "text-rose-600 dark:text-rose-400",    bg: "bg-rose-50 dark:bg-rose-950/30 border-rose-200 dark:border-rose-800" },
+            { label: "Key Opportunities", items: brief.keyOpportunities, icon: TrendingUp,   color: "text-blue-600 dark:text-blue-400",     bg: "bg-blue-50 dark:bg-blue-950/30 border-blue-200 dark:border-blue-800" },
+          ].map(({ label, items, icon: Icon, color, bg }) => (
+            <Card key={label} className={`border shadow-sm ${bg}`}>
+              <CardHeader className="pb-1.5 pt-3 px-4">
+                <CardTitle className={`text-xs font-semibold flex items-center gap-1.5 ${color}`}>
+                  <Icon className="h-3.5 w-3.5" />{label}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="px-4 pb-4">
+                {items.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground">None identified yet.</p>
+                ) : (
+                  <ul className="space-y-1">
+                    {items.map((item, i) => (
+                      <li key={i} className="text-[11px] leading-relaxed flex items-start gap-1.5">
+                        <span className={`mt-1 h-1.5 w-1.5 rounded-full shrink-0 ${color.replace("text-", "bg-")}`} />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Recommendations */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            Recommendations
+            {pending.length > 0 && <Badge className="text-[10px] h-4 px-1.5 bg-primary text-primary-foreground">{pending.length} pending</Badge>}
+          </h3>
+        </div>
+
+        {recsLoading ? (
+          <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />)}</div>
+        ) : !recommendations.length ? (
+          <div className="rounded-md border border-dashed p-8 text-center text-muted-foreground">
+            <Target className="h-6 w-6 mx-auto mb-2 opacity-30" />
+            <p className="text-sm font-medium">No recommendations yet</p>
+            <p className="text-xs mt-1">Run Executive Analysis to generate actionable recommendations.</p>
+          </div>
+        ) : (
+          <>
+            {/* Pending */}
+            {pending.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Pending Review ({pending.length})</p>
+                {pending.map(rec => (
+                  <RecommendationCard key={rec.id} rec={rec} onStatus={onUpdateStatus} isUpdating={isUpdating} />
+                ))}
+              </div>
+            )}
+            {/* Accepted */}
+            {accepted.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Accepted ({accepted.length})</p>
+                {accepted.map(rec => (
+                  <RecommendationCard key={rec.id} rec={rec} onStatus={onUpdateStatus} isUpdating={isUpdating} />
+                ))}
+              </div>
+            )}
+            {/* Implemented */}
+            {implemented.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide">Implemented ({implemented.length})</p>
+                {implemented.map(rec => (
+                  <RecommendationCard key={rec.id} rec={rec} onStatus={onUpdateStatus} isUpdating={isUpdating} />
+                ))}
+              </div>
+            )}
+            {/* Dismissed */}
+            {dismissed.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Dismissed ({dismissed.length})</p>
+                {dismissed.map(rec => (
+                  <RecommendationCard key={rec.id} rec={rec} onStatus={onUpdateStatus} isUpdating={isUpdating} />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Learning Tab ─────────────────────────────────────────────────────────────
 
 interface LearningTabProps {
@@ -2009,6 +2306,8 @@ export default function AdminOpportunityAcquisitionPage() {
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/learning/metrics"] });
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/learning/insights"] });
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/learning/performance"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/executive/brief"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/executive/recommendations"] });
   }
 
   const summaryQ         = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
@@ -2026,6 +2325,8 @@ export default function AdminOpportunityAcquisitionPage() {
   const learningMetricsQ = useQuery<LearningMetrics>({ queryKey: ["/api/opportunity-acquisition/learning/metrics"] });
   const learningInsightsQ = useQuery<LearningInsight[]>({ queryKey: ["/api/opportunity-acquisition/learning/insights"] });
   const learningPerfQ    = useQuery<LearningPerf>({ queryKey: ["/api/opportunity-acquisition/learning/performance"] });
+  const executiveBriefQ  = useQuery<ExecutiveBrief | null>({ queryKey: ["/api/opportunity-acquisition/executive/brief"] });
+  const executiveRecsQ   = useQuery<Recommendation[]>({ queryKey: ["/api/opportunity-acquisition/executive/recommendations"] });
 
   const runCycle = useMutation({
     mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/run-cycle", {}),
@@ -2134,6 +2435,32 @@ export default function AdminOpportunityAcquisitionPage() {
       setReprocessingId(null);
       toast({ title: "Reprocess failed", variant: "destructive" });
     },
+  });
+
+  const runExecutive = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/executive/run", {}),
+    onSuccess: (data: any) => {
+      toast({
+        title: "Executive analysis complete",
+        description: `Brief generated · ${data?.recommendationsGenerated ?? 0} recommendations created.`,
+      });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/executive/brief"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/executive/recommendations"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+    },
+    onError: (e: any) => toast({ title: "Executive analysis failed", description: e?.message ?? "Try again", variant: "destructive" }),
+  });
+
+  const updateRecommendationStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiRequest("PATCH", `/api/opportunity-acquisition/executive/recommendations/${id}`, { status }),
+    onSuccess: (_data, { status }) => {
+      const labels: Record<string, string> = { accepted: "Accepted", dismissed: "Dismissed", implemented: "Marked as implemented" };
+      toast({ title: labels[status] ?? "Status updated" });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/executive/recommendations"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+    },
+    onError: () => toast({ title: "Failed to update recommendation", variant: "destructive" }),
   });
 
   const runLearning = useMutation({
@@ -2260,6 +2587,14 @@ export default function AdminOpportunityAcquisitionPage() {
             <TabsTrigger value="learning" className="text-xs gap-1" data-testid="tab-learning">
               <Brain className="h-3 w-3" />Learning
             </TabsTrigger>
+            <TabsTrigger value="executive" className="text-xs gap-1" data-testid="tab-executive">
+              <Zap className="h-3 w-3" />Executive Intelligence
+              {(executiveRecsQ.data ?? []).filter(r => r.status === "pending").length > 0 && (
+                <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-amber-500 text-white">
+                  {(executiveRecsQ.data ?? []).filter(r => r.status === "pending").length}
+                </Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="agent-activity"  className="text-xs gap-1" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
             <TabsTrigger value="settings"        className="text-xs gap-1" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
           </TabsList>
@@ -2320,6 +2655,20 @@ export default function AdminOpportunityAcquisitionPage() {
               onReprocess={id => reprocessClassification.mutate(id)}
               generatingId={generatingFollowupId}
               reprocessingId={reprocessingId}
+            />
+          </TabsContent>
+
+          <TabsContent value="executive" className="mt-4">
+            <ExecutiveIntelligenceTab
+              brief={executiveBriefQ.data ?? null}
+              recommendations={executiveRecsQ.data ?? []}
+              briefLoading={executiveBriefQ.isLoading}
+              recsLoading={executiveRecsQ.isLoading}
+              onRunAnalysis={() => runExecutive.mutate()}
+              isRunning={runExecutive.isPending}
+              onUpdateStatus={(id, status) => updateRecommendationStatus.mutate({ id, status })}
+              isUpdating={updateRecommendationStatus.isPending}
+              metrics={learningMetricsQ.data ?? null}
             />
           </TabsContent>
 

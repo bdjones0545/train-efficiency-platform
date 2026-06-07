@@ -1,0 +1,484 @@
+Phase 10 — Executive Intelligence & Autonomous Recommendations
+
+Goal:
+Transform Opportunity Acquisition from a learning system into an executive decision support system.
+
+Current State:
+
+Discovery
+→ Qualification
+→ Outreach
+→ Execution
+→ Replies
+→ Outcomes
+→ Learning
+→ Hermes Insights
+
+New State:
+
+Discovery
+→ Qualification
+→ Outreach
+→ Execution
+→ Replies
+→ Outcomes
+→ Learning
+→ Executive Intelligence
+→ Actionable Recommendations
+
+Important:
+
+Do NOT automatically modify system behavior.
+
+Do NOT automatically change discovery weights.
+
+Do NOT automatically alter outreach messaging.
+
+Do NOT automatically send outreach.
+
+Executive Intelligence should recommend actions, not execute them.
+
+Human approval remains required.
+
+⸻
+
+DATABASE
+
+Create table:
+
+opportunity_executive_briefs
+
+Columns:
+
+id
+org_id
+
+summary
+
+best_action_today
+
+key_wins
+key_risks
+key_opportunities
+
+supporting_metrics JSONB
+
+generated_at
+created_at
+
+⸻
+
+Create table:
+
+opportunity_recommendations
+
+Columns:
+
+id
+org_id
+
+category
+
+recommendation
+
+reasoning
+
+confidence_score
+
+supporting_data JSONB
+
+status
+
+created_at
+reviewed_at
+
+⸻
+
+RECOMMENDATION STATUS
+
+Supported values:
+
+pending
+
+accepted
+
+dismissed
+
+implemented
+
+⸻
+
+EXECUTIVE INTELLIGENCE AGENT
+
+Create:
+
+server/services/opportunity-executive-agent.ts
+
+Primary function:
+
+runOpportunityExecutiveAnalysis(orgId)
+
+Responsibilities:
+
+Analyze:
+
+* discovery performance
+* qualification performance
+* outreach performance
+* execution performance
+* reply performance
+* outcome performance
+* learning insights
+
+Generate:
+
+* executive brief
+* best action today
+* recommendations
+
+⸻
+
+BEST ACTION TODAY
+
+Generate one primary action.
+
+Examples:
+
+“Send 3 approved drafts awaiting outreach.”
+
+“Follow up with 4 interested opportunities.”
+
+“Increase focus on TeamWork Online opportunities.”
+
+“Review 2 high-confidence recommendations.”
+
+“Address declining reply rates in consulting opportunities.”
+
+Store:
+
+best_action_today
+
+inside executive brief.
+
+⸻
+
+EXECUTIVE BRIEF
+
+Generate:
+
+summary
+
+key_wins
+
+key_risks
+
+key_opportunities
+
+supporting_metrics
+
+Example:
+
+Summary:
+
+“Reply rates increased 12% this week and TeamWork Online remains the strongest-performing discovery source.”
+
+Key Wins:
+
+* 8 new opportunities discovered
+* 3 replies received
+* 1 meeting request
+
+Key Risks:
+
+* Consulting opportunities underperforming
+* 5 approved drafts unsent
+
+Key Opportunities:
+
+* Remote coaching continues to outperform all other categories
+
+⸻
+
+RECOMMENDATION ENGINE
+
+Generate recommendations across categories:
+
+Discovery
+
+Outreach
+
+Pipeline
+
+Learning
+
+Execution
+
+Examples:
+
+Discovery:
+
+“Increase attention on TeamWork Online opportunities.”
+
+Outreach:
+
+“Operational-support messaging outperforms AI-first messaging.”
+
+Pipeline:
+
+“Follow up with opportunity #42; no response in 9 days.”
+
+Learning:
+
+“Remote coaching opportunities are generating 2.4x more replies.”
+
+Execution:
+
+“4 approved drafts are awaiting manual send.”
+
+⸻
+
+RECOMMENDATION CONFIDENCE
+
+Every recommendation must include:
+
+confidence_score
+
+0–100
+
+and
+
+supporting_data
+
+Examples:
+
+{
+“replyRate”: 28,
+“meetingRate”: 11,
+“sampleSize”: 42
+}
+
+⸻
+
+API ENDPOINTS
+
+POST /api/opportunity-acquisition/executive/run
+
+Runs full executive analysis.
+
+Returns:
+
+{
+briefGenerated,
+recommendationsGenerated
+}
+
+⸻
+
+GET /api/opportunity-acquisition/executive/brief
+
+Returns latest executive brief.
+
+⸻
+
+GET /api/opportunity-acquisition/executive/recommendations
+
+Returns recommendations newest first.
+
+⸻
+
+PATCH /api/opportunity-acquisition/executive/recommendations/:id
+
+Updates recommendation status:
+
+accepted
+
+dismissed
+
+implemented
+
+⸻
+
+FRONTEND
+
+Add new tab:
+
+Executive Intelligence
+
+Tabs become:
+
+Discovery
+Discovery Runs
+Qualification
+Outreach
+Pipeline
+Cycles
+Executions
+Replies
+Learning
+Executive Intelligence
+Agent Activity
+Settings
+
+⸻
+
+EXECUTIVE INTELLIGENCE TAB
+
+Top card:
+
+Today’s Acquisition Brief
+
+Show:
+
+Summary
+
+Best Action Today
+
+Generated Timestamp
+
+⸻
+
+EXECUTIVE SUMMARY CARDS
+
+Show:
+
+Reply Rate
+
+Meeting Rate
+
+Win Rate
+
+Opportunities Discovered
+
+Drafts Awaiting Send
+
+Interested Opportunities
+
+⸻
+
+KEY INSIGHTS SECTION
+
+Three cards:
+
+Wins
+
+Risks
+
+Opportunities
+
+Each card should render bullet points from the executive brief.
+
+⸻
+
+RECOMMENDATIONS SECTION
+
+Show recommendation cards.
+
+Fields:
+
+Category
+
+Recommendation
+
+Reasoning
+
+Confidence
+
+Supporting Data
+
+Status
+
+⸻
+
+RECOMMENDATION ACTIONS
+
+Buttons:
+
+Accept
+
+Dismiss
+
+Mark Implemented
+
+Status changes should persist immediately.
+
+Accepted recommendations should visually move to an “Accepted” state.
+
+Dismissed recommendations should collapse into a lower-priority section.
+
+⸻
+
+CEO HEARTBEAT INTEGRATION
+
+Create service entrypoint:
+
+runOpportunityExecutiveAnalysis(orgId)
+
+Future CEO Heartbeat can call this.
+
+Do not schedule automatically yet.
+
+⸻
+
+AGENT EVENTS
+
+Log:
+
+Executive Analysis Started
+
+Executive Brief Generated
+
+Recommendation Generated
+
+Recommendation Accepted
+
+Recommendation Dismissed
+
+Recommendation Implemented
+
+⸻
+
+SAFETY CONTROLS
+
+Executive Intelligence can:
+
+Recommend
+
+Prioritize
+
+Highlight
+
+Advise
+
+Executive Intelligence cannot:
+
+Send emails
+
+Change settings
+
+Modify discovery weights
+
+Change qualification thresholds
+
+Approve drafts
+
+Execute actions
+
+⸻
+
+SUCCESS CRITERIA
+
+Phase 10 is complete when:
+
+* Executive brief generation exists
+* Best Action Today exists
+* Recommendations are generated
+* Recommendation statuses persist
+* Executive Intelligence tab exists
+* CEO Heartbeat can call executive analysis
+* Agent events are logged
+* No autonomous actions occur
+* Zero TypeScript errors
+
+Result:
+
+Opportunity Acquisition evolves into an executive decision support system that not only discovers and converts opportunities, but also tells leadership exactly where attention should be focused next.
