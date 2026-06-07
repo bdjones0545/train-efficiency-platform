@@ -55,6 +55,7 @@ interface OutreachDraft {
   channel: string; confidenceScore: number; createdByAgent: boolean;
   approvedByUserId: string | null; sentAt: string | null;
   callToAction: string; positioningAngle: string;
+  recipientEmail?: string; recipientName?: string;
   createdAt: string; updatedAt: string;
 }
 
@@ -85,6 +86,17 @@ interface AcquisitionCycle {
   scanned: number; discovered: number; duplicates: number;
   rejected: number; qualified: number; drafts: number;
   errors: string[]; notes: string;
+}
+
+interface Execution {
+  id: string; opportunityId: string; opportunityTitle: string;
+  opportunityCompany: string; draftId: string;
+  recipientName: string; recipientEmail: string; subject: string;
+  agentmailMessageId: string | null;
+  status: "pending" | "sent" | "delivered" | "replied" | "failed";
+  deliveryStatus: string; replyDetected: boolean;
+  sentAt: string | null; deliveredAt: string | null; repliedAt: string | null;
+  errorMessage: string | null; createdAt: string;
 }
 
 interface OrgSettings {
@@ -167,6 +179,14 @@ const CYCLE_STATUS_CONFIG: Record<string, { label: string; color: string; icon: 
   completed:       { label: "Completed",        color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", icon: CheckCircle },
   partial_failure: { label: "Partial Failure",  color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",   icon: AlertTriangle },
   failed:          { label: "Failed",           color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",       icon: AlertCircle },
+};
+
+const EXEC_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  pending:   { label: "Pending",   color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+  sent:      { label: "Sent",      color: "bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300" },
+  delivered: { label: "Delivered", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
+  replied:   { label: "Replied",   color: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" },
+  failed:    { label: "Failed",    color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -607,6 +627,196 @@ function CyclesTab({ cycles, isLoading, onRunCycle, isRunning }: {
   );
 }
 
+// ─── Send Confirm Dialog ──────────────────────────────────────────────────────
+
+function SendConfirmDialog({
+  draft, onClose, onSent,
+}: { draft: OutreachDraft; onClose: () => void; onSent: () => void }) {
+  const { toast } = useToast();
+  const [email, setEmail] = useState(draft.recipientEmail ?? "");
+  const [name,  setName]  = useState(draft.recipientName  ?? "");
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      apiRequest("POST", `/api/opportunity-acquisition/outreach-drafts/${draft.id}/send`, {
+        recipientEmail: email.trim(),
+        recipientName:  name.trim(),
+      }),
+    onSuccess: () => {
+      toast({ title: "Outreach sent successfully." });
+      onSent();
+      onClose();
+    },
+    onError: (e: any) => {
+      toast({ title: "Send failed", description: e?.message ?? "Unknown error", variant: "destructive" });
+    },
+  });
+
+  const canSend = email.trim().includes("@") && !mutation.isPending;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <Card className="w-full max-w-md border shadow-xl">
+        <CardHeader className="pb-2 pt-4 px-4">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2">
+              <Mail className="h-4 w-4 text-primary" />Send Outreach
+            </CardTitle>
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onClose} data-testid="button-close-send-dialog">
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-4">
+          <div className="rounded-md bg-muted/50 border p-3 space-y-1.5">
+            <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-semibold">Draft Preview</p>
+            <p className="text-xs font-medium">{draft.subject}</p>
+            <p className="text-[11px] text-muted-foreground">{draft.company || draft.opportunityTitle}</p>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            This will send the approved outreach draft to the selected opportunity via AgentMail.
+          </p>
+
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label className="text-xs">Recipient Email *</Label>
+              <Input
+                className="h-8 text-xs"
+                type="email"
+                placeholder="contact@company.com"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
+                data-testid="input-recipient-email"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">Recipient Name <span className="text-muted-foreground">(optional)</span></Label>
+              <Input
+                className="h-8 text-xs"
+                placeholder="John Smith"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                data-testid="input-recipient-name"
+              />
+            </div>
+          </div>
+
+          <div className="rounded-md bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 p-2.5 flex items-start gap-2">
+            <Shield className="h-3.5 w-3.5 text-amber-600 shrink-0 mt-0.5" />
+            <p className="text-[11px] text-amber-700 dark:text-amber-300">
+              You are about to send a real email via AgentMail. This action cannot be undone.
+            </p>
+          </div>
+
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={onClose} data-testid="button-cancel-send">
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              className="flex-1 text-xs gap-1.5 bg-teal-600 hover:bg-teal-700 text-white"
+              disabled={!canSend}
+              onClick={() => mutation.mutate()}
+              data-testid="button-confirm-send"
+            >
+              {mutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
+              Send
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
+// ─── Executions Tab ───────────────────────────────────────────────────────────
+
+function ExecutionsTab({ executions, isLoading }: { executions: Execution[]; isLoading: boolean }) {
+  const byStat = (s: string) => executions.filter(e => e.status === s).length;
+  const cards = [
+    { label: "Sent",      value: byStat("sent") + byStat("delivered") + byStat("replied"), icon: Mail,       color: "text-teal-600 dark:text-teal-400",         bg: "bg-teal-50 dark:bg-teal-900/20" },
+    { label: "Delivered", value: byStat("delivered") + byStat("replied"),                  icon: CheckCircle, color: "text-emerald-600 dark:text-emerald-400",  bg: "bg-emerald-50 dark:bg-emerald-900/20" },
+    { label: "Replies",   value: executions.filter(e => e.replyDetected).length,           icon: Radio,       color: "text-violet-600 dark:text-violet-400",    bg: "bg-violet-50 dark:bg-violet-900/20" },
+    { label: "Failed",    value: byStat("failed"),                                          icon: AlertCircle, color: "text-rose-500",                           bg: "bg-rose-50 dark:bg-rose-900/20" },
+  ];
+
+  if (isLoading) return <CardSkeleton />;
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {cards.map(c => (
+          <Card key={c.label} className="border shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium">{c.label}</p>
+                  <p className="text-2xl font-bold mt-0.5" data-testid={`text-exec-${c.label.toLowerCase()}`}>{c.value}</p>
+                </div>
+                <div className={`p-2 rounded-lg ${c.bg}`}><c.icon className={`h-4 w-4 ${c.color}`} /></div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {executions.length === 0 ? (
+        <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
+          <Mail className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="font-medium text-sm">No outreach has been sent yet</p>
+          <p className="text-xs mt-1">Approve a draft in the Outreach tab, then click "Send Now" to execute.</p>
+        </div>
+      ) : (
+        <Card className="border shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Sent At</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Company</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Opportunity</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Recipient</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Status</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Delivery</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Reply</th>
+                </tr>
+              </thead>
+              <tbody>
+                {executions.map((exec, i) => {
+                  const sc = EXEC_STATUS_CONFIG[exec.status] ?? EXEC_STATUS_CONFIG.pending;
+                  return (
+                    <tr key={exec.id} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`} data-testid={`row-exec-${exec.id}`}>
+                      <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{fmtTime(exec.sentAt)}</td>
+                      <td className="px-4 py-2.5 font-medium">{exec.opportunityCompany || "—"}</td>
+                      <td className="px-4 py-2.5 max-w-[160px]">
+                        <p className="truncate">{exec.opportunityTitle}</p>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <p className="font-medium">{exec.recipientName || "—"}</p>
+                        <p className="text-muted-foreground font-mono text-[10px]">{exec.recipientEmail}</p>
+                      </td>
+                      <td className="px-4 py-2.5">
+                        <Badge className={`text-[10px] px-1.5 py-0 h-4 ${sc.color}`}>{sc.label}</Badge>
+                      </td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{exec.deliveryStatus}</td>
+                      <td className="px-4 py-2.5">
+                        {exec.replyDetected
+                          ? <Badge className="text-[10px] px-1.5 py-0 h-4 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">Yes</Badge>
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ─── Discovery Runs Tab ───────────────────────────────────────────────────────
 
 function DiscoveryRunsTab({
@@ -805,10 +1015,11 @@ function QualificationTab({ assessments, isLoading, onQualifyAll, qualifyAllPend
 
 // ─── Outreach Tab ─────────────────────────────────────────────────────────────
 
-function OutreachTab({ drafts, isLoading, onStatusChange, statusChangingId, onEdit }: {
+function OutreachTab({ drafts, isLoading, onStatusChange, statusChangingId, onEdit, onSend }: {
   drafts: OutreachDraft[]; isLoading: boolean;
   onStatusChange: (id: string, status: DraftStatus) => void;
   statusChangingId: string | null; onEdit: (draft: OutreachDraft) => void;
+  onSend: (draft: OutreachDraft) => void;
 }) {
   if (isLoading) return <CardSkeleton />;
   const byStatus = (s: DraftStatus) => drafts.filter(d => d.status === s);
@@ -817,11 +1028,12 @@ function OutreachTab({ drafts, isLoading, onStatusChange, statusChangingId, onEd
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">Outreach Drafts</h3>
-          <p className="text-xs text-muted-foreground">{drafts.length > 0 ? `${drafts.length} draft${drafts.length !== 1 ? "s" : ""} · ${byStatus("approved").length} approved · ${byStatus("rejected").length} rejected` : "No drafts yet"}</p>
+          <p className="text-xs text-muted-foreground">{drafts.length > 0 ? `${drafts.length} draft${drafts.length !== 1 ? "s" : ""} · ${byStatus("approved").length} approved · ${byStatus("sent").length} sent · ${byStatus("rejected").length} rejected` : "No drafts yet"}</p>
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <Badge className="text-[10px] bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 gap-1"><Pencil className="h-2.5 w-2.5" />{byStatus("draft").length} draft</Badge>
           <Badge className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 gap-1"><CheckCheck className="h-2.5 w-2.5" />{byStatus("approved").length} approved</Badge>
+          <Badge className="text-[10px] bg-teal-100 text-teal-700 dark:bg-teal-900/40 dark:text-teal-300 gap-1"><Mail className="h-2.5 w-2.5" />{byStatus("sent").length} sent</Badge>
         </div>
       </div>
       {drafts.length === 0 ? (
@@ -834,8 +1046,11 @@ function OutreachTab({ drafts, isLoading, onStatusChange, statusChangingId, onEd
         <div className="space-y-4">
           {drafts.map(draft => {
             const isChanging = statusChangingId === draft.id;
+            const isSent     = draft.status === "sent";
+            const isApproved = draft.status === "approved";
+            const isRejected = draft.status === "rejected";
             return (
-              <Card key={draft.id} className={`border shadow-sm ${draft.status === "approved" ? "border-emerald-200 dark:border-emerald-800" : draft.status === "rejected" ? "border-rose-200 dark:border-rose-800 opacity-70" : ""}`} data-testid={`card-draft-${draft.id}`}>
+              <Card key={draft.id} className={`border shadow-sm ${isApproved ? "border-emerald-200 dark:border-emerald-800" : isRejected ? "border-rose-200 dark:border-rose-800 opacity-70" : isSent ? "border-teal-200 dark:border-teal-800" : ""}`} data-testid={`card-draft-${draft.id}`}>
                 <CardHeader className="pb-2 pt-4 px-4">
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
@@ -845,6 +1060,7 @@ function OutreachTab({ drafts, isLoading, onStatusChange, statusChangingId, onEd
                         <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{draft.company || draft.opportunityTitle}</span>
                         <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{draft.location}</span>
                         <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{timeAgo(draft.updatedAt)}</span>
+                        {isSent && draft.sentAt && <span className="flex items-center gap-1 text-teal-600 dark:text-teal-400 font-medium"><Mail className="h-3 w-3" />Sent {timeAgo(draft.sentAt)}</span>}
                       </div>
                     </div>
                     <div className="text-right shrink-0">
@@ -871,20 +1087,36 @@ function OutreachTab({ drafts, isLoading, onStatusChange, statusChangingId, onEd
                       <p className="text-xs text-teal-700 dark:text-teal-300 italic">{draft.callToAction}</p>
                     </div>
                   )}
-                  {draft.status !== "sent" && (
+                  {/* Action buttons — vary by status */}
+                  {!isSent && (
                     <div className="flex flex-wrap items-center gap-2 pt-1 border-t">
-                      <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" disabled={isChanging} onClick={() => onEdit(draft)} data-testid={`button-edit-draft-${draft.id}`}><Pencil className="h-3 w-3" />Edit</Button>
-                      {draft.status !== "approved" && (
+                      {!isRejected && (
+                        <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" disabled={isChanging} onClick={() => onEdit(draft)} data-testid={`button-edit-draft-${draft.id}`}>
+                          <Pencil className="h-3 w-3" />Edit
+                        </Button>
+                      )}
+                      {!isApproved && !isRejected && (
                         <Button size="sm" className="gap-1.5 text-xs h-7 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isChanging} onClick={() => onStatusChange(draft.id, "approved")} data-testid={`button-approve-draft-${draft.id}`}>
                           {isChanging ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCheck className="h-3 w-3" />}Approve
                         </Button>
                       )}
-                      {draft.status !== "rejected" && (
+                      {isApproved && (
+                        <Button size="sm" className="gap-1.5 text-xs h-7 bg-teal-600 hover:bg-teal-700 text-white" onClick={() => onSend(draft)} data-testid={`button-send-draft-${draft.id}`}>
+                          <Mail className="h-3 w-3" />Send Now
+                        </Button>
+                      )}
+                      {!isRejected && (
                         <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7 border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20" disabled={isChanging} onClick={() => onStatusChange(draft.id, "rejected")} data-testid={`button-reject-draft-${draft.id}`}>
                           {isChanging ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsDown className="h-3 w-3" />}Reject
                         </Button>
                       )}
-                      {draft.status === "approved" && <span className="text-xs text-muted-foreground ml-auto italic flex items-center gap-1"><Shield className="h-3 w-3" />No email sending in this phase</span>}
+                    </div>
+                  )}
+                  {isSent && (
+                    <div className="flex items-center gap-2 pt-1 border-t">
+                      <CheckCircle className="h-3.5 w-3.5 text-teal-500" />
+                      <span className="text-xs text-teal-600 dark:text-teal-400 font-medium">Outreach sent via AgentMail</span>
+                      {draft.recipientEmail && <span className="text-xs text-muted-foreground ml-1">→ {draft.recipientEmail}</span>}
                     </div>
                   )}
                 </CardContent>
@@ -1172,6 +1404,7 @@ export default function AdminOpportunityAcquisitionPage() {
   const [activeTab, setActiveTab]                       = useState("discovery");
   const [showAddModal, setShowAddModal]                 = useState(false);
   const [editingDraft, setEditingDraft]                 = useState<OutreachDraft | null>(null);
+  const [sendingDraft, setSendingDraft]                 = useState<OutreachDraft | null>(null);
   const [qualifyingId, setQualifyingId]                 = useState<string | null>(null);
   const [generatingOutreachId, setGeneratingOutreachId] = useState<string | null>(null);
   const [statusChangingId, setStatusChangingId]         = useState<string | null>(null);
@@ -1179,7 +1412,7 @@ export default function AdminOpportunityAcquisitionPage() {
   const qc = useQueryClient();
 
   function invalidateAll() {
-    ["opportunities", "summary", "assessments", "events", "outreach-drafts"].forEach(k =>
+    ["opportunities", "summary", "assessments", "events", "outreach-drafts", "outreach-executions"].forEach(k =>
       qc.invalidateQueries({ queryKey: [`/api/opportunity-acquisition/${k}`] })
     );
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
@@ -1188,16 +1421,17 @@ export default function AdminOpportunityAcquisitionPage() {
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/cycles/latest"] });
   }
 
-  const summaryQ    = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
-  const oppsQ       = useQuery<Opportunity[]>({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
-  const eventsQ     = useQuery<AgentEvent[]>({ queryKey: ["/api/opportunity-acquisition/events"] });
-  const settingsQ   = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
-  const assessQ     = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
-  const draftsQ     = useQuery<OutreachDraft[]>({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
-  const runsQ       = useQuery<DiscoveryRun[]>({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
-  const statsQ      = useQuery<DiscoveryStats>({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
-  const cyclesQ     = useQuery<AcquisitionCycle[]>({ queryKey: ["/api/opportunity-acquisition/cycles"] });
+  const summaryQ     = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
+  const oppsQ        = useQuery<Opportunity[]>({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
+  const eventsQ      = useQuery<AgentEvent[]>({ queryKey: ["/api/opportunity-acquisition/events"] });
+  const settingsQ    = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
+  const assessQ      = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
+  const draftsQ      = useQuery<OutreachDraft[]>({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
+  const runsQ        = useQuery<DiscoveryRun[]>({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
+  const statsQ       = useQuery<DiscoveryStats>({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
+  const cyclesQ      = useQuery<AcquisitionCycle[]>({ queryKey: ["/api/opportunity-acquisition/cycles"] });
   const latestCycleQ = useQuery<AcquisitionCycle | null>({ queryKey: ["/api/opportunity-acquisition/cycles/latest"] });
+  const executionsQ  = useQuery<Execution[]>({ queryKey: ["/api/opportunity-acquisition/outreach-executions"] });
 
   const runCycle = useMutation({
     mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/run-cycle", {}),
@@ -1280,7 +1514,9 @@ export default function AdminOpportunityAcquisitionPage() {
   const assessments: Assessment[]     = assessQ.data ?? [];
   const drafts: OutreachDraft[]       = draftsQ.data ?? [];
   const runs: DiscoveryRun[]          = runsQ.data ?? [];
+  const executions: Execution[]       = executionsQ.data ?? [];
   const pendingDrafts                 = drafts.filter(d => d.status === "draft").length;
+  const sentCount                     = executions.filter(e => e.status === "sent" || e.status === "delivered" || e.status === "replied").length;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
@@ -1292,6 +1528,18 @@ export default function AdminOpportunityAcquisitionPage() {
           onSaved={() => {
             qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
             qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+          }}
+        />
+      )}
+      {sendingDraft && (
+        <SendConfirmDialog
+          draft={sendingDraft}
+          onClose={() => setSendingDraft(null)}
+          onSent={() => {
+            qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
+            qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/outreach-executions"] });
+            qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+            setActiveTab("executions");
           }}
         />
       )}
@@ -1347,6 +1595,10 @@ export default function AdminOpportunityAcquisitionPage() {
               <Zap className="h-3 w-3" />Cycles
               {(cyclesQ.data?.length ?? 0) > 0 && <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-violet-500 text-white">{cyclesQ.data!.length}</Badge>}
             </TabsTrigger>
+            <TabsTrigger value="executions"      className="text-xs gap-1" data-testid="tab-executions">
+              <Mail className="h-3 w-3" />Executions
+              {sentCount > 0 && <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-teal-500 text-white">{sentCount}</Badge>}
+            </TabsTrigger>
             <TabsTrigger value="agent-activity"  className="text-xs gap-1" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
             <TabsTrigger value="settings"        className="text-xs gap-1" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
           </TabsList>
@@ -1381,6 +1633,7 @@ export default function AdminOpportunityAcquisitionPage() {
               onStatusChange={(id, status) => changeDraftStatus.mutate({ id, status })}
               statusChangingId={statusChangingId}
               onEdit={draft => setEditingDraft(draft)}
+              onSend={draft => setSendingDraft(draft)}
             />
           </TabsContent>
 
@@ -1393,6 +1646,10 @@ export default function AdminOpportunityAcquisitionPage() {
               cycles={cyclesQ.data ?? []} isLoading={cyclesQ.isLoading}
               onRunCycle={() => runCycle.mutate()} isRunning={runCycle.isPending}
             />
+          </TabsContent>
+
+          <TabsContent value="executions" className="mt-4">
+            <ExecutionsTab executions={executions} isLoading={executionsQ.isLoading} />
           </TabsContent>
 
           <TabsContent value="agent-activity" className="mt-4">

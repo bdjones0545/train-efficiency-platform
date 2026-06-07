@@ -1,0 +1,404 @@
+Phase 7 — AgentMail Execution Layer
+
+Goal:
+Convert approved outreach drafts into real outbound conversations using AgentMail.
+
+This phase introduces outbound execution while maintaining strict human approval controls.
+
+Important:
+
+* No fully autonomous outreach.
+* No automatic sending.
+* No auto-approval.
+* No self-applying behavior.
+* Human approval required before every send.
+
+The objective is:
+
+Discovery
+→ Qualification
+→ Outreach Draft
+→ Approval
+→ Send
+→ Conversation
+
+⸻
+
+BACKEND
+
+Create:
+
+server/services/opportunity-outreach-execution-agent.ts
+
+Primary function:
+
+executeOutreachDraft(orgId, draftId)
+
+Responsibilities:
+
+1. Validate draft
+2. Confirm draft status = approved
+3. Resolve recipient information
+4. Send through AgentMail
+5. Persist execution record
+6. Log agent events
+7. Update pipeline status
+
+⸻
+
+DATABASE
+
+Create table:
+
+opportunity_outreach_executions
+
+Columns:
+
+id
+org_id
+opportunity_id
+draft_id
+
+recipient_name
+recipient_email
+
+subject
+body
+
+agentmail_message_id
+
+status
+delivery_status
+
+reply_detected
+
+sent_at
+delivered_at
+replied_at
+
+error_message
+
+created_at
+
+Status values:
+
+pending
+sent
+delivered
+replied
+failed
+
+⸻
+
+OUTREACH EXECUTION LOGIC
+
+Rules:
+
+Only approved drafts can be sent.
+
+If draft status != approved:
+
+Return 400.
+
+When sent successfully:
+
+Update:
+
+opportunity_outreach_drafts.status = sent
+
+Update:
+
+opportunity_acquisition_opportunities.status = contacted
+
+Create execution record.
+
+Create agent event.
+
+⸻
+
+PIPELINE AUTOMATION
+
+Add statuses:
+
+new
+qualified
+draft_ready
+approved
+contacted
+interested
+demo
+won
+lost
+
+Status transitions:
+
+Approved Draft
+↓
+Contacted
+
+Reply Detected
+↓
+Interested
+
+Meeting Scheduled
+↓
+Demo
+
+Deal Closed
+↓
+Won
+
+⸻
+
+AGENT EVENTS
+
+Log:
+
+Outreach Execution Started
+
+Outreach Sent
+
+Outreach Delivered
+
+Reply Detected
+
+Opportunity Marked Interested
+
+Outreach Failed
+
+Include:
+
+company
+opportunity title
+draft id
+
+⸻
+
+API ENDPOINTS
+
+POST /api/opportunity-acquisition/outreach-drafts/:id/send
+
+Send a single approved draft.
+
+Response:
+
+{
+success,
+executionId,
+messageId
+}
+
+GET /api/opportunity-acquisition/outreach-executions
+
+Returns all executions newest first.
+
+GET /api/opportunity-acquisition/outreach-executions/:id
+
+Returns execution details.
+
+⸻
+
+AGENTMAIL INTEGRATION
+
+Use existing AgentMail infrastructure.
+
+Send from:
+
+opportunities@
+or
+partnerships@
+or
+configured org sender
+
+Store:
+
+message id
+delivery metadata
+
+Design architecture so future reply tracking is possible.
+
+⸻
+
+FRONTEND
+
+OUTREACH TAB
+
+Approved drafts gain:
+
+Send Now
+
+button.
+
+Rejected drafts:
+
+No send action.
+
+Pending drafts:
+
+Approve / Reject
+
+Approved drafts:
+
+Approve disabled
+Reject disabled
+Send enabled
+
+⸻
+
+SEND FLOW
+
+User clicks:
+
+Send Now
+
+Show confirmation dialog:
+
+Title:
+Send Outreach
+
+Body:
+This will send the approved outreach draft to the selected opportunity.
+
+Buttons:
+
+Cancel
+
+Send
+
+After success:
+
+Toast:
+
+Outreach sent successfully.
+
+Refresh:
+
+Drafts
+Executions
+Pipeline
+Events
+Summary
+Cycles
+
+⸻
+
+NEW TAB
+
+Add:
+
+Executions
+
+Tabs become:
+
+Discovery
+Discovery Runs
+Qualification
+Outreach
+Pipeline
+Cycles
+Executions
+Agent Activity
+Settings
+
+⸻
+
+EXECUTIONS TAB
+
+Summary cards:
+
+Sent
+Delivered
+Replies
+Failed
+
+Table:
+
+Sent At
+Company
+Opportunity
+Recipient
+Status
+Delivery Status
+Reply Detected
+
+Badges:
+
+pending = blue
+
+sent = teal
+
+delivered = green
+
+replied = purple
+
+failed = rose
+
+Empty state:
+
+No outreach has been sent yet.
+
+⸻
+
+OPPORTUNITY DETAIL ENHANCEMENT
+
+When an opportunity has outreach activity:
+
+Show:
+
+Latest Outreach Status
+
+Sent Date
+
+Delivery Status
+
+Reply Status
+
+Execution Count
+
+⸻
+
+REPLY TRACKING PREPARATION
+
+Do not build reply parsing yet.
+
+However:
+
+Create fields and architecture for:
+
+reply_detected
+replied_at
+
+These will be used in Phase 8.
+
+⸻
+
+SAFETY CONTROLS
+
+Human approval required.
+
+Human click required.
+
+No automatic sends.
+
+No scheduled sends.
+
+No autonomous execution.
+
+One draft = one manual send action.
+
+⸻
+
+SUCCESS CRITERIA
+
+Phase 7 is complete when:
+
+* Approved drafts can be sent
+* Execution records are stored
+* Pipeline automatically updates to Contacted
+* Executions tab exists
+* Agent events are logged
+* AgentMail is integrated
+* Delivery metadata is stored
+* Reply tracking fields exist
+* No autonomous sending exists
+* Zero TypeScript errors

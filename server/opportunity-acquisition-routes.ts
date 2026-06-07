@@ -799,6 +799,118 @@ export async function registerOpportunityAcquisitionRoutes(
     }
   });
 
+  // ── POST /api/opportunity-acquisition/outreach-drafts/:id/send ──────────────
+  app.post("/api/opportunity-acquisition/outreach-drafts/:id/send", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { id } = req.params;
+      const { recipientEmail, recipientName = "" } = req.body;
+
+      if (!recipientEmail || typeof recipientEmail !== "string") {
+        return res.status(400).json({ message: "recipientEmail is required" });
+      }
+
+      const { executeOutreachDraft } = await import("./services/opportunity-outreach-execution-agent");
+      const result = await executeOutreachDraft(orgId, id, recipientEmail, recipientName);
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      const status = (e as any)?.status ?? 500;
+      console.error("[opportunity/outreach-drafts/send]", e);
+      res.status(status).json({ message: e.message, executionId: (e as any)?.executionId });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/outreach-executions ─────────────────────
+  app.get("/api/opportunity-acquisition/outreach-executions", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json([]);
+
+      // Ensure table exists
+      const { ensureExecutionsTable } = await import("./services/opportunity-outreach-execution-agent");
+      await ensureExecutionsTable();
+
+      const execs = rows(await db.execute(sql`
+        SELECT e.*,
+               o.title    AS opportunity_title,
+               o.company  AS opportunity_company
+        FROM   opportunity_outreach_executions e
+        JOIN   opportunity_acquisition_opportunities o ON o.id = e.opportunity_id
+        WHERE  e.org_id = ${orgId}
+        ORDER  BY e.created_at DESC
+        LIMIT  100
+      `));
+
+      res.json(execs.map((x: any) => ({
+        id:                  x.id,
+        opportunityId:       x.opportunity_id,
+        opportunityTitle:    x.opportunity_title ?? "",
+        opportunityCompany:  x.opportunity_company ?? "",
+        draftId:             x.draft_id,
+        recipientName:       x.recipient_name ?? "",
+        recipientEmail:      x.recipient_email ?? "",
+        subject:             x.subject ?? "",
+        agentmailMessageId:  x.agentmail_message_id ?? null,
+        status:              x.status,
+        deliveryStatus:      x.delivery_status ?? "unknown",
+        replyDetected:       Boolean(x.reply_detected),
+        sentAt:              x.sent_at ?? null,
+        deliveredAt:         x.delivered_at ?? null,
+        repliedAt:           x.replied_at ?? null,
+        errorMessage:        x.error_message ?? null,
+        createdAt:           x.created_at,
+      })));
+    } catch (e: any) {
+      console.error("[opportunity/outreach-executions]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/outreach-executions/:id ─────────────────
+  app.get("/api/opportunity-acquisition/outreach-executions/:id", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { id } = req.params;
+      const x = row0(await db.execute(sql`
+        SELECT e.*,
+               o.title   AS opportunity_title,
+               o.company AS opportunity_company
+        FROM   opportunity_outreach_executions e
+        JOIN   opportunity_acquisition_opportunities o ON o.id = e.opportunity_id
+        WHERE  e.id = ${id} AND e.org_id = ${orgId}
+      `));
+
+      if (!x) return res.status(404).json({ message: "Execution not found" });
+      res.json({
+        id:                 x.id,
+        opportunityId:      x.opportunity_id,
+        opportunityTitle:   x.opportunity_title ?? "",
+        opportunityCompany: x.opportunity_company ?? "",
+        draftId:            x.draft_id,
+        recipientName:      x.recipient_name ?? "",
+        recipientEmail:     x.recipient_email ?? "",
+        subject:            x.subject ?? "",
+        body:               x.body ?? "",
+        agentmailMessageId: x.agentmail_message_id ?? null,
+        status:             x.status,
+        deliveryStatus:     x.delivery_status ?? "unknown",
+        replyDetected:      Boolean(x.reply_detected),
+        sentAt:             x.sent_at ?? null,
+        deliveredAt:        x.delivered_at ?? null,
+        repliedAt:          x.replied_at ?? null,
+        errorMessage:       x.error_message ?? null,
+        createdAt:          x.created_at,
+      });
+    } catch (e: any) {
+      console.error("[opportunity/outreach-executions/:id]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ── POST /api/opportunity-acquisition/run-scan (legacy alias) ────────────────
   app.post("/api/opportunity-acquisition/run-scan", ...auth, async (req: any, res) => {
     try {
