@@ -716,6 +716,89 @@ export async function registerOpportunityAcquisitionRoutes(
     }
   });
 
+  // ── POST /api/opportunity-acquisition/run-cycle ──────────────────────────────
+  app.post("/api/opportunity-acquisition/run-cycle", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { runOpportunityAcquisitionCycle } = await import("./services/opportunity-acquisition-orchestrator");
+      const result = await runOpportunityAcquisitionCycle(orgId);
+      res.json(result);
+    } catch (e: any) {
+      const status = (e as any)?.status === 409 ? 409 : 500;
+      console.error("[opportunity/run-cycle]", e);
+      res.status(status).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/cycles ───────────────────────────────────
+  app.get("/api/opportunity-acquisition/cycles", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json([]);
+
+      const cycles = rows(await db.execute(sql`
+        SELECT * FROM opportunity_acquisition_cycles
+        WHERE org_id = ${orgId}
+        ORDER BY started_at DESC
+        LIMIT 50
+      `));
+
+      res.json(cycles.map((c: any) => ({
+        id:          c.id,
+        startedAt:   c.started_at,
+        completedAt: c.completed_at,
+        status:      c.status,
+        scanned:     n(c.scanned_count),
+        discovered:  n(c.discovered_count),
+        duplicates:  n(c.duplicates_skipped),
+        rejected:    n(c.rejected_count),
+        qualified:   n(c.qualified_count),
+        drafts:      n(c.drafts_created),
+        errors:      Array.isArray(c.errors) ? c.errors : [],
+        notes:       c.notes ?? "",
+      })));
+    } catch (e: any) {
+      console.error("[opportunity/cycles]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/cycles/latest ────────────────────────────
+  app.get("/api/opportunity-acquisition/cycles/latest", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json(null);
+
+      const c = row0(await db.execute(sql`
+        SELECT * FROM opportunity_acquisition_cycles
+        WHERE org_id = ${orgId}
+        ORDER BY started_at DESC
+        LIMIT 1
+      `));
+
+      if (!c) return res.json(null);
+      res.json({
+        id:          c.id,
+        startedAt:   c.started_at,
+        completedAt: c.completed_at,
+        status:      c.status,
+        scanned:     n(c.scanned_count),
+        discovered:  n(c.discovered_count),
+        duplicates:  n(c.duplicates_skipped),
+        rejected:    n(c.rejected_count),
+        qualified:   n(c.qualified_count),
+        drafts:      n(c.drafts_created),
+        errors:      Array.isArray(c.errors) ? c.errors : [],
+        notes:       c.notes ?? "",
+      });
+    } catch (e: any) {
+      console.error("[opportunity/cycles/latest]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ── POST /api/opportunity-acquisition/run-scan (legacy alias) ────────────────
   app.post("/api/opportunity-acquisition/run-scan", ...auth, async (req: any, res) => {
     try {

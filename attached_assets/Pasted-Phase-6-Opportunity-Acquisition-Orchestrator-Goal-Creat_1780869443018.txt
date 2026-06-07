@@ -1,0 +1,342 @@
+Phase 6 — Opportunity Acquisition Orchestrator
+
+Goal:
+Create a full-cycle orchestrator that runs the Opportunity Acquisition workflow end-to-end:
+
+Discovery
+→ Qualification
+→ Outreach Draft Generation
+→ Cycle Summary
+
+This phase should combine the existing agents into one coordinated acquisition cycle.
+
+Do NOT send emails.
+Do NOT auto-apply.
+Do NOT integrate AgentMail yet.
+
+⸻
+
+BACKEND
+
+Create:
+
+server/services/opportunity-acquisition-orchestrator.ts
+
+Primary function:
+
+runOpportunityAcquisitionCycle(orgId)
+
+Workflow:
+
+1. Start cycle
+2. Run Opportunity Discovery Agent
+3. Qualify newly discovered/new unassessed opportunities
+4. Generate outreach drafts for qualified opportunities
+5. Log cycle summary
+6. Return results
+
+⸻
+
+DATABASE
+
+Create table:
+
+opportunity_acquisition_cycles
+
+Columns:
+
+id
+org_id
+started_at
+completed_at
+status
+discovered_count
+scanned_count
+duplicates_skipped
+rejected_count
+qualified_count
+drafts_created
+errors JSONB
+notes TEXT
+created_at
+
+Use IF NOT EXISTS migrations.
+
+⸻
+
+ORCHESTRATOR LOGIC
+
+Step 1 — Discovery
+
+Call:
+
+runOpportunityDiscovery(orgId)
+
+Capture:
+
+* scanned
+* created
+* rejected
+* duplicates
+
+Step 2 — Qualification
+
+Find opportunities for this org where:
+
+status = “new”
+
+OR no qualification assessment exists
+
+Run:
+
+qualifyOpportunity(orgId, opportunityId)
+
+Track:
+
+* qualifiedCount
+* assessmentCount
+* failedQualifications[]
+
+Only qualify opportunities that belong to the org.
+
+Step 3 — Outreach Drafts
+
+Find opportunities where:
+
+fit_score >= 65
+
+AND no outreach draft exists
+
+Run:
+
+generateOutreachDraft(orgId, opportunityId)
+
+Track:
+
+* draftsCreated
+* failedDrafts[]
+
+Do not generate outreach for rejected, lost, or low-fit opportunities.
+
+Step 4 — Cycle Record
+
+Update cycle row with:
+
+* completed_at
+* status: completed / partial_failure / failed
+* discovered_count
+* scanned_count
+* duplicates_skipped
+* rejected_count
+* qualified_count
+* drafts_created
+* errors
+
+⸻
+
+AGENT EVENTS
+
+Log clear events:
+
+* Acquisition Cycle Started
+* Discovery Step Completed
+* Qualification Step Completed
+* Outreach Draft Step Completed
+* Acquisition Cycle Completed
+* Acquisition Cycle Partial Failure
+* Acquisition Cycle Failed
+
+Events should include counts.
+
+Example:
+
+“Acquisition Cycle completed: 22 scanned, 8 created, 6 qualified, 4 drafts generated.”
+
+⸻
+
+API ENDPOINTS
+
+Add:
+
+POST /api/opportunity-acquisition/run-cycle
+
+Runs full acquisition cycle.
+
+Returns:
+
+{
+cycleId,
+status,
+scanned,
+discovered,
+duplicates,
+rejected,
+qualified,
+draftsCreated,
+errors
+}
+
+GET /api/opportunity-acquisition/cycles
+
+Returns the 50 most recent cycles for the org.
+
+GET /api/opportunity-acquisition/cycles/latest
+
+Returns the most recent cycle summary.
+
+⸻
+
+FRONTEND
+
+Add primary button near page header:
+
+Run Full Acquisition Cycle
+
+Behavior:
+
+* Calls POST /run-cycle
+* Shows loading spinner
+* Disables while running
+* On success:
+    * Toast with summary:
+        “Cycle complete: X discovered, Y qualified, Z drafts created.”
+    * Refresh:
+        * Summary
+        * Opportunities
+        * Assessments
+        * Outreach drafts
+        * Agent Activity
+        * Discovery Runs
+        * Cycles
+
+⸻
+
+NEW UI SECTION
+
+Add a new card near top of page:
+
+Last Acquisition Cycle
+
+Show:
+
+* Status
+* Started
+* Completed
+* Scanned
+* Discovered
+* Qualified
+* Drafts Created
+* Duplicates Skipped
+* Errors if any
+
+If no cycle has run:
+
+Show empty state:
+“No acquisition cycle has run yet.”
+
+⸻
+
+NEW TAB
+
+Add tab:
+
+Cycles
+
+Tabs become:
+
+* Discovery
+* Discovery Runs
+* Qualification
+* Outreach
+* Pipeline
+* Cycles
+* Agent Activity
+* Settings
+
+Cycles tab:
+
+Display table/list of recent cycles.
+
+Columns:
+
+* Started
+* Completed
+* Status
+* Scanned
+* Discovered
+* Qualified
+* Drafts
+* Duplicates
+* Errors
+
+Each row should use badges for status:
+
+* completed = green
+* partial_failure = amber
+* failed = rose
+* running = blue
+
+⸻
+
+STATUS HANDLING
+
+If discovery succeeds but qualification or outreach partially fails:
+
+status = partial_failure
+
+If discovery fails entirely:
+
+status = failed
+
+If everything succeeds:
+
+status = completed
+
+If cycle starts but does not finish:
+
+status = running
+
+⸻
+
+SAFETY GUARDS
+
+No email sending.
+No auto-apply.
+No external account actions.
+No AgentMail sending.
+
+Outreach drafts only.
+
+⸻
+
+OPTIONAL BUT RECOMMENDED
+
+Add protection against simultaneous cycles per org.
+
+Before starting a new cycle:
+
+Check for existing cycle with:
+
+status = “running”
+
+and started_at within last 30 minutes.
+
+If found:
+
+Return 409:
+“An acquisition cycle is already running.”
+
+⸻
+
+SUCCESS CRITERIA
+
+Phase 6 is complete when:
+
+* One button runs discovery → qualification → outreach draft generation
+* Cycle records are stored
+* Cycle history is visible
+* Last cycle summary appears on page
+* Agent events clearly show the full workflow
+* Partial failures are captured without crashing the whole cycle
+* No outreach is sent
+* Zero TypeScript errors

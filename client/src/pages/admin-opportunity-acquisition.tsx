@@ -79,6 +79,14 @@ interface DiscoveryStats {
   totalCreated: number; totalDuplicates: number; avgCreatedPerRun: number;
 }
 
+interface AcquisitionCycle {
+  id: string; startedAt: string; completedAt: string | null;
+  status: "completed" | "partial_failure" | "failed" | "running";
+  scanned: number; discovered: number; duplicates: number;
+  rejected: number; qualified: number; drafts: number;
+  errors: string[]; notes: string;
+}
+
 interface OrgSettings {
   sources: Record<string, boolean>;
   qualRules: Record<string, boolean>;
@@ -152,6 +160,13 @@ const RUN_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
   running:   { label: "Running",   color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
   completed: { label: "Completed", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
   failed:    { label: "Failed",    color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" },
+};
+
+const CYCLE_STATUS_CONFIG: Record<string, { label: string; color: string; icon: typeof CheckCircle }> = {
+  running:         { label: "Running",          color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300",       icon: Loader2 },
+  completed:       { label: "Completed",        color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", icon: CheckCircle },
+  partial_failure: { label: "Partial Failure",  color: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300",   icon: AlertTriangle },
+  failed:          { label: "Failed",           color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300",       icon: AlertCircle },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -443,6 +458,151 @@ function DiscoveryTab({
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+// ─── Last Acquisition Cycle Card ─────────────────────────────────────────────
+
+function LastCycleCard({ cycle, isLoading }: { cycle?: AcquisitionCycle | null; isLoading: boolean }) {
+  if (isLoading) return <Card className="border shadow-sm"><CardContent className="p-4"><Skeleton className="h-20 w-full" /></CardContent></Card>;
+  if (!cycle) {
+    return (
+      <Card className="border border-dashed shadow-sm">
+        <CardContent className="p-4 flex items-center gap-3 text-muted-foreground">
+          <Bot className="h-5 w-5 shrink-0 opacity-40" />
+          <div>
+            <p className="text-sm font-medium">No acquisition cycle has run yet</p>
+            <p className="text-xs mt-0.5">Click "Run Full Acquisition Cycle" to start the first complete agent workflow.</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+  const sc = CYCLE_STATUS_CONFIG[cycle.status] ?? CYCLE_STATUS_CONFIG.completed;
+  const Icon = sc.icon;
+  return (
+    <Card className="border shadow-sm" data-testid="card-last-cycle">
+      <CardContent className="p-4">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
+            <div className={`p-2 rounded-lg ${cycle.status === "completed" ? "bg-emerald-50 dark:bg-emerald-900/20" : cycle.status === "partial_failure" ? "bg-amber-50 dark:bg-amber-900/20" : cycle.status === "failed" ? "bg-rose-50 dark:bg-rose-900/20" : "bg-blue-50 dark:bg-blue-900/20"}`}>
+              <Bot className="h-4 w-4 text-primary" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <p className="text-sm font-semibold">Last Acquisition Cycle</p>
+                <Badge className={`text-[10px] px-1.5 py-0 h-4 gap-1 ${sc.color}`}>
+                  <Icon className={`h-2.5 w-2.5 ${cycle.status === "running" ? "animate-spin" : ""}`} />{sc.label}
+                </Badge>
+              </div>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Started {fmtTime(cycle.startedAt)}{cycle.completedAt ? ` · Completed ${fmtTime(cycle.completedAt)}` : " · In progress"}
+              </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 text-center shrink-0">
+            {[
+              { label: "Scanned",    value: cycle.scanned,    color: "text-foreground" },
+              { label: "Discovered", value: cycle.discovered,  color: "text-blue-600 dark:text-blue-400" },
+              { label: "Qualified",  value: cycle.qualified,   color: "text-violet-600 dark:text-violet-400" },
+              { label: "Drafts",     value: cycle.drafts,      color: "text-amber-600 dark:text-amber-400" },
+              { label: "Dupes",      value: cycle.duplicates,  color: "text-muted-foreground" },
+              { label: "Errors",     value: cycle.errors.length, color: cycle.errors.length > 0 ? "text-rose-500" : "text-muted-foreground" },
+            ].map(s => (
+              <div key={s.label}>
+                <p className={`text-lg font-bold ${s.color}`} data-testid={`text-cycle-${s.label.toLowerCase()}`}>{s.value}</p>
+                <p className="text-[10px] text-muted-foreground">{s.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        {cycle.errors.length > 0 && (
+          <div className="mt-3 rounded-md bg-rose-50 dark:bg-rose-900/20 border border-rose-200 dark:border-rose-800 p-2.5 space-y-1">
+            <p className="text-xs font-semibold text-rose-700 dark:text-rose-400 flex items-center gap-1"><AlertCircle className="h-3 w-3" />Errors ({cycle.errors.length})</p>
+            {cycle.errors.slice(0, 3).map((e, i) => <p key={i} className="text-[11px] text-rose-600 dark:text-rose-300 font-mono">{e}</p>)}
+            {cycle.errors.length > 3 && <p className="text-[11px] text-rose-500">+{cycle.errors.length - 3} more</p>}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Cycles Tab ───────────────────────────────────────────────────────────────
+
+function CyclesTab({ cycles, isLoading, onRunCycle, isRunning }: {
+  cycles: AcquisitionCycle[]; isLoading: boolean;
+  onRunCycle: () => void; isRunning: boolean;
+}) {
+  if (isLoading) return <CardSkeleton />;
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Acquisition Cycle History</h3>
+          <p className="text-xs text-muted-foreground">{cycles.length > 0 ? `${cycles.length} cycle${cycles.length !== 1 ? "s" : ""} recorded` : "No cycles run yet"}</p>
+        </div>
+        <Button size="sm" className="gap-1.5 text-xs shrink-0" disabled={isRunning} onClick={onRunCycle} data-testid="button-run-cycle-tab">
+          {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+          Run Cycle Now
+        </Button>
+      </div>
+
+      {cycles.length === 0 ? (
+        <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
+          <Bot className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="font-medium text-sm">No cycles run yet</p>
+          <p className="text-xs mt-1">The full acquisition cycle runs Discovery → Qualification → Outreach Drafts in one pass.</p>
+        </div>
+      ) : (
+        <Card className="border shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Started</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Completed</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Status</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Scanned</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Discovered</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Qualified</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Drafts</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Dupes</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Errors</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cycles.map((cycle, i) => {
+                  const sc = CYCLE_STATUS_CONFIG[cycle.status] ?? CYCLE_STATUS_CONFIG.completed;
+                  const CIcon = sc.icon;
+                  return (
+                    <tr key={cycle.id} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`} data-testid={`row-cycle-${cycle.id}`}>
+                      <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{fmtTime(cycle.startedAt)}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{fmtTime(cycle.completedAt)}</td>
+                      <td className="px-4 py-2.5">
+                        <Badge className={`text-[10px] px-1.5 py-0 h-4 gap-1 ${sc.color}`}>
+                          <CIcon className={`h-2.5 w-2.5 ${cycle.status === "running" ? "animate-spin" : ""}`} />{sc.label}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-2.5 text-right">{cycle.scanned}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-blue-600 dark:text-blue-400">{cycle.discovered}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-violet-600 dark:text-violet-400">{cycle.qualified}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-amber-600 dark:text-amber-400">{cycle.drafts}</td>
+                      <td className="px-4 py-2.5 text-right text-muted-foreground">{cycle.duplicates}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {cycle.errors.length > 0
+                          ? <span className="text-rose-500 font-semibold">{cycle.errors.length}</span>
+                          : <span className="text-muted-foreground">—</span>}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -1024,16 +1184,36 @@ export default function AdminOpportunityAcquisitionPage() {
     );
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/cycles"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/cycles/latest"] });
   }
 
-  const summaryQ  = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
-  const oppsQ     = useQuery<Opportunity[]>({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
-  const eventsQ   = useQuery<AgentEvent[]>({ queryKey: ["/api/opportunity-acquisition/events"] });
-  const settingsQ = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
-  const assessQ   = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
-  const draftsQ   = useQuery<OutreachDraft[]>({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
-  const runsQ     = useQuery<DiscoveryRun[]>({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
-  const statsQ    = useQuery<DiscoveryStats>({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
+  const summaryQ    = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
+  const oppsQ       = useQuery<Opportunity[]>({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
+  const eventsQ     = useQuery<AgentEvent[]>({ queryKey: ["/api/opportunity-acquisition/events"] });
+  const settingsQ   = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
+  const assessQ     = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
+  const draftsQ     = useQuery<OutreachDraft[]>({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
+  const runsQ       = useQuery<DiscoveryRun[]>({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
+  const statsQ      = useQuery<DiscoveryStats>({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
+  const cyclesQ     = useQuery<AcquisitionCycle[]>({ queryKey: ["/api/opportunity-acquisition/cycles"] });
+  const latestCycleQ = useQuery<AcquisitionCycle | null>({ queryKey: ["/api/opportunity-acquisition/cycles/latest"] });
+
+  const runCycle = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/run-cycle", {}),
+    onSuccess: (data: any) => {
+      toast({
+        title: `Cycle ${data?.status === "completed" ? "complete" : data?.status === "partial_failure" ? "completed with some errors" : "failed"}`,
+        description: `${data?.discovered ?? 0} discovered · ${data?.qualified ?? 0} qualified · ${data?.draftsCreated ?? 0} drafts created`,
+      });
+      invalidateAll();
+      setActiveTab("cycles");
+    },
+    onError: (e: any) => {
+      const msg = e?.message ?? "Unknown error";
+      toast({ title: msg.includes("already running") ? "Cycle already running" : "Cycle failed", description: msg, variant: "destructive" });
+    },
+  });
 
   const runDiscovery = useMutation({
     mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/discovery/run", {}),
@@ -1131,18 +1311,24 @@ export default function AdminOpportunityAcquisitionPage() {
               <p className="text-sm text-muted-foreground mt-0.5">AI agents discover, qualify, and draft outreach for real revenue opportunities.</p>
             </div>
           </div>
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 flex-wrap">
             <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowAddModal(true)} data-testid="button-add-opportunity">
               <Plus className="h-3.5 w-3.5" />Add Manually
             </Button>
-            <Button size="sm" className="gap-1.5 text-xs" disabled={runDiscovery.isPending} onClick={() => runDiscovery.mutate()} data-testid="button-run-discovery">
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" disabled={runDiscovery.isPending} onClick={() => runDiscovery.mutate()} data-testid="button-run-discovery">
               {runDiscovery.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
-              Run Discovery Agent
+              Discovery Only
+            </Button>
+            <Button size="sm" className="gap-1.5 text-xs bg-primary hover:bg-primary/90" disabled={runCycle.isPending || runDiscovery.isPending} onClick={() => runCycle.mutate()} data-testid="button-run-full-cycle">
+              {runCycle.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Zap className="h-3.5 w-3.5" />}
+              Run Full Acquisition Cycle
             </Button>
           </div>
         </div>
 
         <SummaryCards data={summaryQ.data} isLoading={summaryQ.isLoading} />
+
+        <LastCycleCard cycle={latestCycleQ.data} isLoading={latestCycleQ.isLoading} />
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full sm:w-auto flex overflow-x-auto" data-testid="tabs-main">
@@ -1157,6 +1343,10 @@ export default function AdminOpportunityAcquisitionPage() {
               {pendingDrafts > 0 && <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-amber-500 text-white">{pendingDrafts}</Badge>}
             </TabsTrigger>
             <TabsTrigger value="pipeline"        className="text-xs gap-1" data-testid="tab-pipeline"><TrendingUp className="h-3 w-3" />Pipeline</TabsTrigger>
+            <TabsTrigger value="cycles"          className="text-xs gap-1" data-testid="tab-cycles">
+              <Zap className="h-3 w-3" />Cycles
+              {(cyclesQ.data?.length ?? 0) > 0 && <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-violet-500 text-white">{cyclesQ.data!.length}</Badge>}
+            </TabsTrigger>
             <TabsTrigger value="agent-activity"  className="text-xs gap-1" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
             <TabsTrigger value="settings"        className="text-xs gap-1" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
           </TabsList>
@@ -1196,6 +1386,13 @@ export default function AdminOpportunityAcquisitionPage() {
 
           <TabsContent value="pipeline" className="mt-4">
             <PipelineTab opportunities={opportunities} />
+          </TabsContent>
+
+          <TabsContent value="cycles" className="mt-4">
+            <CyclesTab
+              cycles={cyclesQ.data ?? []} isLoading={cyclesQ.isLoading}
+              onRunCycle={() => runCycle.mutate()} isRunning={runCycle.isPending}
+            />
           </TabsContent>
 
           <TabsContent value="agent-activity" className="mt-4">
