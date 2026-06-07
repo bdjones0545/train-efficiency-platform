@@ -97,14 +97,41 @@ async function createTables() {
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS opportunity_source_settings (
-      id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id      TEXT NOT NULL UNIQUE,
-      sources     JSONB NOT NULL DEFAULT '{}',
-      qual_rules  JSONB NOT NULL DEFAULT '{}',
-      outreach_rules JSONB NOT NULL DEFAULT '{}',
-      agent_perms JSONB NOT NULL DEFAULT '{}',
-      updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      org_id          TEXT NOT NULL UNIQUE,
+      sources         JSONB NOT NULL DEFAULT '{}',
+      qual_rules      JSONB NOT NULL DEFAULT '{}',
+      outreach_rules  JSONB NOT NULL DEFAULT '{}',
+      agent_perms     JSONB NOT NULL DEFAULT '{}',
+      discovery_filters JSONB NOT NULL DEFAULT '{}',
+      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE opportunity_source_settings
+      ADD COLUMN IF NOT EXISTS discovery_filters JSONB NOT NULL DEFAULT '{}'
+  `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS opportunity_discovery_runs (
+      id                     TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      org_id                 TEXT NOT NULL,
+      started_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at           TIMESTAMPTZ,
+      status                 TEXT NOT NULL DEFAULT 'running',
+      opportunities_scanned  INTEGER NOT NULL DEFAULT 0,
+      opportunities_created  INTEGER NOT NULL DEFAULT 0,
+      opportunities_rejected INTEGER NOT NULL DEFAULT 0,
+      duplicates_skipped     INTEGER NOT NULL DEFAULT 0,
+      notes                  TEXT,
+      created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await db.execute(sql`
+    ALTER TABLE opportunity_acquisition_opportunities
+      ADD COLUMN IF NOT EXISTS fingerprint TEXT
   `);
 }
 
@@ -613,18 +640,90 @@ export async function registerOpportunityAcquisitionRoutes(
     }
   });
 
-  // ── POST /api/opportunity-acquisition/run-scan ──────────────────────────────
-  app.post("/api/opportunity-acquisition/run-scan", ...auth, async (req: any, res) => {
+  // ── POST /api/opportunity-acquisition/discovery/run ─────────────────────────
+  app.post("/api/opportunity-acquisition/discovery/run", ...auth, async (req: any, res) => {
     try {
       const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
-      await db.execute(sql`
-        INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
-        VALUES (${orgId}, 'Discovery Agent', 'Discovery Agent scan requested.', 'scan')
-      `);
+      const { runOpportunityDiscovery } = await import("./services/opportunity-discovery-agent");
+      const result = await runOpportunityDiscovery(orgId);
 
-      res.json({ success: true, message: "Discovery scan queued. Agent event logged." });
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      console.error("[opportunity/discovery/run]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/discovery/history ───────────────────────
+  app.get("/api/opportunity-acquisition/discovery/history", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json([]);
+
+      const runs = rows(await db.execute(sql`
+        SELECT * FROM opportunity_discovery_runs
+        WHERE org_id = ${orgId}
+        ORDER BY started_at DESC
+        LIMIT 50
+      `));
+
+      res.json(runs.map((r: any) => ({
+        id:          r.id,
+        startedAt:   r.started_at,
+        completedAt: r.completed_at,
+        status:      r.status,
+        scanned:     n(r.opportunities_scanned),
+        created:     n(r.opportunities_created),
+        rejected:    n(r.opportunities_rejected),
+        duplicates:  n(r.duplicates_skipped),
+        notes:       r.notes ?? "",
+      })));
+    } catch (e: any) {
+      console.error("[opportunity/discovery/history]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/discovery/stats ─────────────────────────
+  app.get("/api/opportunity-acquisition/discovery/stats", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json({ totalRuns: 0, totalScanned: 0, totalCreated: 0, totalDuplicates: 0, avgCreatedPerRun: 0 });
+
+      const stat = row0(await db.execute(sql`
+        SELECT
+          COUNT(*)                                                          AS total_runs,
+          COALESCE(SUM(opportunities_scanned), 0)                          AS total_scanned,
+          COALESCE(SUM(opportunities_created), 0)                          AS total_created,
+          COALESCE(SUM(duplicates_skipped), 0)                             AS total_duplicates,
+          COALESCE(AVG(opportunities_created)::numeric(10,1), 0)           AS avg_created
+        FROM opportunity_discovery_runs
+        WHERE org_id = ${orgId}
+      `));
+
+      res.json({
+        totalRuns:       n(stat?.total_runs),
+        totalScanned:    n(stat?.total_scanned),
+        totalCreated:    n(stat?.total_created),
+        totalDuplicates: n(stat?.total_duplicates),
+        avgCreatedPerRun: Math.round(Number(stat?.avg_created ?? 0) * 10) / 10,
+      });
+    } catch (e: any) {
+      console.error("[opportunity/discovery/stats]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/opportunity-acquisition/run-scan (legacy alias) ────────────────
+  app.post("/api/opportunity-acquisition/run-scan", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+      const { runOpportunityDiscovery } = await import("./services/opportunity-discovery-agent");
+      const result = await runOpportunityDiscovery(orgId);
+      res.json({ success: true, ...result });
     } catch (e: any) {
       console.error("[opportunity/run-scan]", e);
       res.status(500).json({ message: e.message });

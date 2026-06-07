@@ -1,0 +1,363 @@
+Phase 5 — Opportunity Discovery Agent
+
+Goal:
+Build the first autonomous Opportunity Discovery Agent that finds opportunities, filters them, deduplicates them, stores them, and feeds the existing Qualification + Outreach workflow.
+
+Important:
+Do NOT build email sending.
+Do NOT build automated outreach.
+Do NOT build auto-apply behavior.
+
+The objective is:
+
+Discovery
+→ Qualification
+→ Outreach Draft
+
+using real discovered opportunities.
+
+⸻
+
+BACKEND
+
+Create:
+
+server/services/opportunity-discovery-agent.ts
+
+Primary function:
+
+runOpportunityDiscovery(orgId)
+
+Responsibilities:
+
+1. Discovery
+    Fetch opportunities from configured sources.
+
+Initial architecture should support:
+
+* LinkedIn Jobs
+* Indeed
+* TeamWork Online
+* HigherEdJobs
+* NCAA Careers
+* Company Career Pages
+
+The implementation can initially use mock providers, RSS feeds, APIs, or pluggable adapters.
+
+The important part is the architecture.
+
+Create:
+
+interface OpportunitySourceAdapter {
+name: string;
+discover(): Promise<DiscoveredOpportunity[]>;
+}
+
+Each provider should be isolated so future integrations are easy.
+
+⸻
+
+DISCOVERED OPPORTUNITY MODEL
+
+interface DiscoveredOpportunity {
+title: string;
+company?: string;
+location?: string;
+source: string;
+remoteType?: string;
+description?: string;
+applyUrl?: string;
+estimatedValue?: number;
+}
+
+⸻
+
+DEDUPLICATION
+
+Create fingerprinting.
+
+Generate fingerprint from:
+
+* title
+* company
+* location
+
+Hash the normalized values.
+
+Before creating an opportunity:
+
+Check for existing fingerprint.
+
+Skip duplicates.
+
+Track duplicate count.
+
+⸻
+
+FILTERING
+
+Positive signals:
+
+* remote
+* online
+* virtual
+* coach
+* coaching
+* trainer
+* performance
+* strength
+* conditioning
+* wellness
+* consultant
+* programming
+
+Negative signals:
+
+* onsite only
+* relocation required
+* field technician
+* travel required
+* warehouse
+* delivery
+
+Create configurable filtering logic.
+
+Only store opportunities passing filters.
+
+⸻
+
+DATABASE
+
+Create table:
+
+opportunity_discovery_runs
+
+Columns:
+
+id
+org_id
+started_at
+completed_at
+status
+opportunities_scanned
+opportunities_created
+opportunities_rejected
+duplicates_skipped
+notes
+created_at
+
+Create migration.
+
+⸻
+
+OPPORTUNITY STORAGE
+
+For accepted opportunities:
+
+Insert into:
+
+opportunity_acquisition_opportunities
+
+Populate:
+
+title
+company
+location
+source
+notes
+status = “new”
+
+Do not auto-qualify in this phase.
+
+⸻
+
+AGENT EVENTS
+
+Log events:
+
+Discovery Agent Started
+
+Discovery Agent Scanned X Opportunities
+
+Discovery Agent Created X Opportunities
+
+Discovery Agent Skipped X Duplicates
+
+Discovery Agent Completed
+
+If failures occur:
+
+Discovery Agent Failed
+
+Include reason.
+
+⸻
+
+API ENDPOINTS
+
+Create:
+
+POST /api/opportunity-acquisition/discovery/run
+
+Runs discovery immediately.
+
+Returns:
+
+{
+scanned,
+created,
+rejected,
+duplicates
+}
+
+GET /api/opportunity-acquisition/discovery/history
+
+Returns discovery runs newest first.
+
+GET /api/opportunity-acquisition/discovery/stats
+
+Returns:
+
+{
+totalRuns,
+totalScanned,
+totalCreated,
+totalDuplicates,
+avgCreatedPerRun
+}
+
+⸻
+
+FRONTEND
+
+Add new tab:
+
+Discovery Runs
+
+Tabs become:
+
+* Discovery
+* Discovery Runs
+* Qualification
+* Outreach
+* Pipeline
+* Agent Activity
+* Settings
+
+⸻
+
+DISCOVERY RUNS TAB
+
+Summary cards:
+
+* Total Runs
+* Opportunities Scanned
+* Opportunities Created
+* Duplicates Skipped
+
+Below:
+
+Discovery History Table
+
+Columns:
+
+Started
+Completed
+Status
+Scanned
+Created
+Duplicates
+Rejected
+
+Empty state supported.
+
+⸻
+
+DISCOVERY TAB UPDATES
+
+Replace the current button behavior.
+
+Run Discovery Scan should:
+
+POST /discovery/run
+
+Show loading state.
+
+On success:
+
+Refresh:
+
+* Summary
+* Opportunities
+* Discovery History
+* Agent Activity
+
+Display toast:
+
+“Discovery Agent found X new opportunities.”
+
+⸻
+
+SETTINGS TAB
+
+Add:
+
+Opportunity Sources
+
+Checkboxes:
+
+☑ LinkedIn Jobs
+☑ Indeed
+☑ TeamWork Online
+☑ HigherEdJobs
+☑ NCAA Careers
+
+Add:
+
+Opportunity Types
+
+☑ Remote Coaching
+☑ Programming
+☑ Wellness
+☑ Consulting
+☑ Partnerships
+
+Add:
+
+Minimum Discovery Score
+
+Default:
+65
+
+Persist with existing settings endpoint.
+
+⸻
+
+CEO HEARTBEAT PREPARATION
+
+Do not schedule automatically yet.
+
+However:
+
+Create service entrypoint so CEO Heartbeat can call:
+
+runOpportunityDiscovery(orgId)
+
+in a future phase.
+
+⸻
+
+PHASE 5 SUCCESS CRITERIA
+
+Success means:
+
+* Discovery Agent exists
+* Discovery runs are tracked
+* Deduplication works
+* Opportunities are automatically created
+* Discovery history is visible
+* Agent activity logs are generated
+* No outreach is sent
+* No auto qualification yet
+* Zero TypeScript errors
+* Architecture supports future source expansion

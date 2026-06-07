@@ -11,7 +11,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -19,7 +18,8 @@ import {
   Clock, DollarSign, Star, Activity, Settings, BarChart3,
   Building2, MapPin, Zap, User, Shield, Radio, X, Loader2,
   Brain, Flag, ChevronRight, AlertCircle, ThumbsUp, Mail,
-  ThumbsDown, Edit3, TrendingUp, Bot, CheckCheck, Eye, Pencil,
+  ThumbsDown, CheckCheck, Eye, Pencil, TrendingUp, Bot,
+  Database, RefreshCw, Filter, Hash, PlayCircle,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -33,74 +33,50 @@ type RevPotential = "low" | "medium" | "high";
 type DraftStatus = "draft" | "approved" | "rejected" | "sent";
 
 interface Opportunity {
-  id: string;
-  title: string;
-  source: string;
-  company: string;
-  type: OpportunityType;
-  location: "Remote" | "Hybrid" | "Local";
-  estimatedValue: number;
-  status: OpportunityStatus;
-  fitScore: number;
-  notes: string;
-  createdAt: string;
+  id: string; title: string; source: string; company: string;
+  type: OpportunityType; location: "Remote" | "Hybrid" | "Local";
+  estimatedValue: number; status: OpportunityStatus;
+  fitScore: number; notes: string; createdAt: string;
 }
 
 interface Assessment {
-  id: string;
-  opportunityId: string;
-  opportunityTitle: string;
-  fitScore: number;
-  aiFulfillmentScore: number;
-  revenuePotentialScore: number;
-  riskScore: number;
-  confidenceScore: number;
-  revenuePotential: RevPotential;
-  riskLevel: RiskLevel;
-  recommendedAction: string;
-  reasoning: string;
-  aiCanFulfill: string[];
-  humanRequired: string[];
-  redFlags: string[];
-  nextSteps: string[];
-  updatedAt: string;
+  id: string; opportunityId: string; opportunityTitle: string;
+  fitScore: number; aiFulfillmentScore: number; revenuePotentialScore: number;
+  riskScore: number; confidenceScore: number; revenuePotential: RevPotential;
+  riskLevel: RiskLevel; recommendedAction: string; reasoning: string;
+  aiCanFulfill: string[]; humanRequired: string[]; redFlags: string[];
+  nextSteps: string[]; updatedAt: string;
 }
 
 interface OutreachDraft {
-  id: string;
-  opportunityId: string;
-  opportunityTitle: string;
-  company: string;
-  fitScore: number;
-  opportunityType: OpportunityType;
-  location: string;
-  subject: string;
-  body: string;
-  status: DraftStatus;
-  channel: string;
-  confidenceScore: number;
-  createdByAgent: boolean;
-  approvedByUserId: string | null;
-  sentAt: string | null;
-  callToAction: string;
-  positioningAngle: string;
-  createdAt: string;
-  updatedAt: string;
+  id: string; opportunityId: string; opportunityTitle: string;
+  company: string; fitScore: number; opportunityType: OpportunityType;
+  location: string; subject: string; body: string; status: DraftStatus;
+  channel: string; confidenceScore: number; createdByAgent: boolean;
+  approvedByUserId: string | null; sentAt: string | null;
+  callToAction: string; positioningAngle: string;
+  createdAt: string; updatedAt: string;
 }
 
 interface AgentEvent {
-  id: string;
-  agentName: string;
-  action: string;
-  eventType: string;
-  createdAt: string;
+  id: string; agentName: string; action: string;
+  eventType: string; createdAt: string;
 }
 
 interface Summary {
-  foundToday: number;
-  qualified: number;
-  outreachReady: number;
-  pipelineValue: number;
+  foundToday: number; qualified: number;
+  outreachReady: number; pipelineValue: number;
+}
+
+interface DiscoveryRun {
+  id: string; startedAt: string; completedAt: string | null;
+  status: string; scanned: number; created: number;
+  rejected: number; duplicates: number; notes: string;
+}
+
+interface DiscoveryStats {
+  totalRuns: number; totalScanned: number;
+  totalCreated: number; totalDuplicates: number; avgCreatedPerRun: number;
 }
 
 interface OrgSettings {
@@ -108,6 +84,7 @@ interface OrgSettings {
   qualRules: Record<string, boolean>;
   outreachRules: Record<string, boolean>;
   agentPerms: Record<string, string>;
+  discoveryFilters: Record<string, boolean | number>;
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
@@ -124,7 +101,7 @@ const STATUS_CONFIG: Record<OpportunityStatus, { label: string; color: string }>
 };
 
 const DRAFT_STATUS_CONFIG: Record<DraftStatus, { label: string; color: string; icon: typeof CheckCircle }> = {
-  draft:    { label: "Draft",    color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300", icon: Edit3 },
+  draft:    { label: "Draft",    color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300", icon: Pencil },
   approved: { label: "Approved", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", icon: CheckCheck },
   rejected: { label: "Rejected", color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300", icon: ThumbsDown },
   sent:     { label: "Sent",     color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300", icon: Mail },
@@ -171,6 +148,12 @@ const EVENT_ICONS: Record<string, { icon: typeof Search; color: string }> = {
   update:  { icon: BarChart3, color: "bg-teal-500" },
 };
 
+const RUN_STATUS_CONFIG: Record<string, { label: string; color: string }> = {
+  running:   { label: "Running",   color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+  completed: { label: "Completed", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
+  failed:    { label: "Failed",    color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" },
+};
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function fitScoreColor(score: number): string {
@@ -188,11 +171,15 @@ function fitBarColor(score: number): string {
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
-  if (mins < 1)  return "just now";
+  if (mins < 1) return "just now";
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
-  if (hrs < 24)  return `${hrs}h ago`;
+  if (hrs < 24) return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
+}
+function fmtTime(iso: string | null): string {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 function StatusBadge({ s }: { s: OpportunityStatus }) {
   const cfg = STATUS_CONFIG[s] ?? { label: s, color: "bg-muted text-muted-foreground" };
@@ -236,28 +223,22 @@ function CardSkeleton() {
 
 // ─── Add Opportunity Modal ────────────────────────────────────────────────────
 
-interface AddModalProps { onClose: () => void; onSaved: () => void }
-
-function AddOpportunityModal({ onClose, onSaved }: AddModalProps) {
+function AddOpportunityModal({ onClose, onSaved }: { onClose: () => void; onSaved: () => void }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
     title: "", company: "", source: "Manual", type: "coaching" as OpportunityType,
-    location: "Remote" as "Remote" | "Hybrid" | "Local", estimatedValue: "", fitScore: "", notes: "",
+    location: "Remote" as "Remote" | "Hybrid" | "Local",
+    estimatedValue: "", fitScore: "", notes: "",
   });
-
   const mutation = useMutation({
-    mutationFn: (data: typeof form) =>
+    mutationFn: (d: typeof form) =>
       apiRequest("POST", "/api/opportunity-acquisition/opportunities", {
-        ...data,
-        estimatedValue: Number(data.estimatedValue) || 0,
-        fitScore: Number(data.fitScore) || 0,
+        ...d, estimatedValue: Number(d.estimatedValue) || 0, fitScore: Number(d.fitScore) || 0,
       }),
     onSuccess: () => { toast({ title: "Opportunity added" }); onSaved(); onClose(); },
     onError: () => toast({ title: "Failed to add opportunity", variant: "destructive" }),
   });
-
   const set = (k: keyof typeof form) => (v: string) => setForm(p => ({ ...p, [k]: v }));
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <Card className="w-full max-w-md border shadow-xl">
@@ -273,14 +254,8 @@ function AddOpportunityModal({ onClose, onSaved }: AddModalProps) {
             <Input className="h-8 text-xs" placeholder="e.g. Remote Strength Programming Coach" value={form.title} onChange={e => set("title")(e.target.value)} data-testid="input-opp-title" />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className="text-xs">Company</Label>
-              <Input className="h-8 text-xs" placeholder="Company name" value={form.company} onChange={e => set("company")(e.target.value)} data-testid="input-opp-company" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Source</Label>
-              <Input className="h-8 text-xs" placeholder="LinkedIn, Indeed…" value={form.source} onChange={e => set("source")(e.target.value)} data-testid="input-opp-source" />
-            </div>
+            <div className="space-y-1"><Label className="text-xs">Company</Label><Input className="h-8 text-xs" placeholder="Company name" value={form.company} onChange={e => set("company")(e.target.value)} data-testid="input-opp-company" /></div>
+            <div className="space-y-1"><Label className="text-xs">Source</Label><Input className="h-8 text-xs" placeholder="LinkedIn, Indeed…" value={form.source} onChange={e => set("source")(e.target.value)} data-testid="input-opp-source" /></div>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
@@ -309,19 +284,10 @@ function AddOpportunityModal({ onClose, onSaved }: AddModalProps) {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <div className="space-y-1">
-              <Label className="text-xs">Est. Value ($)</Label>
-              <Input className="h-8 text-xs" type="number" placeholder="60000" value={form.estimatedValue} onChange={e => set("estimatedValue")(e.target.value)} data-testid="input-opp-value" />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs">Fit Score (optional)</Label>
-              <Input className="h-8 text-xs" type="number" placeholder="Auto-scored" value={form.fitScore} onChange={e => set("fitScore")(e.target.value)} data-testid="input-opp-fitscore" />
-            </div>
+            <div className="space-y-1"><Label className="text-xs">Est. Value ($)</Label><Input className="h-8 text-xs" type="number" placeholder="60000" value={form.estimatedValue} onChange={e => set("estimatedValue")(e.target.value)} data-testid="input-opp-value" /></div>
+            <div className="space-y-1"><Label className="text-xs">Fit Score (optional)</Label><Input className="h-8 text-xs" type="number" placeholder="Auto-scored" value={form.fitScore} onChange={e => set("fitScore")(e.target.value)} data-testid="input-opp-fitscore" /></div>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Notes / Description</Label>
-            <Input className="h-8 text-xs" placeholder="Any additional context…" value={form.notes} onChange={e => set("notes")(e.target.value)} data-testid="input-opp-notes" />
-          </div>
+          <div className="space-y-1"><Label className="text-xs">Notes / Description</Label><Input className="h-8 text-xs" placeholder="Any additional context…" value={form.notes} onChange={e => set("notes")(e.target.value)} data-testid="input-opp-notes" /></div>
           <div className="flex gap-2 pt-1">
             <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={onClose}>Cancel</Button>
             <Button size="sm" className="flex-1 text-xs gap-1" disabled={!form.title || mutation.isPending} onClick={() => mutation.mutate(form)} data-testid="button-save-opportunity">
@@ -340,13 +306,11 @@ function EditDraftModal({ draft, onClose, onSaved }: { draft: OutreachDraft; onC
   const { toast } = useToast();
   const [subject, setSubject] = useState(draft.subject);
   const [body, setBody]       = useState(draft.body);
-
   const mutation = useMutation({
     mutationFn: () => apiRequest("PATCH", `/api/opportunity-acquisition/outreach-drafts/${draft.id}`, { subject, body }),
     onSuccess: () => { toast({ title: "Draft updated" }); onSaved(); onClose(); },
     onError: () => toast({ title: "Update failed", variant: "destructive" }),
   });
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
       <Card className="w-full max-w-2xl border shadow-xl max-h-[90vh] flex flex-col">
@@ -360,14 +324,8 @@ function EditDraftModal({ draft, onClose, onSaved }: { draft: OutreachDraft; onC
           </div>
         </CardHeader>
         <CardContent className="px-4 pb-4 space-y-3 overflow-y-auto flex-1">
-          <div className="space-y-1">
-            <Label className="text-xs">Subject</Label>
-            <Input className="h-8 text-xs" value={subject} onChange={e => setSubject(e.target.value)} data-testid="input-draft-subject" />
-          </div>
-          <div className="space-y-1">
-            <Label className="text-xs">Body</Label>
-            <Textarea className="text-xs resize-none min-h-[300px]" value={body} onChange={e => setBody(e.target.value)} data-testid="input-draft-body" />
-          </div>
+          <div className="space-y-1"><Label className="text-xs">Subject</Label><Input className="h-8 text-xs" value={subject} onChange={e => setSubject(e.target.value)} data-testid="input-draft-subject" /></div>
+          <div className="space-y-1"><Label className="text-xs">Body</Label><Textarea className="text-xs resize-none min-h-[300px]" value={body} onChange={e => setBody(e.target.value)} data-testid="input-draft-body" /></div>
           <div className="flex gap-2 pt-1">
             <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={onClose}>Cancel</Button>
             <Button size="sm" className="flex-1 text-xs gap-1" disabled={mutation.isPending} onClick={() => mutation.mutate()} data-testid="button-save-draft">
@@ -397,9 +355,7 @@ function SummaryCards({ data, isLoading }: { data?: Summary; isLoading: boolean 
             <div className="flex items-start justify-between gap-2">
               <div>
                 <p className="text-xs text-muted-foreground font-medium">{c.label}</p>
-                {isLoading
-                  ? <Skeleton className="h-7 w-16 mt-1" />
-                  : <p className="text-2xl font-bold mt-0.5" data-testid={`text-summary-${c.label.replace(/\s/g, "-").toLowerCase()}`}>{c.fmt(c.value)}</p>}
+                {isLoading ? <Skeleton className="h-7 w-16 mt-1" /> : <p className="text-2xl font-bold mt-0.5" data-testid={`text-summary-${c.label.replace(/\s/g, "-").toLowerCase()}`}>{c.fmt(c.value)}</p>}
               </div>
               <div className={`p-2 rounded-lg ${c.bg}`}><c.icon className={`h-4 w-4 ${c.color}`} /></div>
             </div>
@@ -414,35 +370,24 @@ function SummaryCards({ data, isLoading }: { data?: Summary; isLoading: boolean 
 
 function DiscoveryTab({
   opportunities, assessments, drafts, isLoading,
-  onQualify, qualifyingId,
-  onGenerateOutreach, generatingOutreachId,
-  onTabChange,
+  onQualify, qualifyingId, onGenerateOutreach, generatingOutreachId,
 }: {
-  opportunities: Opportunity[];
-  assessments: Assessment[];
-  drafts: OutreachDraft[];
-  isLoading: boolean;
-  onQualify: (id: string) => void;
-  qualifyingId: string | null;
-  onGenerateOutreach: (id: string) => void;
-  generatingOutreachId: string | null;
-  onTabChange: (tab: string) => void;
+  opportunities: Opportunity[]; assessments: Assessment[]; drafts: OutreachDraft[];
+  isLoading: boolean; onQualify: (id: string) => void; qualifyingId: string | null;
+  onGenerateOutreach: (id: string) => void; generatingOutreachId: string | null;
 }) {
-  const assessedIds  = new Set(assessments.map(a => a.opportunityId));
-  const draftedIds   = new Set(drafts.map(d => d.opportunityId));
-
+  const assessedIds = new Set(assessments.map(a => a.opportunityId));
+  const draftedIds  = new Set(drafts.map(d => d.opportunityId));
   if (isLoading) return <CardSkeleton />;
-
   if (!opportunities.length) {
     return (
       <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
         <Target className="h-8 w-8 mx-auto mb-2 opacity-30" />
         <p className="font-medium text-sm">No opportunities yet</p>
-        <p className="text-xs mt-1">Add one manually or run a discovery scan to get started.</p>
+        <p className="text-xs mt-1">Run the Discovery Agent or add one manually to get started.</p>
       </div>
     );
   }
-
   return (
     <div className="space-y-3">
       {opportunities.map(opp => {
@@ -451,7 +396,6 @@ function DiscoveryTab({
         const isQualifying  = qualifyingId === opp.id;
         const isGenerating  = generatingOutreachId === opp.id;
         const canOutreach   = opp.fitScore >= 65 || hasAssessment;
-
         return (
           <Card key={opp.id} className="border shadow-sm hover:shadow-md transition-shadow" data-testid={`card-opportunity-${opp.id}`}>
             <CardContent className="p-4">
@@ -461,16 +405,8 @@ function DiscoveryTab({
                     <h3 className="text-sm font-semibold truncate" data-testid={`text-opp-title-${opp.id}`}>{opp.title}</h3>
                     <StatusBadge s={opp.status} />
                     <TypeBadge t={opp.type} />
-                    {hasAssessment && (
-                      <Badge className="text-[10px] px-1.5 py-0 h-4 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
-                        <Brain className="h-2.5 w-2.5 mr-0.5" />Scored
-                      </Badge>
-                    )}
-                    {hasDraft && (
-                      <Badge className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-                        <Mail className="h-2.5 w-2.5 mr-0.5" />Draft
-                      </Badge>
-                    )}
+                    {hasAssessment && <Badge className="text-[10px] px-1.5 py-0 h-4 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300"><Brain className="h-2.5 w-2.5 mr-0.5" />Scored</Badge>}
+                    {hasDraft      && <Badge className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300"><Mail className="h-2.5 w-2.5 mr-0.5" />Draft</Badge>}
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     {opp.company && <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{opp.company}</span>}
@@ -482,37 +418,16 @@ function DiscoveryTab({
                 <div className="flex items-center gap-3 shrink-0">
                   <div className="text-right">
                     <p className="text-xs text-muted-foreground">Est. Value</p>
-                    <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">
-                      {opp.estimatedValue ? `$${(opp.estimatedValue / 1000).toFixed(0)}K` : "—"}
-                    </p>
+                    <p className="text-sm font-semibold text-emerald-600 dark:text-emerald-400">{opp.estimatedValue ? `$${(opp.estimatedValue / 1000).toFixed(0)}K` : "—"}</p>
                   </div>
-                  {opp.fitScore > 0 && (
-                    <div className="text-right">
-                      <p className="text-xs text-muted-foreground">Fit</p>
-                      <p className={`text-sm font-bold ${fitScoreColor(opp.fitScore)}`}>{opp.fitScore}</p>
-                    </div>
-                  )}
+                  {opp.fitScore > 0 && <div className="text-right"><p className="text-xs text-muted-foreground">Fit</p><p className={`text-sm font-bold ${fitScoreColor(opp.fitScore)}`}>{opp.fitScore}</p></div>}
                   <div className="flex flex-col gap-1.5">
-                    <Button
-                      size="sm"
-                      variant={hasAssessment ? "outline" : "default"}
-                      className="gap-1.5 text-xs h-7"
-                      disabled={isQualifying}
-                      onClick={() => onQualify(opp.id)}
-                      data-testid={`button-qualify-${opp.id}`}
-                    >
+                    <Button size="sm" variant={hasAssessment ? "outline" : "default"} className="gap-1.5 text-xs h-7" disabled={isQualifying} onClick={() => onQualify(opp.id)} data-testid={`button-qualify-${opp.id}`}>
                       {isQualifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
                       {hasAssessment ? "Re-score" : "Qualify"}
                     </Button>
                     {canOutreach ? (
-                      <Button
-                        size="sm"
-                        variant={hasDraft ? "outline" : "secondary"}
-                        className="gap-1.5 text-xs h-7"
-                        disabled={isGenerating}
-                        onClick={() => onGenerateOutreach(opp.id)}
-                        data-testid={`button-outreach-${opp.id}`}
-                      >
+                      <Button size="sm" variant={hasDraft ? "outline" : "secondary"} className="gap-1.5 text-xs h-7" disabled={isGenerating} onClick={() => onGenerateOutreach(opp.id)} data-testid={`button-outreach-${opp.id}`}>
                         {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
                         {hasDraft ? "Re-draft" : "Generate Outreach"}
                       </Button>
@@ -528,6 +443,105 @@ function DiscoveryTab({
           </Card>
         );
       })}
+    </div>
+  );
+}
+
+// ─── Discovery Runs Tab ───────────────────────────────────────────────────────
+
+function DiscoveryRunsTab({
+  runs, stats, runsLoading, statsLoading, onRunDiscovery, isRunning,
+}: {
+  runs: DiscoveryRun[]; stats?: DiscoveryStats;
+  runsLoading: boolean; statsLoading: boolean;
+  onRunDiscovery: () => void; isRunning: boolean;
+}) {
+  const statCards = [
+    { label: "Total Runs",     value: stats?.totalRuns ?? 0,      icon: PlayCircle, color: "text-blue-600 dark:text-blue-400",       bg: "bg-blue-50 dark:bg-blue-900/20" },
+    { label: "Total Scanned",  value: stats?.totalScanned ?? 0,   icon: Search,     color: "text-violet-600 dark:text-violet-400",   bg: "bg-violet-50 dark:bg-violet-900/20" },
+    { label: "Total Created",  value: stats?.totalCreated ?? 0,   icon: Database,   color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/20" },
+    { label: "Dupes Skipped",  value: stats?.totalDuplicates ?? 0,icon: Hash,       color: "text-amber-600 dark:text-amber-400",     bg: "bg-amber-50 dark:bg-amber-900/20" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      {/* Stat cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {statCards.map(c => (
+          <Card key={c.label} className="border shadow-sm">
+            <CardContent className="p-4">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs text-muted-foreground font-medium">{c.label}</p>
+                  {statsLoading ? <Skeleton className="h-7 w-12 mt-1" /> : <p className="text-2xl font-bold mt-0.5" data-testid={`text-stat-${c.label.replace(/\s/g, "-").toLowerCase()}`}>{c.value}</p>}
+                </div>
+                <div className={`p-2 rounded-lg ${c.bg}`}><c.icon className={`h-4 w-4 ${c.color}`} /></div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Header + run button */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Discovery History</h3>
+          <p className="text-xs text-muted-foreground">
+            {stats ? `Avg ${stats.avgCreatedPerRun} opportunities created per run` : "Run the agent to see history"}
+          </p>
+        </div>
+        <Button size="sm" className="gap-1.5 text-xs shrink-0" disabled={isRunning} onClick={onRunDiscovery} data-testid="button-run-discovery-tab">
+          {isRunning ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          Run Discovery Now
+        </Button>
+      </div>
+
+      {/* History table */}
+      {runsLoading ? (
+        <CardSkeleton />
+      ) : runs.length === 0 ? (
+        <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
+          <PlayCircle className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="font-medium text-sm">No discovery runs yet</p>
+          <p className="text-xs mt-1">Click "Run Discovery Now" to kick off the first agent run.</p>
+        </div>
+      ) : (
+        <Card className="border shadow-sm">
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b bg-muted/40">
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Started</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Completed</th>
+                  <th className="text-left px-4 py-2.5 font-semibold text-muted-foreground">Status</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Scanned</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Created</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Dupes</th>
+                  <th className="text-right px-4 py-2.5 font-semibold text-muted-foreground">Rejected</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((run, i) => {
+                  const sc = RUN_STATUS_CONFIG[run.status] ?? RUN_STATUS_CONFIG.completed;
+                  return (
+                    <tr key={run.id} className={`border-b last:border-0 ${i % 2 === 0 ? "" : "bg-muted/20"}`} data-testid={`row-run-${run.id}`}>
+                      <td className="px-4 py-2.5 text-muted-foreground">{fmtTime(run.startedAt)}</td>
+                      <td className="px-4 py-2.5 text-muted-foreground">{fmtTime(run.completedAt)}</td>
+                      <td className="px-4 py-2.5">
+                        <Badge className={`text-[10px] px-1.5 py-0 h-4 ${sc.color}`}>{sc.label}</Badge>
+                      </td>
+                      <td className="px-4 py-2.5 text-right font-medium">{run.scanned}</td>
+                      <td className="px-4 py-2.5 text-right font-semibold text-emerald-600 dark:text-emerald-400">{run.created}</td>
+                      <td className="px-4 py-2.5 text-right text-amber-600 dark:text-amber-400">{run.duplicates}</td>
+                      <td className="px-4 py-2.5 text-right text-muted-foreground">{run.rejected}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
@@ -548,9 +562,9 @@ function AssessmentCard({ a }: { a: Assessment }) {
           <div className={`text-2xl font-bold ${fitScoreColor(a.fitScore)}`} data-testid={`text-fit-score-${a.opportunityId}`}>{a.fitScore}</div>
         </div>
         <div className="mt-3 space-y-2">
-          <ScoreBar label="AI Fulfillment"     value={a.aiFulfillmentScore}    color={fitBarColor(a.aiFulfillmentScore)} />
-          <ScoreBar label="Revenue Potential"  value={a.revenuePotentialScore} color="bg-emerald-500" />
-          <ScoreBar label="Confidence"         value={a.confidenceScore}       color="bg-blue-500" />
+          <ScoreBar label="AI Fulfillment"    value={a.aiFulfillmentScore}    color={fitBarColor(a.aiFulfillmentScore)} />
+          <ScoreBar label="Revenue Potential" value={a.revenuePotentialScore} color="bg-emerald-500" />
+          <ScoreBar label="Confidence"        value={a.confidenceScore}       color="bg-blue-500" />
           <div className="space-y-1">
             <div className="flex items-center justify-between text-xs">
               <span className="text-muted-foreground">Risk Score</span>
@@ -563,22 +577,15 @@ function AssessmentCard({ a }: { a: Assessment }) {
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-4">
-        {a.reasoning && (
-          <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground italic leading-relaxed">{a.reasoning}</div>
-        )}
+        {a.reasoning && <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground italic leading-relaxed">{a.reasoning}</div>}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div className="rounded-lg border p-3 space-y-2">
             <div className="flex items-center gap-2"><Bot className="h-3.5 w-3.5 text-blue-500" /><h4 className="text-xs font-semibold text-blue-700 dark:text-blue-300">AI Can Fulfill</h4></div>
-            <ul className="space-y-1">
-              {a.aiCanFulfill.map(item => <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground"><CheckCircle className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />{item}</li>)}
-              {!a.aiCanFulfill.length && <li className="text-xs text-muted-foreground italic">None identified</li>}
-            </ul>
+            <ul className="space-y-1">{a.aiCanFulfill.map(item => <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground"><CheckCircle className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />{item}</li>)}</ul>
           </div>
           <div className="rounded-lg border p-3 space-y-2">
             <div className="flex items-center gap-2"><User className="h-3.5 w-3.5 text-amber-500" /><h4 className="text-xs font-semibold text-amber-700 dark:text-amber-300">Human Required</h4></div>
-            <ul className="space-y-1">
-              {a.humanRequired.map(item => <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground"><AlertTriangle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />{item}</li>)}
-            </ul>
+            <ul className="space-y-1">{a.humanRequired.map(item => <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground"><AlertTriangle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />{item}</li>)}</ul>
           </div>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -607,13 +614,9 @@ function AssessmentCard({ a }: { a: Assessment }) {
 
 // ─── Qualification Tab ────────────────────────────────────────────────────────
 
-function QualificationTab({
-  assessments, isLoading, onQualifyAll, qualifyAllPending,
-}: {
-  assessments: Assessment[];
-  isLoading: boolean;
-  onQualifyAll: () => void;
-  qualifyAllPending: boolean;
+function QualificationTab({ assessments, isLoading, onQualifyAll, qualifyAllPending }: {
+  assessments: Assessment[]; isLoading: boolean;
+  onQualifyAll: () => void; qualifyAllPending: boolean;
 }) {
   if (isLoading) return <CardSkeleton />;
   return (
@@ -621,15 +624,10 @@ function QualificationTab({
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">Qualification Assessments</h3>
-          <p className="text-xs text-muted-foreground">
-            {assessments.length > 0
-              ? `${assessments.length} assessment${assessments.length !== 1 ? "s" : ""} generated`
-              : "No assessments yet — qualify an opportunity to see results here"}
-          </p>
+          <p className="text-xs text-muted-foreground">{assessments.length > 0 ? `${assessments.length} assessment${assessments.length !== 1 ? "s" : ""} generated` : "No assessments yet"}</p>
         </div>
         <Button size="sm" className="text-xs gap-1.5 shrink-0" onClick={onQualifyAll} disabled={qualifyAllPending} data-testid="button-qualify-all">
-          {qualifyAllPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
-          Qualify All New
+          {qualifyAllPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}Qualify All New
         </Button>
       </div>
       {assessments.length === 0 ? (
@@ -647,46 +645,30 @@ function QualificationTab({
 
 // ─── Outreach Tab ─────────────────────────────────────────────────────────────
 
-function OutreachTab({
-  drafts, isLoading, onStatusChange, statusChangingId, onEdit,
-}: {
-  drafts: OutreachDraft[];
-  isLoading: boolean;
+function OutreachTab({ drafts, isLoading, onStatusChange, statusChangingId, onEdit }: {
+  drafts: OutreachDraft[]; isLoading: boolean;
   onStatusChange: (id: string, status: DraftStatus) => void;
-  statusChangingId: string | null;
-  onEdit: (draft: OutreachDraft) => void;
+  statusChangingId: string | null; onEdit: (draft: OutreachDraft) => void;
 }) {
   if (isLoading) return <CardSkeleton />;
-
   const byStatus = (s: DraftStatus) => drafts.filter(d => d.status === s);
-
   return (
     <div className="space-y-5">
-      {/* Header */}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">Outreach Drafts</h3>
-          <p className="text-xs text-muted-foreground">
-            {drafts.length > 0
-              ? `${drafts.length} draft${drafts.length !== 1 ? "s" : ""} · ${byStatus("approved").length} approved · ${byStatus("rejected").length} rejected`
-              : "No drafts yet — generate outreach from a qualified opportunity"}
-          </p>
+          <p className="text-xs text-muted-foreground">{drafts.length > 0 ? `${drafts.length} draft${drafts.length !== 1 ? "s" : ""} · ${byStatus("approved").length} approved · ${byStatus("rejected").length} rejected` : "No drafts yet"}</p>
         </div>
         <div className="flex items-center gap-1.5">
-          <Badge className="text-[10px] bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 gap-1">
-            <Edit3 className="h-2.5 w-2.5" />{byStatus("draft").length} draft
-          </Badge>
-          <Badge className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 gap-1">
-            <CheckCheck className="h-2.5 w-2.5" />{byStatus("approved").length} approved
-          </Badge>
+          <Badge className="text-[10px] bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 gap-1"><Pencil className="h-2.5 w-2.5" />{byStatus("draft").length} draft</Badge>
+          <Badge className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 gap-1"><CheckCheck className="h-2.5 w-2.5" />{byStatus("approved").length} approved</Badge>
         </div>
       </div>
-
       {drafts.length === 0 ? (
         <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
           <Mail className="h-8 w-8 mx-auto mb-2 opacity-30" />
           <p className="font-medium text-sm">No outreach drafts yet</p>
-          <p className="text-xs mt-1">Go to Discovery and click "Generate Outreach" on any qualified opportunity (fit ≥ 65).</p>
+          <p className="text-xs mt-1">Go to Discovery and click "Generate Outreach" on any qualified opportunity.</p>
         </div>
       ) : (
         <div className="space-y-4">
@@ -697,13 +679,7 @@ function OutreachTab({
                 <CardHeader className="pb-2 pt-4 px-4">
                   <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <DraftBadge s={draft.status} />
-                        <TypeBadge t={draft.opportunityType} />
-                        <Badge className="text-[10px] px-1.5 py-0 h-4 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
-                          {draft.channel}
-                        </Badge>
-                      </div>
+                      <div className="flex flex-wrap items-center gap-1.5"><DraftBadge s={draft.status} /><TypeBadge t={draft.opportunityType} /></div>
                       <h3 className="text-sm font-semibold mt-1.5" data-testid={`text-draft-subject-${draft.id}`}>{draft.subject}</h3>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-1">
                         <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{draft.company || draft.opportunityTitle}</span>
@@ -719,74 +695,36 @@ function OutreachTab({
                   </div>
                 </CardHeader>
                 <CardContent className="px-4 pb-4 space-y-3">
-                  {/* Body preview */}
                   <div className="rounded-md border bg-muted/30 p-3 space-y-2">
-                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                      <Eye className="h-3 w-3" />Body Preview
-                    </div>
+                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5"><Eye className="h-3 w-3" />Body Preview</div>
                     <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed line-clamp-6" data-testid={`text-draft-body-${draft.id}`}>{draft.body}</pre>
                   </div>
-
-                  {/* Positioning angle */}
                   {draft.positioningAngle && (
                     <div className="flex items-start gap-2 rounded-md bg-blue-50 dark:bg-blue-900/20 p-2.5">
                       <Zap className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" />
-                      <div>
-                        <p className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wide">Positioning</p>
-                        <p className="text-xs text-blue-700 dark:text-blue-300">{draft.positioningAngle}</p>
-                      </div>
+                      <div><p className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wide">Positioning</p><p className="text-xs text-blue-700 dark:text-blue-300">{draft.positioningAngle}</p></div>
                     </div>
                   )}
-
-                  {/* Call to action */}
                   {draft.callToAction && (
                     <div className="flex items-start gap-2 rounded-md bg-teal-50 dark:bg-teal-900/20 p-2.5">
                       <ChevronRight className="h-3.5 w-3.5 text-teal-500 shrink-0 mt-0.5" />
                       <p className="text-xs text-teal-700 dark:text-teal-300 italic">{draft.callToAction}</p>
                     </div>
                   )}
-
-                  {/* Actions */}
                   {draft.status !== "sent" && (
                     <div className="flex flex-wrap items-center gap-2 pt-1 border-t">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="gap-1.5 text-xs h-7"
-                        disabled={isChanging}
-                        onClick={() => onEdit(draft)}
-                        data-testid={`button-edit-draft-${draft.id}`}
-                      >
-                        <Pencil className="h-3 w-3" />Edit
-                      </Button>
+                      <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7" disabled={isChanging} onClick={() => onEdit(draft)} data-testid={`button-edit-draft-${draft.id}`}><Pencil className="h-3 w-3" />Edit</Button>
                       {draft.status !== "approved" && (
-                        <Button
-                          size="sm"
-                          className="gap-1.5 text-xs h-7 bg-emerald-600 hover:bg-emerald-700 text-white"
-                          disabled={isChanging}
-                          onClick={() => onStatusChange(draft.id, "approved")}
-                          data-testid={`button-approve-draft-${draft.id}`}
-                        >
+                        <Button size="sm" className="gap-1.5 text-xs h-7 bg-emerald-600 hover:bg-emerald-700 text-white" disabled={isChanging} onClick={() => onStatusChange(draft.id, "approved")} data-testid={`button-approve-draft-${draft.id}`}>
                           {isChanging ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCheck className="h-3 w-3" />}Approve
                         </Button>
                       )}
                       {draft.status !== "rejected" && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="gap-1.5 text-xs h-7 border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                          disabled={isChanging}
-                          onClick={() => onStatusChange(draft.id, "rejected")}
-                          data-testid={`button-reject-draft-${draft.id}`}
-                        >
+                        <Button size="sm" variant="outline" className="gap-1.5 text-xs h-7 border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20" disabled={isChanging} onClick={() => onStatusChange(draft.id, "rejected")} data-testid={`button-reject-draft-${draft.id}`}>
                           {isChanging ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsDown className="h-3 w-3" />}Reject
                         </Button>
                       )}
-                      {draft.status === "approved" && (
-                        <span className="text-xs text-muted-foreground ml-auto italic flex items-center gap-1">
-                          <Shield className="h-3 w-3" />No email sending in this phase
-                        </span>
-                      )}
+                      {draft.status === "approved" && <span className="text-xs text-muted-foreground ml-auto italic flex items-center gap-1"><Shield className="h-3 w-3" />No email sending in this phase</span>}
                     </div>
                   )}
                 </CardContent>
@@ -821,14 +759,10 @@ function PipelineTab({ opportunities }: { opportunities: Opportunity[] }) {
                       <span className="text-[10px] text-muted-foreground truncate max-w-[80px]">{opp.company || "—"}</span>
                       {opp.fitScore > 0 && <span className={`text-[10px] font-bold ${fitScoreColor(opp.fitScore)}`}>{opp.fitScore}</span>}
                     </div>
-                    {opp.estimatedValue > 0 && (
-                      <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">${(opp.estimatedValue / 1000).toFixed(0)}K</p>
-                    )}
+                    {opp.estimatedValue > 0 && <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">${(opp.estimatedValue / 1000).toFixed(0)}K</p>}
                   </div>
                 ))}
-                {items.length === 0 && (
-                  <div className="flex items-center justify-center h-16 text-[11px] text-muted-foreground">Empty</div>
-                )}
+                {items.length === 0 && <div className="flex items-center justify-center h-16 text-[11px] text-muted-foreground">Empty</div>}
               </div>
             </div>
           );
@@ -847,7 +781,7 @@ function AgentActivityTab({ events, isLoading }: { events: AgentEvent[]; isLoadi
       <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
         <Activity className="h-8 w-8 mx-auto mb-2 opacity-30" />
         <p className="font-medium text-sm">No agent activity yet</p>
-        <p className="text-xs mt-1">Run a discovery scan or qualify an opportunity to generate events.</p>
+        <p className="text-xs mt-1">Run the Discovery Agent to generate events.</p>
       </div>
     );
   }
@@ -871,10 +805,7 @@ function AgentActivityTab({ events, isLoading }: { events: AgentEvent[]; isLoadi
               </div>
               <div className="pb-4 flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
-                  <div>
-                    <span className="text-xs font-semibold">{event.agentName}</span>
-                    <span className="text-xs text-muted-foreground"> {event.action}</span>
-                  </div>
+                  <div><span className="text-xs font-semibold">{event.agentName}</span><span className="text-xs text-muted-foreground"> {event.action}</span></div>
                   <span className="text-[10px] text-muted-foreground shrink-0 mt-0.5">{timeAgo(event.createdAt)}</span>
                 </div>
               </div>
@@ -889,10 +820,11 @@ function AgentActivityTab({ events, isLoading }: { events: AgentEvent[]; isLoadi
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
 
 const DEFAULT_SETTINGS: OrgSettings = {
-  sources:       { linkedin: true, indeed: true, agentScan: false, directReferrals: true },
-  qualRules:     { minFitScore70: true, remoteOnly: false, revenueMin40k: true, autoQualifyHigh: false },
-  outreachRules: { requireHumanApproval: true, autoSendHighConf: false, ccFounder: true },
-  agentPerms:    { discovery: "scan_only", qualification: "score_qualify", outreach: "draft_only", executive: "flag_escalate" },
+  sources:          { linkedin: true, indeed: true, teamworkOnline: true, higherEdJobs: true, ncaaCareers: true, directReferrals: true },
+  qualRules:        { minFitScore70: true, remoteOnly: false, revenueMin40k: true, autoQualifyHigh: false },
+  outreachRules:    { requireHumanApproval: true, autoSendHighConf: false, ccFounder: true },
+  agentPerms:       { discovery: "scan_only", qualification: "score_qualify", outreach: "draft_only", executive: "flag_escalate" },
+  discoveryFilters: { remoteCoaching: true, programming: true, wellness: true, consulting: true, partnerships: true, minScore: 65 },
 };
 
 function SettingsTab({ settings: serverSettings, isLoading }: { settings?: OrgSettings | null; isLoading: boolean }) {
@@ -910,8 +842,14 @@ function SettingsTab({ settings: serverSettings, isLoading }: { settings?: OrgSe
   const toggle = (section: keyof OrgSettings, key: string) => () => {
     setLocal(prev => {
       const base = prev ?? effective;
-      const s = base[section] as Record<string, boolean | string>;
+      const s = base[section] as Record<string, boolean | number>;
       return { ...base, [section]: { ...s, [key]: !s[key] } };
+    });
+  };
+  const setNum = (section: keyof OrgSettings, key: string, val: number) => {
+    setLocal(prev => {
+      const base = prev ?? effective;
+      return { ...base, [section]: { ...(base[section] as Record<string, any>), [key]: val } };
     });
   };
   const setPerm = (key: string, val: string) => {
@@ -926,28 +864,67 @@ function SettingsTab({ settings: serverSettings, isLoading }: { settings?: OrgSe
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+        {/* Opportunity Sources */}
         <Card className="border shadow-sm">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2"><Radio className="h-4 w-4 text-muted-foreground" />Opportunity Sources</CardTitle>
           </CardHeader>
           <CardContent className="px-4 pb-4 space-y-3">
             {[
-              { key: "linkedin",        label: "LinkedIn Jobs",    desc: "Scan for coaching and consulting roles" },
-              { key: "indeed",          label: "Indeed",           desc: "Scan Indeed job board daily" },
-              { key: "agentScan",       label: "Agent Deep Scan",  desc: "AI-driven web discovery mode" },
-              { key: "directReferrals", label: "Direct Referrals", desc: "Include manually added opportunities" },
+              { key: "linkedin",       label: "LinkedIn Jobs",    desc: "Scan LinkedIn for coaching and consulting roles" },
+              { key: "indeed",         label: "Indeed",           desc: "Scan Indeed job board" },
+              { key: "teamworkOnline", label: "TeamWork Online",  desc: "Sports and athletics job board" },
+              { key: "higherEdJobs",   label: "HigherEdJobs",     desc: "Higher education performance roles" },
+              { key: "ncaaCareers",    label: "NCAA Careers",     desc: "NCAA member institution listings" },
+              { key: "directReferrals",label: "Direct Referrals", desc: "Manually added opportunities" },
             ].map(s => (
               <div key={s.key} className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium">{s.label}</p>
-                  <p className="text-[11px] text-muted-foreground">{s.desc}</p>
-                </div>
+                <div><p className="text-xs font-medium">{s.label}</p><p className="text-[11px] text-muted-foreground">{s.desc}</p></div>
                 <Switch checked={!!effective.sources[s.key]} onCheckedChange={toggle("sources", s.key)} data-testid={`toggle-source-${s.key}`} />
               </div>
             ))}
           </CardContent>
         </Card>
 
+        {/* Opportunity Types Filter */}
+        <Card className="border shadow-sm">
+          <CardHeader className="pb-2 pt-4 px-4">
+            <CardTitle className="text-sm font-semibold flex items-center gap-2"><Filter className="h-4 w-4 text-muted-foreground" />Opportunity Types</CardTitle>
+          </CardHeader>
+          <CardContent className="px-4 pb-4 space-y-3">
+            {[
+              { key: "remoteCoaching", label: "Remote Coaching",  desc: "Online athlete coaching engagements" },
+              { key: "programming",    label: "Programming",      desc: "Program design and delivery roles" },
+              { key: "wellness",       label: "Wellness",         desc: "Corporate and personal wellness" },
+              { key: "consulting",     label: "Consulting",       desc: "Performance consulting contracts" },
+              { key: "partnerships",   label: "Partnerships",     desc: "Platform and organization partnerships" },
+            ].map(f => (
+              <div key={f.key} className="flex items-center justify-between gap-3">
+                <div><p className="text-xs font-medium">{f.label}</p><p className="text-[11px] text-muted-foreground">{f.desc}</p></div>
+                <Switch checked={!!effective.discoveryFilters[f.key]} onCheckedChange={toggle("discoveryFilters", f.key)} data-testid={`toggle-type-${f.key}`} />
+              </div>
+            ))}
+            {/* Min score */}
+            <div className="pt-2 border-t space-y-2">
+              <div className="flex items-center justify-between">
+                <div><p className="text-xs font-medium">Minimum Discovery Score</p><p className="text-[11px] text-muted-foreground">Reject opportunities below this fit threshold</p></div>
+                <span className="text-sm font-bold text-primary">{effective.discoveryFilters.minScore ?? 65}</span>
+              </div>
+              <Input
+                type="number"
+                min={0}
+                max={100}
+                className="h-8 text-xs w-24"
+                value={String(effective.discoveryFilters.minScore ?? 65)}
+                onChange={e => setNum("discoveryFilters", "minScore", Number(e.target.value))}
+                data-testid="input-min-score"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Qualification Rules */}
         <Card className="border shadow-sm">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2"><Star className="h-4 w-4 text-muted-foreground" />Qualification Rules</CardTitle>
@@ -960,16 +937,14 @@ function SettingsTab({ settings: serverSettings, isLoading }: { settings?: OrgSe
               { key: "autoQualifyHigh", label: "Auto-Qualify High Scores", desc: "Auto-move 90+ scores to Outreach Ready" },
             ].map(r => (
               <div key={r.key} className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium">{r.label}</p>
-                  <p className="text-[11px] text-muted-foreground">{r.desc}</p>
-                </div>
+                <div><p className="text-xs font-medium">{r.label}</p><p className="text-[11px] text-muted-foreground">{r.desc}</p></div>
                 <Switch checked={!!effective.qualRules[r.key]} onCheckedChange={toggle("qualRules", r.key)} data-testid={`toggle-qual-${r.key}`} />
               </div>
             ))}
           </CardContent>
         </Card>
 
+        {/* Outreach Approval Rules */}
         <Card className="border shadow-sm">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2"><Shield className="h-4 w-4 text-muted-foreground" />Outreach Approval Rules</CardTitle>
@@ -981,44 +956,45 @@ function SettingsTab({ settings: serverSettings, isLoading }: { settings?: OrgSe
               { key: "ccFounder",            label: "CC Founder on Outreach",    desc: "Add founder to every outreach email" },
             ].map(r => (
               <div key={r.key} className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium">{r.label}</p>
-                  <p className="text-[11px] text-muted-foreground">{r.desc}</p>
-                </div>
+                <div><p className="text-xs font-medium">{r.label}</p><p className="text-[11px] text-muted-foreground">{r.desc}</p></div>
                 <Switch checked={!!effective.outreachRules[r.key]} onCheckedChange={toggle("outreachRules", r.key)} data-testid={`toggle-outreach-${r.key}`} />
               </div>
             ))}
           </CardContent>
         </Card>
 
-        <Card className="border shadow-sm">
+        {/* Agent Permissions */}
+        <Card className="border shadow-sm md:col-span-2">
           <CardHeader className="pb-2 pt-4 px-4">
             <CardTitle className="text-sm font-semibold flex items-center gap-2"><Bot className="h-4 w-4 text-muted-foreground" />Agent Permissions</CardTitle>
           </CardHeader>
-          <CardContent className="px-4 pb-4 space-y-3">
-            {[
-              { key: "discovery",     label: "Discovery Agent" },
-              { key: "qualification", label: "Qualification Agent" },
-              { key: "outreach",      label: "Outreach Agent" },
-              { key: "executive",     label: "Executive Agent" },
-            ].map(a => (
-              <div key={a.key} className="flex items-center justify-between gap-3">
-                <p className="text-xs font-medium">{a.label}</p>
-                <Select value={effective.agentPerms[a.key] ?? "disabled"} onValueChange={v => setPerm(a.key, v)}>
-                  <SelectTrigger className="h-7 text-xs w-36" data-testid={`select-agent-${a.key}`}><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="scan_only">Scan Only</SelectItem>
-                    <SelectItem value="score_qualify">Score & Qualify</SelectItem>
-                    <SelectItem value="draft_only">Draft Only</SelectItem>
-                    <SelectItem value="flag_escalate">Flag & Escalate</SelectItem>
-                    <SelectItem value="auto_send">Auto Send</SelectItem>
-                    <SelectItem value="disabled">Disabled</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            ))}
+          <CardContent className="px-4 pb-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { key: "discovery",     label: "Discovery Agent" },
+                { key: "qualification", label: "Qualification Agent" },
+                { key: "outreach",      label: "Outreach Agent" },
+                { key: "executive",     label: "Executive Agent" },
+              ].map(a => (
+                <div key={a.key} className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-medium">{a.label}</p>
+                  <Select value={effective.agentPerms[a.key] ?? "disabled"} onValueChange={v => setPerm(a.key, v)}>
+                    <SelectTrigger className="h-7 text-xs w-36" data-testid={`select-agent-${a.key}`}><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="scan_only">Scan Only</SelectItem>
+                      <SelectItem value="score_qualify">Score & Qualify</SelectItem>
+                      <SelectItem value="draft_only">Draft Only</SelectItem>
+                      <SelectItem value="flag_escalate">Flag & Escalate</SelectItem>
+                      <SelectItem value="auto_send">Auto Send</SelectItem>
+                      <SelectItem value="disabled">Disabled</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
+
       </div>
 
       <div className="flex justify-end">
@@ -1033,21 +1009,21 @@ function SettingsTab({ settings: serverSettings, isLoading }: { settings?: OrgSe
 // ─── Page Root ────────────────────────────────────────────────────────────────
 
 export default function AdminOpportunityAcquisitionPage() {
-  const [activeTab, setActiveTab]             = useState("discovery");
-  const [showAddModal, setShowAddModal]       = useState(false);
-  const [editingDraft, setEditingDraft]       = useState<OutreachDraft | null>(null);
-  const [qualifyingId, setQualifyingId]       = useState<string | null>(null);
+  const [activeTab, setActiveTab]                       = useState("discovery");
+  const [showAddModal, setShowAddModal]                 = useState(false);
+  const [editingDraft, setEditingDraft]                 = useState<OutreachDraft | null>(null);
+  const [qualifyingId, setQualifyingId]                 = useState<string | null>(null);
   const [generatingOutreachId, setGeneratingOutreachId] = useState<string | null>(null);
-  const [statusChangingId, setStatusChangingId] = useState<string | null>(null);
+  const [statusChangingId, setStatusChangingId]         = useState<string | null>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
   function invalidateAll() {
-    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
-    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/summary"] });
-    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/assessments"] });
-    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
-    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
+    ["opportunities", "summary", "assessments", "events", "outreach-drafts"].forEach(k =>
+      qc.invalidateQueries({ queryKey: [`/api/opportunity-acquisition/${k}`] })
+    );
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
   }
 
   const summaryQ  = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
@@ -1056,21 +1032,23 @@ export default function AdminOpportunityAcquisitionPage() {
   const settingsQ = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
   const assessQ   = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
   const draftsQ   = useQuery<OutreachDraft[]>({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
+  const runsQ     = useQuery<DiscoveryRun[]>({ queryKey: ["/api/opportunity-acquisition/discovery/history"] });
+  const statsQ    = useQuery<DiscoveryStats>({ queryKey: ["/api/opportunity-acquisition/discovery/stats"] });
 
-  const runScan = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/run-scan", {}),
-    onSuccess: () => {
-      toast({ title: "Discovery scan queued", description: "Agent event logged." });
-      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
-      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/summary"] });
-      setActiveTab("agent-activity");
+  const runDiscovery = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/discovery/run", {}),
+    onSuccess: (data: any) => {
+      const created = data?.created ?? 0;
+      toast({ title: `Discovery complete`, description: `Found ${created} new opportunit${created === 1 ? "y" : "ies"}.` });
+      invalidateAll();
+      setActiveTab("discovery-runs");
     },
-    onError: () => toast({ title: "Scan failed", variant: "destructive" }),
+    onError: () => toast({ title: "Discovery failed", variant: "destructive" }),
   });
 
   const qualifyOne = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/opportunity-acquisition/opportunities/${id}/qualify`, {}),
-    onMutate: (id) => setQualifyingId(id),
+    onMutate: id => setQualifyingId(id),
     onSuccess: () => {
       toast({ title: "Qualification complete", description: "Fit score updated." });
       setQualifyingId(null);
@@ -1085,14 +1063,13 @@ export default function AdminOpportunityAcquisitionPage() {
     onSuccess: (data: any) => {
       toast({ title: `Qualified ${data?.qualified ?? 0} opportunities` });
       invalidateAll();
-      setActiveTab("qualification");
     },
     onError: () => toast({ title: "Qualify All failed", variant: "destructive" }),
   });
 
   const generateOutreach = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/opportunity-acquisition/opportunities/${id}/generate-outreach`, {}),
-    onMutate: (id) => setGeneratingOutreachId(id),
+    onMutate: id => setGeneratingOutreachId(id),
     onSuccess: () => {
       toast({ title: "Outreach draft generated", description: "Review it in the Outreach tab." });
       setGeneratingOutreachId(null);
@@ -1122,12 +1099,12 @@ export default function AdminOpportunityAcquisitionPage() {
   const events: AgentEvent[]          = eventsQ.data ?? [];
   const assessments: Assessment[]     = assessQ.data ?? [];
   const drafts: OutreachDraft[]       = draftsQ.data ?? [];
+  const runs: DiscoveryRun[]          = runsQ.data ?? [];
+  const pendingDrafts                 = drafts.filter(d => d.status === "draft").length;
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
-      {showAddModal && (
-        <AddOpportunityModal onClose={() => setShowAddModal(false)} onSaved={invalidateAll} />
-      )}
+      {showAddModal && <AddOpportunityModal onClose={() => setShowAddModal(false)} onSaved={invalidateAll} />}
       {editingDraft && (
         <EditDraftModal
           draft={editingDraft}
@@ -1149,18 +1126,18 @@ export default function AdminOpportunityAcquisitionPage() {
             <div>
               <div className="flex items-center gap-2">
                 <Target className="h-5 w-5 text-primary" />
-                <h1 className="text-xl font-bold">Opportunity Acquisition</h1>
+                <h1 className="text-xl font-bold">Opportunity Acquisition OS</h1>
               </div>
-              <p className="text-sm text-muted-foreground mt-0.5">AI agents find, qualify, and draft outreach for external opportunities.</p>
+              <p className="text-sm text-muted-foreground mt-0.5">AI agents discover, qualify, and draft outreach for real revenue opportunities.</p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={() => setShowAddModal(true)} data-testid="button-add-opportunity">
-              <Plus className="h-3.5 w-3.5" />Add Opportunity
+              <Plus className="h-3.5 w-3.5" />Add Manually
             </Button>
-            <Button size="sm" className="gap-1.5 text-xs" disabled={runScan.isPending} onClick={() => runScan.mutate()} data-testid="button-run-discovery">
-              {runScan.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
-              Run Discovery Scan
+            <Button size="sm" className="gap-1.5 text-xs" disabled={runDiscovery.isPending} onClick={() => runDiscovery.mutate()} data-testid="button-run-discovery">
+              {runDiscovery.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
+              Run Discovery Agent
             </Button>
           </div>
         </div>
@@ -1169,49 +1146,51 @@ export default function AdminOpportunityAcquisitionPage() {
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
           <TabsList className="w-full sm:w-auto flex overflow-x-auto" data-testid="tabs-main">
-            <TabsTrigger value="discovery"      className="text-xs gap-1" data-testid="tab-discovery"><Search className="h-3 w-3" />Discovery</TabsTrigger>
-            <TabsTrigger value="qualification"  className="text-xs gap-1" data-testid="tab-qualification"><Brain className="h-3 w-3" />Qualification</TabsTrigger>
-            <TabsTrigger value="outreach"       className="text-xs gap-1" data-testid="tab-outreach">
-              <Mail className="h-3 w-3" />Outreach
-              {drafts.filter(d => d.status === "draft").length > 0 && (
-                <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-amber-500 text-white">{drafts.filter(d => d.status === "draft").length}</Badge>
-              )}
+            <TabsTrigger value="discovery"       className="text-xs gap-1" data-testid="tab-discovery"><Search className="h-3 w-3" />Discovery</TabsTrigger>
+            <TabsTrigger value="discovery-runs"  className="text-xs gap-1" data-testid="tab-discovery-runs">
+              <Database className="h-3 w-3" />Discovery Runs
+              {(statsQ.data?.totalRuns ?? 0) > 0 && <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-blue-500 text-white">{statsQ.data?.totalRuns}</Badge>}
             </TabsTrigger>
-            <TabsTrigger value="pipeline"       className="text-xs gap-1" data-testid="tab-pipeline"><TrendingUp className="h-3 w-3" />Pipeline</TabsTrigger>
-            <TabsTrigger value="agent-activity" className="text-xs gap-1" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
-            <TabsTrigger value="settings"       className="text-xs gap-1" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
+            <TabsTrigger value="qualification"   className="text-xs gap-1" data-testid="tab-qualification"><Brain className="h-3 w-3" />Qualification</TabsTrigger>
+            <TabsTrigger value="outreach"        className="text-xs gap-1" data-testid="tab-outreach">
+              <Mail className="h-3 w-3" />Outreach
+              {pendingDrafts > 0 && <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-amber-500 text-white">{pendingDrafts}</Badge>}
+            </TabsTrigger>
+            <TabsTrigger value="pipeline"        className="text-xs gap-1" data-testid="tab-pipeline"><TrendingUp className="h-3 w-3" />Pipeline</TabsTrigger>
+            <TabsTrigger value="agent-activity"  className="text-xs gap-1" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
+            <TabsTrigger value="settings"        className="text-xs gap-1" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
           </TabsList>
 
           <TabsContent value="discovery" className="mt-4">
             <DiscoveryTab
-              opportunities={opportunities}
-              assessments={assessments}
-              drafts={drafts}
+              opportunities={opportunities} assessments={assessments} drafts={drafts}
               isLoading={oppsQ.isLoading}
-              onQualify={(id) => qualifyOne.mutate(id)}
-              qualifyingId={qualifyingId}
-              onGenerateOutreach={(id) => generateOutreach.mutate(id)}
-              generatingOutreachId={generatingOutreachId}
-              onTabChange={setActiveTab}
+              onQualify={id => qualifyOne.mutate(id)} qualifyingId={qualifyingId}
+              onGenerateOutreach={id => generateOutreach.mutate(id)} generatingOutreachId={generatingOutreachId}
+            />
+          </TabsContent>
+
+          <TabsContent value="discovery-runs" className="mt-4">
+            <DiscoveryRunsTab
+              runs={runs} stats={statsQ.data}
+              runsLoading={runsQ.isLoading} statsLoading={statsQ.isLoading}
+              onRunDiscovery={() => runDiscovery.mutate()} isRunning={runDiscovery.isPending}
             />
           </TabsContent>
 
           <TabsContent value="qualification" className="mt-4">
             <QualificationTab
-              assessments={assessments}
-              isLoading={assessQ.isLoading}
-              onQualifyAll={() => qualifyAll.mutate()}
-              qualifyAllPending={qualifyAll.isPending}
+              assessments={assessments} isLoading={assessQ.isLoading}
+              onQualifyAll={() => qualifyAll.mutate()} qualifyAllPending={qualifyAll.isPending}
             />
           </TabsContent>
 
           <TabsContent value="outreach" className="mt-4">
             <OutreachTab
-              drafts={drafts}
-              isLoading={draftsQ.isLoading}
+              drafts={drafts} isLoading={draftsQ.isLoading}
               onStatusChange={(id, status) => changeDraftStatus.mutate({ id, status })}
               statusChangingId={statusChangingId}
-              onEdit={(draft) => setEditingDraft(draft)}
+              onEdit={draft => setEditingDraft(draft)}
             />
           </TabsContent>
 
