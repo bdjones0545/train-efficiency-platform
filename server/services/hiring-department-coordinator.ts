@@ -19,6 +19,9 @@ import type {
 import type { BestAction }            from "../frameworks/department-os/department-executive";
 import type { DepartmentHealthCheck } from "../frameworks/department-os/department-health";
 
+// ─── Framework integration (v2) ────────────────────────────────────────────────
+import { departmentHealthEngine } from "../frameworks/department-os/health-engine";
+
 import { generateHiringBestAction }    from "./hiring-executive-agent";
 import { computeHiringLearningMetrics } from "./hiring-learning-agent";
 
@@ -139,33 +142,16 @@ async function runHealthChecks(orgId: string): Promise<DepartmentHealthCheck[]> 
   ];
 }
 
-// ─── Attention inbox items ─────────────────────────────────────────────────────
+// ─── Attention inbox items — v2: uses DepartmentHealthEngine ──────────────────
+// Replaces 25-line duplicated loop with shared framework helper.
 
 async function createAttentionItems(orgId: string, checks: DepartmentHealthCheck[]): Promise<number> {
-  const failed = checks.filter(c => !c.passed);
-  let created = 0;
-  const { attentionItems } = await import("@shared/schema");
-  for (const check of failed) {
-    try {
-      await db.execute(sql`
-        INSERT INTO attention_items
-          (org_id, agent_name, severity, urgency, business_impact, title, description,
-           recommended_action, source_system, action_type, status)
-        VALUES (
-          ${orgId}, 'hiring_department_coordinator',
-          ${check.severity === "critical" ? 90 : check.severity === "high" ? 70 : check.severity === "medium" ? 50 : 20},
-          ${check.severity === "critical" ? 90 : check.severity === "high" ? 75 : 50},
-          ${check.severity === "critical" ? 85 : check.severity === "high" ? 70 : 55},
-          ${check.title},
-          ${check.detail},
-          ${check.recommendation},
-          'hiring_department', 'review', 'pending'
-        )
-      `);
-      created++;
-    } catch { /* suppress */ }
-  }
-  return created;
+  return departmentHealthEngine.createAttentionItemsFromFailed(
+    orgId,
+    "hiring_department_coordinator",
+    "hiring_department",
+    checks,
+  );
 }
 
 // ─── Coordinator class ─────────────────────────────────────────────────────────

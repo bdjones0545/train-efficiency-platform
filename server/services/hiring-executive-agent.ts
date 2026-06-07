@@ -37,7 +37,7 @@ async function getPipelineStats(orgId: string) {
   ]);
 
   const byStatus = Object.fromEntries(cands.map((r: any) => [r.status, n(r.cnt)]));
-  const total    = Object.values(byStatus).reduce((s: any, v: any) => s + v, 0);
+  const total    = Object.values(byStatus).reduce((s: any, v: any) => s + v, 0) as number;
 
   return {
     total,

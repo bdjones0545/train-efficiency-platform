@@ -1,11 +1,20 @@
 /**
- * Hiring Learning Agent
+ * Hiring Learning Agent — Department OS v2
  * Synthesizes hiring signal data into actionable insights.
  * No AI inference — deterministic pattern analysis.
+ *
+ * v2 migration: HiringLearningInsight is structurally equivalent to the
+ * framework's Insight type from department-os/learning-engine. New code
+ * should prefer importing Insight from the framework directly.
  */
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+
+// ─── Framework integration (v2) ────────────────────────────────────────────────
+// HiringLearningInsight is structurally compatible with the framework Insight.
+// Exported here for backward compat; new departments should use Insight directly.
+export type { Insight as HiringLearningInsightV2 } from "../frameworks/department-os/learning-engine";
 
 function rows(r: any): any[] {
   return Array.isArray(r) ? r : (r?.rows ?? []);
@@ -25,6 +34,7 @@ export interface HiringLearningMetrics {
   positionBreakdown:   Record<string, { count: number; avgFit: number; hireRate: number }>;
 }
 
+/** @deprecated Use Insight from department-os/learning-engine for new departments */
 export interface HiringLearningInsight {
   category:   string;
   insight:    string;

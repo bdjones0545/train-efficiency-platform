@@ -636,6 +636,12 @@ export function AppSidebar() {
               icon: Briefcase,
               testId: "nav-hiring-department",
             },
+            {
+              title: "Department OS v2",
+              url: "/admin/department-os-v2",
+              icon: Layers,
+              testId: "nav-department-os-v2",
+            },
           ]
         : []),
       ...(coachTransactionsVisible

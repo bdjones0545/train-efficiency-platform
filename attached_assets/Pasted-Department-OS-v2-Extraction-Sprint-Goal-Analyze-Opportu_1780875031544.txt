@@ -1,0 +1,437 @@
+Department OS v2 — Extraction Sprint
+
+Goal:
+Analyze Opportunity Acquisition and Hiring Department side-by-side, identify duplicated patterns, and extract them into reusable Department OS components.
+
+This sprint is not about building Department #3.
+
+This sprint is about reducing the cost of Departments #3–#10.
+
+Success is measured by:
+
+* Less duplicated code
+* More reusable infrastructure
+* Faster future department creation
+
+The output should be:
+
+Department OS v2
+
+⸻
+
+CURRENT STATE
+
+Validated Departments:
+
+1. Opportunity Acquisition
+2. Hiring
+
+Both successfully implement:
+
+* DepartmentCoordinator
+* Learning Layer
+* Executive Intelligence
+* Recommendations
+* Attention Signals
+* Health Checks
+* Pipeline
+* CEO Heartbeat Integration
+
+The objective is to extract everything that appears in both.
+
+⸻
+
+PHASE 1
+DUPLICATION AUDIT
+
+Create:
+
+Department OS Extraction Report
+
+Analyze:
+
+Opportunity Acquisition
+
+Hiring Department
+
+Identify:
+
+* duplicated database structures
+* duplicated service patterns
+* duplicated UI patterns
+* duplicated executive patterns
+* duplicated learning patterns
+
+Classify:
+
+Framework Candidate
+
+Department Specific
+
+⸻
+
+PHASE 2
+GENERIC PIPELINE FRAMEWORK
+
+Create:
+
+server/frameworks/department-os/pipeline/
+
+Files:
+
+pipeline-types.ts
+
+pipeline-engine.ts
+
+pipeline-metrics.ts
+
+pipeline-health.ts
+
+⸻
+
+Create:
+
+PipelineStage
+
+interface
+
+Example:
+
+interface PipelineStage {
+id: string;
+name: string;
+order: number;
+terminal: boolean;
+}
+
+⸻
+
+Create:
+
+DepartmentPipeline
+
+interface:
+
+interface DepartmentPipeline {
+stages: PipelineStage[];
+}
+
+⸻
+
+Create helpers:
+
+calculatePipelineMetrics()
+
+calculateStageCounts()
+
+calculateConversionRates()
+
+⸻
+
+Both:
+
+Opportunity Acquisition
+
+Hiring
+
+should migrate to Pipeline Framework.
+
+⸻
+
+PHASE 3
+GENERIC ASSESSMENT FRAMEWORK
+
+Create:
+
+server/frameworks/department-os/assessment/
+
+Files:
+
+assessment-types.ts
+
+assessment-engine.ts
+
+assessment-results.ts
+
+⸻
+
+Generic:
+
+AssessmentResult
+
+interface:
+
+score
+
+confidence
+
+reasoning
+
+strengths
+
+concerns
+
+recommendations
+
+⸻
+
+Opportunity Qualification
+
+Hiring Assessment
+
+should implement the same contract.
+
+⸻
+
+PHASE 4
+GENERIC LEARNING FRAMEWORK
+
+Create:
+
+server/frameworks/department-os/learning-engine/
+
+Files:
+
+learning-types.ts
+
+learning-metrics.ts
+
+learning-insights.ts
+
+⸻
+
+Shared:
+
+Signal
+
+Insight
+
+PerformanceMetric
+
+⸻
+
+Helpers:
+
+calculateReplyRate()
+
+calculateConversionRate()
+
+calculateOutcomeRate()
+
+⸻
+
+Opportunity Learning
+
+Hiring Learning
+
+should reuse shared logic.
+
+⸻
+
+PHASE 5
+GENERIC EXECUTIVE FRAMEWORK
+
+Create:
+
+server/frameworks/department-os/executive-engine/
+
+Files:
+
+executive-types.ts
+
+brief-generator.ts
+
+recommendation-generator.ts
+
+best-action-engine.ts
+
+⸻
+
+Reusable:
+
+ExecutiveBrief
+
+Recommendation
+
+BestAction
+
+Priority
+
+⸻
+
+Both departments should consume framework helpers.
+
+⸻
+
+PHASE 6
+GENERIC DASHBOARD FRAMEWORK
+
+Create shared frontend types:
+
+DepartmentDashboardCard
+
+DepartmentMetric
+
+DepartmentAlert
+
+DepartmentSummaryCard
+
+⸻
+
+Future departments should render dashboards using the same schema.
+
+⸻
+
+PHASE 7
+GENERIC HEALTH FRAMEWORK
+
+Create:
+
+HealthRule
+
+interface
+
+Example:
+
+interface HealthRule {
+id: string;
+severity: string;
+evaluate(): Promise;
+}
+
+⸻
+
+Create:
+
+DepartmentHealthEngine
+
+Used by:
+
+Opportunity Acquisition
+
+Hiring
+
+Future Departments
+
+⸻
+
+PHASE 8
+EXTRACTION SCORECARD
+
+Create:
+
+Department OS Extraction Dashboard
+
+Show:
+
+Duplicated Patterns Found
+
+Patterns Extracted
+
+Lines Reused
+
+Lines Removed
+
+Estimated Future Savings
+
+⸻
+
+Metrics:
+
+Pipeline Reuse %
+
+Assessment Reuse %
+
+Learning Reuse %
+
+Executive Reuse %
+
+Health Reuse %
+
+Overall Framework Reuse %
+
+⸻
+
+PHASE 9
+DEPARTMENT OS V2 REPORT
+
+Generate:
+
+Department OS v2 Audit
+
+Sections:
+
+What was extracted
+
+What remains department-specific
+
+Expected reduction in future build effort
+
+Estimated build effort for:
+
+Department #3
+
+Department #4
+
+Department #5
+
+⸻
+
+NO FUNCTIONAL CHANGES
+
+This sprint is architecture-only.
+
+Do not change:
+
+Opportunity workflows
+
+Hiring workflows
+
+CEO Heartbeat behavior
+
+Attention Inbox behavior
+
+Learning behavior
+
+Recommendation behavior
+
+UI behavior
+
+Only extract shared infrastructure.
+
+⸻
+
+SUCCESS CRITERIA
+
+Sprint complete when:
+
+* Pipeline Framework exists
+* Assessment Framework exists
+* Learning Framework exists
+* Executive Framework exists
+* Health Framework exists
+* Opportunity Acquisition migrated
+* Hiring Department migrated
+* No functionality changes
+* No UI changes
+* Zero TypeScript errors
+
+⸻
+
+EXPECTED RESULT
+
+Department OS v2 becomes a Department Factory.
+
+Building Department #3 should require:
+
+* Department-specific data model
+* Department-specific scoring logic
+* DepartmentCoordinator implementation
+
+Everything else should already exist.
+
+Target Outcome:
+
+Future departments require 70–90% less infrastructure work than Opportunity Acquisition originally required.
+
+Department OS evolves from a validated framework into a scalable organizational operating system capable of supporting an unlimited number of AI-powered departments.
