@@ -95,6 +95,7 @@ import AdminProceduresPage from "@/pages/admin-procedures";
 import AdminGovernancePage from "@/pages/admin-governance";
 import AdminOrganizationPage from "@/pages/admin-organization";
 import AdminStrategyPage from "@/pages/admin-strategy";
+import AdminOpportunityAcquisitionPage from "@/pages/admin-opportunity-acquisition";
 import AdminProductionReadinessPage from "@/pages/admin-production-readiness";
 import AdminLaunchReadinessPage from "@/pages/admin-launch-readiness";
 import AdminEcosystemHealthPage from "@/pages/admin-ecosystem-health";
@@ -540,6 +541,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/governance" component={AdminGovernancePage} />
                   <Route path="/admin/organization" component={AdminOrganizationPage} />
                   <Route path="/admin/strategy" component={AdminStrategyPage} />
+                  <Route path="/admin/opportunity-acquisition" component={AdminOpportunityAcquisitionPage} />
                   <Route path="/admin/production-readiness" component={AdminProductionReadinessPage} />
                   <Route path="/admin/launch-readiness" component={AdminLaunchReadinessPage} />
                   <Route path="/admin/ecosystem-health" component={AdminEcosystemHealthPage} />

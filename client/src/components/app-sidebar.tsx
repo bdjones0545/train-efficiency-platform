@@ -623,6 +623,12 @@ export function AppSidebar() {
               icon: KanbanSquare,
               testId: "nav-pipeline",
             },
+            {
+              title: "Opportunity Acquisition",
+              url: "/admin/opportunity-acquisition",
+              icon: Target,
+              testId: "nav-opportunity-acquisition",
+            },
           ]
         : []),
       ...(coachTransactionsVisible
