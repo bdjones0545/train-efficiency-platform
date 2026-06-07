@@ -1,0 +1,258 @@
+TrainEfficiency — Organization Operating System (Phase 3)
+
+Role: Senior SaaS Architect + Product Engineer
+
+Objective:
+
+Transform TrainEfficiency from a performance-facility platform into an organization-driven operating system.
+
+Do NOT build new AI agents.
+
+Do NOT build new databases unless required.
+
+Do NOT modify existing business logic.
+
+Reuse existing infrastructure wherever possible.
+
+⸻
+
+Goal
+
+Support multiple organization types from a single platform:
+
+* Performance Facility
+* Sports Team
+* Sports Academy
+* High School Program
+* College Program
+* Private Coach
+
+The platform should feel customized to each organization while sharing the same underlying architecture.
+
+⸻
+
+Phase 3A — Organization Type Layer
+
+Create:
+
+organization_type
+
+on organizations table.
+
+Allowed values:
+
+* performance_facility
+* sports_team
+* sports_academy
+* high_school_program
+* college_program
+* private_coach
+
+Default:
+
+performance_facility
+
+⸻
+
+Phase 3B — Organization Setup Wizard
+
+After organization creation:
+
+Redirect to:
+
+/setup
+
+4-step wizard.
+
+⸻
+
+STEP 1
+
+Organization Profile
+
+Fields:
+
+* Organization Name
+* Organization Type
+* Primary Sport
+* Logo
+
+Save and continue.
+
+⸻
+
+STEP 2
+
+What Are You Trying To Improve?
+
+Options:
+
+* Athlete Development
+* Scheduling
+* Team Operations
+* Recruiting
+* Revenue Growth
+* All Of The Above
+
+Store selections.
+
+No AI required.
+
+⸻
+
+STEP 3
+
+Invite Team
+
+Options:
+
+* Coaches
+* Athletes
+* Staff
+
+Email invite or skip.
+
+⸻
+
+STEP 4
+
+Recommended First Action
+
+Generate one recommendation:
+
+Performance Facility:
+→ Create First Session
+
+Sports Team:
+→ Import Roster
+
+Academy:
+→ Add Coaches
+
+High School:
+→ Import Athletes
+
+College:
+→ Create Team Structure
+
+Private Coach:
+→ Create Availability
+
+Button launches the action.
+
+⸻
+
+Phase 3C — Dynamic Navigation Labels
+
+Do NOT change routes.
+
+Only change visible labels.
+
+Example:
+
+Performance Facility
+
+Athletes
+Revenue
+Leads
+
+Sports Team
+
+Players
+Fundraising
+Recruiting
+
+College
+
+Programs
+Roster
+Recruiting
+
+Same routes.
+
+Different language.
+
+⸻
+
+Phase 3D — Organization Presets
+
+Create configuration object:
+
+ORG_PRESETS
+
+Controls:
+
+* visible sidebar items
+* labels
+* home screen language
+* onboarding recommendations
+
+No database needed.
+
+Use configuration layer only.
+
+⸻
+
+Phase 3E — Home Screen Personalization
+
+Existing Home Screen remains.
+
+Only change wording.
+
+Examples:
+
+Performance Facility:
+
+Revenue
+Athletes
+Sessions
+
+Sports Team:
+
+Fundraising
+Players
+Practices
+
+High School:
+
+Roster
+Attendance
+Recruiting
+
+Use same cards.
+
+Different labels.
+
+⸻
+
+Constraints
+
+No AI work.
+
+No workflow changes.
+
+No Composio changes.
+
+No Hermes changes.
+
+No AgentMail changes.
+
+No approval changes.
+
+Only:
+
+* organization abstraction
+* onboarding
+* personalization
+
+⸻
+
+Success Criteria
+
+A hockey academy, football team, and performance facility can all onboard through the same system.
+
+They see terminology that matches their organization.
+
+The platform remains a single codebase.
+
+The user feels the platform was built specifically for them.
