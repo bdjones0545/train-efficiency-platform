@@ -54,6 +54,7 @@ import {
 import { setLastOrgSlug } from "@/lib/logout";
 import type { UserProfile } from "@shared/schema";
 import { cn } from "@/lib/utils";
+import { getOrgPreset } from "@/lib/org-presets";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Types
@@ -449,6 +450,7 @@ export function AppSidebar() {
     logoUrl?: string | null;
     coachTransactionsVisible?: boolean;
     athleticEnabled?: boolean;
+    organizationType?: string | null;
   }>({
     queryKey: ["/api/organizations/by-id", orgId],
     queryFn: async () => {
@@ -463,6 +465,8 @@ export function AppSidebar() {
   const coachTransactionsVisible =
     (organization as any)?.coachTransactionsVisible !== false;
   const orgSlug = (organization as any)?.slug || "";
+
+  const preset = getOrgPreset(organization?.organizationType);
 
   const { data: athleticProgramsSidebar } = useQuery<any[]>({
     queryKey: ["/api/athletic/programs", orgId],
@@ -536,25 +540,25 @@ export function AppSidebar() {
     icon: CalendarDays,
     items: [
       {
-        title: "Schedule",
+        title: preset.nav.schedule,
         url: "/scheduling",
         icon: CalendarDays,
         testId: "nav-schedule",
       },
       {
-        title: "Athletes",
+        title: preset.nav.athletes,
         url: "/coach/users",
         icon: Users,
         testId: "nav-athletes",
       },
       {
-        title: "Group Sessions",
+        title: preset.nav.groupSessions,
         url: "/sessions",
         icon: UsersRound,
         testId: "nav-group-sessions",
       },
       {
-        title: "Team Training",
+        title: preset.nav.teamTraining,
         url: "/team-training",
         icon: Zap,
         testId: "nav-team-training",
@@ -602,19 +606,19 @@ export function AppSidebar() {
       ...(isAdmin
         ? [
             {
-              title: "Athlete Leads",
+              title: preset.nav.leads,
               url: "/admin/athlete-leads",
               icon: Users,
               testId: "nav-athlete-leads",
             },
             {
-              title: "Business Leads",
+              title: preset.nav.businessLeads,
               url: "/admin/team-training-leads",
               icon: Building2,
               testId: "nav-business-leads",
             },
             {
-              title: "Pipeline",
+              title: preset.nav.pipeline,
               url: "/admin/team-training-deals",
               icon: KanbanSquare,
               testId: "nav-pipeline",
@@ -624,7 +628,7 @@ export function AppSidebar() {
       ...(coachTransactionsVisible
         ? [
             {
-              title: "Revenue",
+              title: preset.nav.revenue,
               url: "/coach/transactions",
               icon: DollarSign,
               testId: "nav-revenue",
@@ -711,6 +715,12 @@ export function AppSidebar() {
               url: "/admin/configuration",
               icon: Settings,
               testId: "nav-configuration",
+            },
+            {
+              title: "Setup Wizard",
+              url: "/setup",
+              icon: Building2,
+              testId: "nav-setup-wizard",
             },
           ]
         : [

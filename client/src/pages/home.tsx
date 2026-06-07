@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
+import { getOrgPreset } from "@/lib/org-presets";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -353,6 +354,22 @@ export default function HomePage() {
   const isAdmin = perms.canManageAI;
   const isCoach = perms.canViewRevenue;
 
+  // Fetch profile to get org ID, then fetch org for type-based personalization
+  const { data: profile } = useQuery<{ organizationId?: string }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = profile?.organizationId;
+  const { data: orgData } = useQuery<{ organizationType?: string | null }>({
+    queryKey: ["/api/organizations/by-id", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${orgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+  const preset = getOrgPreset(orgData?.organizationType);
+
   // All queries fire in parallel — each gated by role
   const revQ = useQuery<RevSummary>({
     queryKey: ["/api/admin/revenue-summary-v2"],
@@ -499,7 +516,7 @@ export default function HomePage() {
 
       {/* ─── Section A: Business Snapshot ─────────────────────────────────── */}
       <section aria-label="Business Snapshot">
-        <SectionTitle icon={BarChart2} title="Business Snapshot" />
+        <SectionTitle icon={BarChart2} title={preset.home.snapshotTitle} />
         {revQ.isLoading || leadQ.isLoading ? (
           <Skeleton className="h-24 w-full rounded-xl" />
         ) : (
@@ -535,7 +552,7 @@ export default function HomePage() {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <MetricCard
             icon={DollarSign}
-            label="Revenue"
+            label={preset.home.revenueLabel}
             value={periodRev !== null ? formatDollars(periodRev) : "—"}
             sub={
               revGrowth !== 0
@@ -548,7 +565,7 @@ export default function HomePage() {
           />
           <MetricCard
             icon={Users}
-            label="Leads"
+            label={preset.home.leadsLabel}
             value={totalLeads}
             sub={`${newLeads} new · ${convRate}% conversion`}
             trend={leadTrend}
@@ -557,7 +574,7 @@ export default function HomePage() {
           />
           <MetricCard
             icon={Target}
-            label="Utilization"
+            label={preset.home.utilizationLabel}
             value={utilPct !== null ? `${Math.round(utilPct)}%` : "—"}
             sub={
               utilPct === null
@@ -574,7 +591,7 @@ export default function HomePage() {
           />
           <MetricCard
             icon={Shield}
-            label="Retention"
+            label={preset.home.retentionLabel}
             value={activeRet === 0 ? "Strong" : `${activeRet} at risk`}
             sub={
               activeRet === 0

@@ -9,11 +9,25 @@ import { users } from "./models/auth";
 
 export const subscriptionStatusEnum = pgEnum("subscription_status", ["trialing", "active", "past_due", "canceled", "incomplete", "none"]);
 
+export const ORG_TYPES = [
+  "performance_facility",
+  "sports_team",
+  "sports_academy",
+  "high_school_program",
+  "college_program",
+  "private_coach",
+] as const;
+export type OrgType = typeof ORG_TYPES[number];
+
 export const organizations = pgTable("organizations", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   name: varchar("name").notNull(),
   slug: varchar("slug").notNull().unique(),
   logoUrl: text("logo_url"),
+  organizationType: varchar("organization_type").default("performance_facility"),
+  primarySport: varchar("primary_sport").default(""),
+  improvementGoals: text("improvement_goals").array().default(sql`'{}'::text[]`),
+  onboardingCompleted: boolean("onboarding_completed").default(false),
   ownerUserId: varchar("owner_user_id"),
   ownerEmail: varchar("owner_email"),
   tagline: text("tagline").default(""),

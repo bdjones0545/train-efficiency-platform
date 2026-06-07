@@ -197,6 +197,7 @@ import AdminForecastPage from "@/pages/admin-forecast";
 import AdminEmailAuditPage from "@/pages/admin-email-audit";
 import AdminCommunicationIntelligencePage from "@/pages/admin-communication-intelligence";
 import HomePage from "@/pages/home";
+import SetupWizardPage from "@/pages/setup-wizard";
 
 interface SubscriptionStatus {
   status: string;
@@ -276,7 +277,7 @@ function SubscriptionGate({ children }: { children: React.ReactNode }) {
     enabled: hasOrg,
   });
 
-  if (location === "/admin/subscription" || location === "/admin/setup") {
+  if (location === "/admin/subscription" || location === "/admin/setup" || location === "/setup") {
     return <>{children}</>;
   }
 
@@ -573,6 +574,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/workflow-heatmap" component={AdminWorkflowHeatmapPage} />
                   <Route path="/admin/workflows-library" component={AdminWorkflowsLibraryPage} />
                   <Route path="/onboarding/ai-workforce" component={OnboardingAiWorkforcePage} />
+                  <Route path="/setup" component={SetupWizardPage} />
                   <Route path="/subscribe/:planId" component={SubscribePage} />
                   <Route path="/claim-subscription" component={ClaimSubscriptionPage} />
                   <Route path="/create-password" component={CreatePasswordPage} />
