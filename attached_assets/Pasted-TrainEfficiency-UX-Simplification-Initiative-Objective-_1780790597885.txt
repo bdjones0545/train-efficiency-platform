@@ -1,0 +1,211 @@
+TrainEfficiency UX Simplification Initiative
+
+Objective:
+
+TrainEfficiency has evolved into an AI-powered operating system for performance organizations.
+
+The backend architecture is becoming sophisticated and powerful.
+
+The frontend no longer reflects that simplicity.
+
+The goal is NOT to remove functionality.
+
+The goal is to hide complexity and make the platform feel effortless.
+
+Audit the entire UI and navigation structure.
+
+Do not modify code yet.
+
+Evaluate every page, dashboard, sidebar item, admin screen, command center, and workflow.
+
+Questions to answer:
+
+1. Which pages are feature-oriented instead of outcome-oriented?
+
+Example:
+
+Bad:
+
+* AgentMail
+* Software Improvement
+* Autonomous Action Queue
+* Hermes
+
+Better:
+
+* Communications
+* System Issues
+* Approvals
+* Organization Learning
+
+2. Which pages can be merged?
+
+Identify:
+
+* Duplicate dashboards
+* Overlapping workflows
+* Similar reporting views
+* Multiple ways to reach the same data
+
+3. What should become the primary navigation?
+
+Design a simplified operating system structure:
+
+HOME
+
+OPERATIONS
+
+* Scheduling
+* Athletes
+* Communications
+
+WORKFORCE
+
+* Departments
+* Approvals
+
+INTELLIGENCE
+
+* Learning
+* Forecasting
+
+ENGINEERING
+
+* System Health
+* Software Improvements
+
+4. Design a new Home Screen
+
+The Home Screen should become the operating system.
+
+Only answer:
+
+What is happening?
+What needs attention?
+What is the AI recommending?
+What should I do next?
+
+Design sections:
+
+A. Business Health
+Revenue
+Leads
+Utilization
+Retention
+
+B. Best Action Today
+Single highest-value recommendation
+
+C. AI Workforce Status
+Sales
+Operations
+Customer Success
+Engineering
+
+D. Approvals Inbox
+Pending Gmail Drafts
+Pending GitHub Issues
+Pending Slack Alerts
+Future approvals
+
+E. Organization Learning
+Top learning from Hermes
+Most successful actions
+Emerging risks
+
+F. System Health
+Software issues
+Agent failures
+Integration status
+
+5. Sidebar Simplification
+
+Audit current sidebar.
+
+Recommend:
+
+* What should stay
+* What should move
+* What should become nested
+* What should be hidden from most users
+
+Goal:
+No more than 5 primary navigation groups.
+
+6. Department Model
+
+Map current agents into departments.
+
+Sales Department
+
+* Revenue Agent
+* Growth Agent
+
+Operations Department
+
+* Scheduling Agent
+
+Customer Success Department
+
+* Retention Agent
+* Client Success Agent
+
+Engineering Department
+
+* Software Improvement Agent
+
+Determine how this should appear in the UI.
+
+7. Intelligence Layer
+
+Hermes, outcome attribution, trust registry, learning rules, playbooks, and forecasts should not appear as separate systems.
+
+Design a single:
+
+Organization Learning
+
+experience.
+
+8. Approvals System
+
+Audit all approval queues.
+
+Design a unified:
+
+Approvals Inbox
+
+that contains:
+
+* Gmail Drafts
+* GitHub Issues
+* Slack Alerts
+* Future Calendar Events
+* Future Financial Actions
+
+9. Route Audit
+
+List:
+
+* Routes users actually need
+* Routes that should be hidden
+* Routes that should become admin-only
+* Routes that should be merged
+
+10. Deliverable
+
+Return:
+
+* UX Audit
+* Navigation Audit
+* Home Screen Wireframe
+* Department Architecture
+* Organization Learning Architecture
+* Unified Approvals Architecture
+* Recommended Route Structure
+* Phased UI Simplification Plan
+
+Do not write code.
+
+Act as a Head of Product and SaaS UX Architect.
+
+Optimize for simplicity, clarity, adoption, and scalability.
