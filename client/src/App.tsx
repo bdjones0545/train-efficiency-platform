@@ -1,4 +1,4 @@
-import { Component } from "react";
+import { Component, useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -10,6 +10,7 @@ import { OrgSidebar } from "@/components/OrgSidebar";
 import { ThemeProvider } from "@/components/theme-provider";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/hooks/use-auth";
+import { usePermissions } from "@/hooks/use-permissions";
 import { Card } from "@/components/ui/card";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
@@ -195,11 +196,27 @@ import AdminAutonomyTrustPage from "@/pages/admin-autonomy-trust";
 import AdminForecastPage from "@/pages/admin-forecast";
 import AdminEmailAuditPage from "@/pages/admin-email-audit";
 import AdminCommunicationIntelligencePage from "@/pages/admin-communication-intelligence";
+import HomePage from "@/pages/home";
 
 interface SubscriptionStatus {
   status: string;
   isPlatformOrg: boolean;
   isActive: boolean;
+}
+
+function RedirectToHome() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    setLocation("/", { replace: true });
+  }, []);
+  return null;
+}
+
+function SmartHome() {
+  const perms = usePermissions();
+  if (perms.isHydrating) return null;
+  if (perms.canViewRevenue) return <HomePage />;
+  return <BookFastPage />;
 }
 
 class AppErrorBoundary extends Component<
@@ -416,7 +433,7 @@ function AuthenticatedLayout() {
             <div className={isFullscreenPage ? "h-full" : "max-w-5xl mx-auto"}>
               <SubscriptionGate>
                 <Switch>
-                  <Route path="/" component={BookFastPage} />
+                  <Route path="/" component={SmartHome} />
                   <Route path="/coaches" component={BookFastPage} />
                   <Route path="/coaches/browse" component={CoachesPage} />
                   <Route path="/coaches/:id" component={CoachSchedulePage} />
@@ -437,7 +454,8 @@ function AuthenticatedLayout() {
                   <Route path="/bookings" component={MyBookingsPage} />
                   <Route path="/settings" component={SettingsPage} />
                   <Route path="/wallet" component={WalletPage} />
-                  <Route path="/coach" component={CoachDashboardPage} />
+                  {/* TODO Phase 2 cleanup: /coach redirected to unified Home Screen */}
+                  <Route path="/coach" component={RedirectToHome} />
                   <Route path="/coach/profile" component={CoachProfilePage} />
                   <Route path="/coach/availability" component={AvailabilityManagerPage} />
                   <Route path="/coach/redemptions" component={RedemptionsPage} />
@@ -477,7 +495,8 @@ function AuthenticatedLayout() {
                   <Route path="/admin/platform-health" component={AdminPlatformHealthPage} />
                   <Route path="/admin/execution-center" component={AdminExecutionCenterPage} />
                   <Route path="/admin/ecosystem" component={AdminEcosystemPage} />
-                  <Route path="/command-center" component={BusinessCommandCenterPage} />
+                  {/* TODO Phase 2 cleanup: /command-center redirected to unified Home Screen */}
+                  <Route path="/command-center" component={RedirectToHome} />
                   <Route path="/admin/trigger-audit" component={EmailTriggerAuditPage} />
                   <Route path="/admin/ai-approvals" component={AdminAiApprovalsPage} />
                   <Route path="/admin/ai-outreach-opportunities" component={AdminAiOutreachOpportunitiesPage} />

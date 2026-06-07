@@ -1,0 +1,398 @@
+TrainEfficiency — Phase 2 Home Screen Redesign
+
+Role: Senior Product Engineer + SaaS UX Architect
+
+Objective:
+Build the new unified Home Screen that becomes the operating system for TrainEfficiency.
+
+This is a UI/UX restructuring project.
+
+Do NOT modify business logic.
+Do NOT modify database schemas.
+Do NOT create new agent systems.
+Do NOT create new APIs unless absolutely required.
+
+The goal is to consolidate existing information into a single operating view.
+
+⸻
+
+Core Principle
+
+When a user logs in they should be able to answer:
+
+1. What is happening?
+2. What needs my attention?
+3. What is the AI recommending?
+4. What should I do next?
+
+within 10 seconds.
+
+⸻
+
+Route Strategy
+
+Current:
+
+* /command-center
+* /admin/dashboard
+* /coach
+
+Target:
+
+* /
+
+Create a new Home page at “/”
+
+Role-aware rendering:
+
+ADMIN:
+
+* Full experience
+
+COACH:
+
+* Same layout
+* Hide admin-only cards
+
+CLIENT:
+
+* Existing client experience unchanged
+
+Do not remove old routes yet.
+
+Instead:
+
+/command-center
+/admin/dashboard
+/coach
+
+should redirect to “/”
+
+Add TODO comments for Phase 2 cleanup after verification.
+
+⸻
+
+Home Screen Layout
+
+Order matters.
+
+Render sections in this order:
+
+A. Business Snapshot
+B. Business Health
+C. Best Action Today
+D. AI Workforce Status
+E. Approvals Inbox
+F. Organization Learning
+G. System Health
+
+⸻
+
+Section A — Business Snapshot
+
+NEW
+
+Place directly below greeting.
+
+Purpose:
+Human-readable executive summary.
+
+Example:
+
+Revenue is up 8% this month.
+Lead flow is healthy.
+Capacity is approaching 80%.
+Retention remains strong.
+
+Status: Growing Normally
+
+or
+
+Status: Capacity Bottleneck Emerging
+
+or
+
+Status: Retention Risk Detected
+
+Requirements:
+
+* Generated from existing metrics already available
+* No new AI service required
+* Use simple deterministic rules
+* One paragraph maximum
+* One status badge
+
+This section should feel like an executive briefing.
+
+⸻
+
+Section B — Business Health
+
+Use existing revenue/lead/utilization/retention metrics.
+
+Render as four cards:
+
+Revenue
+Leads
+Utilization
+Retention
+
+Requirements:
+
+* Consistent card sizing
+* Delta indicators
+* Sparklines if already available
+* No tables
+
+Cards should be mobile responsive.
+
+Desktop:
+4-column grid
+
+Tablet:
+2-column
+
+Mobile:
+1-column
+
+⸻
+
+Section C — Best Action Today
+
+This becomes the most important card on the page.
+
+Use the existing Global Priority Engine.
+
+Display:
+
+Title
+
+Description
+
+Reason
+
+Primary CTA
+
+Secondary Skip button
+
+Example:
+
+3 athletes have not booked in 14 days.
+
+AI drafted a re-engagement email.
+
+[Review Draft]
+[Skip]
+
+Requirements:
+
+Only ONE action displayed.
+
+Never a list.
+
+If no action exists:
+
+“Everything looks good today.”
+
+⸻
+
+Section D — AI Workforce Status
+
+Replace individual agent displays.
+
+Users should NOT see 15+ agents.
+
+Group agents into departments:
+
+Sales
+Operations
+Customer Success
+Engineering
+
+Display:
+
+Department Name
+Status
+Actions Today
+Pending Approvals
+
+Example:
+
+Sales
+Active
+12 actions
+2 approvals
+
+Requirements:
+
+Department cards only.
+
+No individual agent cards on Home.
+
+Clicking a department routes to filtered intelligence/approval view.
+
+⸻
+
+Section E — Approvals Inbox
+
+Unified approvals preview.
+
+Pull from existing systems:
+
+* Gmail Drafts
+* Slack Alerts
+* Attention Inbox
+* Autonomous Action Queue
+* AI Approval Queue
+
+Display only top 5 items.
+
+Each row:
+
+Type
+Summary
+Action Button
+
+Example:
+
+Email Draft
+Re-engage Marcus T.
+
+[Review]
+
+Footer:
+
+View All Approvals
+
+Links to future /approvals page.
+
+No new approval logic.
+
+Read-only aggregation.
+
+⸻
+
+Section F — Organization Learning
+
+Purpose:
+
+Surface conclusions.
+
+Not raw data.
+
+Display:
+
+“This week the AI learned:”
+
+Top 3 learnings from:
+
+* Hermes
+* Obsidian
+* Outcome Attribution
+* Forecast insights
+
+Requirements:
+
+Plain language.
+
+No note viewer.
+
+No database tables.
+
+One CTA:
+
+View Learning Center
+
+Links to future Intelligence Hub.
+
+⸻
+
+Section G — System Health
+
+Admin only.
+
+Display:
+
+Integrations Connected
+Open Software Issues
+Agent Failures (24h)
+
+Requirements:
+
+If all values are healthy:
+
+Collapse into compact success card.
+
+If issues exist:
+
+Expand automatically.
+
+Show only actionable information.
+
+⸻
+
+Visual Requirements
+
+Remove dashboard feeling.
+
+Make it feel like:
+
+Executive briefing
+Business operating system
+Morning command center
+
+Design priorities:
+
+1. Scanability
+2. Fewer clicks
+3. Large cards
+4. Clear hierarchy
+5. Mobile-first
+
+Avoid:
+
+Dense tables
+Nested accordions
+Tiny widgets
+Agent jargon
+
+⸻
+
+Technical Constraints
+
+Do not:
+
+* Change APIs
+* Change schemas
+* Change permissions
+* Change workflows
+* Change automations
+
+Only:
+
+* Reorganize existing data
+* Create new presentation layer
+* Reuse existing queries
+
+⸻
+
+Success Criteria
+
+Home screen answers:
+
+What is happening?
+What needs attention?
+What is the AI recommending?
+What should I do next?
+
+within 10 seconds.
+
+The page should feel significantly simpler than the existing Command Center while exposing the same underlying information.
+
+Provide a completion report including:
+
+* Components created
+* Existing queries reused
+* Routes redirected
+* Mobile responsiveness status
+* Before/after page complexity comparison

@@ -891,7 +891,7 @@ export function AppSidebar() {
   // for the unified Home Screen. Do not remove routes yet.
   const homeItem: NavItem = {
     title: "Home",
-    url: "/command-center",
+    url: "/",
     icon: Home,
     testId: "nav-home",
   };
