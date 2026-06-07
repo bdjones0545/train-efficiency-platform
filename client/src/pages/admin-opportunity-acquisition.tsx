@@ -12,13 +12,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
+import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, Target, Search, Plus, CheckCircle, AlertTriangle,
   Clock, DollarSign, Star, Activity, Settings, BarChart3,
-  Building2, MapPin, Zap, User, Shield, Eye, TrendingUp,
-  Bot, Radio, X, Loader2, Brain, Flag, ChevronRight,
-  AlertCircle, ThumbsUp,
+  Building2, MapPin, Zap, User, Shield, Radio, X, Loader2,
+  Brain, Flag, ChevronRight, AlertCircle, ThumbsUp, Mail,
+  ThumbsDown, Edit3, TrendingUp, Bot, CheckCheck, Eye, Pencil,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,6 +30,7 @@ type OpportunityStatus =
 type OpportunityType = "coaching" | "consulting" | "partnership" | "content" | "training";
 type RiskLevel = "low" | "medium" | "high" | "critical";
 type RevPotential = "low" | "medium" | "high";
+type DraftStatus = "draft" | "approved" | "rejected" | "sent";
 
 interface Opportunity {
   id: string;
@@ -61,6 +63,28 @@ interface Assessment {
   humanRequired: string[];
   redFlags: string[];
   nextSteps: string[];
+  updatedAt: string;
+}
+
+interface OutreachDraft {
+  id: string;
+  opportunityId: string;
+  opportunityTitle: string;
+  company: string;
+  fitScore: number;
+  opportunityType: OpportunityType;
+  location: string;
+  subject: string;
+  body: string;
+  status: DraftStatus;
+  channel: string;
+  confidenceScore: number;
+  createdByAgent: boolean;
+  approvedByUserId: string | null;
+  sentAt: string | null;
+  callToAction: string;
+  positioningAngle: string;
+  createdAt: string;
   updatedAt: string;
 }
 
@@ -99,6 +123,13 @@ const STATUS_CONFIG: Record<OpportunityStatus, { label: string; color: string }>
   lost:           { label: "Lost",           color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" },
 };
 
+const DRAFT_STATUS_CONFIG: Record<DraftStatus, { label: string; color: string; icon: typeof CheckCircle }> = {
+  draft:    { label: "Draft",    color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300", icon: Edit3 },
+  approved: { label: "Approved", color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", icon: CheckCheck },
+  rejected: { label: "Rejected", color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300", icon: ThumbsDown },
+  sent:     { label: "Sent",     color: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300", icon: Mail },
+};
+
 const TYPE_CONFIG: Record<OpportunityType, { label: string; color: string }> = {
   coaching:    { label: "Coaching",    color: "bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
   consulting:  { label: "Consulting",  color: "bg-violet-50 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300" },
@@ -132,12 +163,12 @@ const KANBAN_COLUMNS: { id: OpportunityStatus; label: string; color: string }[] 
 ];
 
 const EVENT_ICONS: Record<string, { icon: typeof Search; color: string }> = {
-  scan:    { icon: Search,        color: "bg-blue-500" },
-  qualify: { icon: Brain,         color: "bg-violet-500" },
-  draft:   { icon: Zap,           color: "bg-amber-500" },
-  flag:    { icon: Flag,          color: "bg-rose-500" },
-  info:    { icon: Activity,      color: "bg-slate-400" },
-  update:  { icon: BarChart3,     color: "bg-teal-500" },
+  scan:    { icon: Search,    color: "bg-blue-500" },
+  qualify: { icon: Brain,     color: "bg-violet-500" },
+  draft:   { icon: Mail,      color: "bg-amber-500" },
+  flag:    { icon: Flag,      color: "bg-rose-500" },
+  info:    { icon: Activity,  color: "bg-slate-400" },
+  update:  { icon: BarChart3, color: "bg-teal-500" },
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -148,14 +179,12 @@ function fitScoreColor(score: number): string {
   if (score >= 45) return "text-amber-600 dark:text-amber-400";
   return "text-rose-500";
 }
-
 function fitBarColor(score: number): string {
   if (score >= 80) return "bg-emerald-500";
   if (score >= 65) return "bg-blue-500";
   if (score >= 45) return "bg-amber-500";
   return "bg-rose-500";
 }
-
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
   const mins = Math.floor(diff / 60000);
@@ -165,17 +194,23 @@ function timeAgo(iso: string): string {
   if (hrs < 24)  return `${hrs}h ago`;
   return `${Math.floor(hrs / 24)}d ago`;
 }
-
 function StatusBadge({ s }: { s: OpportunityStatus }) {
   const cfg = STATUS_CONFIG[s] ?? { label: s, color: "bg-muted text-muted-foreground" };
   return <Badge className={`text-[10px] px-1.5 py-0 h-4 font-medium ${cfg.color}`}>{cfg.label}</Badge>;
 }
-
 function TypeBadge({ t }: { t: OpportunityType }) {
   const cfg = TYPE_CONFIG[t] ?? { label: t, color: "bg-muted text-muted-foreground" };
   return <Badge className={`text-[10px] px-1.5 py-0 h-4 font-medium ${cfg.color}`}>{cfg.label}</Badge>;
 }
-
+function DraftBadge({ s }: { s: DraftStatus }) {
+  const cfg = DRAFT_STATUS_CONFIG[s] ?? DRAFT_STATUS_CONFIG.draft;
+  const Icon = cfg.icon;
+  return (
+    <Badge className={`text-[10px] px-1.5 py-0 h-4 font-medium gap-1 ${cfg.color}`}>
+      <Icon className="h-2.5 w-2.5" />{cfg.label}
+    </Badge>
+  );
+}
 function ScoreBar({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <div className="space-y-1">
@@ -189,7 +224,6 @@ function ScoreBar({ label, value, color }: { label: string; value: number; color
     </div>
   );
 }
-
 function CardSkeleton() {
   return (
     <div className="space-y-3">
@@ -208,8 +242,7 @@ function AddOpportunityModal({ onClose, onSaved }: AddModalProps) {
   const { toast } = useToast();
   const [form, setForm] = useState({
     title: "", company: "", source: "Manual", type: "coaching" as OpportunityType,
-    location: "Remote" as "Remote" | "Hybrid" | "Local", estimatedValue: "", fitScore: "",
-    notes: "",
+    location: "Remote" as "Remote" | "Hybrid" | "Local", estimatedValue: "", fitScore: "", notes: "",
   });
 
   const mutation = useMutation({
@@ -301,14 +334,60 @@ function AddOpportunityModal({ onClose, onSaved }: AddModalProps) {
   );
 }
 
+// ─── Edit Draft Modal ─────────────────────────────────────────────────────────
+
+function EditDraftModal({ draft, onClose, onSaved }: { draft: OutreachDraft; onClose: () => void; onSaved: () => void }) {
+  const { toast } = useToast();
+  const [subject, setSubject] = useState(draft.subject);
+  const [body, setBody]       = useState(draft.body);
+
+  const mutation = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/opportunity-acquisition/outreach-drafts/${draft.id}`, { subject, body }),
+    onSuccess: () => { toast({ title: "Draft updated" }); onSaved(); onClose(); },
+    onError: () => toast({ title: "Update failed", variant: "destructive" }),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <Card className="w-full max-w-2xl border shadow-xl max-h-[90vh] flex flex-col">
+        <CardHeader className="pb-2 pt-4 px-4 shrink-0">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm font-semibold">Edit Outreach Draft</CardTitle>
+              <p className="text-xs text-muted-foreground mt-0.5">{draft.opportunityTitle}</p>
+            </div>
+            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={onClose} data-testid="button-close-edit"><X className="h-3.5 w-3.5" /></Button>
+          </div>
+        </CardHeader>
+        <CardContent className="px-4 pb-4 space-y-3 overflow-y-auto flex-1">
+          <div className="space-y-1">
+            <Label className="text-xs">Subject</Label>
+            <Input className="h-8 text-xs" value={subject} onChange={e => setSubject(e.target.value)} data-testid="input-draft-subject" />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Body</Label>
+            <Textarea className="text-xs resize-none min-h-[300px]" value={body} onChange={e => setBody(e.target.value)} data-testid="input-draft-body" />
+          </div>
+          <div className="flex gap-2 pt-1">
+            <Button variant="outline" size="sm" className="flex-1 text-xs" onClick={onClose}>Cancel</Button>
+            <Button size="sm" className="flex-1 text-xs gap-1" disabled={mutation.isPending} onClick={() => mutation.mutate()} data-testid="button-save-draft">
+              {mutation.isPending && <Loader2 className="h-3 w-3 animate-spin" />}Save Changes
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // ─── Summary Cards ─────────────────────────────────────────────────────────────
 
 function SummaryCards({ data, isLoading }: { data?: Summary; isLoading: boolean }) {
   const cards = [
-    { label: "Found Today",    value: data?.foundToday ?? 0,   icon: Search,     color: "text-blue-600 dark:text-blue-400",     bg: "bg-blue-50 dark:bg-blue-900/20",     fmt: (v: number) => String(v) },
-    { label: "Qualified",      value: data?.qualified ?? 0,    icon: Star,       color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-50 dark:bg-violet-900/20", fmt: (v: number) => String(v) },
-    { label: "Outreach Ready", value: data?.outreachReady ?? 0,icon: Zap,        color: "text-amber-600 dark:text-amber-400",  bg: "bg-amber-50 dark:bg-amber-900/20",  fmt: (v: number) => String(v) },
-    { label: "Pipeline Value", value: data?.pipelineValue ?? 0,icon: DollarSign, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/20", fmt: (v: number) => v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${v}` },
+    { label: "Found Today",    value: data?.foundToday ?? 0,    icon: Search,     color: "text-blue-600 dark:text-blue-400",       bg: "bg-blue-50 dark:bg-blue-900/20",       fmt: (v: number) => String(v) },
+    { label: "Qualified",      value: data?.qualified ?? 0,     icon: Star,       color: "text-violet-600 dark:text-violet-400",   bg: "bg-violet-50 dark:bg-violet-900/20",   fmt: (v: number) => String(v) },
+    { label: "Outreach Ready", value: data?.outreachReady ?? 0, icon: Mail,       color: "text-amber-600 dark:text-amber-400",     bg: "bg-amber-50 dark:bg-amber-900/20",     fmt: (v: number) => String(v) },
+    { label: "Pipeline Value", value: data?.pipelineValue ?? 0, icon: DollarSign, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/20", fmt: (v: number) => v >= 1000 ? `$${(v / 1000).toFixed(0)}K` : `$${v}` },
   ];
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -320,12 +399,9 @@ function SummaryCards({ data, isLoading }: { data?: Summary; isLoading: boolean 
                 <p className="text-xs text-muted-foreground font-medium">{c.label}</p>
                 {isLoading
                   ? <Skeleton className="h-7 w-16 mt-1" />
-                  : <p className="text-2xl font-bold mt-0.5" data-testid={`text-summary-${c.label.replace(/\s/g, "-").toLowerCase()}`}>{c.fmt(c.value)}</p>
-                }
+                  : <p className="text-2xl font-bold mt-0.5" data-testid={`text-summary-${c.label.replace(/\s/g, "-").toLowerCase()}`}>{c.fmt(c.value)}</p>}
               </div>
-              <div className={`p-2 rounded-lg ${c.bg}`}>
-                <c.icon className={`h-4 w-4 ${c.color}`} />
-              </div>
+              <div className={`p-2 rounded-lg ${c.bg}`}><c.icon className={`h-4 w-4 ${c.color}`} /></div>
             </div>
           </CardContent>
         </Card>
@@ -337,16 +413,23 @@ function SummaryCards({ data, isLoading }: { data?: Summary; isLoading: boolean 
 // ─── Discovery Tab ─────────────────────────────────────────────────────────────
 
 function DiscoveryTab({
-  opportunities, assessments, isLoading,
+  opportunities, assessments, drafts, isLoading,
   onQualify, qualifyingId,
+  onGenerateOutreach, generatingOutreachId,
+  onTabChange,
 }: {
   opportunities: Opportunity[];
   assessments: Assessment[];
+  drafts: OutreachDraft[];
   isLoading: boolean;
   onQualify: (id: string) => void;
   qualifyingId: string | null;
+  onGenerateOutreach: (id: string) => void;
+  generatingOutreachId: string | null;
+  onTabChange: (tab: string) => void;
 }) {
-  const assessedIds = new Set(assessments.map(a => a.opportunityId));
+  const assessedIds  = new Set(assessments.map(a => a.opportunityId));
+  const draftedIds   = new Set(drafts.map(d => d.opportunityId));
 
   if (isLoading) return <CardSkeleton />;
 
@@ -355,7 +438,7 @@ function DiscoveryTab({
       <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
         <Target className="h-8 w-8 mx-auto mb-2 opacity-30" />
         <p className="font-medium text-sm">No opportunities yet</p>
-        <p className="text-xs mt-1">Run a discovery scan or add one manually to get started.</p>
+        <p className="text-xs mt-1">Add one manually or run a discovery scan to get started.</p>
       </div>
     );
   }
@@ -364,7 +447,11 @@ function DiscoveryTab({
     <div className="space-y-3">
       {opportunities.map(opp => {
         const hasAssessment = assessedIds.has(opp.id);
-        const isQualifying = qualifyingId === opp.id;
+        const hasDraft      = draftedIds.has(opp.id);
+        const isQualifying  = qualifyingId === opp.id;
+        const isGenerating  = generatingOutreachId === opp.id;
+        const canOutreach   = opp.fitScore >= 65 || hasAssessment;
+
         return (
           <Card key={opp.id} className="border shadow-sm hover:shadow-md transition-shadow" data-testid={`card-opportunity-${opp.id}`}>
             <CardContent className="p-4">
@@ -377,6 +464,11 @@ function DiscoveryTab({
                     {hasAssessment && (
                       <Badge className="text-[10px] px-1.5 py-0 h-4 bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300">
                         <Brain className="h-2.5 w-2.5 mr-0.5" />Scored
+                      </Badge>
+                    )}
+                    {hasDraft && (
+                      <Badge className="text-[10px] px-1.5 py-0 h-4 bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
+                        <Mail className="h-2.5 w-2.5 mr-0.5" />Draft
                       </Badge>
                     )}
                   </div>
@@ -400,17 +492,36 @@ function DiscoveryTab({
                       <p className={`text-sm font-bold ${fitScoreColor(opp.fitScore)}`}>{opp.fitScore}</p>
                     </div>
                   )}
-                  <Button
-                    size="sm"
-                    variant={hasAssessment ? "outline" : "default"}
-                    className="gap-1.5 text-xs shrink-0"
-                    disabled={isQualifying}
-                    onClick={() => onQualify(opp.id)}
-                    data-testid={`button-qualify-${opp.id}`}
-                  >
-                    {isQualifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
-                    {hasAssessment ? "Re-score" : "Qualify"}
-                  </Button>
+                  <div className="flex flex-col gap-1.5">
+                    <Button
+                      size="sm"
+                      variant={hasAssessment ? "outline" : "default"}
+                      className="gap-1.5 text-xs h-7"
+                      disabled={isQualifying}
+                      onClick={() => onQualify(opp.id)}
+                      data-testid={`button-qualify-${opp.id}`}
+                    >
+                      {isQualifying ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
+                      {hasAssessment ? "Re-score" : "Qualify"}
+                    </Button>
+                    {canOutreach ? (
+                      <Button
+                        size="sm"
+                        variant={hasDraft ? "outline" : "secondary"}
+                        className="gap-1.5 text-xs h-7"
+                        disabled={isGenerating}
+                        onClick={() => onGenerateOutreach(opp.id)}
+                        data-testid={`button-outreach-${opp.id}`}
+                      >
+                        {isGenerating ? <Loader2 className="h-3 w-3 animate-spin" /> : <Mail className="h-3 w-3" />}
+                        {hasDraft ? "Re-draft" : "Generate Outreach"}
+                      </Button>
+                    ) : (
+                      <Button size="sm" variant="ghost" className="gap-1.5 text-xs h-7 text-muted-foreground cursor-not-allowed" disabled data-testid={`button-outreach-disabled-${opp.id}`}>
+                        <AlertCircle className="h-3 w-3" />Qualify First
+                      </Button>
+                    )}
+                  </div>
                 </div>
               </div>
             </CardContent>
@@ -426,7 +537,6 @@ function DiscoveryTab({
 function AssessmentCard({ a }: { a: Assessment }) {
   const risk = RISK_CONFIG[a.riskLevel] ?? RISK_CONFIG.medium;
   const rev  = REV_CONFIG[a.revenuePotential] ?? REV_CONFIG.medium;
-
   return (
     <Card className="border shadow-sm">
       <CardHeader className="pb-2 pt-4 px-4">
@@ -437,7 +547,6 @@ function AssessmentCard({ a }: { a: Assessment }) {
           </div>
           <div className={`text-2xl font-bold ${fitScoreColor(a.fitScore)}`} data-testid={`text-fit-score-${a.opportunityId}`}>{a.fitScore}</div>
         </div>
-        {/* Score bars */}
         <div className="mt-3 space-y-2">
           <ScoreBar label="AI Fulfillment"     value={a.aiFulfillmentScore}    color={fitBarColor(a.aiFulfillmentScore)} />
           <ScoreBar label="Revenue Potential"  value={a.revenuePotentialScore} color="bg-emerald-500" />
@@ -454,81 +563,38 @@ function AssessmentCard({ a }: { a: Assessment }) {
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-4 space-y-4">
-        {/* Reasoning */}
         {a.reasoning && (
-          <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground italic leading-relaxed">
-            {a.reasoning}
-          </div>
+          <div className="rounded-md bg-muted/50 p-3 text-xs text-muted-foreground italic leading-relaxed">{a.reasoning}</div>
         )}
-
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {/* AI Can Fulfill */}
           <div className="rounded-lg border p-3 space-y-2">
-            <div className="flex items-center gap-2">
-              <Bot className="h-3.5 w-3.5 text-blue-500" />
-              <h4 className="text-xs font-semibold text-blue-700 dark:text-blue-300">AI Can Fulfill</h4>
-            </div>
+            <div className="flex items-center gap-2"><Bot className="h-3.5 w-3.5 text-blue-500" /><h4 className="text-xs font-semibold text-blue-700 dark:text-blue-300">AI Can Fulfill</h4></div>
             <ul className="space-y-1">
-              {a.aiCanFulfill.map(item => (
-                <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                  <CheckCircle className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />{item}
-                </li>
-              ))}
+              {a.aiCanFulfill.map(item => <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground"><CheckCircle className="h-3 w-3 text-emerald-500 shrink-0 mt-0.5" />{item}</li>)}
               {!a.aiCanFulfill.length && <li className="text-xs text-muted-foreground italic">None identified</li>}
             </ul>
           </div>
-
-          {/* Human Required */}
           <div className="rounded-lg border p-3 space-y-2">
-            <div className="flex items-center gap-2">
-              <User className="h-3.5 w-3.5 text-amber-500" />
-              <h4 className="text-xs font-semibold text-amber-700 dark:text-amber-300">Human Required</h4>
-            </div>
+            <div className="flex items-center gap-2"><User className="h-3.5 w-3.5 text-amber-500" /><h4 className="text-xs font-semibold text-amber-700 dark:text-amber-300">Human Required</h4></div>
             <ul className="space-y-1">
-              {a.humanRequired.map(item => (
-                <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                  <AlertTriangle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />{item}
-                </li>
-              ))}
+              {a.humanRequired.map(item => <li key={item} className="flex items-start gap-1.5 text-xs text-muted-foreground"><AlertTriangle className="h-3 w-3 text-amber-500 shrink-0 mt-0.5" />{item}</li>)}
             </ul>
           </div>
         </div>
-
-        {/* Red Flags + Next Steps */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {a.redFlags.length > 0 && (
             <div className="rounded-lg border border-rose-200 dark:border-rose-800 p-3 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <AlertCircle className="h-3.5 w-3.5 text-rose-500" />
-                <h4 className="text-xs font-semibold text-rose-700 dark:text-rose-400">Red Flags</h4>
-              </div>
-              <ul className="space-y-1">
-                {a.redFlags.map(f => (
-                  <li key={f} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                    <Flag className="h-3 w-3 text-rose-400 shrink-0 mt-0.5" />{f}
-                  </li>
-                ))}
-              </ul>
+              <div className="flex items-center gap-2"><AlertCircle className="h-3.5 w-3.5 text-rose-500" /><h4 className="text-xs font-semibold text-rose-700 dark:text-rose-400">Red Flags</h4></div>
+              <ul className="space-y-1">{a.redFlags.map(f => <li key={f} className="flex items-start gap-1.5 text-xs text-muted-foreground"><Flag className="h-3 w-3 text-rose-400 shrink-0 mt-0.5" />{f}</li>)}</ul>
             </div>
           )}
           {a.nextSteps.length > 0 && (
             <div className="rounded-lg border p-3 space-y-1.5">
-              <div className="flex items-center gap-2">
-                <ThumbsUp className="h-3.5 w-3.5 text-teal-500" />
-                <h4 className="text-xs font-semibold text-teal-700 dark:text-teal-300">Next Steps</h4>
-              </div>
-              <ul className="space-y-1">
-                {a.nextSteps.map((s, i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                    <ChevronRight className="h-3 w-3 text-teal-400 shrink-0 mt-0.5" />{s}
-                  </li>
-                ))}
-              </ul>
+              <div className="flex items-center gap-2"><ThumbsUp className="h-3.5 w-3.5 text-teal-500" /><h4 className="text-xs font-semibold text-teal-700 dark:text-teal-300">Next Steps</h4></div>
+              <ul className="space-y-1">{a.nextSteps.map((s, i) => <li key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground"><ChevronRight className="h-3 w-3 text-teal-400 shrink-0 mt-0.5" />{s}</li>)}</ul>
             </div>
           )}
         </div>
-
-        {/* Summary row */}
         <div className="flex flex-wrap items-center gap-3 pt-1 text-xs border-t">
           <span className="text-muted-foreground">Revenue: <span className={`font-semibold ${rev.color}`}>{rev.label}</span></span>
           <span className="text-muted-foreground">Risk: <span className={`font-semibold ${risk.color}`}>{risk.label}</span></span>
@@ -550,10 +616,8 @@ function QualificationTab({
   qualifyAllPending: boolean;
 }) {
   if (isLoading) return <CardSkeleton />;
-
   return (
     <div className="space-y-4">
-      {/* Header bar */}
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold">Qualification Assessments</h3>
@@ -563,18 +627,11 @@ function QualificationTab({
               : "No assessments yet — qualify an opportunity to see results here"}
           </p>
         </div>
-        <Button
-          size="sm"
-          className="text-xs gap-1.5 shrink-0"
-          onClick={onQualifyAll}
-          disabled={qualifyAllPending}
-          data-testid="button-qualify-all"
-        >
+        <Button size="sm" className="text-xs gap-1.5 shrink-0" onClick={onQualifyAll} disabled={qualifyAllPending} data-testid="button-qualify-all">
           {qualifyAllPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Brain className="h-3 w-3" />}
           Qualify All New
         </Button>
       </div>
-
       {assessments.length === 0 ? (
         <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
           <Brain className="h-8 w-8 mx-auto mb-2 opacity-30" />
@@ -582,8 +639,160 @@ function QualificationTab({
           <p className="text-xs mt-1">Click "Qualify" on any opportunity in the Discovery tab, or use "Qualify All New" above.</p>
         </div>
       ) : (
+        <div className="space-y-4">{assessments.map(a => <AssessmentCard key={a.id} a={a} />)}</div>
+      )}
+    </div>
+  );
+}
+
+// ─── Outreach Tab ─────────────────────────────────────────────────────────────
+
+function OutreachTab({
+  drafts, isLoading, onStatusChange, statusChangingId, onEdit,
+}: {
+  drafts: OutreachDraft[];
+  isLoading: boolean;
+  onStatusChange: (id: string, status: DraftStatus) => void;
+  statusChangingId: string | null;
+  onEdit: (draft: OutreachDraft) => void;
+}) {
+  if (isLoading) return <CardSkeleton />;
+
+  const byStatus = (s: DraftStatus) => drafts.filter(d => d.status === s);
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold">Outreach Drafts</h3>
+          <p className="text-xs text-muted-foreground">
+            {drafts.length > 0
+              ? `${drafts.length} draft${drafts.length !== 1 ? "s" : ""} · ${byStatus("approved").length} approved · ${byStatus("rejected").length} rejected`
+              : "No drafts yet — generate outreach from a qualified opportunity"}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <Badge className="text-[10px] bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 gap-1">
+            <Edit3 className="h-2.5 w-2.5" />{byStatus("draft").length} draft
+          </Badge>
+          <Badge className="text-[10px] bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300 gap-1">
+            <CheckCheck className="h-2.5 w-2.5" />{byStatus("approved").length} approved
+          </Badge>
+        </div>
+      </div>
+
+      {drafts.length === 0 ? (
+        <div className="rounded-md border border-dashed p-12 text-center text-muted-foreground">
+          <Mail className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="font-medium text-sm">No outreach drafts yet</p>
+          <p className="text-xs mt-1">Go to Discovery and click "Generate Outreach" on any qualified opportunity (fit ≥ 65).</p>
+        </div>
+      ) : (
         <div className="space-y-4">
-          {assessments.map(a => <AssessmentCard key={a.id} a={a} />)}
+          {drafts.map(draft => {
+            const isChanging = statusChangingId === draft.id;
+            return (
+              <Card key={draft.id} className={`border shadow-sm ${draft.status === "approved" ? "border-emerald-200 dark:border-emerald-800" : draft.status === "rejected" ? "border-rose-200 dark:border-rose-800 opacity-70" : ""}`} data-testid={`card-draft-${draft.id}`}>
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <DraftBadge s={draft.status} />
+                        <TypeBadge t={draft.opportunityType} />
+                        <Badge className="text-[10px] px-1.5 py-0 h-4 bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400">
+                          {draft.channel}
+                        </Badge>
+                      </div>
+                      <h3 className="text-sm font-semibold mt-1.5" data-testid={`text-draft-subject-${draft.id}`}>{draft.subject}</h3>
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground mt-1">
+                        <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{draft.company || draft.opportunityTitle}</span>
+                        <span className="flex items-center gap-1"><MapPin className="h-3 w-3" />{draft.location}</span>
+                        <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{timeAgo(draft.updatedAt)}</span>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs text-muted-foreground">Confidence</p>
+                      <p className={`text-xl font-bold ${fitScoreColor(draft.confidenceScore)}`} data-testid={`text-conf-score-${draft.id}`}>{draft.confidenceScore}</p>
+                      {draft.fitScore > 0 && <p className="text-[10px] text-muted-foreground">Fit: {draft.fitScore}</p>}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 space-y-3">
+                  {/* Body preview */}
+                  <div className="rounded-md border bg-muted/30 p-3 space-y-2">
+                    <div className="text-xs font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                      <Eye className="h-3 w-3" />Body Preview
+                    </div>
+                    <pre className="text-xs text-foreground whitespace-pre-wrap font-sans leading-relaxed line-clamp-6" data-testid={`text-draft-body-${draft.id}`}>{draft.body}</pre>
+                  </div>
+
+                  {/* Positioning angle */}
+                  {draft.positioningAngle && (
+                    <div className="flex items-start gap-2 rounded-md bg-blue-50 dark:bg-blue-900/20 p-2.5">
+                      <Zap className="h-3.5 w-3.5 text-blue-500 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold uppercase tracking-wide">Positioning</p>
+                        <p className="text-xs text-blue-700 dark:text-blue-300">{draft.positioningAngle}</p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Call to action */}
+                  {draft.callToAction && (
+                    <div className="flex items-start gap-2 rounded-md bg-teal-50 dark:bg-teal-900/20 p-2.5">
+                      <ChevronRight className="h-3.5 w-3.5 text-teal-500 shrink-0 mt-0.5" />
+                      <p className="text-xs text-teal-700 dark:text-teal-300 italic">{draft.callToAction}</p>
+                    </div>
+                  )}
+
+                  {/* Actions */}
+                  {draft.status !== "sent" && (
+                    <div className="flex flex-wrap items-center gap-2 pt-1 border-t">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs h-7"
+                        disabled={isChanging}
+                        onClick={() => onEdit(draft)}
+                        data-testid={`button-edit-draft-${draft.id}`}
+                      >
+                        <Pencil className="h-3 w-3" />Edit
+                      </Button>
+                      {draft.status !== "approved" && (
+                        <Button
+                          size="sm"
+                          className="gap-1.5 text-xs h-7 bg-emerald-600 hover:bg-emerald-700 text-white"
+                          disabled={isChanging}
+                          onClick={() => onStatusChange(draft.id, "approved")}
+                          data-testid={`button-approve-draft-${draft.id}`}
+                        >
+                          {isChanging ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCheck className="h-3 w-3" />}Approve
+                        </Button>
+                      )}
+                      {draft.status !== "rejected" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs h-7 border-rose-300 text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                          disabled={isChanging}
+                          onClick={() => onStatusChange(draft.id, "rejected")}
+                          data-testid={`button-reject-draft-${draft.id}`}
+                        >
+                          {isChanging ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsDown className="h-3 w-3" />}Reject
+                        </Button>
+                      )}
+                      {draft.status === "approved" && (
+                        <span className="text-xs text-muted-foreground ml-auto italic flex items-center gap-1">
+                          <Shield className="h-3 w-3" />No email sending in this phase
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>
@@ -824,9 +1033,12 @@ function SettingsTab({ settings: serverSettings, isLoading }: { settings?: OrgSe
 // ─── Page Root ────────────────────────────────────────────────────────────────
 
 export default function AdminOpportunityAcquisitionPage() {
-  const [activeTab, setActiveTab]     = useState("discovery");
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [qualifyingId, setQualifyingId] = useState<string | null>(null);
+  const [activeTab, setActiveTab]             = useState("discovery");
+  const [showAddModal, setShowAddModal]       = useState(false);
+  const [editingDraft, setEditingDraft]       = useState<OutreachDraft | null>(null);
+  const [qualifyingId, setQualifyingId]       = useState<string | null>(null);
+  const [generatingOutreachId, setGeneratingOutreachId] = useState<string | null>(null);
+  const [statusChangingId, setStatusChangingId] = useState<string | null>(null);
   const { toast } = useToast();
   const qc = useQueryClient();
 
@@ -835,13 +1047,15 @@ export default function AdminOpportunityAcquisitionPage() {
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/summary"] });
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/assessments"] });
     qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+    qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
   }
 
-  const summaryQ   = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
-  const oppsQ      = useQuery<Opportunity[]>({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
-  const eventsQ    = useQuery<AgentEvent[]>({ queryKey: ["/api/opportunity-acquisition/events"] });
-  const settingsQ  = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
-  const assessQ    = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
+  const summaryQ  = useQuery<Summary>({ queryKey: ["/api/opportunity-acquisition/summary"] });
+  const oppsQ     = useQuery<Opportunity[]>({ queryKey: ["/api/opportunity-acquisition/opportunities"] });
+  const eventsQ   = useQuery<AgentEvent[]>({ queryKey: ["/api/opportunity-acquisition/events"] });
+  const settingsQ = useQuery<OrgSettings | null>({ queryKey: ["/api/opportunity-acquisition/settings"] });
+  const assessQ   = useQuery<Assessment[]>({ queryKey: ["/api/opportunity-acquisition/assessments"] });
+  const draftsQ   = useQuery<OutreachDraft[]>({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
 
   const runScan = useMutation({
     mutationFn: () => apiRequest("POST", "/api/opportunity-acquisition/run-scan", {}),
@@ -857,16 +1071,13 @@ export default function AdminOpportunityAcquisitionPage() {
   const qualifyOne = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/opportunity-acquisition/opportunities/${id}/qualify`, {}),
     onMutate: (id) => setQualifyingId(id),
-    onSuccess: (_data, id) => {
+    onSuccess: () => {
       toast({ title: "Qualification complete", description: "Fit score updated." });
       setQualifyingId(null);
       invalidateAll();
       setActiveTab("qualification");
     },
-    onError: () => {
-      setQualifyingId(null);
-      toast({ title: "Qualification failed", variant: "destructive" });
-    },
+    onError: () => { setQualifyingId(null); toast({ title: "Qualification failed", variant: "destructive" }); },
   });
 
   const qualifyAll = useMutation({
@@ -879,16 +1090,52 @@ export default function AdminOpportunityAcquisitionPage() {
     onError: () => toast({ title: "Qualify All failed", variant: "destructive" }),
   });
 
-  const opportunities: Opportunity[] = oppsQ.data ?? [];
-  const events: AgentEvent[]         = eventsQ.data ?? [];
-  const assessments: Assessment[]    = assessQ.data ?? [];
+  const generateOutreach = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/opportunity-acquisition/opportunities/${id}/generate-outreach`, {}),
+    onMutate: (id) => setGeneratingOutreachId(id),
+    onSuccess: () => {
+      toast({ title: "Outreach draft generated", description: "Review it in the Outreach tab." });
+      setGeneratingOutreachId(null);
+      invalidateAll();
+      setActiveTab("outreach");
+    },
+    onError: (e: any) => {
+      setGeneratingOutreachId(null);
+      toast({ title: "Draft generation failed", description: e?.message ?? "Try again", variant: "destructive" });
+    },
+  });
+
+  const changeDraftStatus = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: DraftStatus }) =>
+      apiRequest("PATCH", `/api/opportunity-acquisition/outreach-drafts/${id}`, { status }),
+    onMutate: ({ id }) => setStatusChangingId(id),
+    onSuccess: (_data, { status }) => {
+      setStatusChangingId(null);
+      toast({ title: status === "approved" ? "Draft approved" : "Draft rejected" });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
+      qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+    },
+    onError: () => { setStatusChangingId(null); toast({ title: "Failed to update draft", variant: "destructive" }); },
+  });
+
+  const opportunities: Opportunity[]  = oppsQ.data ?? [];
+  const events: AgentEvent[]          = eventsQ.data ?? [];
+  const assessments: Assessment[]     = assessQ.data ?? [];
+  const drafts: OutreachDraft[]       = draftsQ.data ?? [];
 
   return (
     <div className="flex flex-col min-h-screen bg-background">
       {showAddModal && (
-        <AddOpportunityModal
-          onClose={() => setShowAddModal(false)}
-          onSaved={invalidateAll}
+        <AddOpportunityModal onClose={() => setShowAddModal(false)} onSaved={invalidateAll} />
+      )}
+      {editingDraft && (
+        <EditDraftModal
+          draft={editingDraft}
+          onClose={() => setEditingDraft(null)}
+          onSaved={() => {
+            qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/outreach-drafts"] });
+            qc.invalidateQueries({ queryKey: ["/api/opportunity-acquisition/events"] });
+          }}
         />
       )}
 
@@ -897,18 +1144,14 @@ export default function AdminOpportunityAcquisitionPage() {
         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
           <div className="flex items-start gap-3">
             <Link href="/admin/dashboard">
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 mt-0.5" data-testid="button-back">
-                <ArrowLeft className="h-4 w-4" />
-              </Button>
+              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 mt-0.5" data-testid="button-back"><ArrowLeft className="h-4 w-4" /></Button>
             </Link>
             <div>
               <div className="flex items-center gap-2">
                 <Target className="h-5 w-5 text-primary" />
                 <h1 className="text-xl font-bold">Opportunity Acquisition</h1>
               </div>
-              <p className="text-sm text-muted-foreground mt-0.5">
-                AI agents find, qualify, and convert external opportunities into revenue.
-              </p>
+              <p className="text-sm text-muted-foreground mt-0.5">AI agents find, qualify, and draft outreach for external opportunities.</p>
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
@@ -928,6 +1171,12 @@ export default function AdminOpportunityAcquisitionPage() {
           <TabsList className="w-full sm:w-auto flex overflow-x-auto" data-testid="tabs-main">
             <TabsTrigger value="discovery"      className="text-xs gap-1" data-testid="tab-discovery"><Search className="h-3 w-3" />Discovery</TabsTrigger>
             <TabsTrigger value="qualification"  className="text-xs gap-1" data-testid="tab-qualification"><Brain className="h-3 w-3" />Qualification</TabsTrigger>
+            <TabsTrigger value="outreach"       className="text-xs gap-1" data-testid="tab-outreach">
+              <Mail className="h-3 w-3" />Outreach
+              {drafts.filter(d => d.status === "draft").length > 0 && (
+                <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-amber-500 text-white">{drafts.filter(d => d.status === "draft").length}</Badge>
+              )}
+            </TabsTrigger>
             <TabsTrigger value="pipeline"       className="text-xs gap-1" data-testid="tab-pipeline"><TrendingUp className="h-3 w-3" />Pipeline</TabsTrigger>
             <TabsTrigger value="agent-activity" className="text-xs gap-1" data-testid="tab-agent-activity"><Activity className="h-3 w-3" />Agent Activity</TabsTrigger>
             <TabsTrigger value="settings"       className="text-xs gap-1" data-testid="tab-settings"><Settings className="h-3 w-3" />Settings</TabsTrigger>
@@ -937,9 +1186,13 @@ export default function AdminOpportunityAcquisitionPage() {
             <DiscoveryTab
               opportunities={opportunities}
               assessments={assessments}
+              drafts={drafts}
               isLoading={oppsQ.isLoading}
               onQualify={(id) => qualifyOne.mutate(id)}
               qualifyingId={qualifyingId}
+              onGenerateOutreach={(id) => generateOutreach.mutate(id)}
+              generatingOutreachId={generatingOutreachId}
+              onTabChange={setActiveTab}
             />
           </TabsContent>
 
@@ -949,6 +1202,16 @@ export default function AdminOpportunityAcquisitionPage() {
               isLoading={assessQ.isLoading}
               onQualifyAll={() => qualifyAll.mutate()}
               qualifyAllPending={qualifyAll.isPending}
+            />
+          </TabsContent>
+
+          <TabsContent value="outreach" className="mt-4">
+            <OutreachTab
+              drafts={drafts}
+              isLoading={draftsQ.isLoading}
+              onStatusChange={(id, status) => changeDraftStatus.mutate({ id, status })}
+              statusChangingId={statusChangingId}
+              onEdit={(draft) => setEditingDraft(draft)}
             />
           </TabsContent>
 

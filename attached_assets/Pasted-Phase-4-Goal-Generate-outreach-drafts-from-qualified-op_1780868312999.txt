@@ -1,0 +1,126 @@
+Phase 4 Goal:
+Generate outreach drafts from qualified opportunities, but do not send anything yet.
+
+Build:
+
+1. New service
+server/services/opportunity-outreach-agent.ts
+
+Function:
+generateOutreachDraft(orgId, opportunityId)
+
+Use:
+- opportunity title
+- company
+- source
+- type
+- estimated value
+- assessment reasoning
+- aiCanFulfill[]
+- humanRequired[]
+- recommendedAction
+- org name
+
+Generate:
+- subject
+- body
+- callToAction
+- positioningAngle
+- confidenceScore
+
+Positioning should NOT say “I am applying as an AI agent” by default.
+
+Instead frame it as:
+
+“Your posting suggests a need for scalable programming, athlete support, and operational help. TrainChat can support this through an AI-assisted coaching system while your staff keeps ownership of relationships and final decisions.”
+
+2. Database
+Use existing opportunity_outreach_drafts table.
+
+Fields should support:
+- opportunityId
+- orgId
+- subject
+- body
+- status: draft / approved / rejected / sent
+- channel: email
+- confidenceScore
+- createdByAgent
+- approvedByUserId nullable
+- sentAt nullable
+
+3. Endpoints
+POST /api/opportunity-acquisition/opportunities/:id/generate-outreach
+GET /api/opportunity-acquisition/outreach-drafts
+PATCH /api/opportunity-acquisition/outreach-drafts/:id
+
+4. UI
+Add new tab or section:
+Outreach
+
+If adding a new tab, tabs become:
+- Discovery
+- Qualification
+- Outreach
+- Pipeline
+- Agent Activity
+- Settings
+
+Outreach tab should show:
+- Draft cards
+- Subject
+- Body preview
+- Opportunity/company
+- Status badge
+- Confidence score
+- Buttons: Edit, Approve, Reject
+
+5. Discovery / Qualification integration
+On high-fit qualified opportunities:
+Show button:
+Generate Outreach
+
+If fit score < 65:
+Button disabled or warning:
+“Qualification required before outreach.”
+
+6. Activity logs
+Log:
+- Outreach Agent generated draft
+- Outreach draft approved
+- Outreach draft rejected
+- Outreach draft edited
+
+7. Important safety guard
+No email sending in this phase.
+No AgentMail send yet.
+Only draft creation and approval workflow.
+
+8. Draft tone
+Professional, curious, not spammy.
+Shorter than a traditional cover letter.
+The goal is to convert job postings into software/revenue opportunities.
+
+Example structure:
+
+Subject:
+Alternative support for your remote strength coaching role
+
+Body:
+Hi [Company/Team],
+
+I saw your posting for [role]. The role appears to involve [need].
+
+TrainChat may be able to support part of this workload through AI-assisted program design, athlete education, exercise modifications, and reporting.
+
+This would not replace human relationship management, but it could reduce programming/admin load and help your staff scale.
+
+Would it be worth a quick conversation to see if this fits what you're trying to build?
+
+Best,
+[Org Name]
+
+Goal:
+Turn qualified opportunities into reviewable outreach drafts.
+
+Zero TypeScript errors.

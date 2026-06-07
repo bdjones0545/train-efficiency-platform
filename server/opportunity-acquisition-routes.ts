@@ -77,13 +77,21 @@ async function createTables() {
 
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS opportunity_outreach_drafts (
-      id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id          TEXT NOT NULL,
-      opportunity_id  TEXT NOT NULL,
-      subject         TEXT NOT NULL DEFAULT '',
-      body            TEXT NOT NULL DEFAULT '',
-      status          TEXT NOT NULL DEFAULT 'draft',
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      org_id              TEXT NOT NULL,
+      opportunity_id      TEXT NOT NULL UNIQUE,
+      subject             TEXT NOT NULL DEFAULT '',
+      body                TEXT NOT NULL DEFAULT '',
+      status              TEXT NOT NULL DEFAULT 'draft',
+      channel             TEXT NOT NULL DEFAULT 'email',
+      confidence_score    INTEGER NOT NULL DEFAULT 0,
+      created_by_agent    BOOLEAN NOT NULL DEFAULT true,
+      approved_by_user_id TEXT,
+      sent_at             TIMESTAMPTZ,
+      call_to_action      TEXT NOT NULL DEFAULT '',
+      positioning_angle   TEXT NOT NULL DEFAULT '',
+      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
@@ -462,6 +470,145 @@ export async function registerOpportunityAcquisitionRoutes(
       res.json({ success: true, qualified, results });
     } catch (e: any) {
       console.error("[opportunity/qualify-all]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/opportunity-acquisition/opportunities/:id/generate-outreach ───
+  app.post("/api/opportunity-acquisition/opportunities/:id/generate-outreach", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { id } = req.params;
+
+      await db.execute(sql`
+        INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+        VALUES (${orgId}, 'Outreach Agent', ${`Outreach draft generation started for opportunity ${id}.`}, 'draft')
+      `);
+
+      const { generateOutreachDraft } = await import("./services/opportunity-outreach-agent");
+      const result = await generateOutreachDraft(orgId, id);
+
+      await db.execute(sql`
+        INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+        VALUES (${orgId}, 'Outreach Agent',
+          ${`Outreach draft generated for "${result.opportunityTitle}" — confidence ${result.confidenceScore}/100.`},
+          'draft')
+      `);
+
+      res.json({ success: true, result });
+    } catch (e: any) {
+      console.error("[opportunity/generate-outreach]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/opportunity-acquisition/outreach-drafts ────────────────────────
+  app.get("/api/opportunity-acquisition/outreach-drafts", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.json([]);
+
+      const drafts = rows(await db.execute(sql`
+        SELECT d.*, o.title AS opportunity_title, o.company, o.fit_score, o.type, o.location
+        FROM opportunity_outreach_drafts d
+        JOIN opportunity_acquisition_opportunities o ON o.id = d.opportunity_id
+        WHERE d.org_id = ${orgId}
+        ORDER BY d.updated_at DESC
+        LIMIT 100
+      `));
+
+      res.json(drafts.map((d: any) => ({
+        id:                 d.id,
+        opportunityId:      d.opportunity_id,
+        opportunityTitle:   d.opportunity_title,
+        company:            d.company ?? "",
+        fitScore:           n(d.fit_score),
+        opportunityType:    d.type ?? "coaching",
+        location:           d.location ?? "Remote",
+        subject:            d.subject,
+        body:               d.body,
+        status:             d.status,
+        channel:            d.channel ?? "email",
+        confidenceScore:    n(d.confidence_score),
+        createdByAgent:     d.created_by_agent ?? true,
+        approvedByUserId:   d.approved_by_user_id ?? null,
+        sentAt:             d.sent_at ?? null,
+        callToAction:       d.call_to_action ?? "",
+        positioningAngle:   d.positioning_angle ?? "",
+        createdAt:          d.created_at,
+        updatedAt:          d.updated_at,
+      })));
+    } catch (e: any) {
+      console.error("[opportunity/outreach-drafts]", e);
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── PATCH /api/opportunity-acquisition/outreach-drafts/:id ──────────────────
+  app.patch("/api/opportunity-acquisition/outreach-drafts/:id", ...auth, async (req: any, res) => {
+    try {
+      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+
+      const { id } = req.params;
+      const userId = resolveUserId(req);
+      const { status, subject, body } = req.body as { status?: string; subject?: string; body?: string };
+
+      if (!status && !subject && !body) {
+        return res.status(400).json({ message: "Provide status, subject, or body to update" });
+      }
+
+      const draft = row0(await db.execute(sql`
+        SELECT * FROM opportunity_outreach_drafts WHERE id = ${id} AND org_id = ${orgId}
+      `));
+      if (!draft) return res.status(404).json({ message: "Draft not found" });
+
+      if (status) {
+        await db.execute(sql`
+          UPDATE opportunity_outreach_drafts
+          SET status = ${status},
+              approved_by_user_id = CASE WHEN ${status} = 'approved' THEN ${userId} ELSE approved_by_user_id END,
+              updated_at = NOW()
+          WHERE id = ${id} AND org_id = ${orgId}
+        `);
+
+        const actionLabel =
+          status === "approved" ? "Outreach draft approved." :
+          status === "rejected" ? "Outreach draft rejected." : `Outreach draft status changed to ${status}.`;
+        const eventType = status === "approved" ? "flag" : status === "rejected" ? "info" : "update";
+
+        await db.execute(sql`
+          INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+          VALUES (${orgId}, 'Outreach Agent', ${actionLabel}, ${eventType})
+        `);
+      }
+
+      if (subject !== undefined || body !== undefined) {
+        await db.execute(sql`
+          UPDATE opportunity_outreach_drafts
+          SET subject    = COALESCE(${subject ?? null}, subject),
+              body       = COALESCE(${body ?? null}, body),
+              updated_at = NOW()
+          WHERE id = ${id} AND org_id = ${orgId}
+        `);
+        await db.execute(sql`
+          INSERT INTO opportunity_agent_events (org_id, agent_name, action, event_type)
+          VALUES (${orgId}, 'Outreach Agent', 'Outreach draft edited by user.', 'update')
+        `);
+      }
+
+      const updated = row0(await db.execute(sql`
+        SELECT d.*, o.title AS opportunity_title, o.company, o.fit_score
+        FROM opportunity_outreach_drafts d
+        JOIN opportunity_acquisition_opportunities o ON o.id = d.opportunity_id
+        WHERE d.id = ${id}
+      `));
+
+      res.json({ success: true, draft: updated });
+    } catch (e: any) {
+      console.error("[opportunity/outreach-drafts/patch]", e);
       res.status(500).json({ message: e.message });
     }
   });
