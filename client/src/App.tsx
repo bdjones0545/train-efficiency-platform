@@ -14,6 +14,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { Card } from "@/components/ui/card";
 import NotFound from "@/pages/not-found";
 import LandingPage from "@/pages/landing";
+import AiDepartmentsPage from "@/pages/ai-departments";
 import CoachesPage from "@/pages/coaches";
 import CoachSchedulePage from "@/pages/coach-schedule";
 import BookFastPage from "@/pages/book-fast";
@@ -622,6 +623,7 @@ function PublicLayout() {
 
   return (
     <Switch>
+      <Route path="/ai-departments" component={AiDepartmentsPage} />
       <Route path="/portal" component={ClientPortalPage} />
       <Route path="/sessions" component={OpenSessionsPublicPage} />
       <Route path="/org/:slug" component={OrgLandingPage} />
