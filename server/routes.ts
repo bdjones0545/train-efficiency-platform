@@ -29073,6 +29073,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerSponsorshipRoutes } = await import("./sponsorship-routes");
   registerSponsorshipRoutes(app, isAuthenticated, requireRole);
 
+  const { registerDepartmentCommandCenterRoutes } = await import("./department-command-center-routes");
+  registerDepartmentCommandCenterRoutes(app, isAuthenticated);
+
   const { registerDepartmentFactoryRoutes } = await import("./department-factory-routes");
   registerDepartmentFactoryRoutes(app, isAuthenticated);
 

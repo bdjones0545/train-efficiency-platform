@@ -1,0 +1,504 @@
+Department Command Center — Executive Department OS
+
+Goal:
+Create a single executive command center that provides visibility, prioritization, and operational awareness across every Department OS implementation.
+
+Current State:
+
+Departments operate independently.
+
+Opportunity Acquisition
+
+Hiring
+
+Partnerships
+
+Sponsorships
+
+Each has:
+
+* Executive Intelligence
+* Learning
+* Health Checks
+* Best Actions
+* Attention Signals
+
+The CEO must currently visit each department individually.
+
+New State:
+
+Department Command Center
+
+One screen.
+
+Entire organization.
+
+All departments.
+
+⸻
+
+MISSION
+
+Create:
+
+/admin/departments
+
+This becomes:
+
+Executive View of the AI Organization
+
+The page should answer:
+
+Which departments need attention?
+
+Which departments are healthy?
+
+Which department has the highest leverage opportunity?
+
+What should I do next?
+
+⸻
+
+DATA SOURCE
+
+Use:
+
+Department Registry
+
+No hardcoded departments.
+
+Everything should be discovered dynamically from:
+
+departmentRegistry.getEnabledDepartments()
+
+Future departments should automatically appear.
+
+⸻
+
+NEW BACKEND SERVICE
+
+Create:
+
+server/services/department-command-center.ts
+
+Primary function:
+
+generateDepartmentCommandCenter(orgId)
+
+Responsibilities:
+
+Query every registered department.
+
+Collect:
+
+Summary
+
+Best Action
+
+Health Checks
+
+Recommendations
+
+Maturity
+
+Attention Signals
+
+Return unified executive view.
+
+⸻
+
+NEW ENDPOINTS
+
+GET /api/departments/overview
+
+Returns:
+
+{
+departments: [],
+organizationHealth,
+organizationBestAction,
+generatedAt
+}
+
+⸻
+
+GET /api/departments/health
+
+Returns:
+
+department health matrix
+
+⸻
+
+GET /api/departments/actions
+
+Returns:
+
+all best actions ranked
+
+⸻
+
+GET /api/departments/alerts
+
+Returns:
+
+all department alerts
+
+⸻
+
+ORGANIZATION HEALTH SCORE
+
+Create:
+
+calculateOrganizationHealth()
+
+Inputs:
+
+Department Health Summaries
+
+Department Alert Counts
+
+Severity Levels
+
+Outputs:
+
+0–100 score
+
+Example:
+
+95–100
+Excellent
+
+80–94
+Healthy
+
+60–79
+Needs Attention
+
+0–59
+At Risk
+
+⸻
+
+ORGANIZATION BEST ACTION
+
+Create:
+
+rankOrganizationActions()
+
+Inputs:
+
+All department best actions
+
+Outputs:
+
+Single highest-priority action.
+
+Example:
+
+Meeting request requires response (Sponsorship)
+
+Priority:
+Critical
+
+Department:
+Sponsorship
+
+⸻
+
+FRONTEND
+
+Route:
+
+/admin/departments
+
+Sidebar:
+
+Departments
+
+Icon:
+
+Building2
+
+Location:
+
+Above individual departments
+
+⸻
+
+OVERVIEW TAB
+
+Top cards:
+
+Departments Active
+
+Organization Health
+
+Open Alerts
+
+Pending Recommendations
+
+⸻
+
+Show:
+
+Organization Best Action
+
+Large banner
+
+Department badge
+
+Priority badge
+
+Direct link
+
+⸻
+
+DEPARTMENTS TAB
+
+Grid:
+
+One card per department.
+
+Fields:
+
+Department Name
+
+Maturity Level
+
+Health Score
+
+Open Alerts
+
+Recommendations
+
+Best Action
+
+Status
+
+Example:
+
+Opportunity Acquisition
+
+Level 3
+
+Health: 91
+
+Alerts: 2
+
+Best Action:
+Send 3 approved drafts
+
+⸻
+
+HEALTH MATRIX TAB
+
+Table:
+
+Department
+
+Health Score
+
+Critical
+
+High
+
+Medium
+
+Low
+
+Last Review
+
+⸻
+
+Color-coded:
+
+Green
+
+Amber
+
+Red
+
+⸻
+
+BEST ACTIONS TAB
+
+Show:
+
+All department actions
+
+Sorted by priority.
+
+Fields:
+
+Department
+
+Action
+
+Priority
+
+Route
+
+Created
+
+⸻
+
+ALERTS TAB
+
+Unified attention feed.
+
+Combine:
+
+Opportunity
+
+Hiring
+
+Partnerships
+
+Sponsorships
+
+Future departments
+
+Fields:
+
+Severity
+
+Department
+
+Alert
+
+Created
+
+Status
+
+⸻
+
+MATURITY TAB
+
+Show:
+
+All departments
+
+Level
+
+Capabilities
+
+Progress
+
+⸻
+
+Level 1
+
+Foundation
+
+⸻
+
+Level 2
+
+Intelligence
+
+⸻
+
+Level 3
+
+Operations
+
+⸻
+
+Level 4
+
+Autonomy
+
+⸻
+
+Level 5
+
+Self-Optimizing
+
+⸻
+
+CEO HEARTBEAT INTEGRATION
+
+Create:
+
+generateOrganizationDepartmentSummary()
+
+Returns:
+
+Organization Health
+
+Top Risks
+
+Top Opportunities
+
+Highest Priority Action
+
+Future CEO Heartbeat can display this.
+
+Do not modify heartbeat behavior yet.
+
+⸻
+
+DEPARTMENT AUTO-DISCOVERY
+
+Critical:
+
+No hardcoded departments.
+
+When Department #5 registers:
+
+It automatically appears.
+
+No UI changes.
+
+No backend changes.
+
+⸻
+
+AGENT EVENTS
+
+Log:
+
+Department Command Center Generated
+
+Organization Health Calculated
+
+Organization Best Action Ranked
+
+⸻
+
+SUCCESS CRITERIA
+
+Phase complete when:
+
+* Department Command Center exists
+* Uses Department Registry dynamically
+* Organization Health Score exists
+* Organization Best Action exists
+* Departments auto-discover
+* Health Matrix exists
+* Unified Alerts exists
+* Best Actions ranking exists
+* Maturity dashboard exists
+* No hardcoded departments
+* Zero TypeScript errors
+
+⸻
+
+EXPECTED RESULT
+
+TrainEfficiency evolves from:
+
+A collection of departments
+
+to
+
+An executive operating system.
+
+The CEO no longer manages individual departments.
+
+The CEO manages the organization itself.
+
+Future Department #5, #10, or #25 should automatically appear in the Command Center without any additional engineering work.
+
+This becomes the top-level executive layer above every Department OS implementation.

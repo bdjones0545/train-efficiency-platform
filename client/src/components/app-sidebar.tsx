@@ -645,6 +645,12 @@ export function AppSidebar() {
               testId: "nav-partnerships-department",
             },
             {
+              title: "Departments",
+              url: "/admin/departments",
+              icon: Building2,
+              testId: "nav-departments",
+            },
+            {
               title: "Sponsorship Department",
               url: "/admin/sponsorships",
               icon: BadgeDollarSign,
