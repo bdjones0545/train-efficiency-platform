@@ -1,0 +1,221 @@
+Create a separate public landing page for TrainEfficiency focused on the new AI Department marketplace concept.
+
+Goal:
+Build a polished marketing page that positions TrainEfficiency as a marketplace-style AI operating system where AI departments find opportunities, qualify work, and report back to leadership.
+
+This is UI/architecture only.
+
+Do NOT change authentication.
+Do NOT create a separate sign-in system.
+Do NOT change app routing for existing users.
+Do NOT add new backend tables.
+Do NOT modify Department OS logic.
+
+Add route:
+
+/ai-departments
+
+This page should be public and separate from the existing app/admin experience.
+
+Primary positioning:
+
+“AI Departments Looking For Work”
+
+Alternative supporting language:
+
+“Deploy AI departments that discover opportunities, qualify them, build relationships, learn from outcomes, and report directly to leadership.”
+
+Page structure:
+
+1. Navigation
+
+Top nav:
+
+* TrainEfficiency logo
+* Departments
+* How It Works
+* Command Center
+* Login
+* Deploy Department CTA
+
+Login should route to the existing login.
+Deploy Department CTA can route to existing signup or demo path.
+
+2. Hero Section
+
+Headline:
+AI Departments Looking For Work
+
+Subheadline:
+TrainEfficiency lets performance organizations deploy AI departments that search for opportunities, qualify them, draft outreach, track replies, learn from outcomes, and surface executive priorities.
+
+CTA buttons:
+
+* Deploy Your First Department
+* See How It Works
+
+Hero visual:
+Create a marketplace-style visual showing AI departments matching themselves to opportunities.
+
+Visual concept:
+
+Left side:
+AI Departments
+
+* Opportunity Acquisition
+* Hiring
+* Partnerships
+* Sponsorships
+
+Center:
+Matching Engine / CEO Heartbeat
+
+Right side:
+Work Found
+
+* Revenue Opportunities
+* Candidates
+* Partners
+* Sponsors
+
+The visual should feel like agents actively finding work, not just static software cards.
+
+3. Marketplace Concept Section
+
+Headline:
+A Marketplace Where AI Departments Find Work
+
+Explain:
+Traditional software waits for humans to use it.
+TrainEfficiency deploys AI departments that actively look for useful work across the organization.
+
+Use 3 cards:
+
+Discover
+AI departments search for opportunities, candidates, partners, and sponsors.
+
+Qualify
+Each opportunity is scored for fit, value, urgency, and risk.
+
+Report
+Departments summarize what matters and send priorities to the Command Center.
+
+4. Meet the Departments Section
+
+Create four department cards:
+
+Opportunity Acquisition Department
+Finds revenue opportunities, qualifies them, drafts outreach, tracks replies, and learns what converts.
+
+Hiring Department
+Tracks candidates, scores fit, prepares hiring outreach, and surfaces hiring priorities.
+
+Partnerships Department
+Identifies strategic partners, manages relationship pipelines, and recommends next actions.
+
+Sponsorship Department
+Finds potential sponsors, manages proposal pipelines, and tracks sponsorship outcomes.
+
+Each card should include:
+
+* Icon
+* Department name
+* What it finds
+* What it reports
+* Status badge: Available to Deploy
+
+5. Command Center Section
+
+Headline:
+One Command Center for Every Department
+
+Show a mock Command Center panel with:
+
+* Organization Health
+* Departments Active
+* Open Alerts
+* Best Action Today
+* Department Status Cards
+
+Use existing TrainEfficiency visual style:
+dark panels, gradients, subtle borders, clean executive dashboard aesthetic.
+
+6. CEO Heartbeat Section
+
+Headline:
+The CEO Heartbeat Keeps Everything Moving
+
+Explain:
+Every department reports into a central heartbeat that monitors health, ranks priorities, and surfaces the highest-leverage action.
+
+Show flow:
+
+AI Departments
+↓
+Department Registry
+↓
+Department Command Center
+↓
+CEO Heartbeat
+↓
+Best Action Today
+
+7. How It Works Section
+
+Four steps:
+
+1. Create your organization
+2. Deploy AI departments
+3. Review opportunities and recommendations
+4. Act from one executive command center
+5. Final CTA
+
+Headline:
+Deploy Your First AI Department
+
+Subheadline:
+Start with Opportunity Acquisition, Hiring, Partnerships, or Sponsorships — then let the system surface what needs attention.
+
+Buttons:
+
+* Get Started
+* Login
+
+Design requirements:
+
+* Modern, premium, futuristic but not gimmicky
+* Marketplace feel
+* AI agents should feel active and useful
+* Avoid cheesy robot imagery
+* Use department cards, signal lines, status badges, and dashboard mockups
+* Mobile responsive
+* Match existing TrainEfficiency branding
+* Use existing shadcn/ui components where possible
+* Use lucide-react icons
+* No TypeScript errors
+
+Important messaging rules:
+
+Do not say:
+“AI agents apply for jobs.”
+
+Say:
+“AI departments discover where they can create value.”
+
+Do not make it sound like spam automation.
+
+Emphasize:
+
+* Human approval
+* Executive control
+* Departments recommend and prepare work
+* Leadership stays in command
+
+Deliverables:
+
+* New public landing page component
+* Route registered at /ai-departments
+* Existing login/signup links preserved
+* No backend changes
+* No auth changes
+* Zero TypeScript errors
