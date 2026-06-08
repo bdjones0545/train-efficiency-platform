@@ -52,6 +52,7 @@ import {
   Plug,
   Briefcase,
   Factory,
+  BadgeDollarSign,
 } from "lucide-react";
 import { setLastOrgSlug } from "@/lib/logout";
 import type { UserProfile } from "@shared/schema";
@@ -642,6 +643,12 @@ export function AppSidebar() {
               url: "/admin/partnerships",
               icon: Handshake,
               testId: "nav-partnerships-department",
+            },
+            {
+              title: "Sponsorship Department",
+              url: "/admin/sponsorships",
+              icon: BadgeDollarSign,
+              testId: "nav-sponsorships-department",
             },
             {
               title: "Department Factory",

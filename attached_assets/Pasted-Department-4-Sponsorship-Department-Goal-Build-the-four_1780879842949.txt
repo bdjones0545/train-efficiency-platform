@@ -1,0 +1,595 @@
+Department #4 — Sponsorship Department
+
+Goal:
+Build the fourth Department OS implementation using the Department Factory system only.
+
+This is not primarily a Sponsorship feature.
+
+This is the final validation of the Department Factory.
+
+The department must be built by following:
+
+Department Builder Guide
+→ Department Scaffold
+→ Department Checklist
+→ Registry Registration
+
+No custom architecture design should be required.
+
+Success Metric:
+
+Department #4 should be built almost entirely through Department Factory patterns.
+
+Target:
+
+70–90% framework reuse.
+
+⸻
+
+MISSION
+
+Create a Sponsorship Department that helps organizations identify, qualify, develop, and manage sponsorship opportunities.
+
+Examples:
+
+Local Businesses
+
+National Brands
+
+Equipment Companies
+
+Sports Nutrition Companies
+
+Recovery Companies
+
+Community Organizations
+
+Foundations
+
+Corporate Sponsors
+
+Media Partners
+
+The department should support:
+
+Sponsor Discovery
+→ Qualification
+→ Outreach
+→ Replies
+→ Proposal Pipeline
+→ Outcomes
+→ Learning
+→ Executive Intelligence
+
+⸻
+
+ROUTE
+
+Create:
+
+/admin/sponsorships
+
+Sidebar:
+
+Sponsorship Department
+
+Icon:
+
+BadgeDollarSign
+or
+Handshake
+or
+Trophy
+
+Location:
+
+Immediately after Partnerships Department
+
+⸻
+
+DATABASE
+
+Create:
+
+sponsorship_opportunities
+
+Columns:
+
+id
+org_id
+
+organization_name
+
+contact_name
+
+contact_email
+
+contact_phone
+
+website
+
+industry
+
+location
+
+sponsorship_type
+
+source
+
+estimated_value
+
+notes
+
+status
+
+fit_score
+
+created_at
+
+updated_at
+
+⸻
+
+sponsorship_assessments
+
+Columns:
+
+id
+org_id
+
+sponsorship_id
+
+fit_score
+
+brand_alignment_score
+
+financial_value_score
+
+confidence_score
+
+recommended_action
+
+reasoning
+
+strengths JSONB
+
+concerns JSONB
+
+next_steps JSONB
+
+created_at
+
+⸻
+
+sponsorship_outreach_drafts
+
+Columns:
+
+id
+org_id
+
+sponsorship_id
+
+subject
+
+body
+
+status
+
+positioning_angle
+
+confidence_score
+
+created_at
+
+⸻
+
+sponsorship_relationships
+
+Columns:
+
+id
+org_id
+
+sponsorship_id
+
+stage
+
+last_contacted_at
+
+notes
+
+created_at
+
+⸻
+
+sponsorship_learning_signals
+
+Columns:
+
+id
+org_id
+
+sponsorship_id
+
+source
+
+industry
+
+sponsorship_type
+
+fit_score
+
+responded
+
+meeting_requested
+
+proposal_requested
+
+sponsored
+
+declined
+
+created_at
+
+⸻
+
+sponsorship_executive_briefs
+
+sponsorship_recommendations
+
+⸻
+
+PIPELINE
+
+Stages:
+
+new
+
+qualified
+
+outreach_ready
+
+contacted
+
+interested
+
+meeting
+
+proposal
+
+negotiation
+
+sponsored
+
+declined
+
+⸻
+
+TABS
+
+Sponsors
+
+Assessments
+
+Outreach
+
+Pipeline
+
+Learning
+
+Executive Intelligence
+
+Health
+
+⸻
+
+SPONSOR ASSESSMENT AGENT
+
+Create:
+
+server/services/sponsorship-assessment-agent.ts
+
+Use:
+
+Department OS Assessment Framework
+
+Evaluate:
+
+Brand Alignment
+
+Audience Overlap
+
+Financial Value
+
+Local Market Relevance
+
+Strategic Fit
+
+Outputs:
+
+fit score
+
+reasoning
+
+strengths
+
+concerns
+
+recommended action
+
+⸻
+
+SPONSOR OUTREACH AGENT
+
+Create:
+
+server/services/sponsorship-outreach-agent.ts
+
+Draft Types:
+
+Introduction
+
+Partnership Proposal
+
+Community Sponsorship
+
+Event Sponsorship
+
+Athlete Development Sponsorship
+
+Facility Sponsorship
+
+No sending.
+
+Draft generation only.
+
+⸻
+
+SPONSOR LEARNING AGENT
+
+Create:
+
+server/services/sponsorship-learning-agent.ts
+
+Use:
+
+Department OS Learning Framework
+
+Track:
+
+Industry Performance
+
+Sponsor Type Performance
+
+Reply Rate
+
+Meeting Rate
+
+Proposal Rate
+
+Sponsor Conversion Rate
+
+Generate insights.
+
+⸻
+
+SPONSOR EXECUTIVE AGENT
+
+Create:
+
+server/services/sponsorship-executive-agent.ts
+
+Use:
+
+Department OS Executive Framework
+
+Generate:
+
+Executive Brief
+
+Recommendations
+
+Best Action Today
+
+Examples:
+
+Follow up with 4 interested sponsors.
+
+Proposal requests increased 18% this month.
+
+Community businesses convert 2.1x better than national outreach.
+
+Review 2 active sponsorship negotiations.
+
+⸻
+
+HEALTH CHECKS
+
+Create:
+
+Proposal Pending
+
+Proposal stage >14 days
+
+Severity:
+high
+
+⸻
+
+Interested Sponsor Aging
+
+Interested >7 days
+
+Severity:
+medium
+
+⸻
+
+No New Sponsors
+
+No opportunities in 30 days
+
+Severity:
+low
+
+⸻
+
+Negotiation Stalled
+
+Negotiation >21 days
+
+Severity:
+high
+
+⸻
+
+DEPARTMENT COORDINATOR
+
+Create:
+
+server/services/sponsorship-department-coordinator.ts
+
+Implement:
+
+DepartmentCoordinator
+
+Use:
+
+Department OS v2 Health Engine
+
+Methods:
+
+runHeartbeatReview()
+
+generateSummary()
+
+generateBestAction()
+
+⸻
+
+DEPARTMENT REGISTRY
+
+Register:
+
+Sponsorship Department
+
+through:
+
+departmentRegistry.register()
+
+No modifications allowed to:
+
+CEO Heartbeat
+
+Department Registry
+
+Opportunity Acquisition
+
+Hiring
+
+Partnerships
+
+Department Factory
+
+⸻
+
+FACTORY VALIDATION
+
+Use:
+
+Department Scaffold
+
+Department Checklist
+
+Department Builder Guide
+
+as the source of truth.
+
+Track:
+
+Framework Reuse %
+
+Estimated Infrastructure Savings
+
+Custom Logic %
+
+Checklist Completion %
+
+⸻
+
+CEO HEARTBEAT VALIDATION
+
+Verify automatic appearance in:
+
+CEO Timeline
+
+Attention Inbox
+
+Executive Dashboard
+
+Best Action Today
+
+Department Summary
+
+without touching:
+
+CEO Heartbeat code
+
+Registry code
+
+Other departments
+
+⸻
+
+VALIDATION REPORT
+
+Generate:
+
+Department #4 Factory Validation Report
+
+Show:
+
+Framework Components Reused
+
+Department-Specific Components
+
+Reuse %
+
+Estimated Build Savings
+
+Checklist Completion
+
+Maturity Level
+
+⸻
+
+SUCCESS CRITERIA
+
+Department #4 complete when:
+
+* Sponsorship Department page exists
+* Assessment Agent exists
+* Outreach Agent exists
+* Learning Agent exists
+* Executive Agent exists
+* DepartmentCoordinator implemented
+* Registered through Department Factory
+* Appears automatically in CEO Heartbeat
+* Appears automatically in Attention Inbox
+* Appears automatically in Best Action Today
+* Uses Department OS v2 components
+* Factory Validation Report exists
+* Reuse % calculated
+* Checklist auto-passes
+* Zero TypeScript errors
+
+⸻
+
+PRIMARY OBJECTIVE
+
+This is not a Sponsorship project.
+
+This is a Department Factory validation.
+
+If Sponsorship can be built quickly, cleanly, and almost entirely from scaffolds, templates, and framework components, then TrainEfficiency has successfully evolved into an AI Department Factory capable of scaling organizational intelligence across unlimited domains.
