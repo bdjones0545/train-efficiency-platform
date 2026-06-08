@@ -1,0 +1,552 @@
+Department #3 — Partnerships Department
+
+Goal:
+Build the third Department OS implementation using Department OS v2.
+
+This department is intentionally chosen because it differs from both Opportunity Acquisition and Hiring while still following the Department OS lifecycle.
+
+The objective is not partnership management.
+
+The objective is proving that Department OS v2 can rapidly manufacture a new department with minimal custom infrastructure.
+
+Expected New Code Target:
+
+~250–400 lines of department-specific logic.
+
+Everything else should come from Department OS v2.
+
+⸻
+
+MISSION
+
+Create a Partnerships Department that helps organizations identify, evaluate, develop, and manage strategic partnerships.
+
+Examples:
+
+Schools
+
+Sports Clubs
+
+Facilities
+
+Clinics
+
+Leagues
+
+Teams
+
+Organizations
+
+Sponsors
+
+Franchises
+
+Community Programs
+
+The department should support:
+
+Partner Discovery
+→ Qualification
+→ Outreach
+→ Replies
+→ Relationship Pipeline
+→ Outcomes
+→ Learning
+→ Executive Intelligence
+
+⸻
+
+ROUTE
+
+Create:
+
+/admin/partnerships
+
+Sidebar:
+
+Partnerships Department
+
+Icon:
+
+Handshake
+
+Location:
+
+Immediately after Hiring Department
+
+⸻
+
+DATABASE
+
+Create:
+
+partnership_opportunities
+
+Columns:
+
+id
+org_id
+
+organization_name
+
+contact_name
+
+contact_email
+
+contact_phone
+
+website
+
+location
+
+partnership_type
+
+source
+
+notes
+
+status
+
+fit_score
+
+created_at
+
+updated_at
+
+⸻
+
+partnership_assessments
+
+Columns:
+
+id
+org_id
+
+partnership_id
+
+fit_score
+
+reach_score
+
+strategic_value_score
+
+confidence_score
+
+recommended_action
+
+reasoning
+
+strengths JSONB
+
+concerns JSONB
+
+next_steps JSONB
+
+created_at
+
+⸻
+
+partnership_outreach_drafts
+
+Columns:
+
+id
+org_id
+
+partnership_id
+
+subject
+
+body
+
+status
+
+positioning_angle
+
+confidence_score
+
+created_at
+
+⸻
+
+partnership_relationships
+
+Columns:
+
+id
+org_id
+
+partnership_id
+
+stage
+
+last_contacted_at
+
+notes
+
+created_at
+
+⸻
+
+partnership_learning_signals
+
+Columns:
+
+id
+org_id
+
+partnership_id
+
+source
+
+partnership_type
+
+fit_score
+
+replied
+
+meeting_requested
+
+partnered
+
+declined
+
+created_at
+
+⸻
+
+partnership_executive_briefs
+
+partnership_recommendations
+
+⸻
+
+PIPELINE
+
+Stages:
+
+new
+
+qualified
+
+outreach_ready
+
+contacted
+
+interested
+
+meeting
+
+negotiation
+
+partnered
+
+declined
+
+⸻
+
+TABS
+
+Partners
+
+Assessments
+
+Outreach
+
+Pipeline
+
+Learning
+
+Executive Intelligence
+
+⸻
+
+PARTNERS TAB
+
+Summary cards:
+
+Total Opportunities
+
+Qualified
+
+Meetings
+
+Partnered
+
+Add Partner button
+
+Table:
+
+Organization
+
+Type
+
+Source
+
+Status
+
+Fit Score
+
+Created
+
+⸻
+
+ASSESSMENT AGENT
+
+Create:
+
+server/services/partnership-assessment-agent.ts
+
+Use Department OS Assessment Framework.
+
+Evaluate:
+
+Organization quality
+
+Strategic alignment
+
+Reach
+
+Partnership potential
+
+Community impact
+
+Outputs:
+
+fit score
+
+strengths
+
+concerns
+
+recommended action
+
+⸻
+
+OUTREACH AGENT
+
+Create:
+
+server/services/partnership-outreach-agent.ts
+
+Draft types:
+
+Introduction
+
+Collaboration Proposal
+
+Facility Partnership
+
+Community Partnership
+
+Referral Partnership
+
+No sending.
+
+Draft generation only.
+
+⸻
+
+LEARNING AGENT
+
+Create:
+
+server/services/partnership-learning-agent.ts
+
+Use Department OS Learning Framework.
+
+Track:
+
+Source performance
+
+Partnership type performance
+
+Reply rate
+
+Meeting rate
+
+Partnership conversion rate
+
+Generate insights.
+
+⸻
+
+EXECUTIVE AGENT
+
+Create:
+
+server/services/partnership-executive-agent.ts
+
+Use Department OS Executive Framework.
+
+Generate:
+
+Executive Brief
+
+Recommendations
+
+Best Action Today
+
+Examples:
+
+Follow up with 3 interested facilities.
+
+Review 2 partnership proposals.
+
+School partnerships generate the highest conversion rate.
+
+⸻
+
+HEALTH CHECKS
+
+Create rules:
+
+Stale Qualified Opportunity
+
+Qualified >14 days with no outreach
+
+Severity:
+medium
+
+⸻
+
+Meeting Follow-Up Needed
+
+Meeting >7 days old without update
+
+Severity:
+high
+
+⸻
+
+Partnership Proposal Pending
+
+Negotiation stage >14 days
+
+Severity:
+medium
+
+⸻
+
+No New Opportunities
+
+No partnership opportunities in 30 days
+
+Severity:
+low
+
+⸻
+
+DEPARTMENT COORDINATOR
+
+Create:
+
+server/services/partnership-department-coordinator.ts
+
+Implement:
+
+DepartmentCoordinator
+
+Use Department OS v2 Health Engine.
+
+Methods:
+
+runHeartbeatReview()
+
+generateSummary()
+
+generateBestAction()
+
+⸻
+
+DEPARTMENT REGISTRY
+
+Register:
+
+Partnerships Department
+
+through:
+
+departmentRegistry.register()
+
+No CEO Heartbeat modifications.
+
+No registry modifications.
+
+⸻
+
+CEO HEARTBEAT VALIDATION
+
+Verify automatic participation in:
+
+CEO Timeline
+
+Attention Inbox
+
+Department Summary
+
+Best Action Today
+
+Executive Dashboard
+
+without touching:
+
+CEO Heartbeat
+
+Department Registry
+
+Opportunity Acquisition
+
+Hiring Department
+
+⸻
+
+VALIDATION METRICS
+
+Generate:
+
+Department #3 Validation Summary
+
+Show:
+
+Framework Components Reused
+
+Custom Components Built
+
+Estimated Code Savings
+
+Department OS Reuse %
+
+Target:
+
+70%+
+
+⸻
+
+SUCCESS CRITERIA
+
+Department #3 complete when:
+
+* Partnerships Department page exists
+* Assessment Agent exists
+* Outreach Agent exists
+* Learning Agent exists
+* Executive Agent exists
+* DepartmentCoordinator implemented
+* Registered through Department OS
+* Appears automatically in CEO Heartbeat
+* Appears automatically in Attention Inbox
+* Appears automatically in Best Action Today
+* Uses Department OS v2 frameworks
+* Reuse % calculated
+* Zero TypeScript errors
+
+⸻
+
+PRIMARY OBJECTIVE
+
+This department is a framework stress test.
+
+The real deliverable is proof that Department OS v2 can rapidly manufacture entirely new AI-powered organizational departments.
+
+If Partnerships can be built with mostly Department OS components and minimal custom infrastructure, then TrainEfficiency has successfully evolved into a true Department Factory capable of producing future departments at scale.

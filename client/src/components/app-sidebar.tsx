@@ -637,6 +637,12 @@ export function AppSidebar() {
               testId: "nav-hiring-department",
             },
             {
+              title: "Partnerships Department",
+              url: "/admin/partnerships",
+              icon: Handshake,
+              testId: "nav-partnerships-department",
+            },
+            {
               title: "Department OS v2",
               url: "/admin/department-os-v2",
               icon: Layers,

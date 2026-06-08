@@ -29067,6 +29067,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerHiringRoutes } = await import("./hiring-routes");
   registerHiringRoutes(app, isAuthenticated, requireRole);
 
+  const { registerPartnershipRoutes } = await import("./partnership-routes");
+  registerPartnershipRoutes(app, isAuthenticated, requireRole);
+
   const { registerDepartmentOsV2Routes } = await import("./department-os-v2-routes");
   registerDepartmentOsV2Routes(app);
 
