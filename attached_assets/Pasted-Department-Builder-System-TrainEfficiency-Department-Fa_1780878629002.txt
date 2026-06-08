@@ -1,0 +1,387 @@
+Department Builder System — TrainEfficiency Department Factory v1
+
+Goal:
+Convert Department OS v2 from an internal framework into a repeatable Department Factory.
+
+Current State:
+
+Department #1 — Opportunity Acquisition ✓
+
+Department #2 — Hiring ✓
+
+Department #3 — Partnerships ✓
+
+The framework has now been validated across three different business domains.
+
+The next objective is not another department.
+
+The next objective is creating a system that allows future departments to be created consistently, rapidly, and with minimal architectural decisions.
+
+This phase creates:
+
+Department Builder System v1
+
+⸻
+
+MISSION
+
+Create a complete internal blueprint for building future departments.
+
+The result should be:
+
+A developer can create Department #4, #5, or #10 without needing to understand the entire TrainEfficiency architecture.
+
+The Department Builder should define:
+
+* required files
+* required contracts
+* required registration
+* required health checks
+* required executive intelligence
+* required learning integration
+
+⸻
+
+NEW SECTION
+
+Create:
+
+server/frameworks/department-os/builder/
+
+Files:
+
+department-builder-guide.ts
+
+department-template.ts
+
+department-checklist.ts
+
+department-scaffold.ts
+
+⸻
+
+DEPARTMENT TEMPLATE
+
+Create reusable template:
+
+DepartmentTemplate
+
+Contains:
+
+Assessment Agent
+
+Learning Agent
+
+Executive Agent
+
+Coordinator
+
+Routes
+
+UI Page
+
+Registry Registration
+
+Health Checks
+
+⸻
+
+Example:
+
+export const DepartmentTemplate = {
+assessmentAgent: “…”,
+learningAgent: “…”,
+executiveAgent: “…”,
+coordinator: “…”,
+routes: “…”,
+};
+
+⸻
+
+BUILDER GUIDE
+
+Create:
+
+Department Builder Guide
+
+Document:
+
+Required Components
+
+1. Database Tables
+2. Assessment Agent
+3. Learning Agent
+4. Executive Agent
+5. DepartmentCoordinator
+6. Routes
+7. Admin UI
+8. Registry Registration
+
+⸻
+
+Document:
+
+What is optional
+
+Examples:
+
+Outreach Agent
+
+Execution Agent
+
+Reply Intelligence
+
+Pipeline
+
+Learning Signals
+
+⸻
+
+DEPARTMENT CREATION CHECKLIST
+
+Create:
+
+DepartmentChecklist
+
+Example:
+
+□ Database tables created
+
+□ Assessment Agent implemented
+
+□ Learning Agent implemented
+
+□ Executive Agent implemented
+
+□ DepartmentCoordinator implemented
+
+□ Registered in Department Registry
+
+□ Appears in CEO Heartbeat
+
+□ Appears in Attention Inbox
+
+□ Appears in Timeline
+
+□ Appears in Best Action Today
+
+□ TypeScript passes
+
+□ Runtime registration verified
+
+⸻
+
+SCAFFOLD GENERATOR
+
+Create:
+
+department-scaffold.ts
+
+Function:
+
+generateDepartmentSkeleton(name)
+
+Produces:
+
+folder structure
+
+placeholder files
+
+coordinator template
+
+registry registration
+
+health rule examples
+
+⸻
+
+Output should generate:
+
+Department Name
+
+DepartmentCoordinator
+
+Assessment Agent
+
+Learning Agent
+
+Executive Agent
+
+Routes
+
+Admin Page
+
+⸻
+
+FRAMEWORK DOCUMENTATION
+
+Create:
+
+Department OS v2 Documentation
+
+Sections:
+
+Architecture Overview
+
+Lifecycle
+
+Assessment Framework
+
+Learning Framework
+
+Executive Framework
+
+Health Framework
+
+Pipeline Framework
+
+Coordinator Contract
+
+Registry Contract
+
+⸻
+
+API GOTCHA REGISTRY
+
+Document known framework quirks discovered during Departments #2 and #3.
+
+Examples:
+
+register(coordinator, meta)
+
+candidate(condition, action, score)
+
+createAttentionItemsFromFailed()
+
+Signal.responded
+
+Signal.won
+
+Static imports preferred
+
+⸻
+
+Purpose:
+
+Prevent future implementation mistakes.
+
+⸻
+
+DEPARTMENT SCORECARD
+
+Create:
+
+Department Factory Dashboard
+
+Route:
+
+/admin/department-factory
+
+Show:
+
+Built Departments
+
+Reuse %
+
+Average Department Size
+
+Framework Savings
+
+Builder Guide Status
+
+⸻
+
+DEPARTMENT MATURITY MODEL
+
+Define:
+
+Level 1
+
+Assessment
+
+Coordinator
+
+Heartbeat
+
+⸻
+
+Level 2
+
+Learning
+
+Executive Intelligence
+
+⸻
+
+Level 3
+
+Outreach
+
+Execution
+
+Replies
+
+⸻
+
+Level 4
+
+Autonomous Recommendations
+
+⸻
+
+Level 5
+
+Self-Optimizing Department
+
+⸻
+
+Every department should display:
+
+Current maturity level.
+
+⸻
+
+SUCCESS CRITERIA
+
+Phase complete when:
+
+* Department Builder Guide exists
+* Department Template exists
+* Department Checklist exists
+* Department Scaffold Generator exists
+* Framework documentation exists
+* API Gotcha Registry exists
+* Department Factory Dashboard exists
+* Maturity Model exists
+* No changes required to existing departments
+* Zero TypeScript errors
+
+⸻
+
+EXPECTED RESULT
+
+After this phase:
+
+TrainEfficiency no longer merely contains departments.
+
+TrainEfficiency contains a Department Factory.
+
+Future departments become a standardized manufacturing process:
+
+Choose Department Name
+↓
+Run Scaffold
+↓
+Implement Domain Logic
+↓
+Register Coordinator
+↓
+Department Live
+
+Target:
+
+Department #4 should take hours, not weeks.
+
+Department #10 should feel routine.
+
+This phase marks the transition from building AI departments to industrializing the creation of AI departments.

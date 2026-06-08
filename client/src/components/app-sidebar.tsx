@@ -51,6 +51,7 @@ import {
   Mail,
   Plug,
   Briefcase,
+  Factory,
 } from "lucide-react";
 import { setLastOrgSlug } from "@/lib/logout";
 import type { UserProfile } from "@shared/schema";
@@ -641,6 +642,12 @@ export function AppSidebar() {
               url: "/admin/partnerships",
               icon: Handshake,
               testId: "nav-partnerships-department",
+            },
+            {
+              title: "Department Factory",
+              url: "/admin/department-factory",
+              icon: Factory,
+              testId: "nav-department-factory",
             },
             {
               title: "Department OS v2",
