@@ -76,7 +76,8 @@ export async function extractMessageLearningFromFeedback(
     feedback.coachingFeedbackText ||
     (feedback.feedbackTags && (feedback.feedbackTags as string[]).length > 0) ||
     feedback.rejectionReason ||
-    feedback.reviewerNotes;
+    feedback.reviewerNotes ||
+    (feedback.editedBody && feedback.originalBody);
 
   if (!hasCoachingInput) return;
 
@@ -125,7 +126,9 @@ Rules must be specific, actionable, and written as instructions for an AI. Max 3
     return;
   }
 
-  const confidence = typeof parsed.confidence === "number" ? parsed.confidence : 0.75;
+  const isApproval = feedback.decision === "approved" || feedback.decision === "edited_and_approved";
+  const rawConfidence = typeof parsed.confidence === "number" ? parsed.confidence : 0.75;
+  const confidence = isApproval ? rawConfidence * 0.7 : rawConfidence;
   const ruleEntries = [
     ...((parsed.do_rules ?? []) as string[]).map((r: string) => ({ ruleType: "do", ruleText: r })),
     ...((parsed.avoid_rules ?? []) as string[]).map((r: string) => ({ ruleType: "avoid", ruleText: r })),
@@ -162,6 +165,7 @@ Rules must be specific, actionable, and written as instructions for an AI. Max 3
         cta: parsed.cta_preferences ?? [],
         length: parsed.length_preferences ?? [],
       } as any,
+      appliedToFutureRuns: true,
     })
     .where(eq(agentMessageFeedback.id, feedbackId));
 

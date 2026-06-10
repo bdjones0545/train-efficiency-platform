@@ -337,6 +337,30 @@ export async function registerAgentMailFollowupRoutes(
         metadata: { reason },
       }).catch(() => {});
 
+      // Wire rejection into global learning loop
+      if (reason) {
+        try {
+          const { agentMessageFeedback: amfTable } = await import("@shared/schema");
+          const [fbRow] = await db.insert(amfTable).values({
+            orgId,
+            proposalId: id,
+            agentName: f.agent_name ?? null,
+            messageType: "agentmail_followup",
+            originalBody: f.draft_body ?? null,
+            decision: "rejected",
+            rejectionReason: reason,
+            reviewedBy: actor,
+            communicationDomain: "athlete_lead",
+          } as any).returning();
+          if (fbRow?.id) {
+            const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
+            extractMessageLearningFromFeedback(orgId, fbRow.id).catch(console.error);
+          }
+        } catch (learningErr) {
+          console.error("[agentmail-followup-reject] learning loop error (non-fatal):", learningErr);
+        }
+      }
+
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to reject follow-up" });

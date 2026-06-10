@@ -20,6 +20,7 @@ import {
   Building2, GraduationCap, Briefcase, BarChart3, Mail,
   TrendingDown, DollarSign, Award, Target, MessageSquare, CalendarCheck,
   FileSignature, UserCheck, BarChart2, ShieldCheck, Send, Ban,
+  Activity, BookOpen, CheckCircle2, XCircle, Lightbulb,
   Eye, User, Info, Sparkles, ExternalLink, ChevronLeft,
 } from "lucide-react";
 
@@ -1153,6 +1154,184 @@ function AutonomyPanel({ activeDomainTab }: { activeDomainTab: string }) {
 
 // ─── Learning Dashboard ───────────────────────────────────────────────────────
 
+// ─── Learning Health Card ─────────────────────────────────────────────────────
+
+const DOMAIN_LABEL_MAP: Record<string, string> = {
+  athlete_lead: "Athlete Leads", parent_lead: "Parent Leads",
+  team_training: "Team Training", school_partnership: "School Partnerships",
+  athletic_director: "Athletic Directors", coach_outreach: "Coach Outreach",
+  organization_outreach: "Org Outreach", business_outreach: "Business Outreach",
+  employment_opportunity: "Employment", corporate_wellness: "Corporate Wellness",
+  facility_partnership: "Facility Partnerships", gym_owner: "Gym Owners",
+};
+
+function LearningHealthCard() {
+  const { data: health, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/ceo-heartbeat/learning-health"],
+    refetchInterval: 60_000,
+  });
+
+  const score = health?.healthScore ?? null;
+  const scoreColor =
+    score === null ? "text-muted-foreground" :
+    score >= 80 ? "text-green-600 dark:text-green-400" :
+    score >= 50 ? "text-yellow-600 dark:text-yellow-400" :
+    "text-red-600 dark:text-red-400";
+  const scoreBg =
+    score === null ? "" :
+    score >= 80 ? "border-green-200 dark:border-green-800 bg-green-50/40 dark:bg-green-950/10" :
+    score >= 50 ? "border-yellow-200 dark:border-yellow-800 bg-yellow-50/40 dark:bg-yellow-950/10" :
+    "border-red-200 dark:border-red-800 bg-red-50/40 dark:bg-red-950/10";
+
+  const fb = health?.feedback7d ?? {};
+  const approvalRatio = fb.approvalRatio;
+  const conversionRate = fb.conversionRate;
+
+  return (
+    <Card data-testid="learning-health-card" className={`mb-4 ${scoreBg}`}>
+      <CardHeader className="p-4 pb-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Activity className="w-4 h-4 text-blue-500" />
+            <CardTitle className="text-sm">Learning System Health</CardTitle>
+            {score !== null && (
+              <span data-testid="health-score" className={`text-sm font-bold ${scoreColor}`}>
+                {score}/100
+              </span>
+            )}
+          </div>
+          <span className="text-xs text-muted-foreground">Last 7 days</span>
+        </div>
+      </CardHeader>
+      <CardContent className="p-4 pt-0">
+        {isLoading ? (
+          <p className="text-sm text-muted-foreground">Loading…</p>
+        ) : !health ? (
+          <p className="text-sm text-muted-foreground">No data available.</p>
+        ) : (
+          <div className="space-y-3">
+            {/* Stat row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div data-testid="stat-feedback" className="bg-background/60 border rounded-lg p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-0.5">Feedback received</p>
+                <p className="text-xl font-bold">{fb.total ?? 0}</p>
+                {fb.total > 0 && (
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    <span className="text-green-600">✓{fb.approved ?? 0}</span>
+                    {" · "}
+                    <span className="text-red-600">✗{fb.rejected ?? 0}</span>
+                  </p>
+                )}
+              </div>
+              <div data-testid="stat-rules" className="bg-background/60 border rounded-lg p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-0.5">Rules created</p>
+                <p className="text-xl font-bold">{health.totalRules ?? 0}</p>
+                <p className="text-xs text-muted-foreground mt-0.5">active rules</p>
+              </div>
+              <div data-testid="stat-approval-ratio" className="bg-background/60 border rounded-lg p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-0.5">Approval ratio</p>
+                <p className={`text-xl font-bold ${approvalRatio === null ? "text-muted-foreground" : approvalRatio >= 60 ? "text-green-600" : "text-yellow-600"}`}>
+                  {approvalRatio !== null ? `${approvalRatio}%` : "—"}
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">of reviews</p>
+              </div>
+              <div data-testid="stat-domain-coverage" className="bg-background/60 border rounded-lg p-3 text-center">
+                <p className="text-xs text-muted-foreground mb-0.5">Domain coverage</p>
+                <p className="text-xl font-bold">
+                  {health.domainsWithRules ?? 0}
+                  <span className="text-sm font-normal text-muted-foreground">/{health.totalDomains ?? 12}</span>
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">domains learned</p>
+              </div>
+            </div>
+
+            {/* Conversion rate bar */}
+            {fb.total > 0 && (
+              <div className="space-y-1">
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1">
+                    <BookOpen className="w-3 h-3" /> Feedback → Rules conversion
+                  </span>
+                  <span className="font-medium">{conversionRate ?? 0}%</span>
+                </div>
+                <div className="w-full bg-muted rounded-full h-1.5">
+                  <div
+                    data-testid="conversion-bar"
+                    className={`h-1.5 rounded-full transition-all ${
+                      (conversionRate ?? 0) >= 50 ? "bg-green-500" :
+                      (conversionRate ?? 0) >= 20 ? "bg-yellow-500" : "bg-red-400"
+                    }`}
+                    style={{ width: `${Math.min(conversionRate ?? 0, 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Domains with zero rules */}
+            {(health.domainsWithZeroRules ?? []).length > 0 && (
+              <div className="bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <p className="text-xs font-semibold text-amber-700 dark:text-amber-400 mb-1.5 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> Learning blind spots — no rules yet
+                </p>
+                <div className="flex flex-wrap gap-1">
+                  {(health.domainsWithZeroRules as string[]).map((d) => (
+                    <span
+                      key={d}
+                      data-testid={`blind-spot-${d}`}
+                      className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-300 px-2 py-0.5 rounded-full"
+                    >
+                      {DOMAIN_LABEL_MAP[d] ?? d}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Failed extractions warning */}
+            {(health.failedExtractions ?? 0) > 0 && (
+              <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-3 flex items-center gap-2">
+                <XCircle className="w-3.5 h-3.5 text-red-500 shrink-0" />
+                <p className="text-xs text-red-700 dark:text-red-400">
+                  <span className="font-semibold">{health.failedExtractions}</span> rejection{health.failedExtractions !== 1 ? "s" : ""} had reasons but failed to generate rules.
+                  Reasons may be too vague for the AI to extract actionable rules.
+                </p>
+              </div>
+            )}
+
+            {/* Latest rule */}
+            {health.latestRule && (
+              <div className="bg-muted/40 border rounded-lg p-3 flex items-start gap-2">
+                <Lightbulb className="w-3.5 h-3.5 text-purple-500 shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <p className="text-xs text-muted-foreground mb-0.5">Latest learned rule</p>
+                  <p data-testid="latest-rule-text" className="text-xs font-medium leading-relaxed truncate">
+                    {health.latestRule.rule_text}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {DOMAIN_LABEL_MAP[health.latestRule.communication_domain] ?? health.latestRule.communication_domain}
+                    {" · "}
+                    {health.latestRule.rule_type}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* All good state */}
+            {(health.failedExtractions ?? 0) === 0 && (health.domainsWithZeroRules ?? []).length <= 4 && (health.totalRules ?? 0) > 0 && (
+              <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                Learning system active — {health.totalRules} rules across {health.domainsWithRules} domains
+              </p>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Learning Dashboard (full rule explorer) ──────────────────────────────────
+
 function LearningDashboard({ activeDomainTab }: { activeDomainTab: string }) {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -1800,6 +1979,9 @@ export default function AdminAiApprovalsPage() {
 
       {/* Autonomy Panel */}
       <AutonomyPanel activeDomainTab={activeTab} />
+
+      {/* Learning Health Card */}
+      <LearningHealthCard />
 
       {/* Learning Dashboard */}
       <LearningDashboard activeDomainTab={activeTab} />

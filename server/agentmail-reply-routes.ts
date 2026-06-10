@@ -448,6 +448,33 @@ export async function registerAgentMailReplyRoutes(
         id, { inbox: reply.inbox, approver, hasEdits },
       );
 
+      // Positive learning signal — fire-and-forget
+      try {
+        const { agentMessageFeedback: amfTable } = await import("@shared/schema");
+        const fbValues: any = {
+          orgId,
+          proposalId: id,
+          agentName: reply.agent_name ?? null,
+          messageType: reply.classification ?? "agentmail_reply",
+          originalSubject: reply.subject ?? null,
+          originalBody: reply.draft_body ?? null,
+          decision: hasEdits ? "edited_and_approved" : "approved",
+          reviewedBy: approver,
+          communicationDomain: "athlete_lead",
+        };
+        if (hasEdits) {
+          fbValues.editedBody = reply.edited_body;
+          fbValues.reviewerNotes = "Approved with edits — learn from improvements";
+        }
+        const [fbRow] = await db.insert(amfTable).values(fbValues).returning();
+        if (fbRow?.id) {
+          const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
+          extractMessageLearningFromFeedback(orgId, fbRow.id).catch(console.error);
+        }
+      } catch (learningErr) {
+        console.error("[agentmail-approve] learning loop error (non-fatal):", learningErr);
+      }
+
       res.json({ ok: true, approvedBy: approver, approvedAt: new Date().toISOString() });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to approve reply" });

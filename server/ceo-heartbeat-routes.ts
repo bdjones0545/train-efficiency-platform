@@ -7,6 +7,8 @@ import {
   adminActionAuditLog,
   jobExecutionLocks,
   organizations,
+  agentMessageFeedback,
+  agentMessageLearningRules,
 } from "@shared/schema";
 import {
   runHeartbeatCycle,
@@ -398,6 +400,126 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
         .catch(() => []);
 
       res.json({ runs });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+  // ─── GET /api/admin/ceo-heartbeat/learning-health ─────────────────────────
+  // Returns learning system health: rules count, domain coverage, feedback stats.
+  app.get("/api/admin/ceo-heartbeat/learning-health", async (req: any, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+
+      const ALL_DOMAINS = [
+        "athlete_lead", "parent_lead", "team_training", "school_partnership",
+        "athletic_director", "coach_outreach", "organization_outreach",
+        "business_outreach", "employment_opportunity", "corporate_wellness",
+        "facility_partnership", "gym_owner",
+      ];
+
+      // Total active rules
+      const totalRulesResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS total
+        FROM agent_message_learning_rules
+        WHERE org_id = ${orgId} AND status = 'active'
+      `).catch(() => []);
+      const totalRules = Array.isArray(totalRulesResult)
+        ? (totalRulesResult[0]?.total ?? 0)
+        : ((totalRulesResult as any).rows?.[0]?.total ?? 0);
+
+      // Rules by domain
+      const rulesByDomainResult = await db.execute(sql`
+        SELECT communication_domain, COUNT(*)::int AS count
+        FROM agent_message_learning_rules
+        WHERE org_id = ${orgId} AND status = 'active'
+        GROUP BY communication_domain
+      `).catch(() => []);
+      const rulesByDomainRows: any[] = Array.isArray(rulesByDomainResult)
+        ? rulesByDomainResult
+        : ((rulesByDomainResult as any).rows ?? []);
+      const rulesByDomain: Record<string, number> = {};
+      for (const r of rulesByDomainRows) rulesByDomain[r.communication_domain] = r.count;
+      const domainsWithRules = Object.keys(rulesByDomain);
+      const domainsWithZeroRules = ALL_DOMAINS.filter((d) => !domainsWithRules.includes(d));
+
+      // Feedback stats — last 7 days
+      const feedbackResult = await db.execute(sql`
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE decision IN ('approved', 'edited_and_approved'))::int AS approved_count,
+          COUNT(*) FILTER (WHERE decision = 'rejected')::int AS rejected_count,
+          COUNT(*) FILTER (WHERE applied_to_future_runs = true)::int AS converted_to_rules
+        FROM agent_message_feedback
+        WHERE org_id = ${orgId}
+          AND created_at > NOW() - INTERVAL '7 days'
+      `).catch(() => []);
+      const fbRow: any = Array.isArray(feedbackResult)
+        ? feedbackResult[0]
+        : ((feedbackResult as any).rows?.[0] ?? {});
+
+      // Failed extractions: had rejection reason but not converted (older than 1 hour, last 7 days)
+      const failedResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM agent_message_feedback
+        WHERE org_id = ${orgId}
+          AND rejection_reason IS NOT NULL
+          AND applied_to_future_runs = false
+          AND created_at > NOW() - INTERVAL '7 days'
+          AND created_at < NOW() - INTERVAL '1 hour'
+      `).catch(() => []);
+      const failedExtractions = Array.isArray(failedResult)
+        ? (failedResult[0]?.count ?? 0)
+        : ((failedResult as any).rows?.[0]?.count ?? 0);
+
+      // Latest learned rule
+      const latestRuleResult = await db.execute(sql`
+        SELECT rule_text, rule_type, communication_domain, created_at
+        FROM agent_message_learning_rules
+        WHERE org_id = ${orgId} AND status = 'active'
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).catch(() => []);
+      const latestRule: any = Array.isArray(latestRuleResult)
+        ? latestRuleResult[0]
+        : ((latestRuleResult as any).rows?.[0] ?? null);
+
+      const approvedCount = Number(fbRow?.approved_count ?? 0);
+      const rejectedCount = Number(fbRow?.rejected_count ?? 0);
+      const totalFeedback = Number(fbRow?.total ?? 0);
+      const convertedToRules = Number(fbRow?.converted_to_rules ?? 0);
+      const approvalRatio = totalFeedback > 0
+        ? Math.round((approvedCount / totalFeedback) * 100)
+        : null;
+
+      res.json({
+        totalRules: Number(totalRules),
+        rulesByDomain,
+        domainsWithRules: domainsWithRules.length,
+        totalDomains: ALL_DOMAINS.length,
+        domainsWithZeroRules,
+        feedback7d: {
+          total: totalFeedback,
+          approved: approvedCount,
+          rejected: rejectedCount,
+          convertedToRules,
+          conversionRate: totalFeedback > 0 ? Math.round((convertedToRules / totalFeedback) * 100) : null,
+          approvalRatio,
+        },
+        failedExtractions: Number(failedExtractions),
+        latestRule: latestRule ?? null,
+        healthScore: (() => {
+          let score = 100;
+          if (Number(totalRules) === 0) score -= 40;
+          else if (Number(totalRules) < 5) score -= 20;
+          if (domainsWithZeroRules.length > 8) score -= 20;
+          else if (domainsWithZeroRules.length > 4) score -= 10;
+          if (Number(failedExtractions) > 3) score -= 15;
+          else if (Number(failedExtractions) > 0) score -= 5;
+          if (totalFeedback === 0) score -= 10;
+          return Math.max(score, 0);
+        })(),
+      });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

@@ -3642,6 +3642,7 @@ export const agentMessageFeedback = pgTable("agent_message_feedback", {
   shouldApplyGlobally: boolean("should_apply_globally").default(false),
   communicationDomain: text("communication_domain").default("athlete_lead"),
   outcomeData: jsonb("outcome_data"),
+  appliedToFutureRuns: boolean("applied_to_future_runs").default(false),
 });
 export type AgentMessageFeedback = typeof agentMessageFeedback.$inferSelect;
 
