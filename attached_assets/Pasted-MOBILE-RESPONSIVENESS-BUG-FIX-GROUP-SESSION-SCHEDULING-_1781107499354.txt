@@ -1,0 +1,95 @@
+MOBILE RESPONSIVENESS BUG FIX — GROUP SESSION SCHEDULING MODAL
+
+Issue:
+The Group Session scheduling popup is not mobile responsive. On iPhone/mobile devices the modal opens partially off-screen with the left side clipped, making content difficult or impossible to view and interact with.
+
+Observed Behavior:
+- Modal extends beyond the viewport.
+- Left side of popup is cut off.
+- Content does not properly fit within mobile screen width.
+- User experience is poor on devices around 375–430px wide.
+
+Requirements:
+
+1. Mobile Modal Layout
+- Convert the scheduling popup to a true mobile-responsive modal.
+- On mobile (<768px):
+  - Width: 100%
+  - Max width: calc(100vw - 24px)
+  - Max height: 90vh
+  - Center horizontally
+  - Keep all content visible within viewport
+  - Add internal scrolling if content exceeds available height
+
+2. Positioning
+- Ensure modal uses:
+  left: 50%;
+  transform: translateX(-50%);
+- Verify no parent container is causing clipping through:
+  overflow: hidden;
+  transform;
+  relative positioning;
+  z-index conflicts
+
+3. Overflow Protection
+- Remove all horizontal overflow.
+- Add:
+  overflow-x: hidden;
+- Ensure body/content never exceeds viewport width.
+- Prevent modal content from forcing layout wider than screen.
+
+4. Mobile UX Improvements
+- Close button always visible.
+- Maintain adequate padding.
+- Buttons should span full width on mobile.
+- Touch targets should be large enough for mobile use.
+- Long text should wrap properly.
+
+5. Bottom Sheet Behavior (Preferred)
+If architecture allows:
+- Use a mobile bottom sheet pattern.
+- Fixed to bottom.
+- Rounded top corners.
+- Full-width layout.
+- Scrollable content area.
+- Desktop remains unchanged.
+
+6. Verify All Scheduling Fields
+Ensure the following are fully visible without clipping:
+- Sport
+- Session Name
+- Time
+- Duration
+- Location
+- Available Spots
+- Campaign Selection
+- Schedule/Create Session Button
+- Close Button
+
+7. Desktop Protection
+- Do not alter desktop appearance.
+- Existing desktop modal behavior should remain intact.
+- Only apply responsive/mobile-specific adjustments where necessary.
+
+Testing Requirements:
+- iPhone 13/14/15 viewport widths
+- Safari mobile
+- Chrome mobile
+- 375px width
+- 390px width
+- 430px width
+
+Acceptance Criteria:
+✅ Modal never extends off-screen
+✅ No horizontal scrolling
+✅ Close button visible
+✅ All form fields accessible
+✅ Schedule button visible
+✅ Mobile experience feels native
+✅ Desktop behavior unchanged
+
+After implementation:
+1. Identify root cause of overflow.
+2. List files modified.
+3. Provide before/after behavior summary.
+4. Confirm testing at 375px, 390px, and 430px widths.
