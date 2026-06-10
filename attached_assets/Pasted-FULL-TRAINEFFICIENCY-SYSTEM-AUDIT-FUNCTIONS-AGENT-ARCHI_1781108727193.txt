@@ -1,0 +1,281 @@
+FULL TRAINEFFICIENCY SYSTEM AUDIT — FUNCTIONS, AGENT ARCHITECTURE, DRAFT APPROVALS, AND FEEDBACK LEARNING
+
+Run a full audit of the TrainEfficiency application after recent infrastructure additions.
+
+Primary Goal:
+Verify that all core functions work correctly end-to-end, with special focus on:
+- Agent architecture
+- Draft creation
+- Draft visibility
+- Draft approval/disapproval
+- Feedback-based agent education
+- Scheduling and booking flows
+- Notifications and attention systems
+- Command Center visibility
+
+Audit Scope:
+
+1. Core App Functionality
+Audit the following areas for errors, broken flows, missing API routes, permission issues, stale cache issues, or UI inconsistencies:
+
+- Authentication
+- Organization setup
+- Coach/admin access
+- Athlete access
+- Group sessions
+- Semi-private sessions
+- 1-on-1 bookings
+- Open sessions page
+- My Bookings page
+- Attendance
+- PR tracker
+- Athlete profiles
+- Team management
+- Lead capture
+- Applications
+- Revenue tracking
+- Notifications
+- Attention Inbox
+- Command Center
+- CEO Heartbeat
+- Agent dashboard
+- AgentMail
+- Drafts
+- Approvals
+- Disapprovals
+- Feedback loops
+
+2. Agent Architecture Audit
+Review the full agent system and confirm:
+
+- Agents are properly registered
+- Agents can be triggered
+- Agents write to the correct tables
+- Agent outputs are visible in the UI
+- Agent actions are properly logged
+- Failed agent actions are captured
+- Agent timelines update correctly
+- CEO Heartbeat can see and coordinate agents
+- Agents do not duplicate work unnecessarily
+- Cooldowns, deduplication, and rate limits work correctly
+- Agent outputs are tied to the correct organization
+- Permissions prevent cross-org data leakage
+
+Specifically audit:
+- Executive Agent
+- Revenue Agent
+- Growth Agent
+- Scheduling Agent
+- Retention Agent
+- Opportunity Acquisition Agent
+- Hiring Agent
+- Sponsorship/Partnership Agent
+- Software Improvement Agent
+- Any AgentMail-related agent
+- Any draft-generating agent
+
+3. Draft Approval System Audit
+Audit the full draft lifecycle:
+
+Required flow:
+Agent creates draft
+→ draft appears in approval queue
+→ admin/owner can view draft
+→ admin/owner can approve draft
+→ approved draft can be sent/executed
+→ admin/owner can disapprove draft
+→ disapproval requires or captures feedback
+→ feedback is saved
+→ feedback is available to educate future agent behavior
+
+Verify:
+- Drafts are created correctly
+- Drafts are org-scoped
+- Draft content is readable in the UI
+- Draft metadata is visible:
+  - agent name
+  - source trigger
+  - recipient
+  - subject/title
+  - created time
+  - approval status
+- Drafts can be approved
+- Drafts can be rejected/disapproved
+- Disapproval feedback is stored
+- Feedback is connected to the correct draft and agent
+- Feedback can be used by future agent runs
+- Approved drafts cannot be accidentally edited after approval unless intentionally supported
+- Rejected drafts are not sent
+- Sent drafts are marked correctly
+- Failed sends are logged
+
+4. Feedback-Based Agent Education
+Confirm whether the current system actually teaches agents from rejected drafts.
+
+If this exists:
+- Verify where feedback is stored
+- Verify how agents retrieve feedback
+- Verify feedback is used in future prompts
+- Verify feedback is scoped by:
+  - organization
+  - agent
+  - draft type
+  - communication channel
+- Verify old feedback does not override newer feedback incorrectly
+
+If this does not exist or is incomplete:
+Design and implement a feedback education layer.
+
+Preferred structure:
+- agent_feedback table or equivalent
+- fields:
+  - id
+  - orgId
+  - agentId / agentType
+  - draftId
+  - feedbackText
+  - feedbackCategory
+  - originalOutput
+  - correctedGuidance
+  - createdBy
+  - createdAt
+  - appliedToFutureRuns boolean
+- agents should retrieve relevant recent feedback before generating similar drafts/actions
+- feedback should be summarized into durable coaching instructions where appropriate
+
+5. AgentMail Audit
+Audit AgentMail integration:
+
+- Can agents create outbound message drafts?
+- Are drafts visible before sending?
+- Can admins approve before send?
+- Can admins reject before send?
+- Does rejected feedback improve future messages?
+- Are sent messages logged?
+- Are failed sends logged?
+- Are recipients correct?
+- Are messages tied to the correct org?
+- Are there safeguards to prevent accidental auto-sending?
+
+6. UI Audit
+Check all UI surfaces where agent outputs or drafts should appear:
+
+- Command Center
+- CEO Heartbeat
+- Attention Inbox
+- Approvals page
+- Agent dashboard
+- Agent timeline
+- AgentMail page
+- Draft detail view
+- Notifications
+- Mobile views
+
+Confirm:
+- Drafts are not hidden from admins
+- Approvals are easy to find
+- Rejected drafts remain reviewable
+- Feedback history is visible
+- Agent status is clear
+- Errors are surfaced instead of silently failing
+
+7. Database Audit
+Review schema and relationships for:
+
+- drafts
+- approvals
+- agent actions
+- agent logs
+- agent timelines
+- feedback
+- notifications
+- workflow jobs
+- dead letters
+- org scoping
+- users/roles/permissions
+
+Check for:
+- missing indexes
+- missing foreign keys
+- missing orgId
+- unsafe nullable fields
+- inconsistent status enums
+- orphaned draft/action records
+- duplicate records
+- stale pending approvals
+
+8. Permission Audit
+Verify:
+
+- Only org owners/admins can approve or reject agent drafts
+- Coaches only see what they are allowed to see
+- Athletes cannot access admin drafts
+- Cross-org access is impossible
+- API routes enforce permissions, not just UI hiding
+
+9. End-to-End Test Scenarios
+Create and run test scenarios for:
+
+A. Agent creates email draft
+- Draft appears in approvals
+- Admin approves
+- Draft sends or is marked approved
+- Log updates
+
+B. Agent creates email draft
+- Admin rejects
+- Admin leaves feedback
+- Draft is not sent
+- Feedback is saved
+- Next similar draft reflects feedback
+
+C. Agent fails to create draft
+- Error is logged
+- Attention Inbox receives alert
+- CEO Heartbeat sees the problem
+
+D. Agent creates duplicate draft
+- Deduplication prevents spam or flags duplicate
+
+E. Coach tries to approve draft
+- Permission denied unless coach has admin rights
+
+F. Athlete tries to access draft route
+- Permission denied
+
+G. Mobile approval flow
+- Draft can be viewed, approved, or rejected on mobile
+
+10. Deliverables
+After the audit, provide:
+
+1. Executive summary
+2. Pass/fail checklist by module
+3. Critical bugs found
+4. High-priority bugs found
+5. Medium/low-priority issues
+6. Files reviewed
+7. Files modified
+8. Database issues found
+9. Permission issues found
+10. Agent architecture issues found
+11. Draft approval issues found
+12. Feedback education issues found
+13. Fixes implemented
+14. Remaining recommendations
+15. Suggested next sprint
+
+Do not just summarize. Actually inspect the code, routes, schema, UI, and flows. Fix clear bugs where safe. If a larger architectural change is needed, document it and propose the implementation plan before making destructive changes.
+
+Acceptance Criteria:
+✅ Drafts can be seen
+✅ Drafts can be approved
+✅ Drafts can be disapproved
+✅ Disapproval feedback is saved
+✅ Feedback educates future agent behavior or a clear implementation plan is provided
+✅ Agent actions are logged
+✅ Agent failures are visible
+✅ Permissions are enforced
+✅ Mobile approval flow works
+✅ CEO Heartbeat and Command Center reflect agent/draft status
+✅ No cross-org data leakage
