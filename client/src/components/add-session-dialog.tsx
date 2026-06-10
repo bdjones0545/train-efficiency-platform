@@ -360,7 +360,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
           )}
         </DialogTrigger>
       )}
-      <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-full sm:max-w-md max-h-[85dvh] sm:max-h-[90dvh] overflow-y-auto overflow-x-hidden flex flex-col p-4 sm:p-6 gap-0 rounded-t-2xl sm:rounded-lg !left-0 !bottom-0 !top-auto !translate-x-0 !translate-y-0 sm:!left-1/2 sm:!bottom-auto sm:!top-1/2 sm:!-translate-x-1/2 sm:!-translate-y-1/2">
         {showRepeatStep ? (
           <>
             <DialogHeader>
@@ -660,7 +660,7 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                 />
                 <p className="text-xs text-muted-foreground">This will be shown to athletes who can register for this session.</p>
               </div>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="space-y-2">
                   <Label>Age Range</Label>
                   <Input
