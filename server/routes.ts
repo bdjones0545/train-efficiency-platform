@@ -29106,5 +29106,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerDepartmentOsV2Routes } = await import("./department-os-v2-routes");
   registerDepartmentOsV2Routes(app);
 
+  const { registerAgentQualityRoutes } = await import("./agent-quality-routes");
+  await registerAgentQualityRoutes(app, isAuthenticated, requireRole);
+
   return httpServer;
 }

@@ -132,6 +132,11 @@ export default function AdminCeoHeartbeatPage() {
     refetchInterval: 120_000,
   });
 
+  const { data: agentQualityRisks } = useQuery<any>({
+    queryKey: ["/api/admin/agent-quality/risks"],
+    refetchInterval: 120_000,
+  });
+
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
   const runMutation = useMutation({
@@ -623,6 +628,72 @@ export default function AdminCeoHeartbeatPage() {
               </div>
             )}
           </ScrollArea>
+        </CardContent>
+      </Card>
+
+      {/* Agent Quality Risks */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Star className="h-4 w-4 text-blue-500" />
+              Agent Quality &amp; Trust
+            </CardTitle>
+            <a href="/admin/agent-quality" className="text-xs text-blue-500 hover:underline flex items-center gap-1">
+              Full Dashboard <ArrowRight className="h-3 w-3" />
+            </a>
+          </div>
+          <CardDescription className="text-xs">30-day rolling trust scores and risk signals across all agents</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {!agentQualityRisks ? (
+            <p className="text-xs text-muted-foreground">Loading quality signals…</p>
+          ) : (
+            <>
+              {agentQualityRisks.rejectionSpikeAgents?.length > 0 && (
+                <div className="space-y-1.5">
+                  {agentQualityRisks.rejectionSpikeAgents.map((a: any) => (
+                    <div key={a.agentName} className="flex items-center gap-2 text-xs bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-md px-3 py-2">
+                      <ShieldAlert className="h-3 w-3 text-red-500 shrink-0" />
+                      <span className="font-medium text-red-700 dark:text-red-400">Rejection spike — {a.agentName.replace(/_/g, " ")}</span>
+                      <span className="text-red-500 ml-auto">{a.rejectionRate != null ? `${Math.round(Number(a.rejectionRate) * 100)}% rejection` : ""}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {agentQualityRisks.decliningAgents?.length > 0 && (
+                <div className="space-y-1.5">
+                  {agentQualityRisks.decliningAgents.map((a: any) => (
+                    <div key={a.agentName} className="flex items-center gap-2 text-xs bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded-md px-3 py-2">
+                      <TrendingUp className="h-3 w-3 text-amber-500 shrink-0 rotate-180" />
+                      <span className="font-medium text-amber-700 dark:text-amber-400">Declining — {a.agentName.replace(/_/g, " ")}</span>
+                      <span className="text-amber-500 ml-auto">Δ {Number(a.scoreDelta).toFixed(1)} pts</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex items-center gap-4 text-xs text-muted-foreground pt-1">
+                {agentQualityRisks.bestAgent && (
+                  <span className="flex items-center gap-1">
+                    <CheckCircle2 className="h-3 w-3 text-green-500" />
+                    Best: <strong className="text-foreground">{agentQualityRisks.bestAgent.agentName.replace(/_/g, " ")}</strong> ({Number(agentQualityRisks.bestAgent.score ?? 0).toFixed(1)})
+                  </span>
+                )}
+                {agentQualityRisks.worstAgent && (
+                  <span className="flex items-center gap-1">
+                    <XCircle className="h-3 w-3 text-red-400" />
+                    Needs work: <strong className="text-foreground">{agentQualityRisks.worstAgent.agentName.replace(/_/g, " ")}</strong> ({Number(agentQualityRisks.worstAgent.score ?? 0).toFixed(1)})
+                  </span>
+                )}
+              </div>
+              {!agentQualityRisks.hasRisks && !agentQualityRisks.bestAgent && (
+                <p className="text-xs text-muted-foreground">No quality data yet — open the Agent Quality dashboard and click "Recompute Scores".</p>
+              )}
+              {!agentQualityRisks.hasRisks && agentQualityRisks.bestAgent && (
+                <p className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1"><CheckCircle2 className="h-3 w-3" /> All agents within healthy quality ranges</p>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
 

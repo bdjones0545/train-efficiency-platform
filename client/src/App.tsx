@@ -185,6 +185,7 @@ import LeadCaptureProgramEditorPage from "@/pages/lead-capture-program-editor";
 import AthleteSignupPage from "@/pages/athlete-signup";
 import AdminLeadPipelinePage from "@/pages/admin-lead-pipeline";
 import AdminCeoHeartbeatPage from "@/pages/admin-ceo-heartbeat";
+import AdminAgentQualityPage from "@/pages/admin-agent-quality";
 import AdminSoftwareImprovementPage from "@/pages/admin-software-improvement";
 import AdminGmailDraftReviewPage from "@/pages/admin-gmail-draft-review";
 import AdminSlackAlertReviewPage from "@/pages/admin-slack-alert-review";
@@ -570,6 +571,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/org-recruitment" component={AdminOrgRecruitmentPage} />
                   <Route path="/admin/marketplace-proof" component={AdminMarketplaceProofPage} />
                   <Route path="/admin/ceo-heartbeat" component={AdminCeoHeartbeatPage} />
+                  <Route path="/admin/agent-quality" component={AdminAgentQualityPage} />
                   <Route path="/admin/software-improvement" component={AdminSoftwareImprovementPage} />
                   <Route path="/admin/gmail-draft-review" component={AdminGmailDraftReviewPage} />
                   <Route path="/admin/slack-alert-review" component={AdminSlackAlertReviewPage} />

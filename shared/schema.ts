@@ -5234,3 +5234,59 @@ export const softwareImprovementTasks = pgTable("software_improvement_tasks", {
 export const insertSoftwareImprovementTaskSchema = createInsertSchema(softwareImprovementTasks).omit({ id: true, createdAt: true, updatedAt: true });
 export type SoftwareImprovementTask = typeof softwareImprovementTasks.$inferSelect;
 export type InsertSoftwareImprovementTask = z.infer<typeof insertSoftwareImprovementTaskSchema>;
+
+// ─── Agent Quality Scores ─────────────────────────────────────────────────────
+// Computed per-agent trust metrics across rolling windows.
+// communication_domain = 'all' means aggregate across all domains.
+export const agentQualityScores = pgTable("agent_quality_scores", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  agentName: text("agent_name").notNull(),
+  communicationDomain: text("communication_domain").notNull().default("all"),
+  windowDays: integer("window_days").notNull(),          // 7 | 30 | 90
+
+  // Raw counts
+  totalActions: integer("total_actions").notNull().default(0),
+  approvedCount: integer("approved_count").notNull().default(0),
+  rejectedCount: integer("rejected_count").notNull().default(0),
+  editedCount: integer("edited_count").notNull().default(0),
+  failedCount: integer("failed_count").notNull().default(0),
+  overrideCount: integer("override_count").notNull().default(0),
+  learningConversionCount: integer("learning_conversion_count").notNull().default(0),
+
+  // Computed rates (0.0–1.0)
+  approvalRate: doublePrecision("approval_rate"),
+  rejectionRate: doublePrecision("rejection_rate"),
+  editRate: doublePrecision("edit_rate"),
+  failureRate: doublePrecision("failure_rate"),
+  learningConversionRate: doublePrecision("learning_conversion_rate"),
+  averageConfidence: doublePrecision("average_confidence"),
+
+  // Score & tier
+  qualityScore: doublePrecision("quality_score"),
+  scoreDelta: doublePrecision("score_delta"),
+  trustTier: text("trust_tier").notNull().default("training"), // training|assisted|trusted|high_trust|restricted
+  rejectionSpike: boolean("rejection_spike").notNull().default(false),
+
+  windowStart: timestamp("window_start"),
+  computedAt: timestamp("computed_at").defaultNow(),
+}, (t) => [
+  uniqueIndex("agent_quality_scores_unique").on(t.orgId, t.agentName, t.communicationDomain, t.windowDays),
+]);
+export type AgentQualityScore = typeof agentQualityScores.$inferSelect;
+
+// ─── Agent Trust Overrides ────────────────────────────────────────────────────
+// Admin-set manual tier overrides that take precedence over computed tiers.
+export const agentTrustOverrides = pgTable("agent_trust_overrides", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  agentName: text("agent_name").notNull(),
+  communicationDomain: text("communication_domain").notNull().default("all"),
+  overrideTier: text("override_tier").notNull(), // training|assisted|trusted|high_trust|restricted
+  reason: text("reason"),
+  overriddenBy: text("overridden_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (t) => [
+  uniqueIndex("agent_trust_override_unique").on(t.orgId, t.agentName, t.communicationDomain),
+]);
+export type AgentTrustOverride = typeof agentTrustOverrides.$inferSelect;
