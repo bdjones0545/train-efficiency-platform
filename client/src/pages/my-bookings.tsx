@@ -261,7 +261,9 @@ function BookingDetailDrawer({
   const max        = booking.maxParticipants ?? 0;
   const spotsLeft  = max > 0 ? max - count : null;
   const fillPct    = max > 0 ? Math.min(100, Math.round((count / max) * 100)) : 0;
-  const canCancel  = booking.status === "CONFIRMED" || booking.status === "PENDING";
+  const sessionHasStarted = new Date() >= new Date(booking.startAt as any);
+  const canCancel  = !sessionHasStarted && (booking.status === "CONFIRMED" || booking.status === "PENDING");
+  const isParticipantOnly = !!booking.userIsParticipant && booking.sessionType !== "1_ON_1";
 
   return (
     <Dialog open={!!booking} onOpenChange={open => { if (!open) onClose(); }}>
@@ -419,21 +421,30 @@ function BookingDetailDrawer({
                   data-testid="button-cancel-booking-drawer"
                 >
                   <X className="h-4 w-4 mr-1.5" />
-                  {cancelling ? "Cancelling…" : "Cancel Booking"}
+                  {cancelling ? "Removing…" : isParticipantOnly ? "Remove Me From Session" : "Cancel Booking"}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
-                  <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+                  <AlertDialogTitle>
+                    {isParticipantOnly ? "Remove yourself from this session?" : "Cancel this booking?"}
+                  </AlertDialogTitle>
+                  <AlertDialogDescription>
+                    {isParticipantOnly
+                      ? "Are you sure you want to remove yourself from this session? Your spot will be released."
+                      : "This action cannot be undone."}
+                  </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel>Keep Booking</AlertDialogCancel>
+                  <AlertDialogCancel data-testid="button-keep-spot-drawer">
+                    {isParticipantOnly ? "Keep my spot" : "Keep Booking"}
+                  </AlertDialogCancel>
                   <AlertDialogAction
                     className="bg-destructive text-destructive-foreground"
+                    data-testid="button-confirm-cancel-drawer"
                     onClick={() => { onCancel(); onClose(); }}
                   >
-                    Yes, Cancel
+                    {isParticipantOnly ? "Yes, cancel my booking" : "Yes, Cancel"}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>
@@ -488,7 +499,9 @@ function CoachGroup({
         <div className="divide-y divide-border/40">
           {bookings.map(b => {
             const startDate = parseISO(b.startAt as unknown as string);
-            const canCancel = b.status === "CONFIRMED" || b.status === "PENDING";
+            const sessionStarted = new Date() >= startDate;
+            const canCancel = !sessionStarted && (b.status === "CONFIRMED" || b.status === "PENDING");
+            const isPartOnly = !!b.userIsParticipant && b.sessionType !== "1_ON_1";
             return (
               <div key={b.id} className="px-4 py-2.5 flex items-center gap-3 hover:bg-muted/20">
                 <div className="flex-1 min-w-0 space-y-0.5">
@@ -514,13 +527,21 @@ function CoachGroup({
                       </AlertDialogTrigger>
                       <AlertDialogContent>
                         <AlertDialogHeader>
-                          <AlertDialogTitle>Cancel this booking?</AlertDialogTitle>
-                          <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+                          <AlertDialogTitle>
+                            {isPartOnly ? "Remove yourself from this session?" : "Cancel this booking?"}
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {isPartOnly
+                              ? "Are you sure you want to remove yourself from this session? Your spot will be released."
+                              : "This action cannot be undone."}
+                          </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>
-                          <AlertDialogCancel>Keep Booking</AlertDialogCancel>
+                          <AlertDialogCancel>
+                            {isPartOnly ? "Keep my spot" : "Keep Booking"}
+                          </AlertDialogCancel>
                           <AlertDialogAction className="bg-destructive text-destructive-foreground" onClick={() => onCancel(b.id)}>
-                            Yes, Cancel
+                            {isPartOnly ? "Yes, cancel my booking" : "Yes, Cancel"}
                           </AlertDialogAction>
                         </AlertDialogFooter>
                       </AlertDialogContent>
@@ -596,6 +617,7 @@ export default function MyBookingsPage() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [cancellingId, setCancellingId]       = useState<string | null>(null);
+  const [leavingId, setLeavingId]             = useState<string | null>(null);
   const [joiningId, setJoiningId]             = useState<string | null>(null);
   const [selectedBooking, setSelectedBooking] = useState<EnrichedBooking | null>(null);
   const [typeFilter, setTypeFilter]           = useState("all");
@@ -621,6 +643,29 @@ export default function MyBookingsPage() {
     },
     onError: (error: Error) => {
       setCancellingId(null);
+      if (isUnauthorizedError(error)) {
+        toast({ title: "Unauthorized", variant: "destructive" });
+        setTimeout(() => { window.location.href = "/"; }, 500);
+        return;
+      }
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  // ── Leave mutation (for participant-only semi-private/group sessions) ──
+  const leaveMutation = useMutation({
+    mutationFn: async (bookingId: string) => {
+      await apiRequest("DELETE", `/api/bookings/${bookingId}/leave`);
+    },
+    onSuccess: () => {
+      setLeavingId(null);
+      setSelectedBooking(null);
+      toast({ title: "Booking cancelled", description: "You've been removed from this session." });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+    },
+    onError: (error: Error) => {
+      setLeavingId(null);
       if (isUnauthorizedError(error)) {
         toast({ title: "Unauthorized", variant: "destructive" });
         setTimeout(() => { window.location.href = "/"; }, 500);
@@ -829,24 +874,51 @@ export default function MyBookingsPage() {
                       coachInitialsStr={initials}
                       bookings={bookingsForCoach}
                       onViewDetails={setSelectedBooking}
-                      onCancel={(id) => { setCancellingId(id); cancelMutation.mutate(id); }}
+                      onCancel={(id) => {
+                        const bk = bookingsForCoach.find(x => x.id === id);
+                        const participantOnly = bk && !!bk.userIsParticipant && bk.sessionType !== "1_ON_1";
+                        if (participantOnly) {
+                          setLeavingId(id);
+                          leaveMutation.mutate(id);
+                        } else {
+                          setCancellingId(id);
+                          cancelMutation.mutate(id);
+                        }
+                      }}
                       cancellingId={cancellingId}
                     />
                   );
                 })}
               </div>
             ) : (
-              upcoming.map(b => (
-                <UpcomingSessionCard key={b.id}>
-                  <CompactBookingCard
-                    booking={b}
-                    onViewDetails={() => setSelectedBooking(b)}
-                    showCancel={b.status === "CONFIRMED"}
-                    cancelling={cancelMutation.isPending && cancellingId === b.id}
-                    onCancel={() => { setCancellingId(b.id); cancelMutation.mutate(b.id); }}
-                  />
-                </UpcomingSessionCard>
-              ))
+              upcoming.map(b => {
+                const sessionStart = new Date(b.startAt as any);
+                const hasStarted = new Date() >= sessionStart;
+                const isParticipantOnly = !!b.userIsParticipant && b.sessionType !== "1_ON_1";
+                return (
+                  <UpcomingSessionCard key={b.id}>
+                    <CompactBookingCard
+                      booking={b}
+                      onViewDetails={() => setSelectedBooking(b)}
+                      showCancel={!hasStarted && (b.status === "CONFIRMED" || b.status === "PENDING")}
+                      cancelling={
+                        isParticipantOnly
+                          ? leaveMutation.isPending && leavingId === b.id
+                          : cancelMutation.isPending && cancellingId === b.id
+                      }
+                      onCancel={() => {
+                        if (isParticipantOnly) {
+                          setLeavingId(b.id);
+                          leaveMutation.mutate(b.id);
+                        } else {
+                          setCancellingId(b.id);
+                          cancelMutation.mutate(b.id);
+                        }
+                      }}
+                    />
+                  </UpcomingSessionCard>
+                );
+              })
             )}
           </TabsContent>
 
@@ -899,8 +971,23 @@ export default function MyBookingsPage() {
       <BookingDetailDrawer
         booking={selectedBooking}
         onClose={() => setSelectedBooking(null)}
-        cancelling={cancelMutation.isPending && cancellingId === selectedBooking?.id}
-        onCancel={selectedBooking ? () => { setCancellingId(selectedBooking.id); cancelMutation.mutate(selectedBooking.id); } : undefined}
+        cancelling={
+          selectedBooking
+            ? (selectedBooking.userIsParticipant && selectedBooking.sessionType !== "1_ON_1")
+              ? leaveMutation.isPending && leavingId === selectedBooking.id
+              : cancelMutation.isPending && cancellingId === selectedBooking.id
+            : false
+        }
+        onCancel={selectedBooking ? () => {
+          const isParticipantOnly = !!selectedBooking.userIsParticipant && selectedBooking.sessionType !== "1_ON_1";
+          if (isParticipantOnly) {
+            setLeavingId(selectedBooking.id);
+            leaveMutation.mutate(selectedBooking.id);
+          } else {
+            setCancellingId(selectedBooking.id);
+            cancelMutation.mutate(selectedBooking.id);
+          }
+        } : undefined}
       />
     </div>
   );

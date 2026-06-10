@@ -679,6 +679,7 @@ function SessionDetailModal({
 }) {
   const { toast } = useToast();
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   const [showJoinDialog, setShowJoinDialog] = useState(false);
   const [joinParticipantNames, setJoinParticipantNames] = useState<string[]>([""]);
   const [showDescription, setShowDescription] = useState(false);
@@ -727,11 +728,14 @@ function SessionDetailModal({
       await apiRequest("DELETE", `/api/bookings/${session!.id}/leave`);
     },
     onSuccess: () => {
-      toast({ title: "Unregistered", description: "You've been removed from this session." });
+      toast({ title: "Booking cancelled", description: "You've been removed from this session." });
       queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
       queryClient.invalidateQueries({ queryKey: ["/api/bookings", session!.id, "participants"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
+      setShowCancelConfirm(false);
     },
     onError: (error: Error) => {
+      setShowCancelConfirm(false);
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
@@ -794,6 +798,7 @@ function SessionDetailModal({
   const startDate = parseISO(session.startAt as unknown as string);
   const endDate = parseISO(session.endAt as unknown as string);
   const duration = sessionDuration(session);
+  const sessionHasStarted = new Date() >= startDate;
 
   return (
     <>
@@ -1026,16 +1031,23 @@ function SessionDetailModal({
                 Session Cancelled
               </Button>
             ) : hasJoined ? (
-              <Button
-                variant="outline"
-                className="w-full border-destructive/30 text-destructive hover:bg-destructive/5"
-                onClick={() => leaveMutation.mutate()}
-                disabled={leaveMutation.isPending}
-                data-testid={`button-leave-session-${session.id}`}
-              >
-                <UserMinus className="h-4 w-4 mr-1.5" />
-                {leaveMutation.isPending ? "Unregistering…" : "Cancel Registration"}
-              </Button>
+              sessionHasStarted ? (
+                <Button className="w-full" disabled variant="outline" data-testid={`button-leave-session-${session.id}`}>
+                  <AlertCircle className="h-4 w-4 mr-1.5" />
+                  Session In Progress
+                </Button>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full border-destructive/30 text-destructive hover:bg-destructive/5"
+                  onClick={() => setShowCancelConfirm(true)}
+                  disabled={leaveMutation.isPending}
+                  data-testid={`button-leave-session-${session.id}`}
+                >
+                  <UserMinus className="h-4 w-4 mr-1.5" />
+                  {leaveMutation.isPending ? "Removing…" : "Cancel My Booking"}
+                </Button>
+              )
             ) : isFull ? (
               onWaitlist ? (
                 <Button
@@ -1093,6 +1105,28 @@ function SessionDetailModal({
               data-testid="button-confirm-delete-session"
             >
               {deleteMutation.isPending ? "Deleting…" : "Delete"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={showCancelConfirm} onOpenChange={setShowCancelConfirm}>
+        <AlertDialogContent data-testid="modal-cancel-booking-confirm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Cancel your booking?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to remove yourself from this session? Your spot will be released.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-keep-spot">Keep my spot</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => leaveMutation.mutate()}
+              className="bg-destructive text-destructive-foreground"
+              disabled={leaveMutation.isPending}
+              data-testid="button-confirm-cancel-booking"
+            >
+              {leaveMutation.isPending ? "Removing…" : "Yes, cancel my booking"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

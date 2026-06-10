@@ -3730,6 +3730,25 @@ export async function registerRoutes(
       const userId = req.user.claims.sub;
       const bookingId = req.params.id;
 
+      // Fetch booking to validate cancellation window and existence
+      const booking = await storage.getBooking(bookingId);
+      if (!booking) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+
+      // Block cancellation once session has started
+      const sessionStart = new Date(booking.startAt as any);
+      if (new Date() >= sessionStart) {
+        return res.status(400).json({ message: "Cannot cancel after the session has already started" });
+      }
+
+      // Verify the user is actually registered in this session
+      const participants = await storage.getBookingParticipants(bookingId);
+      const isParticipant = participants.some((p: any) => p.userId === userId);
+      if (!isParticipant) {
+        return res.status(403).json({ message: "You are not registered in this session" });
+      }
+
       await storage.removeBookingParticipant(bookingId, userId);
 
       // Waitlist automation: auto-promote first person waiting
