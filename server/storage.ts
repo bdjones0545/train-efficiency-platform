@@ -1299,7 +1299,7 @@ export class DatabaseStorage implements IStorage {
     }).returning();
 
     await db.update(users).set({
-      balanceCents: sql`${users.balanceCents} + ${amountCents}`,
+      balanceCents: sql`COALESCE(${users.balanceCents}, 0) + ${amountCents}`,
     }).where(eq(users.id, userId));
 
     return tx;
@@ -1316,7 +1316,7 @@ export class DatabaseStorage implements IStorage {
     }).returning();
 
     await db.update(users).set({
-      balanceCents: sql`${users.balanceCents} - ${amountCents}`,
+      balanceCents: sql`COALESCE(${users.balanceCents}, 0) - ${amountCents}`,
     }).where(eq(users.id, userId));
 
     return tx;

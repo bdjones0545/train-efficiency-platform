@@ -424,8 +424,8 @@ export class WebhookHandlers {
             if (existingBySession) {
               console.log(`${LOG_PREFIX} skipped duplicate — checkoutSessionId ${sessionId} already credited`);
               logWebhookEvent({ eventId, eventType, livemode, userId: metaUserId, paymentIntentId: piId, amountCents, credited: true });
-            } else if (piId) {
-              const existingByPI = await storage.getWalletTransactionByStripePaymentIntentId(piId);
+            } else {
+              const existingByPI = piId ? await storage.getWalletTransactionByStripePaymentIntentId(piId) : null;
               if (existingByPI) {
                 console.log(`${LOG_PREFIX} skipped duplicate — paymentIntentId ${piId} already credited`);
                 logWebhookEvent({ eventId, eventType, livemode, userId: metaUserId, paymentIntentId: piId, amountCents, credited: true });
@@ -437,7 +437,7 @@ export class WebhookHandlers {
                     amountCents,
                     `Added $${(amountCents / 100).toFixed(2)} via Stripe (webhook)`,
                     sessionId,
-                    piId,
+                    piId || undefined,
                     undefined,
                     session.currency || 'usd',
                     'succeeded'

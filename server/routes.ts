@@ -7481,12 +7481,21 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
       const metaUserId = session.metadata?.userId;
       const amountCents = parseInt(session.metadata?.amountCents || "0", 10);
+      const piId = typeof session.payment_intent === "string" ? session.payment_intent : (session.payment_intent as any)?.id || null;
 
       if (metaUserId !== userId || amountCents <= 0) {
         return res.status(400).json({ message: "Invalid session" });
       }
 
-      const stripeCreditTx = await storage.creditWallet(userId, amountCents, `Added $${(amountCents / 100).toFixed(2)} via Stripe`, sessionId);
+      // Second dedup check by payment intent ID before crediting
+      if (piId) {
+        const existingByPI = await storage.getWalletTransactionByStripePaymentIntentId(piId);
+        if (existingByPI) {
+          return res.json({ credited: true, alreadyProcessed: true });
+        }
+      }
+
+      const stripeCreditTx = await storage.creditWallet(userId, amountCents, `Added $${(amountCents / 100).toFixed(2)} via Stripe`, sessionId, piId || undefined);
 
       // ── Revenue recognition: record payment received ─────────────────────────
       onPaymentReceived({
