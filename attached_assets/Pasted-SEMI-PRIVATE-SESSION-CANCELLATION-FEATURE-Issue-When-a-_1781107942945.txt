@@ -1,0 +1,74 @@
+SEMI-PRIVATE SESSION CANCELLATION FEATURE
+
+Issue:
+When a user joins/books a semi-private session, there is currently no way for them to remove themselves if they can no longer attend.
+
+Build:
+Add a user-facing “Cancel Booking” / “Remove Me” flow for semi-private group sessions.
+
+Requirements:
+
+1. User Booking State
+- Detect when the logged-in user is already booked into a semi-private session.
+- Replace or supplement the join button with:
+  “Cancel Booking” or “Remove Me From Session”
+
+2. Cancellation Action
+- Add a backend endpoint if one does not already exist:
+  DELETE /api/group-sessions/:sessionId/booking
+  or similar existing route pattern.
+- The endpoint should:
+  - Verify the user is authenticated
+  - Verify the user is booked in that session
+  - Remove only that user’s booking
+  - Increase available spots by 1 if spots are stored directly
+  - Prevent canceling another user’s booking
+
+3. UI Behavior
+- On cancel tap/click:
+  - Show confirmation dialog:
+    “Are you sure you want to remove yourself from this session?”
+  - Confirm button: “Yes, cancel my booking”
+  - Cancel button: “Keep my spot”
+- After successful cancellation:
+  - Update session card immediately
+  - Update spots remaining
+  - Show toast:
+    “You’ve been removed from this session.”
+
+4. Safety Rules
+- Do not allow cancellation after the session has already started.
+- If cancellation window rules exist, respect them.
+- If no cancellation window exists, allow cancellation up until session start time.
+- Do not delete the session itself.
+- Do not affect other athletes/bookings.
+
+5. Admin/Coach View
+- Coaches/admins should still be able to see current participants.
+- If an athlete cancels, remove them from the participant list.
+- Optional but preferred: add an activity log entry:
+  “[Athlete Name] canceled their booking for [Session Name].”
+
+6. Data Integrity
+- Prevent duplicate bookings.
+- Prevent spot count from becoming negative or exceeding session capacity.
+- If spots are derived from booking count, recalculate instead of manually incrementing.
+
+7. Mobile UX
+- Make sure the cancel/remove button is visible and usable on mobile.
+- Confirmation modal must also be mobile responsive.
+
+Acceptance Criteria:
+✅ User can remove themselves from a semi-private session
+✅ Available spot count updates correctly
+✅ User cannot cancel someone else’s booking
+✅ User cannot cancel after session start time
+✅ Session itself is not deleted
+✅ UI updates immediately after cancellation
+✅ Works on mobile and desktop
+
+After implementation:
+1. List files modified.
+2. Explain the booking/cancellation flow.
+3. Confirm backend validation.
+4. Confirm mobile testing.
