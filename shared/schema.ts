@@ -3667,6 +3667,7 @@ export const agentMessageLearningRules = pgTable("agent_message_learning_rules",
   timesApplied: integer("times_applied").default(0),
   successCount: integer("success_count").default(0),
   rejectionCount: integer("rejection_count").default(0),
+  communicationDomain: text("communication_domain").default("athlete_lead"),
 });
 export type AgentMessageLearningRule = typeof agentMessageLearningRules.$inferSelect;
 

@@ -46,6 +46,7 @@ const DOMAIN_LABELS: Record<string, string> = {
   employment_opportunity: "Employment",
   corporate_wellness: "Corporate Wellness",
   facility_partnership: "Facility Partnership",
+  gym_owner: "Gym Owner",
 };
 
 const DOMAIN_BADGE_CLASS: Record<string, string> = {
@@ -60,6 +61,7 @@ const DOMAIN_BADGE_CLASS: Record<string, string> = {
   employment_opportunity: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300",
   corporate_wellness: "bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-300",
   facility_partnership: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300",
+  gym_owner: "bg-lime-100 text-lime-800 dark:bg-lime-900/30 dark:text-lime-300",
 };
 
 const DOMAIN_GROUP_TO_API: Record<string, string[]> = {
@@ -196,7 +198,7 @@ function RejectDialog({
             data-testid="button-confirm-reject"
             variant="destructive"
             onClick={() => mutation.mutate()}
-            disabled={mutation.isPending || !canSubmit}
+            disabled={mutation.isPending}
           >
             {mutation.isPending ? "Rejecting…" : "Reject"}
           </Button>

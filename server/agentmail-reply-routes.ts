@@ -498,6 +498,33 @@ export async function registerAgentMailReplyRoutes(
         id, { inbox: reply.inbox, reason },
       );
 
+      // Wire AgentMail rejections into the global learning loop so future
+      // drafts from this agent improve based on human feedback.
+      if (reason?.trim()) {
+        try {
+          const { agentMessageFeedback } = await import("@shared/schema");
+          const userId = (req as any).user?.claims?.sub ?? (req as any).user?.id;
+          const [fbRow] = await db.insert(agentMessageFeedback).values({
+            orgId,
+            proposalId: id,
+            agentName: reply.agent_name ?? null,
+            messageType: reply.classification ?? "agentmail_reply",
+            originalSubject: reply.subject ?? null,
+            originalBody: reply.draft_body ?? null,
+            decision: "rejected",
+            rejectionReason: reason,
+            reviewedBy: userId ?? actor,
+            communicationDomain: "athlete_lead",
+          } as any).returning();
+          if (fbRow?.id) {
+            const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
+            extractMessageLearningFromFeedback(orgId, fbRow.id).catch(console.error);
+          }
+        } catch (learningErr) {
+          console.error("[agentmail-reject] learning loop error (non-fatal):", learningErr);
+        }
+      }
+
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to reject reply" });

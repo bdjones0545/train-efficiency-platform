@@ -22507,7 +22507,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
 
   // ─── AI Approval Inbox ────────────────────────────────────────────────────────
 
-  app.get("/api/ai-approvals", isAuthenticated, async (req: any, res) => {
+  app.get("/api/ai-approvals", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22547,7 +22547,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  app.get("/api/ai-approvals/metrics", isAuthenticated, async (req: any, res) => {
+  app.get("/api/ai-approvals/metrics", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22598,7 +22598,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  app.get("/api/ai-approvals/autonomy", isAuthenticated, async (req: any, res) => {
+  app.get("/api/ai-approvals/autonomy", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22655,7 +22655,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  app.post("/api/ai-approvals/autonomy/:messageType", isAuthenticated, async (req: any, res) => {
+  app.post("/api/ai-approvals/autonomy/:messageType", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22674,7 +22674,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  app.post("/api/ai-approvals/bulk-approve", isAuthenticated, async (req: any, res) => {
+  app.post("/api/ai-approvals/bulk-approve", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22710,7 +22710,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  app.post("/api/ai-approvals/bulk-reject", isAuthenticated, async (req: any, res) => {
+  app.post("/api/ai-approvals/bulk-reject", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22719,10 +22719,15 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
       if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: "ids required" });
       const proposals = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.orgId, orgId), inArray(gmailAgentActions.id, ids)));
       await Promise.all(proposals.map(async (p) => {
-        await Promise.all([
+        const [fbRow] = await Promise.all([
+          db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, reviewedBy: userId, communicationDomain: (p as any).communicationDomain ?? "athlete_lead" } as any).returning(),
           db.update(gmailAgentActions).set({ status: "rejected", approvedBy: userId }).where(eq(gmailAgentActions.id, p.id)),
-          db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "rejected", rejectionReason: reason ?? null, reviewedBy: userId, communicationDomain: (p as any).communicationDomain ?? "athlete_lead" } as any),
         ]);
+        // Trigger learning extraction if reason provided (fix: bulk reject previously skipped learning loop)
+        if (fbRow[0]?.id && reason?.trim()) {
+          const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
+          extractMessageLearningFromFeedback(orgId, fbRow[0].id).catch(console.error);
+        }
       }));
       res.json({ rejected: proposals.length });
     } catch (e: any) {
@@ -22730,8 +22735,39 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
+  // ─── Learning rules CRUD (must be before /:id to avoid route shadowing) ─────
+
+  app.get("/api/ai-approvals/learning-rules", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const { agentMessageLearningRules } = await import("@shared/schema");
+      const rules = await db.select().from(agentMessageLearningRules)
+        .where(and(eq(agentMessageLearningRules.orgId, orgId), eq(agentMessageLearningRules.status, "active")))
+        .orderBy(desc(agentMessageLearningRules.createdAt));
+      res.json(rules);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch learning rules" });
+    }
+  });
+
+  // ─── Learning dashboard (must be before /:id to avoid route shadowing) ───────
+
+  app.get("/api/ai-approvals/learning-dashboard", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const { getLearningDashboard } = await import("./services/message-learning-service");
+      const data = await getLearningDashboard(orgId);
+      res.json(data);
+    } catch (e: any) {
+      console.error("[ai-approvals] learning-dashboard error:", e);
+      res.status(500).json({ message: "Failed to load learning dashboard" });
+    }
+  });
+
   // GET /api/ai-approvals/:id — fetch full proposal detail with lead enrichment
-  app.get("/api/ai-approvals/:id", isAuthenticated, async (req: any, res) => {
+  app.get("/api/ai-approvals/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22794,7 +22830,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  app.post("/api/ai-approvals/:id/approve", isAuthenticated, async (req: any, res) => {
+  app.post("/api/ai-approvals/:id/approve", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22838,7 +22874,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  app.post("/api/ai-approvals/:id/edit-send", isAuthenticated, async (req: any, res) => {
+  app.post("/api/ai-approvals/:id/edit-send", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22880,7 +22916,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  app.post("/api/ai-approvals/:id/reject", isAuthenticated, async (req: any, res) => {
+  app.post("/api/ai-approvals/:id/reject", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22909,7 +22945,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
 
   // ─── Regenerate draft with admin feedback ─────────────────────────────────
 
-  app.post("/api/ai-approvals/:id/regenerate", isAuthenticated, async (req: any, res) => {
+  app.post("/api/ai-approvals/:id/regenerate", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22938,23 +22974,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  // ─── Learning rules CRUD ──────────────────────────────────────────────────
-
-  app.get("/api/ai-approvals/learning-rules", isAuthenticated, async (req: any, res) => {
-    try {
-      const orgId = await getAdminOrgId(req);
-      if (!orgId) return res.status(403).json({ message: "Not authorized" });
-      const { agentMessageLearningRules } = await import("@shared/schema");
-      const rules = await db.select().from(agentMessageLearningRules)
-        .where(and(eq(agentMessageLearningRules.orgId, orgId), eq(agentMessageLearningRules.status, "active")))
-        .orderBy(desc(agentMessageLearningRules.createdAt));
-      res.json(rules);
-    } catch (e: any) {
-      res.status(500).json({ message: "Failed to fetch learning rules" });
-    }
-  });
-
-  app.patch("/api/ai-approvals/learning-rules/:ruleId", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/ai-approvals/learning-rules/:ruleId", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -22970,21 +22990,6 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to update rule" });
-    }
-  });
-
-  // ─── Learning dashboard ───────────────────────────────────────────────────
-
-  app.get("/api/ai-approvals/learning-dashboard", isAuthenticated, async (req: any, res) => {
-    try {
-      const orgId = await getAdminOrgId(req);
-      if (!orgId) return res.status(403).json({ message: "Not authorized" });
-      const { getLearningDashboard } = await import("./services/message-learning-service");
-      const data = await getLearningDashboard(orgId);
-      res.json(data);
-    } catch (e: any) {
-      console.error("[ai-approvals] learning-dashboard error:", e);
-      res.status(500).json({ message: "Failed to load learning dashboard" });
     }
   });
 
