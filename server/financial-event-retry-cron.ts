@@ -49,6 +49,46 @@ async function replayFinancialEvent(failure: {
       reason: p.reason ?? "",
       createdBy: p.createdBy ?? null,
     });
+  } else if (failure.sourceType === "stripe_webhook") {
+    // Replay a failed wallet credit from a Stripe webhook event
+    const userId: string | undefined = p.userId;
+    const amountCents: number | undefined = p.amountCents;
+    const paymentIntentId: string | undefined = p.paymentIntentId;
+    const sessionId: string | undefined = p.sessionId;
+    const currency: string = p.currency ?? "usd";
+    const livemode: boolean = p.livemode ?? false;
+
+    if (!userId || !amountCents || amountCents <= 0) {
+      throw new Error(
+        `stripe_webhook replay: missing userId (${userId}) or invalid amountCents (${amountCents}). Manual repair required.`
+      );
+    }
+
+    // Check if already credited to prevent double-credit on retry
+    if (paymentIntentId) {
+      const existing = await storage.getWalletTransactionByStripePaymentIntentId(paymentIntentId);
+      if (existing) {
+        // Already credited — resolve without re-crediting
+        return;
+      }
+    } else if (sessionId) {
+      const existing = await storage.getWalletTransactionByStripeSessionId(sessionId);
+      if (existing) {
+        return;
+      }
+    }
+
+    await storage.creditWallet(
+      userId,
+      amountCents,
+      `Retry credit — $${(amountCents / 100).toFixed(2)} (event: ${p.stripeEventId ?? "unknown"})`,
+      sessionId,
+      paymentIntentId,
+      undefined,
+      currency,
+      "succeeded",
+      livemode
+    );
   } else {
     throw new Error(`Unknown sourceType: ${failure.sourceType}`);
   }

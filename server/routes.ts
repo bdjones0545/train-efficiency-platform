@@ -894,6 +894,108 @@ export async function registerRoutes(
     }
   });
 
+  // GET /api/admin/billing/balance-integrity — compare stored balance_cents against SUM(wallet_transactions)
+  app.get("/api/admin/billing/balance-integrity", adminRepairAuth, async (req: any, res) => {
+    try {
+      const { db: dbRef } = await import("./db");
+      const { sql: sqlTag } = await import("drizzle-orm");
+
+      const raw = await dbRef.execute(sqlTag`
+        SELECT
+          u.id,
+          u.email,
+          u.first_name,
+          u.last_name,
+          u.balance_cents                                                                      AS stored_balance,
+          COALESCE(SUM(CASE WHEN wt.type = 'CREDIT' THEN wt.amount_cents ELSE -wt.amount_cents END), 0) AS computed_balance,
+          u.balance_cents - COALESCE(SUM(CASE WHEN wt.type = 'CREDIT' THEN wt.amount_cents ELSE -wt.amount_cents END), 0) AS drift_cents,
+          COUNT(wt.id)::int AS tx_count
+        FROM users u
+        LEFT JOIN wallet_transactions wt ON wt.user_id = u.id
+        GROUP BY u.id, u.email, u.first_name, u.last_name, u.balance_cents
+        ORDER BY ABS(u.balance_cents - COALESCE(SUM(CASE WHEN wt.type = 'CREDIT' THEN wt.amount_cents ELSE -wt.amount_cents END), 0)) DESC
+      `);
+
+      const rows: any[] = Array.isArray(raw) ? raw : (raw as any).rows ?? [];
+      const drifters = rows.filter((r: any) => parseInt(r.drift_cents, 10) !== 0);
+      const clean = rows.filter((r: any) => parseInt(r.drift_cents, 10) === 0);
+
+      res.json({
+        summary: {
+          totalUsers: rows.length,
+          clean: clean.length,
+          drifters: drifters.length,
+          totalDriftCents: drifters.reduce((s: number, r: any) => s + Math.abs(parseInt(r.drift_cents, 10)), 0),
+        },
+        drifters,
+        clean,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Balance integrity check failed" });
+    }
+  });
+
+  // POST /api/admin/billing/balance-integrity/repair — fix drift by recomputing balance from wallet_transactions
+  app.post("/api/admin/billing/balance-integrity/repair", adminRepairAuth, async (req: any, res) => {
+    try {
+      const { dryRun = true } = req.body;
+      const { db: dbRef } = await import("./db");
+      const { sql: sqlTag } = await import("drizzle-orm");
+
+      const raw = await dbRef.execute(sqlTag`
+        SELECT
+          u.id,
+          u.email,
+          u.balance_cents AS stored_balance,
+          COALESCE(SUM(CASE WHEN wt.type = 'CREDIT' THEN wt.amount_cents ELSE -wt.amount_cents END), 0) AS computed_balance
+        FROM users u
+        LEFT JOIN wallet_transactions wt ON wt.user_id = u.id
+        GROUP BY u.id, u.email, u.balance_cents
+        HAVING u.balance_cents != COALESCE(SUM(CASE WHEN wt.type = 'CREDIT' THEN wt.amount_cents ELSE -wt.amount_cents END), 0)
+      `);
+
+      const drifters: any[] = Array.isArray(raw) ? raw : (raw as any).rows ?? [];
+      const repaired: any[] = [];
+
+      for (const u of drifters) {
+        const storedBalance = parseInt(u.stored_balance, 10);
+        const computedBalance = parseInt(u.computed_balance, 10);
+        const driftCents = storedBalance - computedBalance;
+
+        if (!dryRun) {
+          await dbRef.execute(sqlTag`
+            UPDATE users SET balance_cents = ${computedBalance} WHERE id = ${u.id}
+          `);
+          console.log(`[BalanceIntegrity] Repaired userId: ${u.id} (${u.email}): stored=${storedBalance} → computed=${computedBalance} (drift=${driftCents})`);
+        }
+
+        repaired.push({
+          userId: u.id,
+          email: u.email,
+          storedBalance,
+          computedBalance,
+          driftCents,
+          action: dryRun ? "dry_run" : "repaired",
+        });
+      }
+
+      res.json({
+        dryRun,
+        repaired,
+        summary: {
+          total: drifters.length,
+          repaired: dryRun ? 0 : drifters.length,
+          totalDriftCents: repaired.reduce((s, r) => s + Math.abs(r.driftCents), 0),
+        },
+        message: dryRun
+          ? `Dry run — ${drifters.length} user(s) would be repaired. Pass dryRun:false to apply.`
+          : `Repaired ${drifters.length} user balance(s) from wallet_transactions.`,
+      });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message || "Balance integrity repair failed" });
+    }
+  });
+
   app.post("/api/admin/backfill-org-prefs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const result = await storage.backfillUserOrgPreferences();

@@ -105,18 +105,25 @@ async function writeDeadLetterForFailedCredit(params: {
   livemode: boolean;
   customerId?: string | null;
   paymentIntentId?: string | null;
+  sessionId?: string | null;
+  userId?: string | null;
   amountCents?: number;
+  currency?: string;
   error: string;
 }) {
   try {
     await db.insert(financialEventFailures).values({
       sourceType: 'stripe_webhook',
       eventType: params.eventType,
+      clientId: params.userId ?? null,
       payload: {
         stripeEventId: params.eventId,
         stripeCustomerId: params.customerId,
         paymentIntentId: params.paymentIntentId,
+        sessionId: params.sessionId,
+        userId: params.userId,
         amountCents: params.amountCents,
+        currency: params.currency ?? 'usd',
         livemode: params.livemode,
       },
       failureMessage: `[${params.eventId}] Credit failed: ${params.error}`,
@@ -207,6 +214,7 @@ async function processWalletCredit(params: {
   currency: string;
   description: string;
   eventType: string;
+  livemode?: boolean;
 }): Promise<void> {
   const {
     stripePaymentIntentId,
@@ -243,7 +251,8 @@ async function processWalletCredit(params: {
     stripePaymentIntentId || undefined,
     stripeChargeId || undefined,
     currency || 'usd',
-    'succeeded'
+    'succeeded',
+    params.livemode ?? false
   );
 
   const newBalance = await storage.getUserBalance(user.id);
@@ -440,14 +449,15 @@ export class WebhookHandlers {
                     piId || undefined,
                     undefined,
                     session.currency || 'usd',
-                    'succeeded'
+                    'succeeded',
+                    livemode
                   );
                   const newBalance = await storage.getUserBalance(metaUserId);
                   console.log(`${LOG_PREFIX} wallet deposit credited — userId: ${metaUserId}, amount: $${(amountCents / 100).toFixed(2)}, prior: $${(priorBalance / 100).toFixed(2)}, new: $${(newBalance / 100).toFixed(2)}`);
                   logWebhookEvent({ eventId, eventType, livemode, userId: metaUserId, paymentIntentId: piId, amountCents, credited: true });
                 } catch (creditErr: any) {
                   console.error(`${LOG_PREFIX} wallet credit failed:`, creditErr.message);
-                  await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId, paymentIntentId: piId, amountCents, error: creditErr.message });
+                  await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId, paymentIntentId: piId, sessionId, userId: metaUserId, amountCents, currency: session.currency || 'usd', error: creditErr.message });
                   logWebhookEvent({ eventId, eventType, livemode, userId: metaUserId, paymentIntentId: piId, amountCents, credited: false, error: creditErr.message });
                   await markWebhookEventDone(rowId, 'failed', creditErr.message);
                   return;
@@ -507,10 +517,11 @@ export class WebhookHandlers {
             currency,
             description: `Stripe payment $${(piAmountCents / 100).toFixed(2)} (paymentIntent: ${pi.id})`,
             eventType,
+            livemode,
           });
           logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: pi.id, customerId: piCustomerId, amountCents: piAmountCents, credited: true });
         } catch (creditErr: any) {
-          await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId: piCustomerId, paymentIntentId: pi.id, amountCents: piAmountCents, error: creditErr.message });
+          await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId: piCustomerId, paymentIntentId: pi.id, amountCents: piAmountCents, currency, error: creditErr.message });
           logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: pi.id, customerId: piCustomerId, amountCents: piAmountCents, credited: false, error: creditErr.message });
           await markWebhookEventDone(rowId, 'failed', creditErr.message);
           return;
@@ -573,10 +584,11 @@ export class WebhookHandlers {
             currency: chargeCurrency,
             description: `Stripe charge $${(chargeAmountCents / 100).toFixed(2)} (chargeId: ${charge.id})`,
             eventType,
+            livemode,
           });
           logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: chargePiId, customerId: chargeCustomerId, amountCents: chargeAmountCents, credited: true });
         } catch (creditErr: any) {
-          await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId: chargeCustomerId, paymentIntentId: chargePiId, amountCents: chargeAmountCents, error: creditErr.message });
+          await writeDeadLetterForFailedCredit({ eventId, eventType, livemode, customerId: chargeCustomerId, paymentIntentId: chargePiId, amountCents: chargeAmountCents, currency: chargeCurrency, error: creditErr.message });
           logWebhookEvent({ eventId, eventType, livemode, paymentIntentId: chargePiId, customerId: chargeCustomerId, amountCents: chargeAmountCents, credited: false, error: creditErr.message });
           await markWebhookEventDone(rowId, 'failed', creditErr.message);
           return;

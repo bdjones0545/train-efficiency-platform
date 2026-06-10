@@ -492,6 +492,7 @@ export const walletTransactions = pgTable("wallet_transactions", {
   stripeChargeId: varchar("stripe_charge_id"),
   currency: varchar("currency").default("usd"),
   paymentStatus: varchar("payment_status"),
+  livemode: boolean("livemode").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
