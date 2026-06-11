@@ -54,6 +54,7 @@ import {
   Factory,
   BadgeDollarSign,
   Handshake,
+  LayoutDashboard,
 } from "lucide-react";
 import { setLastOrgSlug } from "@/lib/logout";
 import type { UserProfile } from "@shared/schema";
@@ -543,6 +544,12 @@ export function AppSidebar() {
     label: "Operations",
     icon: CalendarDays,
     items: [
+      {
+        title: "Scheduling Dashboard",
+        url: "/admin/scheduling-command-center",
+        icon: LayoutDashboard,
+        testId: "nav-scheduling-dashboard",
+      },
       {
         title: preset.nav.schedule,
         url: "/scheduling",
