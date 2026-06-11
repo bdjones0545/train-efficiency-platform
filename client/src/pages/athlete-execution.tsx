@@ -881,16 +881,6 @@ export default function AthleteExecutionPage() {
     submitMutation.mutate(payload);
   }
 
-  function parseRestSeconds(restStr: string): number {
-    if (!restStr) return 90;
-    const minMatch = restStr.match(/(\d+)\s*min/i);
-    const secMatch = restStr.match(/(\d+)\s*s/i);
-    if (minMatch) return parseInt(minMatch[1]) * 60;
-    if (secMatch) return parseInt(secMatch[1]);
-    const plain = parseInt(restStr);
-    return isNaN(plain) ? 90 : plain > 20 ? plain : plain * 60;
-  }
-
   // ── Render ────────────────────────────────────────────────────────────────
   if (isLoading || !session) {
     return (

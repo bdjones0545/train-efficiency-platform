@@ -561,7 +561,7 @@ function HiringTab() {
                 <AlertTriangle className="h-4 w-4 text-amber-500" />
                 <h3 className="text-sm font-semibold">Competitor Hiring Activity</h3>
               </div>
-              {data.competitorHiring.map((c, i) => (
+              {(data?.competitorHiring ?? []).map((c, i) => (
                 <div key={i} className="flex items-center gap-3 text-xs" data-testid={`comp-hiring-${i}`}>
                   <Building2 className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                   <span className="font-medium">{c.competitor}</span>

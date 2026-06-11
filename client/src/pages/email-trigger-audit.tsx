@@ -138,7 +138,7 @@ function SummaryCard({
   );
 }
 
-function TimelineRow({ event, idx }: { event: TriggerAuditSummary["timeline"][number]; idx: number }) {
+function TimelineRow({ event, idx }: { event: NonNullable<TriggerAuditSummary["timeline"]>[number]; idx: number }) {
   const [expanded, setExpanded] = useState(false);
   const badge = outcomeBadge(event.outcome, event.missedOpportunity, event.collisionDetected);
   const dot = outcomeColor(event.outcome, event.missedOpportunity, event.collisionDetected);
@@ -292,7 +292,7 @@ export default function EmailTriggerAuditPage() {
 
         {prospectLoading ? (
           <div className="space-y-2">{[...Array(6)].map((_, i) => <Skeleton key={i} className="h-12" />)}</div>
-        ) : !prospectData || prospectData.timeline.length === 0 ? (
+        ) : !prospectData || (prospectData.timeline?.length ?? 0) === 0 ? (
           <Card className="p-8 text-center text-muted-foreground">
             <Info className="h-8 w-8 mx-auto mb-2 opacity-40" />
             <p className="text-sm">No trigger events recorded for this prospect yet.</p>
@@ -310,7 +310,7 @@ export default function EmailTriggerAuditPage() {
                 <div className="text-xs text-muted-foreground mt-0.5">Blocked</div>
               </Card>
               <Card className="p-3 text-center">
-                <div className="text-2xl font-bold">{prospectData.timeline.length}</div>
+                <div className="text-2xl font-bold">{prospectData.timeline?.length ?? 0}</div>
                 <div className="text-xs text-muted-foreground mt-0.5">Total Events</div>
               </Card>
             </div>
@@ -335,7 +335,7 @@ export default function EmailTriggerAuditPage() {
                 <Clock className="h-4 w-4 text-primary" /> Full Event Timeline
               </h2>
               <div className="max-h-[600px] overflow-y-auto">
-                {prospectData.timeline.map((event, idx) => (
+                {(prospectData.timeline ?? []).map((event, idx) => (
                   <TimelineRow key={idx} event={event} idx={idx} />
                 ))}
               </div>

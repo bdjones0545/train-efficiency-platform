@@ -45,6 +45,13 @@ type BusinessPlanClient = {
     venmoCents: number;
     cashCents: number;
   };
+  clientStats?: {
+    totalSessions: number;
+    completedCount: number;
+    scheduledCount: number;
+    revenueCents: number;
+    walletBalanceCents: number;
+  };
 };
 
 type RevenueMonth = {
@@ -442,7 +449,7 @@ export default function CoachBusinessPlanPage() {
               <p className="text-2xl font-bold">${(plan.stats.totalRevenueCents / 100).toFixed(0)}</p>
               <div className="flex flex-col gap-0.5 mt-0.5">
                 <p className="text-xs text-muted-foreground">
-                  Total accrued: <span className="font-medium text-foreground">${((plan.stats.coachEarningsCents || 0) / 100).toFixed(2)}</span>
+                  Total accrued: <span className="font-medium text-foreground">${((plan.stats.coachPendingCents || 0) / 100).toFixed(2)}</span>
                 </p>
                 {(plan.stats.coachPendingCents ?? 0) > 0 && (
                   <p className="text-xs text-amber-600 dark:text-amber-400 font-medium">

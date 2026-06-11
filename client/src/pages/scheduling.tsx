@@ -208,7 +208,7 @@ function MetricsDashboard({ bookings }: { bookings: BookingWithDetails[] }) {
         const d = new Date(b.startAt);
         return d >= weekStart && d <= weekEnd && b.status !== "CANCELLED";
       })
-      .reduce((sum, b) => sum + (b.service?.priceInCents ?? 0), 0) / 100,
+      .reduce((sum, b) => sum + (b.service?.priceCents ?? 0), 0) / 100,
     [bookings, weekStart, weekEnd]
   );
   const confirmedCount = useMemo(() =>
