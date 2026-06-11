@@ -53,6 +53,7 @@ import {
   Briefcase,
   Factory,
   BadgeDollarSign,
+  Handshake,
 } from "lucide-react";
 import { setLastOrgSlug } from "@/lib/logout";
 import type { UserProfile } from "@shared/schema";
