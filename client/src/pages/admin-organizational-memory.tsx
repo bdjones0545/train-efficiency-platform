@@ -10,7 +10,7 @@ import {
   ArrowLeft, Brain, ChevronRight, Layers, RefreshCw, Search,
   BookOpen, CheckSquare, Lightbulb, Shield, GitBranch, BarChart3,
   X, Plus, TrendingUp, Star, Activity, Users, AlertTriangle,
-  CheckCircle, ArrowRightLeft,
+  CheckCircle, ArrowRightLeft, ClipboardList,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 

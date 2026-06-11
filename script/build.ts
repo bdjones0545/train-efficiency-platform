@@ -1,6 +1,7 @@
 import { build as esbuild } from "esbuild";
 import { build as viteBuild } from "vite";
 import { rm, readFile } from "fs/promises";
+import { execSync } from "child_process";
 
 // server deps to bundle to reduce openat(2) syscalls
 // which helps cold start times
@@ -32,7 +33,23 @@ const allowlist = [
   "zod-validation-error",
 ];
 
+async function typecheck() {
+  console.log("typechecking...");
+  try {
+    execSync("npx tsc --noEmit -p tsconfig.client.json", { stdio: "inherit" });
+    console.log("typecheck passed ✓");
+  } catch {
+    console.error(
+      "\n✗ TypeScript errors found — build aborted.\n" +
+        "Fix all type errors (including missing imports used in JSX) before deploying.\n"
+    );
+    process.exit(1);
+  }
+}
+
 async function buildAll() {
+  await typecheck();
+
   await rm("dist", { recursive: true, force: true });
 
   console.log("building client...");

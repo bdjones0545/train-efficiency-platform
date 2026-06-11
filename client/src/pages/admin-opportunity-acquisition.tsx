@@ -250,6 +250,9 @@ const REPLY_CLASS_CONFIG: Record<string, { label: string; color: string; icon: t
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+/** Coerce any value to a number (falls back to 0). */
+const n = (v: unknown): number => Number(v ?? 0);
+
 function fitScoreColor(score: number): string {
   if (score >= 80) return "text-emerald-600 dark:text-emerald-400";
   if (score >= 65) return "text-blue-600 dark:text-blue-400";

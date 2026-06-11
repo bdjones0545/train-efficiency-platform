@@ -9,7 +9,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ArrowLeft, MessageSquare, ChevronRight, Users, ArrowRightLeft,
   AlertTriangle, Megaphone, BarChart3, Send, RefreshCw, CheckCircle,
-  Clock, X, Layers, Activity, Bot, Shield, TrendingUp, Star,
+  Clock, X, Layers, Activity, Bot, Shield, TrendingUp, Star, CheckSquare,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
