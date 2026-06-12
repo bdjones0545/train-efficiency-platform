@@ -1186,7 +1186,7 @@ function SessionDetailModal({
 
 // ─── Session Chip (compact, for calendar cells) ────────────────────────────
 
-function SessionChip({ session, onClick }: { session: OpenSession; onClick: () => void }) {
+function SessionChip({ session, onClick }: { session: OpenSession; onClick: (e: React.MouseEvent) => void }) {
   const status = getSessionStatus(session);
   const count = session.participantCount || 0;
   const max = session.maxParticipants || 6;
@@ -1434,7 +1434,7 @@ function MonthView({
                     <SessionChip
                       key={s.id}
                       session={s}
-                      onClick={e => { (e as any).stopPropagation(); onSessionClick(s); }}
+                      onClick={e => { e.stopPropagation(); onSessionClick(s); }}
                     />
                   ))}
                   {daySessions.length > 2 && (

@@ -3,6 +3,7 @@
   "include": ["client/src/**/*", "shared/**/*"],
   "exclude": ["node_modules", "build", "dist", "server", "**/*.test.ts"],
   "compilerOptions": {
+    "target": "ES2020",
     "tsBuildInfoFile": "./node_modules/typescript/tsbuildinfo-client"
   }
 }

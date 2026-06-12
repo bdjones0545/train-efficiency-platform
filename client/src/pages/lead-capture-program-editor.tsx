@@ -990,7 +990,7 @@ export default function LeadCaptureProgramEditorPage() {
     setHeroImageFit(ext.heroImageFit || "cover");
     setHeroImagePosition(ext.heroImagePosition || "center center");
     setMobileHeroImagePosition(ext.mobileHeroImagePosition || "");
-    setWhoCards(ext.whoCards?.length > 0 ? ext.whoCards : newFt.defaultWhoCards);
+    setWhoCards((ext.whoCards ?? []).length > 0 ? (ext.whoCards ?? []) : newFt.defaultWhoCards);
     if (ext.formFields && ext.formFields.length > 0) {
       setFormFields(ext.formFields);
     } else {
