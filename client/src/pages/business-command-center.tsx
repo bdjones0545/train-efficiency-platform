@@ -59,7 +59,6 @@ import {
   AlertCircle,
   Lightbulb,
   CalendarCheck,
-  Shield,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
