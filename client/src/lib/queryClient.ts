@@ -81,10 +81,25 @@ function isPublicRoute(path: string): boolean {
 
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
-    onError(error: unknown) {
+    onError(error: unknown, query) {
       const msg = error instanceof Error ? error.message : String(error);
-      if (msg.startsWith("401:")) {
-        const path = window.location.pathname;
+      const path = window.location.pathname;
+      const statusMatch = msg.match(/^(\d{3}):/);
+      const statusCode = statusMatch ? parseInt(statusMatch[1], 10) : null;
+      const queryKey = Array.isArray(query.queryKey)
+        ? query.queryKey.join(" / ")
+        : String(query.queryKey);
+
+      // Always log query errors for observability
+      console.error("[QueryCache] Query failed", {
+        queryKey,
+        route: path,
+        statusCode,
+        message: msg,
+      });
+
+      // 401: redirect unauthenticated users home
+      if (statusCode === 401) {
         if (!isPublicRoute(path)) {
           console.warn("[QueryCache] 401 Unauthorized — redirecting to home from:", path);
           window.location.href = "/";

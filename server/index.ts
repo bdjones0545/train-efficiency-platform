@@ -47,6 +47,22 @@ async function initStripe() {
 
 (async () => { await initStripe(); })();
 
+// ── Startup environment checks ─────────────────────────────────────────────
+(function checkRequiredEnvVars() {
+  const required: { key: string; hint: string }[] = [
+    { key: "STRIPE_SECRET_KEY",  hint: "Stripe payments will not work" },
+    { key: "OPENAI_API_KEY",     hint: "AI features will not work" },
+  ];
+  for (const { key, hint } of required) {
+    if (!process.env[key]) {
+      console.error(`[Startup] MISSING env var: ${key} — ${hint}`);
+    } else {
+      console.log(`[Startup] ${key} ✓`);
+    }
+  }
+})();
+// ──────────────────────────────────────────────────────────────────────────
+
 // Validate email provider at startup — surface misconfiguration in logs immediately
 (async () => {
   const result = await validateEmailProvider();

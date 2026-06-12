@@ -284,6 +284,23 @@ export async function registerRoutes(
   await setupAuth(app);
   registerAuthRoutes(app);
 
+  // ── Client-side error reporting ────────────────────────────────────────────
+  app.post("/api/client-errors", (req, res) => {
+    const { type, message, source, lineno, colno, stack, route, userAgent } = req.body ?? {};
+    console.error("[ClientError]", {
+      type: type ?? "unknown",
+      message: String(message ?? "").slice(0, 500),
+      route: String(route ?? "").slice(0, 200),
+      source: source ? String(source).slice(0, 300) : undefined,
+      lineno,
+      colno,
+      stack: stack ? String(stack).slice(0, 1000) : undefined,
+      userAgent: userAgent ? String(userAgent).slice(0, 200) : undefined,
+    });
+    res.status(204).end();
+  });
+  // ──────────────────────────────────────────────────────────────────────────
+
   // ─── Phase 10: Security Hardening ─────────────────────────────────────────
   // Broad write-auth middleware for all Phase 4-9 routes that previously relied
   // solely on internal orgId checks without explicit session enforcement.
