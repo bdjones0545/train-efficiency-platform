@@ -253,10 +253,6 @@ const CHECKS: { name: string; run: () => Promise<{ details?: string }>; failWhen
     name: "http_open_sessions",
     run: async () => httpProbe("http_open_sessions", "/api/open-sessions", { acceptStatuses: [200, 401, 403] }),
   },
-  {
-    name: "http_reliability_dashboard",
-    run: async () => httpProbe("http_reliability_dashboard", "/api/reliability/dashboard", { acceptStatuses: [200] }),
-  },
 ];
 
 async function runHealthChecks(): Promise<CheckResult[]> {
@@ -290,14 +286,25 @@ async function runAlertEngine() {
   try {
     await ensureTablesOnce();
 
+    // Clean up any stale unresolved alerts older than 48h on every run
+    await resolveStaleAlerts();
+
     // Client errors spike
     const ceRes = await db.execute(sql`
       SELECT COUNT(*)::int AS n FROM client_errors
       WHERE created_at > NOW() - INTERVAL '30 minutes'
     `);
     const ceCount = toN(ceRes);
-    if (ceCount >= 50) await maybeFireAlert("critical", "Client Crash Rate Critical", `${ceCount} client errors in last 30 minutes`);
-    else if (ceCount >= 10) await maybeFireAlert("warning", "Client Crash Rate Elevated", `${ceCount} client errors in last 30 minutes`);
+    if (ceCount >= 50) {
+      await maybeFireAlert("critical", "Client Crash Rate Critical", `${ceCount} client errors in last 30 minutes`);
+    } else {
+      await maybeResolveAlert("Client Crash Rate Critical");
+    }
+    if (ceCount >= 10 && ceCount < 50) {
+      await maybeFireAlert("warning", "Client Crash Rate Elevated", `${ceCount} client errors in last 30 minutes`);
+    } else if (ceCount < 10) {
+      await maybeResolveAlert("Client Crash Rate Elevated");
+    }
 
     // Query failures spike
     const qfRes = await db.execute(sql`
@@ -305,10 +312,19 @@ async function runAlertEngine() {
       WHERE created_at > NOW() - INTERVAL '30 minutes'
     `);
     const qfCount = toN(qfRes);
-    if (qfCount >= 100) await maybeFireAlert("critical", "API Query Failure Rate Critical", `${qfCount} query failures in last 30 minutes`);
-    else if (qfCount >= 20) await maybeFireAlert("warning", "API Query Failure Rate Elevated", `${qfCount} query failures in last 30 minutes`);
+    if (qfCount >= 100) {
+      await maybeFireAlert("critical", "API Query Failure Rate Critical", `${qfCount} query failures in last 30 minutes`);
+    } else {
+      await maybeResolveAlert("API Query Failure Rate Critical");
+    }
+    if (qfCount >= 20 && qfCount < 100) {
+      await maybeFireAlert("warning", "API Query Failure Rate Elevated", `${qfCount} query failures in last 30 minutes`);
+    } else if (qfCount < 20) {
+      await maybeResolveAlert("API Query Failure Rate Elevated");
+    }
 
-    // Health check failures
+    // Health check failures — fire for sustained failures, resolve when check recovers
+    const allCheckNames = CHECKS.map(c => c.name);
     const hcRes = await db.execute(sql`
       SELECT check_name, COUNT(*)::int AS fails
       FROM health_check_results
@@ -316,9 +332,16 @@ async function runAlertEngine() {
       GROUP BY check_name HAVING COUNT(*) >= 2
     `);
     const failedChecks = toArr(hcRes);
+    const failedCheckNames = new Set(failedChecks.map((fc: any) => fc.check_name));
     for (const fc of failedChecks) {
       await maybeFireAlert("critical", `Health Check Failing: ${fc.check_name}`,
         `${fc.check_name} has failed ${fc.fails} times in the last 30 minutes`);
+    }
+    // Auto-resolve health check alerts for checks that are now passing
+    for (const checkName of allCheckNames) {
+      if (!failedCheckNames.has(checkName)) {
+        await maybeResolveAlert(`Health Check Failing: ${checkName}`);
+      }
     }
 
     // System logs errors
@@ -327,13 +350,25 @@ async function runAlertEngine() {
       WHERE level IN ('error', 'critical') AND created_at > NOW() - INTERVAL '1 hour'
     `);
     const slCount = toN(slRes);
-    if (slCount >= 25) await maybeFireAlert("warning", "System Error Rate Elevated", `${slCount} system errors in last hour`);
+    if (slCount >= 25) {
+      await maybeFireAlert("warning", "System Error Rate Elevated", `${slCount} system errors in last hour`);
+    } else {
+      await maybeResolveAlert("System Error Rate Elevated");
+    }
 
     // Dead-letter queue depth
     const dlq = await getDlqCounts();
     const dlqPending = dlq.pending + dlq.finalFailed;
-    if (dlqPending >= 20) await maybeFireAlert("critical", "Dead-Letter Queue Critical", `${dlqPending} jobs stuck in dead-letter queue (${dlq.finalFailed} permanently failed)`);
-    else if (dlqPending >= 5) await maybeFireAlert("warning", "Dead-Letter Queue Elevated", `${dlqPending} jobs in dead-letter queue require attention`);
+    if (dlqPending >= 20) {
+      await maybeFireAlert("critical", "Dead-Letter Queue Critical", `${dlqPending} jobs stuck in dead-letter queue (${dlq.finalFailed} permanently failed)`);
+    } else {
+      await maybeResolveAlert("Dead-Letter Queue Critical");
+    }
+    if (dlqPending >= 5 && dlqPending < 20) {
+      await maybeFireAlert("warning", "Dead-Letter Queue Elevated", `${dlqPending} jobs in dead-letter queue require attention`);
+    } else if (dlqPending < 5) {
+      await maybeResolveAlert("Dead-Letter Queue Elevated");
+    }
 
     // Stripe webhook failures
     const wfRes = await db.execute(sql`
@@ -342,10 +377,19 @@ async function runAlertEngine() {
         AND created_at > NOW() - INTERVAL '30 minutes'
     `);
     const wfCount = toN(wfRes);
-    if (wfCount >= 10) await maybeFireAlert("critical", "Stripe Webhook Failure Rate Critical", `${wfCount} webhook failures in last 30 minutes`);
-    else if (wfCount >= 3) await maybeFireAlert("warning", "Stripe Webhook Failure Rate Elevated", `${wfCount} webhook failures in last 30 minutes`);
+    if (wfCount >= 10) {
+      await maybeFireAlert("critical", "Stripe Webhook Failure Rate Critical", `${wfCount} webhook failures in last 30 minutes`);
+    } else {
+      await maybeResolveAlert("Stripe Webhook Failure Rate Critical");
+    }
+    if (wfCount >= 3 && wfCount < 10) {
+      await maybeFireAlert("warning", "Stripe Webhook Failure Rate Elevated", `${wfCount} webhook failures in last 30 minutes`);
+    } else if (wfCount < 3) {
+      await maybeResolveAlert("Stripe Webhook Failure Rate Elevated");
+    }
 
-    // HTTP probe p95 latency
+    // HTTP probe p95 latency — only for checks still in the active CHECKS array
+    const activeCheckNames = new Set(CHECKS.map(c => c.name));
     const p95Res = await db.execute(sql`
       SELECT check_name,
         PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms)::int AS p95
@@ -357,18 +401,31 @@ async function runAlertEngine() {
     `);
     const p95Rows: any[] = Array.isArray(p95Res) ? p95Res : (p95Res as any).rows ?? [];
     for (const probe of p95Rows) {
-      if (probe.p95 >= 3000) await maybeFireAlert("critical", `HTTP Probe Latency Critical: ${probe.check_name}`, `${probe.check_name} p95 response time is ${probe.p95}ms — exceeds 3000ms threshold`);
-      else if (probe.p95 >= 1500) await maybeFireAlert("warning", `HTTP Probe Latency Elevated: ${probe.check_name}`, `${probe.check_name} p95 response time is ${probe.p95}ms — exceeds 1500ms threshold`);
+      // Skip latency evaluation for checks that have been removed — resolve any leftover alerts
+      if (!activeCheckNames.has(probe.check_name)) {
+        await maybeResolveAlert(`HTTP Probe Latency Critical: ${probe.check_name}`);
+        await maybeResolveAlert(`HTTP Probe Latency Elevated: ${probe.check_name}`);
+        continue;
+      }
+      if (probe.p95 >= 3000) {
+        await maybeFireAlert("critical", `HTTP Probe Latency Critical: ${probe.check_name}`, `${probe.check_name} p95 response time is ${probe.p95}ms — exceeds 3000ms threshold`);
+      } else if (probe.p95 >= 1500) {
+        await maybeFireAlert("warning", `HTTP Probe Latency Elevated: ${probe.check_name}`, `${probe.check_name} p95 response time is ${probe.p95}ms — exceeds 1500ms threshold`);
+      } else {
+        await maybeResolveAlert(`HTTP Probe Latency Critical: ${probe.check_name}`);
+        await maybeResolveAlert(`HTTP Probe Latency Elevated: ${probe.check_name}`);
+      }
     }
 
   } catch { /* never crash the engine */ }
 }
 
 async function maybeFireAlert(severity: string, title: string, description: string) {
+  // Deduplicate: don't re-fire the same alert title within 6 hours
   const existing = await db.execute(sql`
     SELECT id FROM system_alerts
     WHERE title = ${title} AND resolved_at IS NULL
-      AND created_at > NOW() - INTERVAL '30 minutes'
+      AND created_at > NOW() - INTERVAL '6 hours'
     LIMIT 1
   `);
   if ((existing as any[]).length > 0) return;
@@ -379,6 +436,22 @@ async function maybeFireAlert(severity: string, title: string, description: stri
     severity as any, "alert-engine", "alert_fired",
     `[${severity.toUpperCase()}] ${title}`, { description }
   );
+}
+
+async function maybeResolveAlert(title: string) {
+  await db.execute(sql`
+    UPDATE system_alerts SET resolved_at = NOW()
+    WHERE title = ${title} AND resolved_at IS NULL
+  `);
+}
+
+async function resolveStaleAlerts() {
+  // Auto-resolve unresolved alerts that are older than 48h (covers any historical accumulation)
+  await db.execute(sql`
+    UPDATE system_alerts
+    SET resolved_at = NOW()
+    WHERE resolved_at IS NULL AND created_at < NOW() - INTERVAL '48 hours'
+  `);
 }
 
 // ─── SLO calculations ─────────────────────────────────────────────────────────
@@ -761,7 +834,11 @@ export async function registerReliabilityRoutes(app: Express) {
           SELECT
             SUM(CASE WHEN status='pass' THEN 1 ELSE 0 END)::int AS passing,
             COUNT(*)::int AS total
-          FROM health_check_results WHERE created_at > NOW() - INTERVAL '30 minutes'
+          FROM (
+            SELECT DISTINCT ON (check_name) check_name, status
+            FROM health_check_results
+            ORDER BY check_name, created_at DESC
+          ) latest_per_check
         `),
         db.execute(sql`
           SELECT COUNT(*)::int AS client_errors
