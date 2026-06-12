@@ -2494,13 +2494,13 @@ export default function AdminOpportunityAcquisitionPage() {
     onError: () => toast({ title: "Failed to record outcome", variant: "destructive" }),
   });
 
-  const opportunities: Opportunity[]  = oppsQ.data ?? [];
-  const events: AgentEvent[]          = eventsQ.data ?? [];
-  const assessments: Assessment[]     = assessQ.data ?? [];
-  const drafts: OutreachDraft[]       = draftsQ.data ?? [];
-  const runs: DiscoveryRun[]          = runsQ.data ?? [];
-  const executions: Execution[]       = executionsQ.data ?? [];
-  const replies: ReplyEvent[]         = repliesQ.data ?? [];
+  const opportunities: Opportunity[]  = Array.isArray(oppsQ.data)      ? oppsQ.data      : [];
+  const events: AgentEvent[]          = Array.isArray(eventsQ.data)     ? eventsQ.data    : [];
+  const assessments: Assessment[]     = Array.isArray(assessQ.data)     ? assessQ.data    : [];
+  const drafts: OutreachDraft[]       = Array.isArray(draftsQ.data)     ? draftsQ.data    : [];
+  const runs: DiscoveryRun[]          = Array.isArray(runsQ.data)       ? runsQ.data      : [];
+  const executions: Execution[]       = Array.isArray(executionsQ.data) ? executionsQ.data : [];
+  const replies: ReplyEvent[]         = Array.isArray(repliesQ.data)    ? repliesQ.data   : [];
   const pendingDrafts                 = drafts.filter(d => d.status === "draft").length;
   const sentCount                     = executions.filter(e => e.status === "sent" || e.status === "delivered" || e.status === "replied").length;
   const replyCount                    = replies.length;
@@ -2602,9 +2602,9 @@ export default function AdminOpportunityAcquisitionPage() {
             </TabsTrigger>
             <TabsTrigger value="executive" className="text-xs gap-1" data-testid="tab-executive">
               <Zap className="h-3 w-3" />Executive Intelligence
-              {(executiveRecsQ.data ?? []).filter(r => r.status === "pending").length > 0 && (
+              {(Array.isArray(executiveRecsQ.data) ? executiveRecsQ.data : []).filter(r => r.status === "pending").length > 0 && (
                 <Badge className="ml-1 text-[9px] h-3.5 px-1 bg-amber-500 text-white">
-                  {(executiveRecsQ.data ?? []).filter(r => r.status === "pending").length}
+                  {(Array.isArray(executiveRecsQ.data) ? executiveRecsQ.data : []).filter(r => r.status === "pending").length}
                 </Badge>
               )}
             </TabsTrigger>

@@ -448,7 +448,7 @@ export default function AdminReliabilityPage() {
             </CardHeader>
             <CardContent>
               {probeLatency.isLoading ? <Skeleton className="h-24 w-full" /> :
-               (probeLatency.data ?? []).length === 0 ? (
+               (Array.isArray(probeLatency.data) ? probeLatency.data : []).length === 0 ? (
                 <div className="text-sm text-muted-foreground text-center py-4">
                   No probe latency data yet — run health checks first.
                 </div>
@@ -466,7 +466,7 @@ export default function AdminReliabilityPage() {
                       </tr>
                     </thead>
                     <tbody className="divide-y">
-                      {(probeLatency.data ?? []).map((row: any) => {
+                      {(Array.isArray(probeLatency.data) ? probeLatency.data : []).map((row: any) => {
                         const p95 = row.p95 ?? 0;
                         const latencyStatus = p95 >= 3000 ? "critical" : p95 >= 1500 ? "warning" : "ok";
                         return (
@@ -699,14 +699,14 @@ export default function AdminReliabilityPage() {
               <ScrollArea className="h-[500px]">
                 {alerts.isLoading ? (
                   <div className="p-4 space-y-2">{Array.from({length:5}).map((_,i)=><Skeleton key={i} className="h-12 w-full"/>)}</div>
-                ) : (alerts.data ?? []).length === 0 ? (
+                ) : (Array.isArray(alerts.data) ? alerts.data : []).length === 0 ? (
                   <div className="p-8 text-center">
                     <CheckCircle2 className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
                     <div className="text-sm text-muted-foreground">No alerts — all systems normal</div>
                   </div>
                 ) : (
                   <div className="divide-y">
-                    {(alerts.data ?? []).map((alert: any) => (
+                    {(Array.isArray(alerts.data) ? alerts.data : []).map((alert: any) => (
                       <div key={alert.id} className={`flex items-start gap-3 px-4 py-3 ${alert.resolved_at ? "opacity-50" : ""}`}
                         data-testid={`alert-history-${alert.id}`}>
                         <SeverityBadge severity={alert.severity} />

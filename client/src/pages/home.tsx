@@ -26,6 +26,11 @@ import {
   AlertTriangle,
 } from "lucide-react";
 
+// ─── Safe array helper ────────────────────────────────────────────────────────
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : [];
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface RevSummary {
@@ -476,15 +481,15 @@ export default function HomePage() {
   const utilTrend: Trend = utilPct === null ? "flat" : utilPct > 85 ? "up" : utilPct < 40 ? "down" : "flat";
 
   // Retention
-  const activeRet = (retQ.data ?? []).filter(
+  const activeRet = asArray<RetentionWorkflow>(retQ.data).filter(
     (r) => r.status !== "resolved" && r.status !== "closed"
   ).length;
   const retTrend: Trend = activeRet === 0 ? "flat" : activeRet <= 2 ? "flat" : "down";
 
   // Best action — prefer high-priority recommendation, fallback to top attention item
-  const bestRec =
-    recQ.data?.find((r) => r.priority === "high") ?? recQ.data?.[0] ?? null;
-  const attnSorted = (attnQ.data ?? [])
+  const recArr = asArray<Recommendation>(recQ.data);
+  const bestRec = recArr.find((r) => r.priority === "high") ?? recArr[0] ?? null;
+  const attnSorted = asArray<AttentionItem>(attnQ.data)
     .filter((a) => a.status === "active")
     .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
   const topAttn = attnSorted[0] ?? null;
@@ -493,10 +498,17 @@ export default function HomePage() {
   const approvalItems = attnSorted.slice(0, 5);
 
   // AI Workforce departments
-  const depts = groupByDept(agentsQ.data ?? []);
+  const depts = groupByDept(asArray<WorkforceAgent>(agentsQ.data));
 
   // Learning items from heartbeat priorities
-  const learnings = (prioritiesQ.data ?? []).slice(0, 3);
+  // NOTE: /api/admin/ceo-heartbeat/priorities returns { priorities: [...] } — normalise both shapes
+  const prioritiesRaw = prioritiesQ.data as unknown;
+  const prioritiesArr: HeartbeatPriority[] = Array.isArray(prioritiesRaw)
+    ? prioritiesRaw
+    : Array.isArray((prioritiesRaw as any)?.priorities)
+      ? (prioritiesRaw as any).priorities
+      : [];
+  const learnings = prioritiesArr.slice(0, 3);
 
   // System health
   const health = healthQ.data;

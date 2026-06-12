@@ -193,7 +193,7 @@ export default function AdminPartnerships() {
   const learningQ  = useQuery<any>({   queryKey: ["/api/partnerships/learning"] });
   const executiveQ = useQuery<any>({   queryKey: ["/api/partnerships/executive"] });
 
-  const partners = partnersQ.data ?? [];
+  const partners = Array.isArray(partnersQ.data) ? partnersQ.data : [];
   const total     = partners.length;
   const qualified = partners.filter((p: any) => p.status === "qualified").length;
   const meeting   = partners.filter((p: any) => p.status === "meeting").length;
@@ -380,7 +380,7 @@ export default function AdminPartnerships() {
             <CardContent className="p-0">
               {assessQ.isLoading ? (
                 <div className="p-8 text-center text-muted-foreground">Loading...</div>
-              ) : (assessQ.data ?? []).length === 0 ? (
+              ) : (Array.isArray(assessQ.data) ? assessQ.data : []).length === 0 ? (
                 <div className="p-8 text-center text-muted-foreground">
                   <Star className="h-10 w-10 mx-auto mb-2 opacity-30" />
                   <p>No assessments yet. Run an assessment from the Partners tab.</p>
@@ -399,7 +399,7 @@ export default function AdminPartnerships() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {(assessQ.data ?? []).map((a: any) => (
+                    {(Array.isArray(assessQ.data) ? assessQ.data : []).map((a: any) => (
                       <TableRow key={a.id} data-testid={`row-assessment-${a.id}`}>
                         <TableCell className="font-medium">{a.organization_name}</TableCell>
                         <TableCell>{scoreBadge(a.fit_score ?? 0)}</TableCell>
@@ -451,7 +451,7 @@ export default function AdminPartnerships() {
 
           {draftsQ.isLoading ? (
             <div className="p-8 text-center text-muted-foreground">Loading...</div>
-          ) : (draftsQ.data ?? []).length === 0 ? (
+          ) : (Array.isArray(draftsQ.data) ? draftsQ.data : []).length === 0 ? (
             <Card>
               <CardContent className="p-8 text-center text-muted-foreground">
                 <Mail className="h-10 w-10 mx-auto mb-2 opacity-30" />
@@ -460,7 +460,7 @@ export default function AdminPartnerships() {
             </Card>
           ) : (
             <div className="space-y-3">
-              {(draftsQ.data ?? []).map((d: any) => (
+              {(Array.isArray(draftsQ.data) ? draftsQ.data : []).map((d: any) => (
                 <Card key={d.id} data-testid={`card-draft-${d.id}`}>
                   <CardContent className="pt-4 space-y-2">
                     <div className="flex items-center justify-between">
@@ -500,7 +500,7 @@ export default function AdminPartnerships() {
                 <div className="space-y-3">
                   {(pipelineQ.data ?? STAGES.map(s => ({ stage: s.id, count: 0 }))).map((item: any) => {
                     const stage = STAGES.find(s => s.id === item.stage);
-                    const maxCount = Math.max(1, ...(pipelineQ.data ?? []).map((i: any) => i.count));
+                    const maxCount = Math.max(1, ...(Array.isArray(pipelineQ.data) ? pipelineQ.data : []).map((i: any) => i.count));
                     const pct = Math.round((item.count / maxCount) * 100);
                     return (
                       <div key={item.stage} className="flex items-center gap-3" data-testid={`pipeline-stage-${item.stage}`}>
