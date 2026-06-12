@@ -11,7 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Activity, AlertTriangle, CheckCircle2, XCircle, RefreshCw, Shield,
   Zap, Server, Database, Mail, DollarSign, Clock, TrendingUp, Bell,
-  AlertCircle, Info, Eye
+  AlertCircle, Info, Eye, Timer, Trash2, Gauge
 } from "lucide-react";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -93,6 +93,14 @@ export default function AdminReliabilityPage() {
   const execSummary = useQuery<any>({
     queryKey: ["/api/reliability/executive-summary"],
     refetchInterval: 30_000,
+  });
+  const probeLatency = useQuery<any[]>({
+    queryKey: ["/api/reliability/probe-latency"],
+    refetchInterval: 60_000,
+  });
+  const retentionHistory = useQuery<any>({
+    queryKey: ["/api/reliability/retention-history"],
+    refetchInterval: 120_000,
   });
 
   const runChecks = useMutation({
@@ -198,6 +206,7 @@ export default function AdminReliabilityPage() {
           <TabsTrigger value="infrastructure"  className="text-xs gap-1" data-testid="tab-infra"><Server className="h-3 w-3"/>Infrastructure</TabsTrigger>
           <TabsTrigger value="agents"          className="text-xs gap-1" data-testid="tab-agents"><Zap className="h-3 w-3"/>Agents</TabsTrigger>
           <TabsTrigger value="financial"       className="text-xs gap-1" data-testid="tab-financial"><DollarSign className="h-3 w-3"/>Financial</TabsTrigger>
+          <TabsTrigger value="maintenance"     className="text-xs gap-1" data-testid="tab-maintenance"><Trash2 className="h-3 w-3"/>Maintenance</TabsTrigger>
           <TabsTrigger value="alerts"          className="text-xs gap-1" data-testid="tab-alerts">
             <Bell className="h-3 w-3"/>Alerts
             {activeAlerts.length > 0 && <Badge variant="destructive" className="ml-1 h-4 px-1 text-[10px]">{activeAlerts.length}</Badge>}
@@ -426,6 +435,64 @@ export default function AdminReliabilityPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* HTTP Probe Latency Percentiles */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Timer className="h-4 w-4 text-indigo-500" /> HTTP Probe Latency — last 24h
+              </CardTitle>
+              <CardDescription className="text-xs">
+                p50 / p95 / max response times. Warning: p95 &gt; 1500ms · Critical: p95 &gt; 3000ms
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {probeLatency.isLoading ? <Skeleton className="h-24 w-full" /> :
+               (probeLatency.data ?? []).length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center py-4">
+                  No probe latency data yet — run health checks first.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm" data-testid="table-probe-latency">
+                    <thead>
+                      <tr className="text-left text-[10px] text-muted-foreground border-b">
+                        <th className="pb-2 font-medium">Probe</th>
+                        <th className="pb-2 font-medium text-right">p50</th>
+                        <th className="pb-2 font-medium text-right">p95</th>
+                        <th className="pb-2 font-medium text-right">Max</th>
+                        <th className="pb-2 font-medium text-right">Samples</th>
+                        <th className="pb-2 font-medium text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      {(probeLatency.data ?? []).map((row: any) => {
+                        const p95 = row.p95 ?? 0;
+                        const latencyStatus = p95 >= 3000 ? "critical" : p95 >= 1500 ? "warning" : "ok";
+                        return (
+                          <tr key={row.check_name} className="py-2" data-testid={`latency-row-${row.check_name}`}>
+                            <td className="py-2 font-mono text-xs">{row.check_name.replace(/^http_/, "")}</td>
+                            <td className="py-2 text-right tabular-nums text-xs">{row.p50 ?? "—"}ms</td>
+                            <td className={`py-2 text-right tabular-nums text-xs font-semibold ${
+                              latencyStatus === "critical" ? "text-red-500" :
+                              latencyStatus === "warning"  ? "text-yellow-500" : ""
+                            }`}>{row.p95 ?? "—"}ms</td>
+                            <td className="py-2 text-right tabular-nums text-xs text-muted-foreground">{row.max_ms ?? "—"}ms</td>
+                            <td className="py-2 text-right tabular-nums text-xs text-muted-foreground">{row.sample_count}</td>
+                            <td className="py-2 text-right">
+                              {latencyStatus === "critical" && <Badge variant="destructive" className="text-[10px]">CRITICAL</Badge>}
+                              {latencyStatus === "warning"  && <Badge className="text-[10px] bg-yellow-500/15 text-yellow-700 border-yellow-300">WARN</Badge>}
+                              {latencyStatus === "ok"       && <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-300">OK</Badge>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ── AGENTS ── */}
@@ -465,6 +532,118 @@ export default function AdminReliabilityPage() {
                 Reliability tracks aggregate success/failure rates from{" "}
                 <span className="font-mono text-xs">unified_agent_action_log</span>.
               </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ── MAINTENANCE ── */}
+        <TabsContent value="maintenance" className="space-y-4 pt-4">
+          {/* Retention policies */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Trash2 className="h-4 w-4 text-orange-500" /> Log Retention Policies
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Automated cleanup runs daily. Logs beyond policy age are permanently deleted.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="divide-y">
+                {(retentionHistory.data?.policies ?? []).map((p: any) => (
+                  <div key={p.table} className="flex items-center justify-between py-2.5" data-testid={`policy-${p.table.replace(/\s+/g, "-")}`}>
+                    <span className="font-mono text-xs">{p.table}</span>
+                    <Badge variant="outline" className="text-[10px]">{p.retentionDays}d</Badge>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Schedule status */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardContent className="pt-4 pb-3 text-center">
+                <Clock className="h-5 w-5 text-muted-foreground mx-auto mb-1" />
+                <div className="text-sm font-semibold mt-1">
+                  {retentionHistory.data?.lastRunAt
+                    ? new Date(retentionHistory.data.lastRunAt).toLocaleString()
+                    : "Not yet run"}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Last Cleanup</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-3 text-center">
+                <Activity className="h-5 w-5 text-blue-500 mx-auto mb-1" />
+                <div className="text-sm font-semibold mt-1">
+                  {retentionHistory.data?.nextRunAt
+                    ? new Date(retentionHistory.data.nextRunAt).toLocaleString()
+                    : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Next Scheduled Run</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4 pb-3 text-center">
+                <Trash2 className="h-5 w-5 text-emerald-500 mx-auto mb-1" />
+                <div className="text-2xl font-bold tabular-nums mt-1">
+                  {retentionHistory.data?.history?.length ?? 0}
+                </div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">Runs Recorded</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Cleanup history */}
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Clock className="h-4 w-4 text-muted-foreground" /> Cleanup History (last 10 runs)
+                </CardTitle>
+                <Button size="sm" variant="outline" className="h-7 text-xs"
+                  onClick={() => qc.invalidateQueries({ queryKey: ["/api/reliability/retention-history"] })}
+                  data-testid="button-refresh-retention">
+                  <RefreshCw className="h-3 w-3 mr-1" /> Refresh
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-0">
+              {retentionHistory.isLoading ? (
+                <div className="p-4 space-y-2">{Array.from({length:3}).map((_,i)=><Skeleton key={i} className="h-10 w-full"/>)}</div>
+              ) : (retentionHistory.data?.history ?? []).length === 0 ? (
+                <div className="p-6 text-sm text-muted-foreground text-center">
+                  No cleanup runs yet. First run scheduled for{" "}
+                  {retentionHistory.data?.nextRunAt
+                    ? new Date(retentionHistory.data.nextRunAt).toLocaleString()
+                    : "24h after server startup"}.
+                </div>
+              ) : (
+                <div className="divide-y">
+                  {(retentionHistory.data?.history ?? []).map((run: any) => {
+                    const meta = run.metadata as any;
+                    const del = meta?.deleted ?? {};
+                    return (
+                      <div key={run.id} className="px-4 py-3" data-testid={`retention-run-${run.id}`}>
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-muted-foreground">{fmt(run.created_at)}</div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
+                              {del.systemLogs      != null && <span className="text-[11px]"><span className="text-muted-foreground">system_logs</span> <span className="font-semibold">{del.systemLogs}</span> deleted</span>}
+                              {del.queryFailures   != null && <span className="text-[11px]"><span className="text-muted-foreground">query_failures</span> <span className="font-semibold">{del.queryFailures}</span> deleted</span>}
+                              {del.healthChecks    != null && <span className="text-[11px]"><span className="text-muted-foreground">health_checks</span> <span className="font-semibold">{del.healthChecks}</span> deleted</span>}
+                              {del.clientErrors    != null && <span className="text-[11px]"><span className="text-muted-foreground">client_errors</span> <span className="font-semibold">{del.clientErrors}</span> deleted</span>}
+                              {del.resolvedAlerts  != null && <span className="text-[11px]"><span className="text-muted-foreground">resolved_alerts</span> <span className="font-semibold">{del.resolvedAlerts}</span> deleted</span>}
+                            </div>
+                          </div>
+                          <Badge variant="outline" className="text-[10px] text-emerald-600 border-emerald-300 flex-shrink-0">Completed</Badge>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

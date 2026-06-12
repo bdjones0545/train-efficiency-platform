@@ -73,8 +73,13 @@ async function ensureReliabilityTables() {
   await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_alerts_severity ON system_alerts(severity, resolved_at)`);
 }
 
-// ─── Public persist helpers (called by other routes) ─────────────────────────
+// ─── Module-level state ───────────────────────────────────────────────────────
 let _tablesReady = false;
+let _lastRetentionRun: Date | null = null;
+const _serverStartedAt = Date.now();
+const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
+
+// ─── Public persist helpers (called by other routes) ─────────────────────────
 async function ensureTablesOnce() {
   if (_tablesReady) return;
   await ensureReliabilityTables();
@@ -315,6 +320,32 @@ async function runAlertEngine() {
     if (dlqPending >= 20) await maybeFireAlert("critical", "Dead-Letter Queue Critical", `${dlqPending} jobs stuck in dead-letter queue (${dlq.finalFailed} permanently failed)`);
     else if (dlqPending >= 5) await maybeFireAlert("warning", "Dead-Letter Queue Elevated", `${dlqPending} jobs in dead-letter queue require attention`);
 
+    // Stripe webhook failures
+    const wfRes = await db.execute(sql`
+      SELECT COUNT(*)::int AS n FROM system_logs
+      WHERE service = 'stripe' AND event_type = 'webhook_failed'
+        AND created_at > NOW() - INTERVAL '30 minutes'
+    `);
+    const wfCount = (wfRes as any)[0]?.n ?? 0;
+    if (wfCount >= 10) await maybeFireAlert("critical", "Stripe Webhook Failure Rate Critical", `${wfCount} webhook failures in last 30 minutes`);
+    else if (wfCount >= 3) await maybeFireAlert("warning", "Stripe Webhook Failure Rate Elevated", `${wfCount} webhook failures in last 30 minutes`);
+
+    // HTTP probe p95 latency
+    const p95Res = await db.execute(sql`
+      SELECT check_name,
+        PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms)::int AS p95
+      FROM health_check_results
+      WHERE check_name LIKE 'http_%'
+        AND created_at > NOW() - INTERVAL '24 hours'
+        AND response_time_ms IS NOT NULL
+      GROUP BY check_name
+    `);
+    const p95Rows: any[] = Array.isArray(p95Res) ? p95Res : (p95Res as any).rows ?? [];
+    for (const probe of p95Rows) {
+      if (probe.p95 >= 3000) await maybeFireAlert("critical", `HTTP Probe Latency Critical: ${probe.check_name}`, `${probe.check_name} p95 response time is ${probe.p95}ms — exceeds 3000ms threshold`);
+      else if (probe.p95 >= 1500) await maybeFireAlert("warning", `HTTP Probe Latency Elevated: ${probe.check_name}`, `${probe.check_name} p95 response time is ${probe.p95}ms — exceeds 1500ms threshold`);
+    }
+
   } catch { /* never crash the engine */ }
 }
 
@@ -427,6 +458,8 @@ async function runLogRetention() {
       INSERT INTO system_logs (level, service, event_type, message, metadata)
       VALUES ('info', 'reliability', 'log_retention', ${`Log retention complete — ${summary}`}, ${JSON.stringify({ deleted: { systemLogs: slDel, queryFailures: qfDel, healthChecks: hcDel, clientErrors: ceDel, resolvedAlerts: saDel } })})
     `);
+
+    _lastRetentionRun = new Date();
   } catch (err: any) {
     console.error("[Reliability] Log retention error:", err?.message);
   }
@@ -487,7 +520,7 @@ export async function registerReliabilityRoutes(app: Express) {
   app.get("/api/reliability/dashboard", async (_req, res) => {
     try {
       const [ceHourly, qfHourly, hcSummary, hcLatest, activeAlerts, totalsRaw, logsByService,
-             recentClientErrors, recentQueryFailures, topFailingRoutes, dlq] = await Promise.all([
+             recentClientErrors, recentQueryFailures, topFailingRoutes, dlq, webhookFailures24hRaw] = await Promise.all([
         db.execute(sql`
           SELECT date_trunc('hour', created_at) AS hour, COUNT(*)::int AS count
           FROM client_errors WHERE created_at > NOW() - INTERVAL '24 hours'
@@ -544,9 +577,15 @@ export async function registerReliabilityRoutes(app: Express) {
           GROUP BY route ORDER BY count DESC LIMIT 10
         `),
         getDlqCounts(),
+        db.execute(sql`
+          SELECT COUNT(*)::int AS n FROM system_logs
+          WHERE service = 'stripe' AND event_type = 'webhook_failed'
+            AND created_at > NOW() - INTERVAL '24 hours'
+        `),
       ]);
 
       const totals = (totalsRaw as any)[0] ?? {};
+      const webhookFailures24h = (webhookFailures24hRaw as any)[0]?.n ?? 0;
 
       // Drizzle db.execute() may return QueryResult or array — normalise to array
       const toArr = (r: any) => Array.isArray(r) ? r : (r?.rows ?? []);
@@ -557,6 +596,7 @@ export async function registerReliabilityRoutes(app: Express) {
           dlq_pending: dlq.pending,
           dlq_final_failed: dlq.finalFailed,
           dlq_total: dlq.total,
+          webhook_failures_24h: webhookFailures24h,
         },
         ceHourly:           toArr(ceHourly),
         qfHourly:           toArr(qfHourly),
@@ -686,7 +726,7 @@ export async function registerReliabilityRoutes(app: Express) {
   // GET /api/reliability/executive-summary — compact card data for CEO / BCC views
   app.get("/api/reliability/executive-summary", async (_req, res) => {
     try {
-      const [alertsRes, checksRes, errorsRes, dlq] = await Promise.all([
+      const [alertsRes, checksRes, errorsRes, dlq, webhookFailRes] = await Promise.all([
         db.execute(sql`
           SELECT COUNT(*)::int AS total,
             SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END)::int AS critical,
@@ -704,11 +744,17 @@ export async function registerReliabilityRoutes(app: Express) {
           FROM client_errors WHERE created_at > NOW() - INTERVAL '1 hour'
         `),
         getDlqCounts(),
+        db.execute(sql`
+          SELECT COUNT(*)::int AS n FROM system_logs
+          WHERE service = 'stripe' AND event_type = 'webhook_failed'
+            AND created_at > NOW() - INTERVAL '30 minutes'
+        `),
       ]);
 
-      const alertRow = (alertsRes as any)[0] ?? {};
-      const checkRow = (checksRes as any)[0] ?? {};
-      const errorRow = (errorsRes as any)[0] ?? {};
+      const alertRow  = (alertsRes    as any)[0] ?? {};
+      const checkRow  = (checksRes    as any)[0] ?? {};
+      const errorRow  = (errorsRes    as any)[0] ?? {};
+      const webhookFailures30m = (webhookFailRes as any)[0]?.n ?? 0;
 
       const criticalAlerts = alertRow.critical ?? 0;
       const warningAlerts  = alertRow.warning  ?? 0;
@@ -743,11 +789,92 @@ export async function registerReliabilityRoutes(app: Express) {
         dlqPending,
         dlqFinalFailed: dlq.finalFailed,
         dlqTotal: dlq.total,
+        webhookFailures30m,
         recommendation,
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // GET /api/reliability/probe-latency — p50/p95/max for HTTP probes over 24h
+  app.get("/api/reliability/probe-latency", async (_req, res) => {
+    try {
+      const r = await db.execute(sql`
+        SELECT
+          check_name,
+          PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY response_time_ms)::int AS p50,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY response_time_ms)::int AS p95,
+          MAX(response_time_ms)::int AS max_ms,
+          MIN(response_time_ms)::int AS min_ms,
+          COUNT(*)::int AS sample_count
+        FROM health_check_results
+        WHERE check_name LIKE 'http_%'
+          AND created_at > NOW() - INTERVAL '24 hours'
+          AND response_time_ms IS NOT NULL
+        GROUP BY check_name
+        ORDER BY check_name
+      `);
+      res.json(Array.isArray(r) ? r : (r as any).rows ?? []);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/reliability/retention-history — last 10 cleanup runs
+  app.get("/api/reliability/retention-history", async (_req, res) => {
+    try {
+      const r = await db.execute(sql`
+        SELECT id, created_at, message, metadata
+        FROM system_logs
+        WHERE service = 'reliability' AND event_type = 'log_retention'
+        ORDER BY created_at DESC LIMIT 10
+      `);
+      const history = Array.isArray(r) ? r : (r as any).rows ?? [];
+      const nextRunAt = _lastRetentionRun
+        ? new Date(_lastRetentionRun.getTime() + RETENTION_INTERVAL_MS).toISOString()
+        : new Date(_serverStartedAt + RETENTION_INTERVAL_MS).toISOString();
+      res.json({
+        history,
+        lastRunAt: _lastRetentionRun?.toISOString() ?? null,
+        nextRunAt,
+        policies: [
+          { table: "system_logs",          retentionDays: 30 },
+          { table: "query_failures",        retentionDays: 30 },
+          { table: "health_check_results",  retentionDays: 30 },
+          { table: "client_errors",         retentionDays: 60 },
+          { table: "system_alerts (resolved)", retentionDays: 90 },
+        ],
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /healthz — public lightweight health check (safe for uptime monitors)
+  app.get("/healthz", async (_req, res) => {
+    const t0 = Date.now();
+    let dbStatus = "ok";
+    let tablesStatus = "ok";
+    try {
+      await db.execute(sql`SELECT 1`);
+    } catch {
+      dbStatus = "error";
+    }
+    try {
+      await db.execute(sql`SELECT 1 FROM health_check_results LIMIT 1`);
+    } catch {
+      tablesStatus = "degraded";
+    }
+    const healthy = dbStatus === "ok";
+    res.status(healthy ? 200 : 503).json({
+      status: healthy ? "healthy" : "unhealthy",
+      timestamp: new Date().toISOString(),
+      database: dbStatus,
+      tables: tablesStatus,
+      version: process.env.npm_package_version ?? "1.0.0",
+      responseTimeMs: Date.now() - t0,
+    });
   });
 
   console.log("[Reliability] Routes registered");
