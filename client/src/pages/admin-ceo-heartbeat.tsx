@@ -18,10 +18,6 @@ import {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function useOrgId(): string {
-  return (window as any).__orgId ?? "";
-}
-
 function fmtTime(d: string | null | undefined): string {
   if (!d) return "—";
   return new Date(d).toLocaleString();
@@ -66,7 +62,12 @@ function actionTypeIcon(t: string) {
 export default function AdminCeoHeartbeatPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const orgId = useOrgId();
+
+  const { data: sessionCtx } = useQuery<{ orgId: string | null; orgName: string | null }>({
+    queryKey: ["/api/admin/ceo-heartbeat/session-context"],
+    staleTime: 5 * 60_000,
+  });
+  const orgId: string = sessionCtx?.orgId ?? "";
 
   const [timelineFilters, setTimelineFilters] = useState({
     agent: "",
@@ -140,6 +141,7 @@ export default function AdminCeoHeartbeatPage() {
   const { data: reliabilitySummary } = useQuery<any>({
     queryKey: ["/api/reliability/executive-summary"],
     refetchInterval: 60_000,
+    refetchOnMount: "always",
   });
 
   // ─── Mutations ──────────────────────────────────────────────────────────────
@@ -150,6 +152,7 @@ export default function AdminCeoHeartbeatPage() {
       toast({ title: "Heartbeat cycle started", description: "CEO Heartbeat is running now." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/status", orgId] });
       queryClient.invalidateQueries({ queryKey: timelineQKey });
+      queryClient.invalidateQueries({ queryKey: ["/api/reliability/executive-summary"] });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });

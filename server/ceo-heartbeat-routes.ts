@@ -9,6 +9,8 @@ import {
   organizations,
   agentMessageFeedback,
   agentMessageLearningRules,
+  userProfiles,
+  coachProfiles,
 } from "@shared/schema";
 import {
   runHeartbeatCycle,
@@ -21,8 +23,28 @@ import {
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
-function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? req.query.orgId ?? null;
+async function getOrgId(req: any): Promise<string | null> {
+  // 1. Explicit property set by some middleware
+  if (req.user?.orgId) return req.user.orgId as string;
+  // 2. Query param passed from frontend
+  if (req.query.orgId) return req.query.orgId as string;
+  // 3. DB lookup from authenticated session (Replit OIDC or custom auth)
+  try {
+    const userId: string | undefined = req.user?.claims?.sub ?? req.user?.id;
+    if (!userId) return null;
+    const [profile] = await db.select({ orgId: userProfiles.organizationId })
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    if (profile?.orgId) return profile.orgId;
+    const [coach] = await db.select({ orgId: coachProfiles.organizationId })
+      .from(coachProfiles)
+      .where(eq(coachProfiles.userId, userId))
+      .limit(1);
+    return coach?.orgId ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function getAdminId(req: any): string {
@@ -68,7 +90,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // Returns current heartbeat state, last run info, and next scheduled run.
   app.get("/api/admin/ceo-heartbeat/status", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const status = getHeartbeatStatus();
@@ -101,7 +123,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // Manually trigger a heartbeat cycle for this org.
   app.post("/api/admin/ceo-heartbeat/run", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       await logAdminAction({
@@ -121,7 +143,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // Unified operating timeline with rich filters.
   app.get("/api/admin/ceo-heartbeat/timeline", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const {
@@ -182,7 +204,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // Returns the latest CEO priority ranking for this org.
   app.get("/api/admin/ceo-heartbeat/priorities", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       // Get priorities from the last heartbeat timeline entries
@@ -207,7 +229,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // Returns execution health stats for the last 24 hours.
   app.get("/api/admin/ceo-heartbeat/health", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const health = await getExecutionHealth(orgId);
@@ -220,7 +242,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // ─── POST /api/admin/ceo-heartbeat/pause ───────────────────────────────────
   app.post("/api/admin/ceo-heartbeat/pause", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       pauseCeoHeartbeat();
@@ -248,7 +270,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // ─── POST /api/admin/ceo-heartbeat/resume ──────────────────────────────────
   app.post("/api/admin/ceo-heartbeat/resume", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       resumeCeoHeartbeat();
@@ -276,7 +298,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // Retries all failed timeline entries from the last 6 hours.
   app.post("/api/admin/ceo-heartbeat/retry-failed", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const failed = await db.select()
@@ -314,7 +336,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // ─── POST /api/admin/ceo-heartbeat/recalculate-priorities ─────────────────
   app.post("/api/admin/ceo-heartbeat/recalculate-priorities", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const result = await runHeartbeatCycle({ orgId, triggeredBy: "manual_priority_recalc" });
@@ -335,7 +357,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // Admin action audit log with filters.
   app.get("/api/admin/ceo-heartbeat/audit-log", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { actionType, adminUserId, since, limit: lp, offset: op } = req.query as Record<string, string>;
@@ -367,7 +389,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // ─── GET /api/admin/ceo-heartbeat/locks ────────────────────────────────────
   app.get("/api/admin/ceo-heartbeat/locks", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const locks = await db.select()
@@ -386,7 +408,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // ─── GET /api/admin/ceo-heartbeat/runs ─────────────────────────────────────
   app.get("/api/admin/ceo-heartbeat/runs", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { limit: lp } = req.query as Record<string, string>;
@@ -404,11 +426,31 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
       res.status(500).json({ message: e.message });
     }
   });
+  // ─── GET /api/admin/ceo-heartbeat/session-context ─────────────────────────
+  // Returns the orgId for the currently authenticated admin/coach session.
+  // Used by the frontend to bootstrap queries without requiring window.__orgId.
+  app.get("/api/admin/ceo-heartbeat/session-context", async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(200).json({ orgId: null });
+
+      const [org] = await db.select({ name: organizations.name })
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1)
+        .catch(() => []);
+
+      res.json({ orgId, orgName: org?.name ?? null });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
   // ─── GET /api/admin/ceo-heartbeat/learning-health ─────────────────────────
   // Returns learning system health: rules count, domain coverage, feedback stats.
   app.get("/api/admin/ceo-heartbeat/learning-health", async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const ALL_DOMAINS = [

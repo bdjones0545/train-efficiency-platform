@@ -1,0 +1,56 @@
+CEO Heartbeat Bootstrap + orgId Fix
+
+Issues:
+1. CEO Heartbeat shows "Not run yet" forever for an existing org.
+2. Pressing "Run Heartbeat Now" returns:
+   400: {"message":"orgId required"}
+3. The page has org context, but the manual heartbeat request is not sending orgId.
+4. Platform Status is still showing stale values: 389 critical alerts / 32 of 36 checks, despite executive-summary being fixed.
+
+Tasks:
+
+1. Fix Run Heartbeat Now
+- Find the mutation called by the Run Heartbeat Now button in admin-ceo-heartbeat.tsx.
+- Ensure it sends the current orgId in the request body or query params, matching the backend endpoint requirement.
+- If orgId is unavailable, disable the button and show "Loading organization..." instead of firing a bad request.
+- Confirm POST succeeds and creates a heartbeat run.
+
+2. Add heartbeat bootstrap
+- On org creation, create an initial CEO heartbeat record or schedule the first heartbeat.
+- Also add lazy bootstrap:
+  - if CEO Heartbeat page loads and no heartbeat exists for this org,
+  - create/run the first heartbeat automatically or show a clear "Initialize Heartbeat" action.
+- Do not leave the page in permanent "Not run yet" state.
+
+3. Fix automatic heartbeat schedule
+- Confirm the 30-minute heartbeat cron is actually running.
+- Confirm it iterates over active orgs and passes orgId into the heartbeat service.
+- If no heartbeat exists, the cron should create the first one.
+
+4. Fix stale reliability card data
+- Confirm CEO Heartbeat reliability card is reading from /api/reliability/executive-summary.
+- Confirm it is not using cached/stale local state or old aggregate endpoint.
+- Add refetch on mount and after resolving alerts.
+- Expected values after fix:
+  - criticalAlerts: 0
+  - warningAlerts: 0
+  - status: operational
+  - checks: latest unique checks only
+
+5. Validation
+- Create or use an org with no heartbeat.
+- Load CEO Heartbeat page.
+- Confirm heartbeat initializes or shows working initialize action.
+- Press Run Heartbeat Now.
+- Confirm no 400.
+- Confirm Last Heartbeat updates.
+- Confirm Agents Coordinated and Errors last run populate.
+- Confirm Platform Status card no longer shows stale 389 / 32 of 36 data.
+- Run typecheck and build.
+
+Return:
+- root cause
+- files changed
+- endpoint request before/after
+- cron behavior
+- validation screenshots/results
