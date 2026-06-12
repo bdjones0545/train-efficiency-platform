@@ -55,6 +55,17 @@ async function initPhase2Tables() {
       created_at TIMESTAMP DEFAULT NOW()
     )
   `);
+
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS session_waitlists (
+      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
+      booking_id VARCHAR NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
+      user_id VARCHAR NOT NULL REFERENCES users(id),
+      participant_name VARCHAR,
+      created_at TIMESTAMP DEFAULT NOW(),
+      UNIQUE(booking_id, user_id)
+    )
+  `);
 }
 
 let tablesInitialized = false;
@@ -464,20 +475,16 @@ export async function registerSchedulingPhase2Routes(app: Express, isAuthenticat
         return reg >= max;
       });
 
-      // Sessions with waitlist entries (table may not exist — fail gracefully)
+      // Sessions with waitlist entries
+      const waitlistResult = await db.execute(sql`
+        SELECT sw.booking_id, COUNT(*) AS wait_count
+        FROM session_waitlists sw
+        JOIN bookings b ON sw.booking_id = b.id
+        WHERE b.organization_id = ${orgId}
+        GROUP BY sw.booking_id
+      `);
       const waitlistCounts = new Map<string, number>();
-      try {
-        const waitlistResult = await db.execute(sql`
-          SELECT sw.booking_id, COUNT(*) AS wait_count
-          FROM session_waitlists sw
-          JOIN bookings b ON sw.booking_id = b.id
-          WHERE b.organization_id = ${orgId}
-          GROUP BY sw.booking_id
-        `);
-        rows(waitlistResult).forEach((r: any) => waitlistCounts.set(r.booking_id, parseInt(r.wait_count)));
-      } catch {
-        // session_waitlists table not yet provisioned — skip waitlist data
-      }
+      rows(waitlistResult).forEach((r: any) => waitlistCounts.set(r.booking_id, parseInt(r.wait_count)));
 
       const waitlistedSessions = all
         .filter((s: any) => waitlistCounts.has(s.id))
