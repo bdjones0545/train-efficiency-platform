@@ -2,6 +2,21 @@ import type { Express } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
+// ─── Drizzle result normalisers ─────────────────────────────────────────────
+function toArr(r: any): any[] {
+  if (r == null) return [];
+  if (Array.isArray(r)) return r;
+  if (r.rows != null) return r.rows;
+  try { return [...r]; } catch { return []; }
+}
+function toN(r: any): number {
+  if (r == null) return 0;
+  if (Array.isArray(r)) return +(r[0]?.n ?? 0);
+  if (r.rows != null)   return +(r.rows[0]?.n ?? 0);
+  if (r.n    != null)   return +(r.n);
+  try { const rows = [...r]; return +(rows[0]?.n ?? 0); } catch { return 0; }
+}
+
 // ─── Table creation ──────────────────────────────────────────────────────────
 async function ensureReliabilityTables() {
   await db.execute(sql`
@@ -280,7 +295,7 @@ async function runAlertEngine() {
       SELECT COUNT(*)::int AS n FROM client_errors
       WHERE created_at > NOW() - INTERVAL '30 minutes'
     `);
-    const ceCount = (ceRes as any)[0]?.n ?? 0;
+    const ceCount = toN(ceRes);
     if (ceCount >= 50) await maybeFireAlert("critical", "Client Crash Rate Critical", `${ceCount} client errors in last 30 minutes`);
     else if (ceCount >= 10) await maybeFireAlert("warning", "Client Crash Rate Elevated", `${ceCount} client errors in last 30 minutes`);
 
@@ -289,7 +304,7 @@ async function runAlertEngine() {
       SELECT COUNT(*)::int AS n FROM query_failures
       WHERE created_at > NOW() - INTERVAL '30 minutes'
     `);
-    const qfCount = (qfRes as any)[0]?.n ?? 0;
+    const qfCount = toN(qfRes);
     if (qfCount >= 100) await maybeFireAlert("critical", "API Query Failure Rate Critical", `${qfCount} query failures in last 30 minutes`);
     else if (qfCount >= 20) await maybeFireAlert("warning", "API Query Failure Rate Elevated", `${qfCount} query failures in last 30 minutes`);
 
@@ -300,7 +315,7 @@ async function runAlertEngine() {
       WHERE status = 'fail' AND created_at > NOW() - INTERVAL '30 minutes'
       GROUP BY check_name HAVING COUNT(*) >= 2
     `);
-    const failedChecks = (hcRes as any[]) ?? [];
+    const failedChecks = toArr(hcRes);
     for (const fc of failedChecks) {
       await maybeFireAlert("critical", `Health Check Failing: ${fc.check_name}`,
         `${fc.check_name} has failed ${fc.fails} times in the last 30 minutes`);
@@ -311,7 +326,7 @@ async function runAlertEngine() {
       SELECT COUNT(*)::int AS n FROM system_logs
       WHERE level IN ('error', 'critical') AND created_at > NOW() - INTERVAL '1 hour'
     `);
-    const slCount = (slRes as any)[0]?.n ?? 0;
+    const slCount = toN(slRes);
     if (slCount >= 25) await maybeFireAlert("warning", "System Error Rate Elevated", `${slCount} system errors in last hour`);
 
     // Dead-letter queue depth
@@ -326,7 +341,7 @@ async function runAlertEngine() {
       WHERE service = 'stripe' AND event_type = 'webhook_failed'
         AND created_at > NOW() - INTERVAL '30 minutes'
     `);
-    const wfCount = (wfRes as any)[0]?.n ?? 0;
+    const wfCount = toN(wfRes);
     if (wfCount >= 10) await maybeFireAlert("critical", "Stripe Webhook Failure Rate Critical", `${wfCount} webhook failures in last 30 minutes`);
     else if (wfCount >= 3) await maybeFireAlert("warning", "Stripe Webhook Failure Rate Elevated", `${wfCount} webhook failures in last 30 minutes`);
 
@@ -519,8 +534,9 @@ export async function registerReliabilityRoutes(app: Express) {
   // GET /api/reliability/dashboard — aggregated stats
   app.get("/api/reliability/dashboard", async (_req, res) => {
     try {
-      const [ceHourly, qfHourly, hcSummary, hcLatest, activeAlerts, totalsRaw, logsByService,
-             recentClientErrors, recentQueryFailures, topFailingRoutes, dlq, webhookFailures24hRaw] = await Promise.all([
+      const [ceHourly, qfHourly, hcSummary, hcLatest, activeAlerts, logsByService,
+             recentClientErrors, recentQueryFailures, topFailingRoutes, dlq,
+             ceCount, qfCount, alertCount, sysErrCount, wfCount] = await Promise.all([
         db.execute(sql`
           SELECT date_trunc('hour', created_at) AS hour, COUNT(*)::int AS count
           FROM client_errors WHERE created_at > NOW() - INTERVAL '24 hours'
@@ -551,13 +567,6 @@ export async function registerReliabilityRoutes(app: Express) {
           LIMIT 20
         `),
         db.execute(sql`
-          SELECT
-            (SELECT COUNT(*)::int FROM client_errors WHERE created_at > NOW() - INTERVAL '24 hours') AS client_errors_24h,
-            (SELECT COUNT(*)::int FROM query_failures WHERE created_at > NOW() - INTERVAL '24 hours') AS query_failures_24h,
-            (SELECT COUNT(*)::int FROM system_alerts WHERE resolved_at IS NULL) AS open_alerts,
-            (SELECT COUNT(*)::int FROM system_logs WHERE level IN ('error','critical') AND created_at > NOW() - INTERVAL '24 hours') AS system_errors_24h
-        `),
-        db.execute(sql`
           SELECT service, level, COUNT(*)::int AS count
           FROM system_logs WHERE created_at > NOW() - INTERVAL '24 hours'
           GROUP BY service, level ORDER BY count DESC LIMIT 50
@@ -577,26 +586,24 @@ export async function registerReliabilityRoutes(app: Express) {
           GROUP BY route ORDER BY count DESC LIMIT 10
         `),
         getDlqCounts(),
-        db.execute(sql`
-          SELECT COUNT(*)::int AS n FROM system_logs
-          WHERE service = 'stripe' AND event_type = 'webhook_failed'
-            AND created_at > NOW() - INTERVAL '24 hours'
-        `),
+        // Individual scalar counts — each handled independently by toN()
+        db.execute(sql`SELECT COUNT(*)::int AS n FROM client_errors WHERE created_at > NOW() - INTERVAL '24 hours'`),
+        db.execute(sql`SELECT COUNT(*)::int AS n FROM query_failures WHERE created_at > NOW() - INTERVAL '24 hours'`),
+        db.execute(sql`SELECT COUNT(*)::int AS n FROM system_alerts WHERE resolved_at IS NULL`),
+        db.execute(sql`SELECT COUNT(*)::int AS n FROM system_logs WHERE level IN ('error','critical') AND created_at > NOW() - INTERVAL '24 hours'`),
+        db.execute(sql`SELECT COUNT(*)::int AS n FROM system_logs WHERE service = 'stripe' AND event_type = 'webhook_failed' AND created_at > NOW() - INTERVAL '24 hours'`),
       ]);
-
-      const totals = (totalsRaw as any)[0] ?? {};
-      const webhookFailures24h = (webhookFailures24hRaw as any)[0]?.n ?? 0;
-
-      // Drizzle db.execute() may return QueryResult or array — normalise to array
-      const toArr = (r: any) => Array.isArray(r) ? r : (r?.rows ?? []);
 
       res.json({
         totals: {
-          ...totals,
-          dlq_pending: dlq.pending,
-          dlq_final_failed: dlq.finalFailed,
-          dlq_total: dlq.total,
-          webhook_failures_24h: webhookFailures24h,
+          client_errors_24h:    toN(ceCount),
+          query_failures_24h:   toN(qfCount),
+          open_alerts:          toN(alertCount),
+          system_errors_24h:    toN(sysErrCount),
+          webhook_failures_24h: toN(wfCount),
+          dlq_pending:          dlq.pending,
+          dlq_final_failed:     dlq.finalFailed,
+          dlq_total:            dlq.total,
         },
         ceHourly:           toArr(ceHourly),
         qfHourly:           toArr(qfHourly),
@@ -670,6 +677,22 @@ export async function registerReliabilityRoutes(app: Express) {
     }
   });
 
+  // POST /api/reliability/run-alert-engine — manual trigger for testing
+  app.post("/api/reliability/run-alert-engine", async (_req, res) => {
+    try {
+      await runAlertEngine();
+      const alertsRes = await db.execute(sql`
+        SELECT id, severity, title, description, created_at
+        FROM system_alerts WHERE resolved_at IS NULL
+        ORDER BY created_at DESC LIMIT 20
+      `);
+      const alerts = Array.isArray(alertsRes) ? alertsRes : (alertsRes as any)?.rows ?? [];
+      res.json({ ok: true, activeAlerts: alerts.length, alerts });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // POST /api/reliability/run-retention — manual trigger for testing
   app.post("/api/reliability/run-retention", async (_req, res) => {
     try {
@@ -726,11 +749,12 @@ export async function registerReliabilityRoutes(app: Express) {
   // GET /api/reliability/executive-summary — compact card data for CEO / BCC views
   app.get("/api/reliability/executive-summary", async (_req, res) => {
     try {
-      const [alertsRes, checksRes, errorsRes, dlq, webhookFailRes] = await Promise.all([
+      const [alertsRes, checksRes, errorsRes, dlq] = await Promise.all([
         db.execute(sql`
           SELECT COUNT(*)::int AS total,
             SUM(CASE WHEN severity='critical' THEN 1 ELSE 0 END)::int AS critical,
-            SUM(CASE WHEN severity='warning'  THEN 1 ELSE 0 END)::int AS warning
+            SUM(CASE WHEN severity='warning'  THEN 1 ELSE 0 END)::int AS warning,
+            (SELECT COUNT(*)::int FROM system_logs WHERE service = 'stripe' AND event_type = 'webhook_failed' AND created_at > NOW() - INTERVAL '30 minutes') AS webhook_failures_30m
           FROM system_alerts WHERE resolved_at IS NULL
         `),
         db.execute(sql`
@@ -744,17 +768,13 @@ export async function registerReliabilityRoutes(app: Express) {
           FROM client_errors WHERE created_at > NOW() - INTERVAL '1 hour'
         `),
         getDlqCounts(),
-        db.execute(sql`
-          SELECT COUNT(*)::int AS n FROM system_logs
-          WHERE service = 'stripe' AND event_type = 'webhook_failed'
-            AND created_at > NOW() - INTERVAL '30 minutes'
-        `),
       ]);
 
-      const alertRow  = (alertsRes    as any)[0] ?? {};
-      const checkRow  = (checksRes    as any)[0] ?? {};
-      const errorRow  = (errorsRes    as any)[0] ?? {};
-      const webhookFailures30m = (webhookFailRes as any)[0]?.n ?? 0;
+      const toExecArr = (r: any) => Array.isArray(r) ? r : (r?.rows ?? []);
+      const alertRow  = toExecArr(alertsRes)[0] ?? {};
+      const checkRow  = toExecArr(checksRes)[0] ?? {};
+      const errorRow  = toExecArr(errorsRes)[0] ?? {};
+      const webhookFailures30m: number = alertRow.webhook_failures_30m ?? 0;
 
       const criticalAlerts = alertRow.critical ?? 0;
       const warningAlerts  = alertRow.warning  ?? 0;
