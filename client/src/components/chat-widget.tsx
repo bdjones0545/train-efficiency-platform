@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback, Component } from "react";
+import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import {
@@ -56,6 +57,33 @@ function StreamingBubble({ content, isStreaming, showThinking }: {
       {isStreaming && <span className="chat-cursor" aria-hidden="true" />}
     </>
   );
+}
+
+// ─── Portal error boundary — hard containment, never reaches PageErrorBoundary ─
+
+class BrainPortalErrorBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean; message: string }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false, message: "" };
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, message: error?.message ?? "unknown" };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[BrainPortalErrorBoundary] caught:", error.message);
+    console.error(info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      // Render null — the portal DOM is orphaned from the page tree,
+      // so this can NEVER propagate to PageErrorBoundary.
+      return null;
+    }
+    return this.props.children;
+  }
 }
 
 // ─── Obsidian Status Card ─────────────────────────────────────────────────────
@@ -731,7 +759,7 @@ function ApprovalsTab() {
 
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
 
-function SettingsTab({ onNavigate }: { onNavigate: (path: string) => void }) {
+function SettingsTab({ onClose }: { onClose: () => void }) {
   const { data: settings, isLoading } = useQuery<any>({
     queryKey: ["/api/workforce/settings"],
     queryFn: () => fetch("/api/workforce/settings", { credentials: "include" }).then(r => r.json()),
@@ -780,7 +808,7 @@ function SettingsTab({ onNavigate }: { onNavigate: (path: string) => void }) {
             <button
               key={link.href}
               type="button"
-              onClick={() => onNavigate(link.href)}
+              onClick={() => onClose()}
               className="w-full flex items-center justify-between gap-2 rounded-lg bg-zinc-800/60 border border-zinc-700/60 hover:border-zinc-500/80 px-3 py-2.5 transition-all text-left"
             >
               <span className="text-xs text-zinc-300">{link.label}</span>
@@ -872,7 +900,9 @@ export function ChatWidget() {
   // spacer so nothing can throw during the 300ms slide-out animation.
   const [isClosing, setIsClosing] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ceo");
-  const [pathname, setLocation] = useLocation();
+  // READ-ONLY — never call setLocation inside the Brain sidebar.
+  // Navigation from within the portal causes page-level side-effects.
+  const [pathname] = useLocation();
 
   const { data: approvalMetrics } = useQuery<any>({
     queryKey: ["/api/ai-approvals/metrics"],
@@ -911,15 +941,8 @@ export function ChatWidget() {
     setIsClosing(false);
   };
 
-  // Close the drawer first, then navigate client-side (no full-page reload).
-  // Used by Settings tab quick-links.
-  const handleNavigate = useCallback((path: string) => {
-    handleClose();
-    setLocation(path);
-  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  return (
-    <>
+  return createPortal(
+    <BrainPortalErrorBoundary>
       {/* Backdrop */}
       {isMounted && (
         <div
@@ -964,7 +987,12 @@ export function ChatWidget() {
             <Button
               size="icon" variant="ghost"
               className="h-7 w-7 text-zinc-500 hover:text-zinc-300 no-default-hover-elevate shrink-0"
-              onClick={handleClose}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                console.log("[BrainFAB:close] [header-X] pathname =", pathname);
+                handleClose();
+              }}
               data-testid="button-close-chat"
             >
               <X className="h-4 w-4" />
@@ -983,7 +1011,7 @@ export function ChatWidget() {
                 {activeTab === "agents"    && <AgentsTab />}
                 {activeTab === "tasks"     && <TasksTab />}
                 {activeTab === "approvals" && <ApprovalsTab />}
-                {activeTab === "settings"  && <SettingsTab onNavigate={handleNavigate} />}
+                {activeTab === "settings"  && <SettingsTab onClose={handleClose} />}
               </ChatWidgetErrorBoundary>
             </div>
           )}
@@ -1047,6 +1075,7 @@ export function ChatWidget() {
           </span>
         )}
       </button>
-    </>
+    </BrainPortalErrorBoundary>,
+    document.body
   );
 }
