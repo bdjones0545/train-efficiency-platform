@@ -1,3 +1,4 @@
+import { Component, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -12,7 +13,29 @@ import {
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link } from "wouter";
-import { useState } from "react";
+
+// Catches render errors in individual panels — prevents one bad panel from
+// crashing the whole page and triggering PageErrorBoundary.
+class PanelErrorBoundary extends Component<
+  { children: React.ReactNode; label?: string },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode; label?: string }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error(`[PanelErrorBoundary:${this.props.label ?? "unknown"}] Render error:`, error);
+    console.error("[PanelErrorBoundary] Component stack:", info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
 
 interface CommandCenterData {
   todaySessions: number;
@@ -302,7 +325,8 @@ function HealthScorePanel() {
   });
 
   if (isLoading) return <Skeleton className="h-36" />;
-  if (!data) return null;
+  // Guard against any API shape — score must be a number, breakdown must exist
+  if (!data || typeof data.score !== "number" || !data.breakdown) return null;
 
   const scoreColor = data.score >= 90 ? "text-green-600 dark:text-green-400" :
                      data.score >= 75 ? "text-blue-600 dark:text-blue-400" :
@@ -312,12 +336,14 @@ function HealthScorePanel() {
                      data.score >= 60 ? "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20" :
                      "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20";
 
+  // Guard each breakdown field individually — API may omit any of these
+  const bd = data.breakdown ?? {};
   const factors = [
-    { label: "Util", value: data.breakdown.utilization },
-    { label: "Rev", value: data.breakdown.revenue },
-    { label: "Attend", value: data.breakdown.attendance },
-    { label: "Retain", value: data.breakdown.retention },
-    { label: "WL", value: data.breakdown.waitlist },
+    { label: "Util",   value: bd.utilization ?? 0 },
+    { label: "Rev",    value: bd.revenue     ?? 0 },
+    { label: "Attend", value: bd.attendance  ?? 0 },
+    { label: "Retain", value: bd.retention   ?? 0 },
+    { label: "WL",     value: bd.waitlist    ?? 0 },
   ];
 
   return (
@@ -371,9 +397,16 @@ function RevenueRecoveryPanel() {
   });
 
   if (isLoading) return <Skeleton className="h-36" />;
-  if (!data || data.gaps.length === 0) return null;
+  // Guard: data.gaps must be an array, data.summary must exist
+  const gaps = Array.isArray(data?.gaps) ? data!.gaps : [];
+  if (!data || !data.summary || gaps.length === 0) return null;
 
-  const { totalLostRevenueCents, totalRecoverableRevenueCents, sessionsWithGaps, urgentSessions } = data.summary;
+  const {
+    totalLostRevenueCents = 0,
+    totalRecoverableRevenueCents = 0,
+    sessionsWithGaps = 0,
+    urgentSessions = 0,
+  } = data.summary;
 
   return (
     <Card className="p-4 space-y-3" data-testid="panel-revenue-recovery">
@@ -404,7 +437,7 @@ function RevenueRecoveryPanel() {
         </div>
       </div>
       <div>
-        {data.gaps.slice(0, 5).map(g => (
+        {gaps.slice(0, 5).map(g => (
           <RevenueRecoveryGapCard key={g.sessionId} gap={g} />
         ))}
         {urgentSessions > 0 && (
@@ -538,8 +571,12 @@ export default function AdminSchedulingCommandCenterPage() {
 
       {/* Intelligence Row — Health Score + Revenue Recovery */}
       <div className="grid md:grid-cols-2 gap-4">
-        <HealthScorePanel />
-        <RevenueRecoveryPanel />
+        <PanelErrorBoundary label="HealthScore">
+          <HealthScorePanel />
+        </PanelErrorBoundary>
+        <PanelErrorBoundary label="RevenueRecovery">
+          <RevenueRecoveryPanel />
+        </PanelErrorBoundary>
       </div>
 
       {/* Main Content Grid */}

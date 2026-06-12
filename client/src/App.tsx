@@ -245,7 +245,8 @@ class ChatWidgetSafetyBoundary extends Component<
     return { hasError: true };
   }
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    console.error("[ChatWidget] Safety boundary caught:", error.message, info.componentStack);
+    console.error("[ChatWidgetSafetyBoundary] *** CRASH caught (should never reach PageErrorBoundary):", error);
+    console.error("[ChatWidgetSafetyBoundary] Full component stack:", info.componentStack);
   }
   render() {
     if (this.state.hasError) return null;

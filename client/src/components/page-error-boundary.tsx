@@ -23,10 +23,10 @@ export class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErr
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     const route = window.location.pathname;
     console.error(
-      `[PageErrorBoundary] Crash on route "${route}"${this.props.pageName ? ` (${this.props.pageName})` : ""}:`,
-      error.message
+      `[PageErrorBoundary] *** CRASH on route "${route}"${this.props.pageName ? ` (${this.props.pageName})` : ""}:`,
+      error
     );
-    console.error("[PageErrorBoundary] Component stack:", info.componentStack);
+    console.error("[PageErrorBoundary] Full component stack:", info.componentStack);
   }
 
   render() {
