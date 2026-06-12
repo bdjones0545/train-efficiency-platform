@@ -418,19 +418,20 @@ function RevenueRecoveryPanel() {
 }
 
 export default function AdminSchedulingCommandCenterPage() {
-  const { data, isLoading } = useQuery<CommandCenterData>({
+  const { data, isLoading, isError, refetch } = useQuery<CommandCenterData>({
     queryKey: ["/api/scheduling/command-center"],
     queryFn: async () => {
       const res = await fetch("/api/scheduling/command-center", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
+      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
       return res.json();
     },
     refetchInterval: 60_000,
+    retry: 1,
   });
 
   if (isLoading) {
     return (
-      <div className="space-y-6">
+      <div className="space-y-6" data-testid="scheduling-dashboard-loading">
         <Skeleton className="h-8 w-64" />
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-24" />)}
@@ -442,8 +443,48 @@ export default function AdminSchedulingCommandCenterPage() {
     );
   }
 
-  const d = data;
-  if (!d) return <div className="text-muted-foreground text-center py-12">No data available</div>;
+  if (isError) {
+    return (
+      <div className="space-y-6" data-testid="scheduling-dashboard-error">
+        <div>
+          <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
+            <Flame className="h-6 w-6 text-primary" />
+            Scheduling Command Center
+          </h1>
+          <p className="text-muted-foreground mt-1 text-sm">Live operational heartbeat for scheduling across your organization</p>
+        </div>
+        <Card className="p-6 text-center space-y-3">
+          <AlertCircle className="h-8 w-8 text-destructive mx-auto" />
+          <p className="font-semibold">Unable to load dashboard data</p>
+          <p className="text-sm text-muted-foreground">There was a problem fetching your scheduling data. Please try again.</p>
+          <Button variant="outline" onClick={() => refetch()} className="gap-2" data-testid="button-retry-dashboard">
+            <RefreshCw className="h-4 w-4" />
+            Retry
+          </Button>
+        </Card>
+      </div>
+    );
+  }
+
+  // Defensive defaults — never crash on missing/empty arrays
+  const d: CommandCenterData = {
+    todaySessions: data?.todaySessions ?? 0,
+    tomorrowSessions: data?.tomorrowSessions ?? 0,
+    todaySessionList: data?.todaySessionList ?? [],
+    tomorrowSessionList: data?.tomorrowSessionList ?? [],
+    openSessionsCount: data?.openSessionsCount ?? 0,
+    fullSessionsCount: data?.fullSessionsCount ?? 0,
+    waitlistedSessionsCount: data?.waitlistedSessionsCount ?? 0,
+    waitlistedSessions: data?.waitlistedSessions ?? [],
+    highestRevenueSessions: data?.highestRevenueSessions ?? [],
+    lowestUtilizationSessions: data?.lowestUtilizationSessions ?? [],
+    coachUtilization: data?.coachUtilization ?? [],
+    weekRevenueCents: data?.weekRevenueCents ?? 0,
+    monthRevenueCents: data?.monthRevenueCents ?? 0,
+    weekProjectionCents: data?.weekProjectionCents ?? 0,
+    monthProjectionCents: data?.monthProjectionCents ?? 0,
+    totalUpcomingSessions: data?.totalUpcomingSessions ?? 0,
+  };
 
   return (
     <div className="space-y-6">
