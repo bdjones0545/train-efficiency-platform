@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1407,7 +1408,7 @@ export default function AdminTeamTrainingLeadsPage() {
     queryKey: ["/api/admin/pipeline-segment-counts"],
   });
 
-  const { data: prospects, isLoading: prospectsLoading } = useQuery<TeamTrainingProspect[]>({
+  const { data: prospects, isLoading: prospectsLoading, isError: prospectsError, refetch: refetchProspects } = useQuery<TeamTrainingProspect[]>({
     queryKey: ["/api/admin/team-training/prospects"],
   });
 
@@ -2341,7 +2342,13 @@ export default function AdminTeamTrainingLeadsPage() {
             </div>
           )}
 
-          {prospectsLoading ? (
+          {prospectsError ? (
+            <QueryErrorState
+              title="Unable to load leads"
+              message="There was a problem fetching team training prospects. Please try again."
+              onRetry={() => refetchProspects()}
+            />
+          ) : prospectsLoading ? (
             <div className="space-y-3">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24" />)}</div>
           ) : filteredProspects.length === 0 ? (
             <Card className="p-8 text-center text-muted-foreground">

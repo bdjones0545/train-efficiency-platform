@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { DashPageHeader, DashSectionReveal } from "@/components/DashboardMotion";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -471,7 +472,7 @@ export default function CoachDashboardPage() {
     ? `${selectedCoach.user?.firstName || ""} ${selectedCoach.user?.lastName || ""}`.trim()
     : "My Schedule";
 
-  const { data: bookings, isLoading: bookingsLoading } = useQuery<BookingWithDetails[]>({
+  const { data: bookings, isLoading: bookingsLoading, isError: bookingsError, refetch: refetchBookings } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/coach/bookings", activeCoachId],
     queryFn: () => fetchWithAuth(activeCoachId ? `/api/coach/bookings?coachId=${activeCoachId}` : "/api/coach/bookings"),
     enabled: !!activeCoachId,
@@ -604,6 +605,7 @@ export default function CoachDashboardPage() {
   }, []);
 
   const isInitialLoading = (!myCoachProfile && !coaches) || (bookingsLoading && !bookings);
+  const showBookingsError = bookingsError && !bookingsLoading;
 
   if (isInitialLoading) {
     return (
@@ -637,6 +639,13 @@ export default function CoachDashboardPage() {
 
   return (
     <div className="space-y-4">
+      {showBookingsError && (
+        <QueryErrorState
+          title="Unable to load schedule"
+          message="There was a problem fetching your bookings. Please try again."
+          onRetry={() => refetchBookings()}
+        />
+      )}
       {/* Title + action buttons */}
       <DashPageHeader>
       <div className="flex items-start justify-between gap-3 flex-wrap">

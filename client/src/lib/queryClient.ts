@@ -1,4 +1,4 @@
-import { QueryClient, QueryFunction } from "@tanstack/react-query";
+import { QueryClient, QueryCache, QueryFunction } from "@tanstack/react-query";
 import { getAuthHeaders } from "./authToken";
 
 async function throwIfResNotOk(res: Response) {
@@ -55,7 +55,43 @@ export const getQueryFn: <T>(options: {
     return await res.json();
   };
 
+const PUBLIC_PATH_PREFIXES = [
+  "/apply/",
+  "/org/",
+  "/attendance/",
+  "/unsubscribe/",
+  "/subscribe/",
+];
+const PUBLIC_PATHS_EXACT = new Set([
+  "/",
+  "/login",
+  "/forgot-password",
+  "/reset-password",
+  "/create-password",
+  "/signup",
+  "/privacy",
+  "/terms",
+  "/efficiencystrength",
+]);
+
+function isPublicRoute(path: string): boolean {
+  if (PUBLIC_PATHS_EXACT.has(path)) return true;
+  return PUBLIC_PATH_PREFIXES.some((prefix) => path.startsWith(prefix));
+}
+
 export const queryClient = new QueryClient({
+  queryCache: new QueryCache({
+    onError(error: unknown) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (msg.startsWith("401:")) {
+        const path = window.location.pathname;
+        if (!isPublicRoute(path)) {
+          console.warn("[QueryCache] 401 Unauthorized — redirecting to home from:", path);
+          window.location.href = "/";
+        }
+      }
+    },
+  }),
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),

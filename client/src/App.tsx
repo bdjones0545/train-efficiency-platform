@@ -1,5 +1,6 @@
 import { Component, useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
+import { PageErrorBoundary } from "@/components/page-error-boundary";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -247,23 +248,25 @@ class AppErrorBoundary extends Component<
     if (this.state.hasError) {
       return (
         <div className="min-h-screen flex items-center justify-center bg-background p-8">
-          <div className="max-w-md w-full space-y-4">
+          <div className="max-w-md w-full space-y-4 text-center">
             <h1 className="text-xl font-semibold text-foreground">Something went wrong</h1>
             <p className="text-sm text-muted-foreground">
-              A page rendering error occurred. Try refreshing — if the problem persists, please report it.
+              An unexpected error occurred. Try reloading — if the problem persists, return to the home screen.
             </p>
-            <details className="text-xs text-muted-foreground bg-muted rounded p-3 whitespace-pre-wrap break-words">
-              <summary className="cursor-pointer font-medium mb-1">Error details</summary>
-              {this.state.error?.message}
-              {"\n"}
-              {this.state.error?.stack}
-            </details>
-            <button
-              className="px-4 py-2 rounded bg-primary text-primary-foreground text-sm font-medium"
-              onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
-            >
-              Reload page
-            </button>
+            <div className="flex gap-3 justify-center flex-wrap">
+              <button
+                className="px-4 py-2 rounded bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
+                onClick={() => { this.setState({ hasError: false, error: null }); window.location.reload(); }}
+              >
+                Reload page
+              </button>
+              <button
+                className="px-4 py-2 rounded border border-input bg-background text-foreground text-sm font-medium hover:bg-muted transition-colors"
+                onClick={() => { this.setState({ hasError: false, error: null }); window.location.href = "/"; }}
+              >
+                Return home
+              </button>
+            </div>
           </div>
         </div>
       );
@@ -352,6 +355,7 @@ function OrgLayout({ orgSlug }: { orgSlug: string }) {
           </header>
           <main className="main-scroll flex-1 min-h-0 overflow-y-auto p-4 md:p-6 pb-safe">
             <div className="max-w-5xl mx-auto">
+              <PageErrorBoundary>
               <Switch>
                 <Route path="/org/:slug/portal" component={OrgPortalPage} />
                 <Route path="/org/:slug/notifications" component={OrgNotificationsPage} />
@@ -387,6 +391,7 @@ function OrgLayout({ orgSlug }: { orgSlug: string }) {
                 <Route path="/org/:slug/my-schedule" component={OrgMySchedulePage} />
                 <Route component={NotFound} />
               </Switch>
+              </PageErrorBoundary>
             </div>
           </main>
         </div>
@@ -442,6 +447,7 @@ function AuthenticatedLayout() {
           <main className={`flex-1 min-h-0 ${isFullscreenPage ? "overflow-hidden" : "main-scroll overflow-y-auto p-4 md:p-6 pb-safe"}`}>
             <div className={isFullscreenPage ? "h-full" : "max-w-5xl mx-auto"}>
               <SubscriptionGate>
+                <PageErrorBoundary>
                 <Switch>
                   <Route path="/" component={SmartHome} />
                   <Route path="/coaches" component={BookFastPage} />
@@ -598,6 +604,7 @@ function AuthenticatedLayout() {
                   <Route path="/unsubscribe/:token" component={UnsubscribePage} />
                   <Route component={NotFound} />
                 </Switch>
+                </PageErrorBoundary>
               </SubscriptionGate>
             </div>
           </main>

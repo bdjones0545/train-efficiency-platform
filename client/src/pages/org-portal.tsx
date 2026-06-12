@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { logoutAllSessions } from "@/lib/logout";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -1200,7 +1201,7 @@ export default function OrgPortalPage() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug || "";
 
-  const { data: org, isLoading: orgLoading } = useQuery<any>({
+  const { data: org, isLoading: orgLoading, isError: orgError, refetch: refetchOrg } = useQuery<any>({
     queryKey: ["/api/organizations", slug],
     queryFn: async () => {
       const res = await fetch(`/api/organizations/${slug}`);
@@ -1249,6 +1250,18 @@ export default function OrgPortalPage() {
 
   function handleLogout() {
     logoutAllSessions(`/org/${slug}/portal`);
+  }
+
+  if (orgError) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <QueryErrorState
+          title="Unable to load organization"
+          message="There was a problem loading this organization portal. Please try again."
+          onRetry={() => refetchOrg()}
+        />
+      </div>
+    );
   }
 
   if (orgLoading) {

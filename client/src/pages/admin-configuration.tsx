@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { QueryErrorState } from "@/components/query-error-state";
 import QRCode from "react-qr-code";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -1146,7 +1147,7 @@ function OrgIntegrationsSection() {
   });
   const isAdmin = profile?.role === "ADMIN";
 
-  const { data: records, isLoading, refetch } = useQuery<OrgIntegrationRecord[]>({
+  const { data: records, isLoading, isError: recordsError, refetch } = useQuery<OrgIntegrationRecord[]>({
     queryKey: ["/api/integrations"],
     refetchInterval: 30000,
     enabled: isAdmin,
@@ -1242,7 +1243,13 @@ function OrgIntegrationsSection() {
         </div>
       </div>
 
-      {isLoading && isAdmin ? (
+      {recordsError && isAdmin ? (
+        <QueryErrorState
+          title="Unable to load integrations"
+          message="There was a problem fetching your configuration data. Please try again."
+          onRetry={() => refetch()}
+        />
+      ) : isLoading && isAdmin ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-36 rounded-xl border border-border/20 bg-muted/10 animate-pulse" />

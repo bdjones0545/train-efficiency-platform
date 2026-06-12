@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -1765,7 +1766,7 @@ export default function OpenSessionsPage() {
   const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
   const userId = user?.id;
 
-  const { data: sessions = [], isLoading } = useQuery<OpenSession[]>({
+  const { data: sessions = [], isLoading, isError, refetch } = useQuery<OpenSession[]>({
     queryKey: ["/api/sessions/open"],
   });
 
@@ -1832,6 +1833,16 @@ export default function OpenSessionsPage() {
     setCreateSessionDate(date);
     setCreateSessionOpen(true);
   };
+
+  if (isError) {
+    return (
+      <QueryErrorState
+        title="Unable to load sessions"
+        message="There was a problem fetching open sessions. Please try again."
+        onRetry={() => refetch()}
+      />
+    );
+  }
 
   if (isLoading) {
     return (

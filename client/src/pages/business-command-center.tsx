@@ -13,6 +13,7 @@ import {
 } from "@/components/DashboardMotion";
 import { useAiRevenueToasts } from "@/hooks/use-ai-revenue-toasts";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -1426,6 +1427,27 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
         <Skeleton className="h-40 rounded-xl" />
         <div className="space-y-2 mt-3">
           {[1, 2, 3].map(i => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        </div>
+      </section>
+    );
+  }
+
+  if (!data && !isLoading) {
+    return (
+      <section data-testid="section-unified-inbox-error">
+        <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3 flex items-center gap-1.5">
+          <ListChecks className="h-4 w-4 text-primary" /> Today's Business Priorities
+        </h2>
+        <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-6 text-center space-y-3">
+          <p className="text-sm font-medium text-foreground">Unable to load business priorities</p>
+          <p className="text-xs text-muted-foreground">There was a problem fetching your action queue.</p>
+          <button
+            onClick={() => refetch()}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:bg-primary/90 transition-colors"
+            data-testid="button-retry-priorities"
+          >
+            Try Again
+          </button>
         </div>
       </section>
     );

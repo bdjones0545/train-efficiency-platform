@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -2560,6 +2561,13 @@ export default function AdminOpportunityAcquisitionPage() {
           </div>
         </div>
 
+        {summaryQ.isError && (
+          <QueryErrorState
+            title="Unable to load opportunity data"
+            message="There was a problem fetching acquisition data. Please try again."
+            onRetry={() => summaryQ.refetch()}
+          />
+        )}
         <SummaryCards data={summaryQ.data} isLoading={summaryQ.isLoading} />
 
         <LastCycleCard cycle={latestCycleQ.data} isLoading={latestCycleQ.isLoading} />

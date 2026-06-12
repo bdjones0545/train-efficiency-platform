@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { QueryErrorState } from "@/components/query-error-state";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import {
   format,
@@ -1012,7 +1013,7 @@ export default function SchedulingPage() {
   });
   const orgId = profile?.organizationId;
 
-  const { data: bookings = [], isLoading } = useQuery<BookingWithDetails[]>({
+  const { data: bookings = [], isLoading, isError, refetch } = useQuery<BookingWithDetails[]>({
     queryKey: ["/api/scheduling/bookings"],
   });
 
@@ -1203,7 +1204,13 @@ export default function SchedulingPage() {
       </div>
 
       {/* ── Metrics Dashboard ── */}
-      {isLoading ? (
+      {isError ? (
+        <QueryErrorState
+          title="Unable to load bookings"
+          message="There was a problem fetching your schedule. Please try again."
+          onRetry={() => refetch()}
+        />
+      ) : isLoading ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[1,2,3,4].map(i => <Skeleton key={i} className="h-20 w-full rounded-xl" />)}
         </div>

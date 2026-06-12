@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { QueryErrorState } from "@/components/query-error-state";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1541,7 +1542,7 @@ function ProposalsPanel({ domain }: { domain: string }) {
   const { toast } = useToast();
   const [selected, setSelected] = useState<Set<string>>(new Set());
 
-  const { data: rawProposals, isLoading } = useQuery<any>({
+  const { data: rawProposals, isLoading, isError, refetch } = useQuery<any>({
     queryKey: ["/api/ai-approvals", domain],
     queryFn: () => safeFetch(`/api/ai-approvals?domain=${domain}`),
   });
@@ -1572,6 +1573,16 @@ function ProposalsPanel({ domain }: { domain: string }) {
     setSelected((prev) => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
   const selectableProposals = proposals.filter((p) => p.status !== "blocked");
   const allSelected = selectableProposals.length > 0 && selectableProposals.every((p) => selected.has(p.id));
+
+  if (isError) {
+    return (
+      <QueryErrorState
+        title="Unable to load approval queue"
+        message="There was a problem fetching AI proposals. Please try again."
+        onRetry={() => refetch()}
+      />
+    );
+  }
 
   if (isLoading) {
     return <div className="text-center py-12 text-muted-foreground text-sm">Loading drafts…</div>;

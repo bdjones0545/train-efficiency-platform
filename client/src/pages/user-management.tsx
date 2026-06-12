@@ -1,5 +1,6 @@
 import { useState, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { QueryErrorState } from "@/components/query-error-state";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -125,7 +126,7 @@ export default function UserManagementPage() {
   const [newClientPhone, setNewClientPhone] = useState("");
   const [newClientNotes, setNewClientNotes] = useState("");
 
-  const { data: users, isLoading } = useQuery<UserWithProfile[]>({
+  const { data: users, isLoading, isError, refetch } = useQuery<UserWithProfile[]>({
     queryKey: ["/api/coach/users"],
   });
 
@@ -896,7 +897,13 @@ export default function UserManagementPage() {
         />
       </div>
 
-      {isLoading ? (
+      {isError ? (
+        <QueryErrorState
+          title="Unable to load users"
+          message="There was a problem fetching athlete and client data. Please try again."
+          onRetry={() => refetch()}
+        />
+      ) : isLoading ? (
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-14 w-full" />)}
         </div>
