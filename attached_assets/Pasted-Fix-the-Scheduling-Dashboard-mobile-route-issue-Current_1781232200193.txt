@@ -1,0 +1,77 @@
+Fix the Scheduling Dashboard mobile/route issue.
+
+Current behavior:
+- In the mobile sidebar, clicking “Scheduling Dashboard” highlights the nav item.
+- The main content renders only “No data available.”
+- This should render the actual Scheduling Dashboard page/cards, not an empty fallback.
+
+Audit and fix:
+
+1. Find the sidebar nav item for “Scheduling Dashboard”
+- Verify the route/path it navigates to.
+- Confirm it matches the route registered in App.tsx / router.
+- Fix any mismatch between the nav path and the actual page path.
+
+2. Inspect the Scheduling Dashboard page component
+- Find where “No data available” is being rendered.
+- Determine whether this is coming from:
+  - a generic chart/table empty state,
+  - a failed data fetch,
+  - undefined dashboard data,
+  - missing org context,
+  - or a component crash/fallback.
+
+3. Verify API calls from the page
+- Identify every query used by Scheduling Dashboard.
+- Confirm each query includes the correct org context/session credentials.
+- Confirm the API endpoint exists and returns the expected shape.
+- Fix any query key / endpoint mismatch.
+
+4. Add proper loading/error/empty states
+Do not show “No data available” for the whole page while data is loading or when one widget is empty.
+
+Use this pattern:
+- loading → skeleton/spinner
+- error/401/403 → clear error card with retry
+- valid dashboard shell → render the page
+- individual empty widgets → show localized empty state only inside that widget
+
+5. Make dashboard resilient to empty arrays
+If there are no sessions/bookings yet, the Scheduling Dashboard should still render:
+- page header
+- quick stats with zeros
+- upcoming sessions card
+- calendar/availability summary
+- empty-state CTA to create a session or add availability
+
+6. Check mobile layout
+- Ensure the page content is not hidden behind the sidebar overlay.
+- Confirm closing the sidebar after nav on mobile works.
+- Confirm no z-index or width issue is covering the page.
+
+7. Add defensive defaults
+Normalize dashboard data before render:
+
+- upcomingSessions: []
+- todaySessions: []
+- coaches: []
+- availability: []
+- stats: zero values
+
+Avoid any direct `.length`, `.map`, or property access on possibly undefined values.
+
+8. Test
+Verify:
+- desktop Scheduling Dashboard loads
+- mobile Scheduling Dashboard loads
+- clicking sidebar item routes correctly
+- empty org still shows dashboard shell, not only “No data available”
+- no console errors
+- no failed network requests
+- no 401/403 for valid admin user
+
+Return:
+- root cause
+- files changed
+- exact fix applied
+- before/after behavior
