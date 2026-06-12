@@ -1,0 +1,320 @@
+TrainEfficiency Sprint 1 — Org Isolation & Security Hardening
+
+Objective
+
+Eliminate all cross-organization data leakage risk and establish a single authoritative organization resolution path across the entire platform.
+
+This sprint should be completed before any new agent, heartbeat, workflow, or automation work.
+
+Success Criteria:
+
+* No route resolves orgId in more than one way.
+* No route falls back to “” when org resolution fails.
+* Every org-scoped route either resolves an org or returns 403.
+* No authenticated user can access another organization’s data.
+* No public endpoint can be used to enumerate organization data.
+
+⸻
+
+Phase 1 — Create Single Source of Truth
+
+New Utility
+
+Create:
+
+server/lib/resolve-org-id.ts
+
+Export:
+
+resolveOrgIdOrThrow(req)
+
+Behavior:
+
+1. Attempt resolveOrgSession(req)
+2. Verify organization exists
+3. Verify authenticated user belongs to organization
+4. Return orgId
+5. If org cannot be resolved:
+
+throw new Error(“ORG_RESOLUTION_FAILED”)
+
+Route middleware converts to:
+
+403 Forbidden
+
+Never return:
+
+null
+undefined
+“”
+
+Forbidden patterns:
+
+req.user?.organizationId || “”
+req.session?.organizationId || “”
+req.query.organizationId || “”
+req.body.organizationId || “”
+
+outside of the resolver.
+
+⸻
+
+Phase 2 — Remove Empty String Fallbacks
+
+Search entire repository for:
+
+?? “”
+|| “”
+organizationId || “”
+orgId || “”
+
+Audit every occurrence.
+
+Replace with:
+
+const orgId = await resolveOrgIdOrThrow(req);
+
+Deliverable:
+
+Table listing:
+
+File
+Line
+Previous logic
+Replacement
+
+No exceptions.
+
+⸻
+
+Phase 3 — Route Security Audit
+
+Audit every route that touches:
+
+organizations
+services
+coaches
+bookings
+athletes
+workflows
+approvals
+heartbeat
+communications
+billing
+revenue
+agent actions
+
+For each route:
+
+Document:
+
+Method
+Path
+Auth Required?
+Org Scoped?
+Resolver Used?
+
+Example:
+
+GET /api/services
+Auth: Yes
+Org Scoped: Yes
+Resolver: resolveOrgIdOrThrow
+
+If not org-scoped:
+
+Explain why.
+
+⸻
+
+Phase 4 — Fix Critical Leakage Routes
+
+Route A
+
+GET /api/services
+
+Current risk:
+
+Returns all services when organizationId omitted.
+
+Required:
+
+const orgId = await resolveOrgIdOrThrow(req)
+
+Add:
+
+WHERE organization_id = orgId
+
+Validation:
+
+Org A sees only Org A services.
+Org B sees only Org B services.
+
+⸻
+
+Route B
+
+/api/coaches
+
+Public endpoint.
+
+Audit:
+
+Can another org’s coaches be retrieved?
+
+Required:
+
+* strict validation
+* rate limiting
+* org existence check
+
+⸻
+
+Route C
+
+/api/availability
+
+Public endpoint.
+
+Audit:
+
+Can UUID enumeration expose scheduling inventory?
+
+Required:
+
+* rate limiting
+* validation
+* safe error responses
+
+⸻
+
+Phase 5 — Organization Boundary Test Suite
+
+Create automated test file:
+
+organization-isolation.spec.ts
+
+Tests:
+
+Test 1
+
+User A requests User B data
+
+Expected:
+
+403
+
+⸻
+
+Test 2
+
+Org A services
+
+Expected:
+
+Only Org A services
+
+⸻
+
+Test 3
+
+Org B services
+
+Expected:
+
+Only Org B services
+
+⸻
+
+Test 4
+
+Empty org resolution
+
+Expected:
+
+403
+
+Never:
+
+[]
+200
+silent success
+
+⸻
+
+Test 5
+
+Public scheduling endpoints
+
+Expected:
+
+Rate limit enforced
+
+⸻
+
+Phase 6 — Runtime Protection
+
+Add structured logging:
+
+ORG_ACCESS_DENIED
+
+Include:
+
+userId
+organizationId
+route
+timestamp
+
+Log every org-boundary violation attempt.
+
+⸻
+
+Phase 7 — Startup Safety Audit
+
+At startup:
+
+Scan route registry.
+
+Report:
+
+Total Routes
+Org Scoped Routes
+Routes Missing Resolver
+
+Example:
+
+Org Isolation Audit
+
+Routes: 188
+Org Scoped: 134
+Protected: 132
+Missing Resolver: 2
+
+Fail startup if any protected route lacks resolver.
+
+⸻
+
+Deliverables
+
+1. New resolveOrgIdOrThrow() utility
+2. Removal of all “” org fallbacks
+3. Patched /api/services
+4. Audit of public scheduling endpoints
+5. Organization isolation test suite
+6. Org-boundary violation logging
+7. Startup audit report
+
+Final Report Must Include:
+
+* Number of routes audited
+* Number of routes patched
+* Number of empty-string fallbacks removed
+* Security findings discovered
+* Test results
+* Remaining org-isolation risks
+* TypeScript status
+* Build status
+
+Goal:
+
+Make cross-organization data leakage structurally impossible rather than relying on developer discipline.

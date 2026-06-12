@@ -6,10 +6,7 @@
 
 import type { Express } from "express";
 import { generateDepartmentCommandCenter } from "./services/department-command-center";
-
-function getOrgId(req: any): string {
-  return (req.session as any)?.organizationId ?? (req.user as any)?.organizationId ?? "";
-}
+import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 
 export function registerDepartmentCommandCenterRoutes(
   app: Express,
@@ -19,7 +16,7 @@ export function registerDepartmentCommandCenterRoutes(
   // ── GET /api/departments/overview ──────────────────────────────────────────
   app.get("/api/departments/overview", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const center = await generateDepartmentCommandCenter(orgId);
       res.json({
         departments:            center.departments,
@@ -27,13 +24,16 @@ export function registerDepartmentCommandCenterRoutes(
         organizationBestAction: center.organizationBestAction,
         generatedAt:            center.generatedAt,
       });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/departments/health ────────────────────────────────────────────
   app.get("/api/departments/health", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const center = await generateDepartmentCommandCenter(orgId);
       res.json(
         center.departments.map(d => ({
@@ -52,25 +52,34 @@ export function registerDepartmentCommandCenterRoutes(
           lastReview:     center.generatedAt,
         }))
       );
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/departments/actions ───────────────────────────────────────────
   app.get("/api/departments/actions", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const center = await generateDepartmentCommandCenter(orgId);
       res.json(center.allBestActions);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/departments/alerts ────────────────────────────────────────────
   app.get("/api/departments/alerts", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const center = await generateDepartmentCommandCenter(orgId);
       res.json(center.allAlerts);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   console.log("[DepartmentCommandCenter] Routes registered");

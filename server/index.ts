@@ -7,6 +7,8 @@ import { getStripeSync } from './stripeClient';
 import { WebhookHandlers } from './webhookHandlers';
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { validateEmailProvider } from "./email";
+import { orgErrorMiddleware } from "./lib/resolve-org-id";
+import { runStartupOrgAudit } from "./lib/startup-org-audit";
 
 const app = express();
 const httpServer = createServer(app);
@@ -606,6 +608,8 @@ app.use((req, res, next) => {
   const { startAttendanceReportCron } = await import("./attendance-report-cron");
   startAttendanceReportCron();
 
+  app.use(orgErrorMiddleware);
+
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
@@ -627,6 +631,8 @@ app.use((req, res, next) => {
   }
 
   console.log("[ENV CHECK] OPENAI_API_KEY exists:", !!process.env.OPENAI_API_KEY);
+
+  runStartupOrgAudit(app);
 
   const port = parseInt(process.env.PORT || "5000", 10);
   httpServer.listen(

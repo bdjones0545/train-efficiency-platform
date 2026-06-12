@@ -9,11 +9,9 @@ import { db }           from "./db";
 import { sql }          from "drizzle-orm";
 import { createPartnershipsCoordinator } from "./services/partnership-department-coordinator";
 import { departmentRegistry }            from "./services/department-registry";
+import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 
 function rows(r: any): any[] { return Array.isArray(r) ? r : (r?.rows ?? []); }
-function getOrgId(req: any): string {
-  return (req.session as any)?.organizationId ?? (req.user as any)?.organizationId ?? "";
-}
 
 // ─── Table creation ──────────────────────────────────────────────────────────
 
@@ -153,7 +151,7 @@ export function registerPartnershipRoutes(
   // ── GET /api/partnerships ─────────────────────────────────────────────────
   app.get("/api/partnerships", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT * FROM partnership_opportunities
         WHERE org_id = ${orgId}
@@ -161,13 +159,16 @@ export function registerPartnershipRoutes(
         LIMIT 500
       `);
       res.json(rows(result));
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── POST /api/partnerships ────────────────────────────────────────────────
   app.post("/api/partnerships", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const {
         organizationName, contactName, contactEmail, contactPhone,
         website, location, partnershipType, source, notes,
@@ -189,13 +190,16 @@ export function registerPartnershipRoutes(
         RETURNING *
       `);
       res.json(rows(result)[0] ?? {});
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/partnerships/:id ─────────────────────────────────────────────
   app.get("/api/partnerships/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT * FROM partnership_opportunities
         WHERE id = ${req.params.id} AND org_id = ${orgId}
@@ -204,13 +208,16 @@ export function registerPartnershipRoutes(
       const item = rows(result)[0];
       if (!item) return res.status(404).json({ error: "Not found" });
       res.json(item);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── PATCH /api/partnerships/:id/status ────────────────────────────────────
   app.patch("/api/partnerships/:id/status", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const { status } = req.body;
       const valid = ["new","qualified","outreach_ready","contacted","interested","meeting","negotiation","partnered","declined"];
       if (!valid.includes(status)) {
@@ -242,24 +249,30 @@ export function registerPartnershipRoutes(
       }
 
       res.json({ success: true });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── DELETE /api/partnerships/:id ──────────────────────────────────────────
   app.delete("/api/partnerships/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       await db.execute(sql`
         DELETE FROM partnership_opportunities WHERE id = ${req.params.id} AND org_id = ${orgId}
       `);
       res.json({ success: true });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/partnerships/assessments ─────────────────────────────────────
   app.get("/api/partnerships/assessments", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT pa.*, po.organization_name, po.partnership_type
         FROM partnership_assessments pa
@@ -269,23 +282,29 @@ export function registerPartnershipRoutes(
         LIMIT 200
       `);
       res.json(rows(result));
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── POST /api/partnerships/:id/assess ─────────────────────────────────────
   app.post("/api/partnerships/:id/assess", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const { assessPartnership } = await import("./services/partnership-assessment-agent");
       const result = await assessPartnership(orgId, req.params.id);
       res.json(result);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/partnerships/outreach-drafts ─────────────────────────────────
   app.get("/api/partnerships/outreach-drafts", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT pod.*, po.organization_name
         FROM partnership_outreach_drafts pod
@@ -295,24 +314,30 @@ export function registerPartnershipRoutes(
         LIMIT 200
       `);
       res.json(rows(result));
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── POST /api/partnerships/:id/draft-outreach ─────────────────────────────
   app.post("/api/partnerships/:id/draft-outreach", isAuthenticated, async (req, res) => {
     try {
-      const orgId     = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const draftType = req.body.draftType ?? "introduction";
       const { draftPartnershipOutreach } = await import("./services/partnership-outreach-agent");
       const result = await draftPartnershipOutreach(orgId, req.params.id, draftType);
       res.json(result);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/partnerships/pipeline ────────────────────────────────────────
   app.get("/api/partnerships/pipeline", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT status, COUNT(*) as cnt
         FROM partnership_opportunities
@@ -322,23 +347,29 @@ export function registerPartnershipRoutes(
       const byStatus = Object.fromEntries(rows(result).map((r: any) => [r.status, Number(r.cnt)]));
       const stages = ["new","qualified","outreach_ready","contacted","interested","meeting","negotiation","partnered","declined"];
       res.json(stages.map(s => ({ stage: s, count: byStatus[s] ?? 0 })));
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/partnerships/learning ────────────────────────────────────────
   app.get("/api/partnerships/learning", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const { computePartnershipsLearningMetrics } = await import("./services/partnership-learning-agent");
       const result = await computePartnershipsLearningMetrics(orgId);
       res.json(result);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/partnerships/executive ───────────────────────────────────────
   app.get("/api/partnerships/executive", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const {
         generatePartnershipsBrief,
         generatePartnershipsRecommendations,
@@ -352,13 +383,16 @@ export function registerPartnershipRoutes(
       ]);
 
       res.json({ brief, recommendations, bestAction });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── POST /api/partnerships/relationships ──────────────────────────────────
   app.post("/api/partnerships/relationships", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const { partnershipId, stage, notes } = req.body;
       if (!partnershipId) return res.status(400).json({ error: "partnershipId is required" });
 
@@ -382,6 +416,9 @@ export function registerPartnershipRoutes(
       }
 
       res.json({ success: true });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 }

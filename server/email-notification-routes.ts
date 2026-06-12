@@ -48,8 +48,8 @@ export async function registerEmailNotificationRoutes(app: Express) {
       const userId = req.user.claims.sub;
       const { storage } = await import("./storage");
       const profile = await storage.getCoachProfileByUserId(userId);
-      const orgId = profile?.organizationId || req.query.orgId as string;
-      if (!orgId) return res.status(400).json({ message: "No organization found" });
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
 
       const [existing] = await db
         .select()

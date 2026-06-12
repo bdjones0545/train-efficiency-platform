@@ -1,3 +1,4 @@
+import { resolveOrgIdOrThrow, handleOrgError } from './lib/resolve-org-id';
 import type { Express } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
@@ -149,7 +150,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/summary ────────────────────────────────
   app.get("/api/opportunity-acquisition/summary", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json({ foundToday: 0, qualified: 0, outreachReady: 0, pipelineValue: 0 });
 
       const today = new Date();
@@ -180,7 +181,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/opportunities ──────────────────────────
   app.get("/api/opportunity-acquisition/opportunities", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
 
       const opps = rows(await db.execute(sql`
@@ -212,7 +213,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/opportunities ─────────────────────────
   app.post("/api/opportunity-acquisition/opportunities", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const {
@@ -247,7 +248,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── PATCH /api/opportunity-acquisition/opportunities/:id ────────────────────
   app.patch("/api/opportunity-acquisition/opportunities/:id", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { id } = req.params;
@@ -286,7 +287,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/events ─────────────────────────────────
   app.get("/api/opportunity-acquisition/events", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
 
       const events = rows(await db.execute(sql`
@@ -312,7 +313,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/settings ───────────────────────────────
   app.get("/api/opportunity-acquisition/settings", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json(null);
 
       let settings = row0(await db.execute(sql`
@@ -354,7 +355,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── PATCH /api/opportunity-acquisition/settings ─────────────────────────────
   app.patch("/api/opportunity-acquisition/settings", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { sources, qualRules, outreachRules, agentPerms } = req.body;
@@ -386,7 +387,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/assessments ────────────────────────────
   app.get("/api/opportunity-acquisition/assessments", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
 
       const assessments = rows(await db.execute(sql`
@@ -426,7 +427,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/opportunities/:id/qualify ──────────────
   app.post("/api/opportunity-acquisition/opportunities/:id/qualify", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { id } = req.params;
@@ -476,7 +477,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/qualify-all ────────────────────────────
   app.post("/api/opportunity-acquisition/qualify-all", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       await db.execute(sql`
@@ -504,7 +505,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/opportunities/:id/generate-outreach ───
   app.post("/api/opportunity-acquisition/opportunities/:id/generate-outreach", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { id } = req.params;
@@ -534,7 +535,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/outreach-drafts ────────────────────────
   app.get("/api/opportunity-acquisition/outreach-drafts", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
 
       const drafts = rows(await db.execute(sql`
@@ -576,7 +577,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── PATCH /api/opportunity-acquisition/outreach-drafts/:id ──────────────────
   app.patch("/api/opportunity-acquisition/outreach-drafts/:id", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { id } = req.params;
@@ -643,7 +644,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/discovery/run ─────────────────────────
   app.post("/api/opportunity-acquisition/discovery/run", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { runOpportunityDiscovery } = await import("./services/opportunity-discovery-agent");
@@ -659,7 +660,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/discovery/history ───────────────────────
   app.get("/api/opportunity-acquisition/discovery/history", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
 
       const runs = rows(await db.execute(sql`
@@ -689,7 +690,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/discovery/stats ─────────────────────────
   app.get("/api/opportunity-acquisition/discovery/stats", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json({ totalRuns: 0, totalScanned: 0, totalCreated: 0, totalDuplicates: 0, avgCreatedPerRun: 0 });
 
       const stat = row0(await db.execute(sql`
@@ -719,7 +720,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/run-cycle ──────────────────────────────
   app.post("/api/opportunity-acquisition/run-cycle", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { runOpportunityAcquisitionCycle } = await import("./services/opportunity-acquisition-orchestrator");
@@ -735,7 +736,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/cycles ───────────────────────────────────
   app.get("/api/opportunity-acquisition/cycles", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
 
       const cycles = rows(await db.execute(sql`
@@ -768,7 +769,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/cycles/latest ────────────────────────────
   app.get("/api/opportunity-acquisition/cycles/latest", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json(null);
 
       const c = row0(await db.execute(sql`
@@ -802,7 +803,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/outreach-drafts/:id/send ──────────────
   app.post("/api/opportunity-acquisition/outreach-drafts/:id/send", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { id } = req.params;
@@ -825,7 +826,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/outreach-executions ─────────────────────
   app.get("/api/opportunity-acquisition/outreach-executions", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
 
       // Ensure table exists
@@ -871,7 +872,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/outreach-executions/:id ─────────────────
   app.get("/api/opportunity-acquisition/outreach-executions/:id", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { id } = req.params;
@@ -914,7 +915,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/replies ─────────────────────────────────
   app.get("/api/opportunity-acquisition/replies", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
 
       const { ensureReplyEventsTable } = await import("./services/opportunity-reply-intelligence-agent");
@@ -963,7 +964,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/replies/:id ──────────────────────────────
   app.get("/api/opportunity-acquisition/replies/:id", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { id } = req.params;
@@ -1015,7 +1016,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/replies/:id/generate-followup ───────────
   app.post("/api/opportunity-acquisition/replies/:id/generate-followup", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { id } = req.params;
@@ -1032,7 +1033,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/replies/reprocess/:id ──────────────────
   app.post("/api/opportunity-acquisition/replies/reprocess/:id", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { id } = req.params;
@@ -1089,7 +1090,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/ingest-reply (manual ingestion) ─────────
   app.post("/api/opportunity-acquisition/ingest-reply", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
 
       const { executionId, senderName = "", senderEmail, subject = "", body } = req.body;
@@ -1109,7 +1110,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/learning/run ───────────────────────────
   app.post("/api/opportunity-acquisition/learning/run", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
       const { runOpportunityLearningAnalysis } = await import("./services/opportunity-learning-agent");
       const result = await runOpportunityLearningAnalysis(orgId);
@@ -1123,7 +1124,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/learning/metrics ────────────────────────
   app.get("/api/opportunity-acquisition/learning/metrics", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json({});
       const { ensureLearningTables } = await import("./services/opportunity-learning-agent");
       await ensureLearningTables();
@@ -1177,7 +1178,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/learning/insights ───────────────────────
   app.get("/api/opportunity-acquisition/learning/insights", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
       const { ensureLearningTables } = await import("./services/opportunity-learning-agent");
       await ensureLearningTables();
@@ -1206,7 +1207,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/learning/performance ────────────────────
   app.get("/api/opportunity-acquisition/learning/performance", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json({ sources: [], types: [], positioning: [], subjects: [] });
       const { ensureLearningTables } = await import("./services/opportunity-learning-agent");
       await ensureLearningTables();
@@ -1297,7 +1298,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── PATCH /api/opportunity-acquisition/opportunities/:id/outcome ──────────────
   app.patch("/api/opportunity-acquisition/opportunities/:id/outcome", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
       const { id } = req.params;
       const { outcome } = req.body;
@@ -1321,7 +1322,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/executive/run ──────────────────────────
   app.post("/api/opportunity-acquisition/executive/run", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
       const { runOpportunityExecutiveAnalysis } = await import("./services/opportunity-executive-agent");
       const result = await runOpportunityExecutiveAnalysis(orgId);
@@ -1335,7 +1336,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/executive/brief ─────────────────────────
   app.get("/api/opportunity-acquisition/executive/brief", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json(null);
       const { ensureExecutiveTables } = await import("./services/opportunity-executive-agent");
       await ensureExecutiveTables();
@@ -1366,7 +1367,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/executive/recommendations ───────────────
   app.get("/api/opportunity-acquisition/executive/recommendations", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.json([]);
       const { ensureExecutiveTables } = await import("./services/opportunity-executive-agent");
       await ensureExecutiveTables();
@@ -1395,7 +1396,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── PATCH /api/opportunity-acquisition/executive/recommendations/:id ─────────
   app.patch("/api/opportunity-acquisition/executive/recommendations/:id", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
       const { id } = req.params;
       const { status } = req.body;
@@ -1429,7 +1430,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── GET /api/opportunity-acquisition/heartbeat-summary ───────────────────────
   app.get("/api/opportunity-acquisition/heartbeat-summary", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
       const { getOpportunityHeartbeatSummary } = await import("./services/opportunity-executive-coordinator");
       const summary = await getOpportunityHeartbeatSummary(orgId);
@@ -1443,7 +1444,7 @@ export async function registerOpportunityAcquisitionRoutes(
   // ── POST /api/opportunity-acquisition/run-scan (legacy alias) ────────────────
   app.post("/api/opportunity-acquisition/run-scan", ...auth, async (req: any, res) => {
     try {
-      const orgId = await storage.getOrgContextForUser(resolveUserId(req)).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(403).json({ message: "No organization" });
       const { runOpportunityDiscovery } = await import("./services/opportunity-discovery-agent");
       const result = await runOpportunityDiscovery(orgId);

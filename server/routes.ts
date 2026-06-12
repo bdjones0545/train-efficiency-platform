@@ -1,6 +1,8 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { buildPublicAppUrl } from "./utils/url";
+import { publicRateLimiter } from "./middleware/public-rate-limiter";
+import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
 import multer from "multer";
@@ -2022,7 +2024,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/coaches", async (req: any, res) => {
+  app.get("/api/coaches", publicRateLimiter(120, 60_000, "coaches"), async (req: any, res) => {
     try {
       let orgId: string | undefined;
       if (req.user) {
@@ -2088,7 +2090,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/availability", async (req: any, res) => {
+  app.get("/api/availability", publicRateLimiter(60, 60_000, "availability"), async (req: any, res) => {
     try {
       const serviceId = req.query.serviceId as string;
       const startDateStr = req.query.startDate as string;
@@ -2181,16 +2183,19 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/services", async (req: any, res) => {
+  app.get("/api/services", publicRateLimiter(60, 60_000, "services"), async (req: any, res) => {
     try {
-      const orgId = req.query.organizationId as string | undefined;
-      if (orgId) {
-        const srvs = await storage.getServicesByOrganization(orgId);
-        res.json(srvs);
+      let orgId: string | undefined;
+      if (req.user) {
+        const sessionOrgId = await getAdminOrgId(req);
+        if (!sessionOrgId) return res.status(403).json({ message: "Organization not found for session" });
+        orgId = sessionOrgId;
       } else {
-        const srvs = await storage.getServices();
-        res.json(srvs);
+        orgId = req.query.organizationId as string | undefined;
+        if (!orgId) return res.status(400).json({ message: "organizationId required for unauthenticated requests" });
       }
+      const srvs = await storage.getServicesByOrganization(orgId);
+      res.json(srvs);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch services" });
     }
@@ -14493,8 +14498,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // GET /api/admin/connectors — list all connector statuses
   app.get("/api/admin/connectors", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
-      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const { isGoogleCalendarConfigured, getGoogleCalendarStatus } = await import("./connectors/google-calendar");
       const gcal = await getGoogleCalendarStatus(orgId);
@@ -14521,6 +14525,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         },
       });
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -14532,11 +14537,11 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       if (!isGoogleCalendarConfigured()) {
         return res.status(400).json({ message: "Google Calendar not configured. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET." });
       }
-      const userId = req.user?.claims?.sub;
-      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       const url = getGoogleAuthUrl(orgId);
       res.json({ url });
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -14562,12 +14567,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // DELETE /api/admin/connectors/google-calendar — disconnect
   app.delete("/api/admin/connectors/google-calendar", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
-      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       const { disconnectGoogleCalendar } = await import("./connectors/google-calendar");
       await disconnectGoogleCalendar(orgId);
       res.json({ success: true });
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -14575,12 +14580,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // GET /api/admin/agent-invoices — list agent invoices
   app.get("/api/admin/agent-invoices", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
-      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       const { listAgentInvoices } = await import("./connectors/stripe-invoicing");
       const invoices = await listAgentInvoices(orgId, 100);
       res.json(invoices);
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -14588,12 +14593,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // GET /api/admin/agent-invoices/unpaid — list unpaid agent invoices
   app.get("/api/admin/agent-invoices/unpaid", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
-      const orgId = await storage.getOrgContextForUser(userId).then(r => r?.orgId ?? "");
+      const orgId = await resolveOrgIdOrThrow(req);
       const { listUnpaidAgentInvoices } = await import("./connectors/stripe-invoicing");
       const invoices = await listUnpaidAgentInvoices(orgId);
       res.json(invoices);
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -14603,10 +14608,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // GET /api/attention — sync + return ranked items
   app.get("/api/attention", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
-      const orgCtx = await storage.getOrgContextForUser(userId);
-      const orgId = orgCtx?.orgId ?? "";
-      if (!orgId) return res.json([]);
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const { syncAttentionItems, runEscalation, getAttentionItems } = await import("./attention-engine");
       // Run sync + escalation silently in background (non-blocking for fast response)
@@ -14616,6 +14618,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const items = await getAttentionItems(orgId);
       res.json(items);
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -14623,10 +14626,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // POST /api/attention/sync — force full sync and return fresh items
   app.post("/api/attention/sync", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
-      const orgCtx = await storage.getOrgContextForUser(userId);
-      const orgId = orgCtx?.orgId ?? "";
-      if (!orgId) return res.json({ synced: 0, items: [] });
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const { syncAttentionItems, runEscalation, getAttentionItems } = await import("./attention-engine");
       await syncAttentionItems(orgId);
@@ -14634,6 +14634,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const items = await getAttentionItems(orgId);
       res.json({ synced: items.length, items });
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -14641,16 +14642,14 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // GET /api/attention/digest — attention digest
   app.get("/api/attention/digest", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
-      const orgCtx = await storage.getOrgContextForUser(userId);
-      const orgId = orgCtx?.orgId ?? "";
-      if (!orgId) return res.json({ summary: "No data available." });
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const { getAttentionDigest } = await import("./attention-engine");
       const type = (req.query.type as "morning" | "eod" | "weekly") || "morning";
       const digest = await getAttentionDigest(orgId, type);
       res.json(digest);
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -16477,8 +16476,8 @@ Respond with this exact JSON structure:
   // POST /api/unified-action-log — write a log entry
   app.post("/api/unified-action-log", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.organizationId;
-      if (!orgId) return res.status(400).json({ message: "No org" });
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
       const entry = { ...req.body, orgId };
       const row = await storage.logUnifiedAction(entry);
       res.json(row);
@@ -16491,8 +16490,8 @@ Respond with this exact JSON structure:
   // GET /api/unified-action-log — list entries
   app.get("/api/unified-action-log", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.organizationId;
-      if (!orgId) return res.status(400).json({ message: "No org" });
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
       const { limit, status, actorType, actionType } = req.query as Record<string, string>;
       const rows = await storage.getUnifiedActionLog(orgId, {
         limit: limit ? parseInt(limit) : 50,
@@ -16510,8 +16509,8 @@ Respond with this exact JSON structure:
   // GET /api/unified-action-log/summary — stats for dashboard
   app.get("/api/unified-action-log/summary", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.organizationId;
-      if (!orgId) return res.status(400).json({ message: "No org" });
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
       const summary = await storage.getUnifiedActionLogSummary(orgId);
       res.json(summary);
     } catch (e: any) {
@@ -16523,8 +16522,8 @@ Respond with this exact JSON structure:
   // GET /api/ai-ops/dashboard — consolidated data for the AI Ops Command Center
   app.get("/api/ai-ops/dashboard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.organizationId;
-      if (!orgId) return res.status(400).json({ message: "No org" });
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
 
       const { getAttentionItems } = await import("./attention-engine");
 
@@ -16569,8 +16568,8 @@ Respond with this exact JSON structure:
   // GET /api/ai-ops/scorecard — unified executive scorecard aggregation
   app.get("/api/ai-ops/scorecard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.organizationId;
-      if (!orgId) return res.status(400).json({ message: "No org" });
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
 
       const { getAttentionItems } = await import("./attention-engine");
       const { computeChurnRisks, computeUpsellOpportunities } = await import("./revenue-intelligence");

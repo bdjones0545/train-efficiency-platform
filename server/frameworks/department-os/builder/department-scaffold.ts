@@ -434,9 +434,6 @@ import { create${pascal}Coordinator } from "./services/${id}-department-coordina
 import { departmentRegistry }   from "./services/department-registry";
 
 function rows(r: any): any[] { return Array.isArray(r) ? r : (r?.rows ?? []); }
-function getOrgId(req: any): string {
-  return (req.session as any)?.organizationId ?? (req.user as any)?.organizationId ?? "";
-}
 
 // ─── Table creation ───────────────────────────────────────────────────────────
 

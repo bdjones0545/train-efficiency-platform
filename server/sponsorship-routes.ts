@@ -9,11 +9,9 @@ import { db }           from "./db";
 import { sql }          from "drizzle-orm";
 import { createSponsorshipsCoordinator } from "./services/sponsorship-department-coordinator";
 import { departmentRegistry }            from "./services/department-registry";
+import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 
 function rows(r: any): any[] { return Array.isArray(r) ? r : (r?.rows ?? []); }
-function getOrgId(req: any): string {
-  return (req.session as any)?.organizationId ?? (req.user as any)?.organizationId ?? "";
-}
 
 // ─── Table creation ──────────────────────────────────────────────────────────
 
@@ -156,7 +154,7 @@ export function registerSponsorshipRoutes(
   // ── GET /api/sponsorships ─────────────────────────────────────────────────
   app.get("/api/sponsorships", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT * FROM sponsorship_opportunities
         WHERE org_id = ${orgId}
@@ -164,13 +162,16 @@ export function registerSponsorshipRoutes(
         LIMIT 500
       `);
       res.json(rows(result));
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── POST /api/sponsorships ────────────────────────────────────────────────
   app.post("/api/sponsorships", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const {
         organizationName, contactName, contactEmail, contactPhone,
         website, industry, location, sponsorshipType, source, estimatedValue, notes,
@@ -193,13 +194,16 @@ export function registerSponsorshipRoutes(
         RETURNING *
       `);
       res.json(rows(result)[0] ?? {});
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/sponsorships/pipeline ────────────────────────────────────────
   app.get("/api/sponsorships/pipeline", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT status, COUNT(*) as cnt
         FROM sponsorship_opportunities
@@ -209,13 +213,16 @@ export function registerSponsorshipRoutes(
       const byStatus = Object.fromEntries(rows(result).map((r: any) => [r.status, Number(r.cnt)]));
       const stages   = ["new","qualified","outreach_ready","contacted","interested","meeting","proposal","negotiation","sponsored","declined"];
       res.json(stages.map(s => ({ stage: s, count: byStatus[s] ?? 0 })));
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/sponsorships/:id ─────────────────────────────────────────────
   app.get("/api/sponsorships/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT * FROM sponsorship_opportunities
         WHERE id = ${req.params.id} AND org_id = ${orgId}
@@ -224,13 +231,16 @@ export function registerSponsorshipRoutes(
       const item = rows(result)[0];
       if (!item) return res.status(404).json({ error: "Not found" });
       res.json(item);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── PATCH /api/sponsorships/:id/status ───────────────────────────────────
   app.patch("/api/sponsorships/:id/status", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const { status } = req.body;
       const valid  = ["new","qualified","outreach_ready","contacted","interested","meeting","proposal","negotiation","sponsored","declined"];
       if (!valid.includes(status)) {
@@ -262,24 +272,30 @@ export function registerSponsorshipRoutes(
       }
 
       res.json({ success: true });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── DELETE /api/sponsorships/:id ──────────────────────────────────────────
   app.delete("/api/sponsorships/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       await db.execute(sql`
         DELETE FROM sponsorship_opportunities WHERE id = ${req.params.id} AND org_id = ${orgId}
       `);
       res.json({ success: true });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/sponsorships/assessments ─────────────────────────────────────
   app.get("/api/sponsorships/assessments", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT sa.*, so.organization_name, so.sponsorship_type
         FROM sponsorship_assessments sa
@@ -289,23 +305,29 @@ export function registerSponsorshipRoutes(
         LIMIT 200
       `);
       res.json(rows(result));
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── POST /api/sponsorships/:id/assess ─────────────────────────────────────
   app.post("/api/sponsorships/:id/assess", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const { assessSponsorship } = await import("./services/sponsorship-assessment-agent");
       const result = await assessSponsorship(orgId, req.params.id);
       res.json(result);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/sponsorships/outreach-drafts ─────────────────────────────────
   app.get("/api/sponsorships/outreach-drafts", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await db.execute(sql`
         SELECT sod.*, so.organization_name
         FROM sponsorship_outreach_drafts sod
@@ -315,34 +337,43 @@ export function registerSponsorshipRoutes(
         LIMIT 200
       `);
       res.json(rows(result));
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── POST /api/sponsorships/:id/draft-outreach ─────────────────────────────
   app.post("/api/sponsorships/:id/draft-outreach", isAuthenticated, async (req, res) => {
     try {
-      const orgId     = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const draftType = req.body.draftType ?? "introduction";
       const { draftSponsorshipOutreach } = await import("./services/sponsorship-outreach-agent");
       const result = await draftSponsorshipOutreach(orgId, req.params.id, draftType);
       res.json(result);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/sponsorships/learning ────────────────────────────────────────
   app.get("/api/sponsorships/learning", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const { computeSponsorshipsLearningMetrics } = await import("./services/sponsorship-learning-agent");
       const result = await computeSponsorshipsLearningMetrics(orgId);
       res.json(result);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/sponsorships/executive ───────────────────────────────────────
   app.get("/api/sponsorships/executive", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const {
         generateSponsorshipsBrief,
         generateSponsorshipsRecommendations,
@@ -356,13 +387,16 @@ export function registerSponsorshipRoutes(
       ]);
 
       res.json({ brief, recommendations, bestAction });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── POST /api/sponsorships/relationships ──────────────────────────────────
   app.post("/api/sponsorships/relationships", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const { sponsorshipId, stage, notes } = req.body;
       if (!sponsorshipId) return res.status(400).json({ error: "sponsorshipId is required" });
 
@@ -386,17 +420,23 @@ export function registerSponsorshipRoutes(
       }
 
       res.json({ success: true });
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   // ── GET /api/sponsorships/health ──────────────────────────────────────────
   app.get("/api/sponsorships/health", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await resolveOrgIdOrThrow(req);
       const coordinator = createSponsorshipsCoordinator();
       const review      = await coordinator.runHeartbeatReview(orgId);
       res.json(review);
-    } catch (err: any) { res.status(500).json({ error: err.message }); }
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ error: err.message });
+    }
   });
 
   console.log("[Sponsorships] Routes registered");
