@@ -852,35 +852,77 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
 // ─── Main Widget ──────────────────────────────────────────────────────────────
 
 export function ChatWidget() {
+  const [isMounted, setIsMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ceo");
+  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: approvalMetrics } = useQuery<any>({
     queryKey: ["/api/ai-approvals/metrics"],
     queryFn: () => fetch("/api/ai-approvals/metrics", { credentials: "include" }).then(r => r.json()),
     refetchInterval: 30000,
-    enabled: isOpen,
+    enabled: isMounted,
   });
 
   const pendingCount = approvalMetrics?.pending ?? 0;
 
+  const handleOpen = () => {
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current);
+      closeTimerRef.current = null;
+    }
+    setIsMounted(true);
+    requestAnimationFrame(() => requestAnimationFrame(() => setIsOpen(true)));
+    document.body.style.overflow = "hidden";
+  };
+
+  const handleClose = () => {
+    setIsOpen(false);
+    closeTimerRef.current = setTimeout(() => {
+      setIsMounted(false);
+      document.body.style.overflow = "";
+    }, 310);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+      document.body.style.overflow = "";
+    };
+  }, []);
+
   return (
     <>
-      {/* CEO Command Center panel */}
-      {isOpen && (
+      {/* Backdrop */}
+      {isMounted && (
+        <div
+          aria-hidden="true"
+          onClick={handleClose}
+          className="fixed inset-0 z-[9990] bg-black/50 transition-opacity duration-300"
+          style={{ opacity: isOpen ? 1 : 0, pointerEvents: isOpen ? "auto" : "none" }}
+        />
+      )}
+
+      {/* Right-side drawer panel */}
+      {isMounted && (
         <div
           data-testid="chat-widget-panel"
-          className="fixed left-2 right-2 sm:left-auto sm:right-5 sm:w-[440px] z-[9999] flex flex-col bg-zinc-900 border border-zinc-700 rounded-2xl shadow-[0_8px_40px_rgba(0,0,0,0.5)] overflow-hidden"
-          style={{
-            bottom: "calc(5.5rem + env(safe-area-inset-bottom, 0px))",
-            maxHeight: "min(85dvh, 640px)",
-          }}
+          className={[
+            "fixed top-0 right-0 z-[9995] flex flex-col",
+            "h-[100dvh] w-full sm:w-[420px]",
+            "bg-zinc-900 border-l border-zinc-700",
+            "shadow-[-8px_0_40px_rgba(0,0,0,0.5)]",
+            "sm:rounded-l-2xl overflow-hidden",
+            "transition-transform duration-300 ease-out",
+            isOpen ? "translate-x-0" : "translate-x-full",
+          ].join(" ")}
+          style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-zinc-700/60 bg-zinc-900/95 shrink-0">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-full bg-green-600 flex items-center justify-center shrink-0">
-                <Brain className="h-4.5 w-4.5 text-white" style={{ width: 18, height: 18 }} />
+                <Brain className="text-white" style={{ width: 18, height: 18 }} />
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-bold text-white leading-none">CEO Agent</p>
@@ -890,7 +932,7 @@ export function ChatWidget() {
             <Button
               size="icon" variant="ghost"
               className="h-7 w-7 text-zinc-500 hover:text-zinc-300 no-default-hover-elevate shrink-0"
-              onClick={() => setIsOpen(false)}
+              onClick={handleClose}
               data-testid="button-close-chat"
             >
               <X className="h-4 w-4" />
@@ -899,7 +941,7 @@ export function ChatWidget() {
 
           {/* Tab content */}
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-            <ChatWidgetErrorBoundary onClose={() => setIsOpen(false)}>
+            <ChatWidgetErrorBoundary onClose={handleClose}>
               {activeTab === "ceo"       && <CeoHomeTab onSwitchTab={setActiveTab} />}
               {activeTab === "chat"      && <ChatTab />}
               {activeTab === "agents"    && <AgentsTab />}
@@ -910,7 +952,10 @@ export function ChatWidget() {
           </div>
 
           {/* Bottom tab bar */}
-          <div className="shrink-0 border-t border-zinc-700/60 bg-zinc-900/95 flex">
+          <div
+            className="shrink-0 border-t border-zinc-700/60 bg-zinc-900/95 flex"
+            style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
+          >
             {TABS.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -941,11 +986,11 @@ export function ChatWidget() {
         </div>
       )}
 
-      {/* Floating action button */}
+      {/* Floating action button — always on top */}
       <button
         className="fixed right-5 z-[9999] flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 rounded-full bg-green-600 text-white shadow-[0_4px_24px_rgba(34,197,94,0.4)] hover:scale-105 active:scale-95 transition-transform"
         style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
-        onClick={() => setIsOpen(prev => !prev)}
+        onClick={() => (isOpen ? handleClose() : handleOpen())}
         data-testid="button-toggle-chat"
       >
         {isOpen ? (

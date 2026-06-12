@@ -1,0 +1,90 @@
+Fix the ChatWidget / CEO Agent mobile panel animation and layout.
+
+Current behavior:
+- Pressing the lower-right Brain FAB opens the CEO Agent panel as a centered modal/card overlay.
+- Desired behavior:
+  - The CEO Agent should be a right-side slide-over drawer.
+  - When opened, it slides in from the right.
+  - When closed, it slides back out to the right.
+  - The FAB should remain usable and the app behind should not crash.
+
+File to inspect first:
+client/src/components/chat-widget.tsx
+
+Requirements:
+
+1. Replace centered modal positioning with right-side drawer behavior
+Current panel appears centered with margins.
+Change to:
+- fixed
+- top: 0 or safe-area aware top
+- right: 0
+- height: 100dvh
+- width: min(420px, 100vw)
+- translate-x-full when closed
+- translate-x-0 when open
+- transition-transform duration-300 ease-out
+
+2. Keep mobile friendly sizing
+Use:
+- h-[100dvh]
+- max-w-[420px]
+- w-full on mobile
+- sm:w-[420px]
+- rounded-none on mobile if needed
+- sm:rounded-l-2xl on desktop/tablet
+
+3. Closing behavior
+When the X is pressed:
+- do not unmount instantly before animation finishes
+- set open state false
+- allow slide-out animation to complete
+- then unmount if necessary
+
+If currently using conditional render like:
+{isOpen && <Panel />}
+replace with mounted state pattern:
+- isMounted controls whether panel exists
+- isOpen controls transform animation
+- on close: setIsOpen(false), setTimeout(() => setIsMounted(false), 300)
+
+4. Overlay behavior
+Optional but preferred:
+- add a subtle backdrop over the page
+- backdrop fades in/out
+- tapping backdrop closes drawer
+- backdrop should not block the FAB after drawer closes
+
+5. Prevent body scroll while drawer is open
+On open:
+- document.body.style.overflow = "hidden"
+On close/unmount:
+- restore body overflow
+
+6. Preserve existing error boundary fix
+Do not remove:
+- ChatWidgetErrorBoundary
+- priorities/runs response unwrapping
+- Retry / Close fallback behavior
+
+7. Mobile browser safe area
+Account for iPhone/Safari:
+- use 100dvh instead of 100vh
+- avoid bottom browser bar overlap where possible
+- panel content should scroll internally with overflow-y-auto
+
+8. Test
+Verify:
+- tapping Brain FAB slides panel in from right
+- tapping X slides panel out to right
+- tapping backdrop closes it
+- no full-screen app error
+- tab navigation still works
+- content scrolls inside panel
+- desktop still looks good as right drawer
+
+Return:
+- root cause of modal-style behavior
+- files changed
+- exact layout classes changed
+- before/after behavior
