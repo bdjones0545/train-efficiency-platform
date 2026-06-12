@@ -229,6 +229,10 @@ interface Organization {
   websiteUrl: string | null;
   instagramUrl: string | null;
   facebookUrl: string | null;
+  athleticEnabled: boolean | null;
+  youtubeUrl: string | null;
+  tiktokUrl: string | null;
+  linktreeUrl: string | null;
 }
 
 function ensureUrl(url: string | null | undefined): string {

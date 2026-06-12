@@ -27,7 +27,7 @@ import {
 
 type OpportunityStatus =
   | "new" | "qualified" | "outreach_ready" | "contacted"
-  | "interested" | "demo" | "won" | "lost";
+  | "interested" | "demo" | "won" | "lost" | "ghosted";
 type OpportunityType = "coaching" | "consulting" | "partnership" | "content" | "training";
 type RiskLevel = "low" | "medium" | "high" | "critical";
 type RevPotential = "low" | "medium" | "high";
@@ -166,6 +166,7 @@ const STATUS_CONFIG: Record<OpportunityStatus, { label: string; color: string }>
   demo:           { label: "Demo",           color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/40 dark:text-cyan-300" },
   won:            { label: "Won",            color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300" },
   lost:           { label: "Lost",           color: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300" },
+  ghosted:        { label: "Ghosted",        color: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" },
 };
 
 const DRAFT_STATUS_CONFIG: Record<DraftStatus, { label: string; color: string; icon: typeof CheckCircle }> = {
@@ -205,6 +206,7 @@ const KANBAN_COLUMNS: { id: OpportunityStatus; label: string; color: string }[] 
   { id: "demo",           label: "Demo",           color: "border-cyan-400" },
   { id: "won",            label: "Won",            color: "border-emerald-400" },
   { id: "lost",           label: "Lost",           color: "border-rose-400" },
+  { id: "ghosted",        label: "Ghosted",        color: "border-gray-400" },
 ];
 
 const EVENT_ICONS: Record<string, { icon: typeof Search; color: string }> = {
