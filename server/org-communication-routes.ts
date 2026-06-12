@@ -1,4 +1,5 @@
 import type { Express } from "express";
+import crypto from "crypto";
 import { db } from "./db";
 import {
   orgMessages,
@@ -7,16 +8,49 @@ import {
   notificationAutomationLogs,
   userProfiles,
   prTeamMembers,
+  orgUsers,
+  orgSessions,
+  orgMemberships,
 } from "@shared/schema";
-import { eq, and, desc, inArray, or, isNull } from "drizzle-orm";
+import { eq, and, desc, inArray, or, isNull, gt } from "drizzle-orm";
 import { z } from "zod";
 import { triggerNotificationEvent, type NotificationEventType } from "./services/notification-automation";
+
+// Resolve identity from X-Org-Auth-Token (org portal login — stored in org_users)
+async function resolveOrgTokenProfile(req: any): Promise<{ userId: string; organizationId: string; role: string } | null> {
+  const token = req.headers["x-org-auth-token"] as string | undefined;
+  if (!token) return null;
+  try {
+    const hash = crypto.createHash("sha256").update(token).digest("hex");
+    const now = new Date();
+    const [session] = await db.select().from(orgSessions)
+      .where(and(eq(orgSessions.tokenHash, hash), gt(orgSessions.expiresAt, now)))
+      .limit(1);
+    if (!session) return null;
+    const [orgUser] = await db.select().from(orgUsers).where(eq(orgUsers.id, session.userId)).limit(1);
+    if (!orgUser) return null;
+    const [membership] = await db.select().from(orgMemberships)
+      .where(and(eq(orgMemberships.userId, session.userId), eq(orgMemberships.orgId, session.orgId)))
+      .limit(1);
+    return {
+      userId: orgUser.id,
+      organizationId: session.orgId,
+      role: membership?.role ?? "athlete",
+    };
+  } catch {
+    return null;
+  }
+}
 
 function getUserId(req: any): string | null {
   return req.user?.claims?.sub ?? req.user?.id ?? null;
 }
 
+// Resolve profile from org-portal token first, then fall back to OIDC session
 async function getOrgProfile(req: any) {
+  const orgTokenProfile = await resolveOrgTokenProfile(req);
+  if (orgTokenProfile) return orgTokenProfile;
+
   const userId = getUserId(req);
   if (!userId) return null;
   const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, userId)).limit(1);
@@ -36,7 +70,9 @@ function requireCoachOrAdmin(req: any, res: any, next: any) {
   (async () => {
     const profile = await getOrgProfile(req);
     if (!profile) return res.status(401).json({ message: "Unauthorized" });
-    if (!["ADMIN", "COACH"].includes(profile.role ?? "")) return res.status(403).json({ message: "Coach or Admin required" });
+    // Normalize to uppercase to handle both org roles (lowercase) and OIDC roles (uppercase)
+    const role = (profile.role ?? "").toUpperCase();
+    if (!["ADMIN", "COACH", "OWNER"].includes(role)) return res.status(403).json({ message: "Coach or Admin required" });
     (req as any)._profile = profile;
     next();
   })().catch(() => res.status(500).json({ message: "Auth error" }));

@@ -28,7 +28,8 @@ function formatHour(hour: number) {
 
 function parseTimeSlot(slot: string | null | undefined): number {
   if (!slot) return 0;
-  return parseInt(slot.split(":")[0], 10);
+  const h = parseInt(slot.split(":")[0], 10);
+  return isNaN(h) ? 0 : h;
 }
 
 function BookingCard({ booking, isPast }: { booking: any; isPast: boolean }) {

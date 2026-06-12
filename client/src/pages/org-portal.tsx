@@ -50,7 +50,8 @@ function formatHour(hour: number) {
 
 function parseTimeSlot(slot: string | null | undefined): number {
   if (!slot) return 0;
-  return parseInt(slot.split(":")[0], 10);
+  const h = parseInt(slot.split(":")[0], 10);
+  return isNaN(h) ? 0 : h;
 }
 
 function RoleBadge({ role }: { role: string }) {
@@ -280,10 +281,13 @@ function PortalHome({
     queryKey: ["/api/org/messages"],
     queryFn: () =>
       fetch("/api/org/messages", { headers: { "X-Org-Auth-Token": orgToken } })
-        .then((r) => r.json()),
+        .then((r) => {
+          if (!r.ok) throw new Error("Messages unavailable");
+          return r.json();
+        }),
     refetchInterval: 60000,
   });
-  const unreadMessages = (messagesData ?? []).filter((m: any) => !m.isRead);
+  const unreadMessages = (Array.isArray(messagesData) ? messagesData : []).filter((m: any) => !m.isRead);
   const prTrackerUrl = prTrackerPrograms?.[0] ? `/org/${slug}/programs/${prTrackerPrograms[0].slug}` : null;
   const scheduleUrl = `/org/${slug}/athletic`;
   const myScheduleUrl = `/org/${slug}/my-schedule`;

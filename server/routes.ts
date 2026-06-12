@@ -7084,6 +7084,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const { date, timeSlot, teamName, trainingType, bookedBy, programId } = req.body;
       if (!programId) return res.status(400).json({ message: "programId is required" });
       if (!date || !timeSlot || !teamName) return res.status(400).json({ message: "date, timeSlot, teamName are required" });
+      if (!/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/.test(timeSlot)) return res.status(400).json({ message: "Invalid timeSlot format. Use HH:mm (e.g. 09:00)." });
 
       const program = await storage.getAthleticProgramById(programId);
       if (!program) return res.status(404).json({ message: "Program not found" });
