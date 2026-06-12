@@ -659,7 +659,15 @@ function ApprovalsTab() {
     onError: () => toast({ title: "Error rejecting", variant: "destructive" }),
   });
 
-  const pending = (approvals ?? []).filter(a => a.status === "proposed" || a.approvalRequired);
+  // Normalize: API may return an object like { message: "Unauthorized" } on
+  // 401, or { items: [...] } — neither is an array, so ?? [] would not help.
+  // Always extract to a guaranteed array first.
+  const approvalsList: any[] = Array.isArray(approvals)
+    ? approvals
+    : Array.isArray((approvals as any)?.items)
+      ? (approvals as any).items
+      : [];
+  const pending = approvalsList.filter(a => a.status === "proposed" || a.approvalRequired);
 
   if (isLoading) return (
     <div className="flex-1 p-4 space-y-2">
@@ -859,6 +867,10 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
 export function ChatWidget() {
   const [isMounted, setIsMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  // isClosing: true from the moment X is pressed until the panel fully exits.
+  // While true, ALL tab content (and their queries) is replaced with an empty
+  // spacer so nothing can throw during the 300ms slide-out animation.
+  const [isClosing, setIsClosing] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ceo");
   const [pathname, setLocation] = useLocation();
 
@@ -866,35 +878,37 @@ export function ChatWidget() {
     queryKey: ["/api/ai-approvals/metrics"],
     queryFn: () => fetch("/api/ai-approvals/metrics", { credentials: "include" }).then(r => r.json()),
     refetchInterval: 30000,
-    enabled: isMounted,
+    enabled: isMounted && !isClosing,
   });
 
   const pendingCount = approvalMetrics?.pending ?? 0;
 
   const handleOpen = () => {
-    // Route must never change when the FAB is pressed — log confirms this.
     console.log("[ChatWidget:open] route →", pathname);
+    setIsClosing(false);
     setIsMounted(true);
-    // one rAF is enough — the panel is in the DOM by the next paint
     requestAnimationFrame(() => setIsOpen(true));
   };
 
   const handleClose = () => {
-    // Route must never change when closing — log confirms this.
     console.log("[ChatWidget:close] route →", pathname);
+    // Drop tab content immediately — prevents ANY query-powered tab component
+    // from rendering (and potentially crashing) during the slide-out animation.
+    setIsClosing(true);
     setIsOpen(false);
-    // isMounted → false is driven by the CSS transition completing on the
-    // panel itself (onTransitionEnd), never by a racing setTimeout.
   };
 
-  // Unmount the panel only once its slide-out transition has fully finished.
-  // Filtering on "transform" prevents firing twice when multiple properties
-  // transition (e.g. opacity on backdrop vs transform on panel).
+  // Only unmount once the panel's OWN transform transition ends.
+  // Guards: (1) only the panel div itself, not child elements
+  //         (2) only on the transform property, not opacity or others
+  //         (3) only when already closed (isOpen false)
   const handlePanelTransitionEnd = (e: React.TransitionEvent<HTMLDivElement>) => {
-    if (e.propertyName === "transform" && !isOpen) {
-      console.log("[ChatWidget:unmounted] route →", pathname);
-      setIsMounted(false);
-    }
+    if (e.currentTarget !== (e.target as Element)) return;
+    if (e.propertyName !== "transform") return;
+    if (isOpen) return;
+    console.log("[ChatWidget:unmounted] route →", pathname);
+    setIsMounted(false);
+    setIsClosing(false);
   };
 
   // Close the drawer first, then navigate client-side (no full-page reload).
@@ -953,17 +967,22 @@ export function ChatWidget() {
             </Button>
           </div>
 
-          {/* Tab content */}
-          <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-            <ChatWidgetErrorBoundary key={String(isMounted)} onClose={handleClose}>
-              {activeTab === "ceo"       && <CeoHomeTab onSwitchTab={setActiveTab} />}
-              {activeTab === "chat"      && <ChatTab />}
-              {activeTab === "agents"    && <AgentsTab />}
-              {activeTab === "tasks"     && <TasksTab />}
-              {activeTab === "approvals" && <ApprovalsTab />}
-              {activeTab === "settings"  && <SettingsTab onNavigate={handleNavigate} />}
-            </ChatWidgetErrorBoundary>
-          </div>
+          {/* Tab content — fully unmounted while isClosing to prevent any
+              query-powered component from rendering during the slide-out. */}
+          {isClosing ? (
+            <div className="flex-1" aria-hidden="true" />
+          ) : (
+            <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+              <ChatWidgetErrorBoundary key={String(isMounted)} onClose={handleClose}>
+                {activeTab === "ceo"       && <CeoHomeTab onSwitchTab={setActiveTab} />}
+                {activeTab === "chat"      && <ChatTab />}
+                {activeTab === "agents"    && <AgentsTab />}
+                {activeTab === "tasks"     && <TasksTab />}
+                {activeTab === "approvals" && <ApprovalsTab />}
+                {activeTab === "settings"  && <SettingsTab onNavigate={handleNavigate} />}
+              </ChatWidgetErrorBoundary>
+            </div>
+          )}
 
           {/* Bottom tab bar */}
           <div

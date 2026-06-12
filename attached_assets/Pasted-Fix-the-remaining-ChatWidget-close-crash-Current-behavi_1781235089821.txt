@@ -1,0 +1,131 @@
+Fix the remaining ChatWidget close crash.
+
+Current behavior:
+- Brain FAB opens the right-side drawer correctly.
+- Route does NOT change on open/close/unmount.
+- Closing the drawer still triggers the page-level error:
+  “Something went wrong loading this page. A rendering error occurred.”
+
+Goal:
+Closing ChatWidget must never cause PageErrorBoundary or AppErrorBoundary to render.
+
+Do not guess. Capture the exact console stack trace first.
+
+Audit and fix:
+
+1. Reproduce and capture the stack trace
+- Open /admin/scheduling-command-center on mobile viewport.
+- Tap Brain FAB.
+- Close drawer with X.
+- Capture the exact error stack from console.
+- Identify the exact component and line throwing.
+
+2. Verify ChatWidgetSafetyBoundary truly contains all widget errors
+In App.tsx, confirm the boundary wraps the entire ChatWidget tree:
+- FAB buttons
+- backdrop
+- drawer shell
+- drawer content
+- all tabs
+- all query-powered components
+
+If any part of ChatWidget is outside the safety boundary, move it inside.
+
+3. Make close immediately stop rendering tab content
+When handleClose runs:
+- setIsOpen(false)
+- also set a local boolean like isClosing = true
+- while isClosing is true, keep only the drawer shell mounted for slide-out animation
+- do NOT render tab components, query components, lists, .map(), .filter(), .slice(), or tab content during close
+
+Example behavior:
+- Open: render full drawer content
+- Closing: render lightweight shell only
+- transitionEnd: setIsMounted(false), setIsClosing(false)
+
+This prevents query-powered tab content from throwing during the close render pass.
+
+4. Harden onTransitionEnd
+Ensure transitionEnd only unmounts from the drawer panel itself:
+
+if (event.currentTarget !== event.target) return;
+if (isOpen) return;
+setIsMounted(false);
+setIsClosing(false);
+
+Do not let child transitions trigger unmount.
+
+5. Audit every tab for unsafe data access
+In client/src/components/chat-widget.tsx, search:
+- .map(
+- .filter(
+- .slice(
+- .length
+- Object.keys
+- reduce(
+
+For every value, prove it is normalized before use.
+
+All query responses should be normalized like:
+
+const items = Array.isArray(raw?.items)
+  ? raw.items
+  : Array.isArray(raw)
+    ? raw
+    : [];
+
+Do this for:
+- CEO tab
+- Chat tab
+- Agents tab
+- Tasks tab
+- Approve tab
+- Settings tab
+- Quick links
+- priorities
+- runs
+- approvals
+- agents
+- messages
+- suggestions
+- actions
+- tools
+
+6. Check Scheduling page re-render
+Because the error appears as the page-level boundary, also audit:
+client/src/pages/admin-scheduling-command-center.tsx
+
+Search for:
+- .map(
+- .filter(
+- .slice(
+- .length
+
+Normalize all API data and derived arrays before render. Closing the drawer may cause the page to re-render, and the page must survive that.
+
+7. Add temporary lifecycle logging
+Log:
+- route on open/close/unmount
+- isOpen/isMounted/isClosing transitions
+- component name before rendering each tab
+- caught errors inside ChatWidgetErrorBoundary and ChatWidgetSafetyBoundary
+
+Remove noisy logs after confirming the fix, or leave only useful error logs.
+
+Expected result:
+- Open Brain drawer
+- Close with X
+- Close with backdrop
+- Repeat 5 times
+- Route remains /admin/scheduling-command-center
+- Scheduling page stays visible
+- No “Something went wrong loading this page”
+- No render exceptions in console
+- Reopen drawer works normally
+
+Return:
+- exact console stack trace
+- true root cause
+- files changed
+- exact fix applied
+- before/after behavior
