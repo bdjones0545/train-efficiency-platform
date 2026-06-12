@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, Component } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import {
   X, Send, Bot, User, Brain, Activity, CheckCircle2, AlertTriangle,
   Clock, Zap, Users, ListTodo, Bell, Settings, MessageSquare,
@@ -722,7 +723,7 @@ function ApprovalsTab() {
 
 // ─── Settings Tab ─────────────────────────────────────────────────────────────
 
-function SettingsTab() {
+function SettingsTab({ onNavigate }: { onNavigate: (path: string) => void }) {
   const { data: settings, isLoading } = useQuery<any>({
     queryKey: ["/api/workforce/settings"],
     queryFn: () => fetch("/api/workforce/settings", { credentials: "include" }).then(r => r.json()),
@@ -768,11 +769,15 @@ function SettingsTab() {
             { label: "Autonomy Controls", href: "/admin/autonomy-controls" },
             { label: "Email Audit & Debug", href: "/admin/email-audit" },
           ].map(link => (
-            <a key={link.href} href={link.href}
-              className="flex items-center justify-between gap-2 rounded-lg bg-zinc-800/60 border border-zinc-700/60 hover:border-zinc-500/80 px-3 py-2.5 transition-all">
+            <button
+              key={link.href}
+              type="button"
+              onClick={() => onNavigate(link.href)}
+              className="w-full flex items-center justify-between gap-2 rounded-lg bg-zinc-800/60 border border-zinc-700/60 hover:border-zinc-500/80 px-3 py-2.5 transition-all text-left"
+            >
               <span className="text-xs text-zinc-300">{link.label}</span>
               <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
-            </a>
+            </button>
           ))}
         </div>
       </div>
@@ -855,6 +860,7 @@ export function ChatWidget() {
   const [isMounted, setIsMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ceo");
+  const [pathname, setLocation] = useLocation();
 
   const { data: approvalMetrics } = useQuery<any>({
     queryKey: ["/api/ai-approvals/metrics"],
@@ -866,12 +872,16 @@ export function ChatWidget() {
   const pendingCount = approvalMetrics?.pending ?? 0;
 
   const handleOpen = () => {
+    // Route must never change when the FAB is pressed — log confirms this.
+    console.log("[ChatWidget:open] route →", pathname);
     setIsMounted(true);
     // one rAF is enough — the panel is in the DOM by the next paint
     requestAnimationFrame(() => setIsOpen(true));
   };
 
   const handleClose = () => {
+    // Route must never change when closing — log confirms this.
+    console.log("[ChatWidget:close] route →", pathname);
     setIsOpen(false);
     // isMounted → false is driven by the CSS transition completing on the
     // panel itself (onTransitionEnd), never by a racing setTimeout.
@@ -882,9 +892,17 @@ export function ChatWidget() {
   // transition (e.g. opacity on backdrop vs transform on panel).
   const handlePanelTransitionEnd = (e: React.TransitionEvent<HTMLDivElement>) => {
     if (e.propertyName === "transform" && !isOpen) {
+      console.log("[ChatWidget:unmounted] route →", pathname);
       setIsMounted(false);
     }
   };
+
+  // Close the drawer first, then navigate client-side (no full-page reload).
+  // Used by Settings tab quick-links.
+  const handleNavigate = useCallback((path: string) => {
+    handleClose();
+    setLocation(path);
+  }, [pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <>
@@ -943,7 +961,7 @@ export function ChatWidget() {
               {activeTab === "agents"    && <AgentsTab />}
               {activeTab === "tasks"     && <TasksTab />}
               {activeTab === "approvals" && <ApprovalsTab />}
-              {activeTab === "settings"  && <SettingsTab />}
+              {activeTab === "settings"  && <SettingsTab onNavigate={handleNavigate} />}
             </ChatWidgetErrorBoundary>
           </div>
 
@@ -984,6 +1002,7 @@ export function ChatWidget() {
 
       {/* Floating action button — always on top */}
       <button
+        type="button"
         className="fixed right-5 z-[9999] flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 rounded-full bg-green-600 text-white shadow-[0_4px_24px_rgba(34,197,94,0.4)] hover:scale-105 active:scale-95 transition-transform"
         style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
         onClick={() => (isOpen ? handleClose() : handleOpen())}
