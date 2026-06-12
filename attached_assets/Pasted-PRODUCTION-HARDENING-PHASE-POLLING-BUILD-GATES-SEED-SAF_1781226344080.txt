@@ -1,0 +1,241 @@
+PRODUCTION HARDENING PHASE — POLLING, BUILD GATES, SEED SAFETY
+
+Objective:
+Complete the final production-readiness hardening pass now that:
+
+* TypeScript error count = 0
+* Route-level Error Boundaries exist
+* Global 401 handling exists
+* Frontend crash reporting exists
+* Query failure logging exists
+* Startup environment validation exists
+
+Focus only on operational reliability and scaling risks.
+
+──────────────────────────────
+TASK 1 — FULL TYPESCRIPT BUILD GATE
+──────────────────────────────
+
+Current State:
+Build process still allows non-TS2304/TS2552 errors to deploy.
+
+Goal:
+No TypeScript errors of any kind should reach production.
+
+Required Changes:
+
+1. Update script/build.ts
+
+Before build:
+
+tsc –noEmit -p tsconfig.client.json
+
+2. If typecheck fails:
+    * Abort build
+    * Exit non-zero
+    * Print full TypeScript output
+3. Remove any legacy TS2304/TS2552-only checks.
+
+Validation:
+
+* Introduce a temporary TS error.
+* Confirm build fails.
+* Remove error.
+* Confirm build succeeds.
+
+Return:
+
+* Build script changes
+* Validation output
+
+──────────────────────────────
+TASK 2 — POLLING & BACKGROUND LOAD AUDIT
+──────────────────────────────
+
+Audit every React Query using:
+
+* refetchInterval
+* polling
+* background refresh
+* timers
+
+Tasks:
+
+1. Produce inventory:
+
+For each polling query:
+
+* page
+* query key
+* interval
+* whether it pauses when hidden
+
+2. Prevent hidden-tab polling.
+
+Preferred approach:
+
+refetchIntervalInBackground: false
+
+or
+
+enabled: !document.hidden
+
+or visibilitychange listeners.
+
+3. Identify:
+
+* duplicate polling
+* overlapping polling
+* unnecessary polling
+
+4. Estimate current request volume:
+
+Active tab:
+
+* requests/minute
+
+Hidden tab:
+
+* requests/minute
+
+After optimization:
+
+* requests/minute
+
+Return:
+
+* complete polling inventory
+* load reduction estimate
+* fixes applied
+
+──────────────────────────────
+TASK 3 — SEED DATABASE SAFETY
+──────────────────────────────
+
+Audit:
+
+seedDatabase()
+seed data initialization
+startup boot sequence
+
+Goal:
+No production deployment should ever risk duplicate or destructive seed execution.
+
+Tasks:
+
+1. Locate every seed entry point.
+2. Determine:
+    * when it runs
+    * what conditions trigger it
+3. Implement one of:
+
+Option A:
+if (NODE_ENV !== “production”)
+
+Option B:
+run only when database empty
+
+Option C:
+seed tracking table
+
+4. Verify:
+
+* fresh dev DB still seeds
+* production restart does not reseed
+
+Return:
+
+* existing behavior
+* new behavior
+* validation results
+
+──────────────────────────────
+TASK 4 — N+1 QUERY AUDIT
+──────────────────────────────
+
+Investigate:
+
+* routes.ts line ~2399
+* org-schedule-routes.ts
+* any async map patterns
+
+Tasks:
+
+1. Identify all:
+
+await Promise.all(
+items.map(async …)
+)
+
+patterns that generate per-record DB queries.
+
+2. Estimate:
+
+* query count before
+* query count after batching
+
+3. Convert high-frequency endpoints to:
+
+* prefetch
+* map lookup
+* grouped query
+
+Return:
+
+* endpoints affected
+* query reduction achieved
+* latency impact estimate
+
+──────────────────────────────
+TASK 5 — RECHARTS SAFETY PASS
+──────────────────────────────
+
+Audit all chart components.
+
+Goal:
+Malformed or empty API responses should never crash charts.
+
+Tasks:
+
+1. Find every chart.
+2. Verify:
+
+data={chartData ?? []}
+
+or equivalent.
+
+3. Verify:
+
+* null
+* undefined
+* empty arrays
+
+all render safely.
+
+4. Confirm no chart can crash a page.
+
+Return:
+
+* charts audited
+* charts fixed
+* remaining risks
+
+──────────────────────────────
+FINAL REPORT REQUIRED
+──────────────────────────────
+
+Provide:
+
+1. Build Gate Status
+2. Polling Inventory
+3. Request Volume Reduction Estimate
+4. Seed Safety Status
+5. N+1 Findings
+6. Recharts Findings
+7. Files Changed
+8. Remaining Critical Risks
+9. Updated Stability Score
+10. Updated Production Readiness Score
+
+Goal:
+Move TrainEfficiency from “production capable” to “production hardened.”

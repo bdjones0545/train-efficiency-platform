@@ -15,7 +15,7 @@ import {
   prLiftEntries,
   prLiftTypes,
 } from "@shared/schema";
-import { eq, and, desc, gt, asc } from "drizzle-orm";
+import { eq, and, desc, gt, asc, inArray } from "drizzle-orm";
 
 async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
   const token = req.headers["x-org-auth-token"] as string;
@@ -158,17 +158,24 @@ export function registerOrgScheduleRoutes(app: Express) {
 
       const today = new Date().toISOString().split("T")[0];
 
-      const enriched = await Promise.all(
-        allBookings.map(async (b) => {
-          if (!b.orgUserId) return { ...b, bookerName: b.bookedBy || null, isTracked: false };
-          const [user] = await db
-            .select({ name: orgUsers.name, email: orgUsers.email })
-            .from(orgUsers)
-            .where(eq(orgUsers.id, b.orgUserId))
-            .limit(1);
-          return { ...b, bookerName: user?.name || b.bookedBy || null, isTracked: true };
-        })
-      );
+      // Batch-fetch booker names in a single query instead of N per-row queries
+      const uniqueOrgUserIds = [
+        ...new Set(allBookings.map((b) => b.orgUserId).filter(Boolean)),
+      ] as string[];
+      const orgUserMap = new Map<string, { name: string; email: string }>();
+      if (uniqueOrgUserIds.length > 0) {
+        const rows = await db
+          .select({ id: orgUsers.id, name: orgUsers.name, email: orgUsers.email })
+          .from(orgUsers)
+          .where(inArray(orgUsers.id, uniqueOrgUserIds));
+        for (const r of rows) orgUserMap.set(r.id, r);
+      }
+
+      const enriched = allBookings.map((b) => {
+        if (!b.orgUserId) return { ...b, bookerName: b.bookedBy || null, isTracked: false };
+        const user = orgUserMap.get(b.orgUserId);
+        return { ...b, bookerName: user?.name || b.bookedBy || null, isTracked: true };
+      });
 
       const upcoming = enriched.filter((b) => b.date >= today);
       const past = enriched.filter((b) => b.date < today);

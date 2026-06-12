@@ -147,8 +147,15 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  const { seedDatabase } = await import("./seed");
-  await seedDatabase();
+  // Dev-data seed: only runs outside production.
+  // The seed is already idempotent (checks before inserting), but we add
+  // this guard so a fresh production DB never receives dev fixture data.
+  if (process.env.NODE_ENV !== "production") {
+    const { seedDatabase } = await import("./seed");
+    await seedDatabase();
+  } else {
+    console.log("[Seed] Production mode — dev seed skipped");
+  }
 
   const { seedDefaultEducationLibrary } = await import("./education-seed");
   await seedDefaultEducationLibrary();

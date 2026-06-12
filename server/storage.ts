@@ -210,6 +210,7 @@ export interface IStorage {
   getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]>;
 
   getBookingParticipants(bookingId: string): Promise<(BookingParticipant & { user: User })[]>;
+  getBookingParticipantsBatch(bookingIds: string[]): Promise<(BookingParticipant & { user: User })[]>;
   addBookingParticipant(participant: InsertBookingParticipant): Promise<BookingParticipant>;
   removeBookingParticipant(bookingId: string, userId: string): Promise<void>;
   removeBookingParticipantById(participantId: string): Promise<void>;
@@ -968,6 +969,16 @@ export class DatabaseStorage implements IStorage {
       .from(bookingParticipants)
       .innerJoin(users, eq(bookingParticipants.userId, users.id))
       .where(eq(bookingParticipants.bookingId, bookingId));
+    return result.map(r => ({ ...r.booking_participants, user: r.users }));
+  }
+
+  async getBookingParticipantsBatch(bookingIds: string[]): Promise<(BookingParticipant & { user: User })[]> {
+    if (bookingIds.length === 0) return [];
+    const result = await db
+      .select()
+      .from(bookingParticipants)
+      .innerJoin(users, eq(bookingParticipants.userId, users.id))
+      .where(inArray(bookingParticipants.bookingId, bookingIds));
     return result.map(r => ({ ...r.booking_participants, user: r.users }));
   }
 

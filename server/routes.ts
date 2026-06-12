@@ -2412,10 +2412,21 @@ export async function registerRoutes(
         }
       }
 
-      const enriched = await Promise.all(
-        merged.map(async (booking: any) => {
+      // Batch-fetch participants for all group bookings in a single query
+      const groupBookingIds = merged
+        .filter((b: any) => b.maxParticipants)
+        .map((b: any) => b.id);
+      const batchedParticipants = await storage.getBookingParticipantsBatch(groupBookingIds);
+      const participantsByBookingId = new Map<string, typeof batchedParticipants>();
+      for (const p of batchedParticipants) {
+        const arr = participantsByBookingId.get(p.bookingId) ?? [];
+        arr.push(p);
+        participantsByBookingId.set(p.bookingId, arr);
+      }
+
+      const enriched = merged.map((booking: any) => {
           const participants = booking.maxParticipants
-            ? await storage.getBookingParticipants(booking.id)
+            ? (participantsByBookingId.get(booking.id) ?? [])
             : [];
           const participantCount = participants.length;
           const spotsRemaining =
@@ -2441,8 +2452,7 @@ export async function registerRoutes(
             priceCents,
             isFree,
           };
-        })
-      );
+        });
 
       res.json(enriched);
     } catch (error) {
