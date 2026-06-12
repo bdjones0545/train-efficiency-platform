@@ -271,7 +271,7 @@ function CreateEventModal({
     }
   }, [open, defaultType]);
 
-  const headers = orgToken ? { "X-Org-Auth-Token": orgToken } : {};
+  const headers: Record<string, string> = orgToken ? { "X-Org-Auth-Token": orgToken } : {};
 
   const { data: targets, isLoading: targetsLoading } = useQuery<any>({
     queryKey: ["/api/org/calendar/targets", slug, orgToken],
@@ -545,7 +545,7 @@ export default function OrgCalendarPage() {
   const [showCreate, setShowCreate]   = useState(false);
   const [detailEvent, setDetailEvent] = useState<any>(null);
 
-  const headers = orgToken ? { "X-Org-Auth-Token": orgToken } : {};
+  const headers: Record<string, string> = orgToken ? { "X-Org-Auth-Token": orgToken } : {};
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/org/activity/calendar", view, slug],

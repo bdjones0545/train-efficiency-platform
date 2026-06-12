@@ -143,17 +143,19 @@ function AlertCard({
   onRead,
 }: {
   alert: Alert;
-  orgToken: string;
+  orgToken: string | null;
   slug: string;
   onRead: () => void;
 }) {
   const { toast } = useToast();
+  const alertHeaders: Record<string, string> = {};
+  if (orgToken) alertHeaders["X-Org-Auth-Token"] = orgToken;
 
   const readMutation = useMutation({
     mutationFn: async () => {
       const r = await fetch(`/api/org/coach/intelligence/alerts/${alert.id}/read`, {
         method: "PATCH",
-        headers: { "X-Org-Auth-Token": orgToken },
+        headers: alertHeaders,
       });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
@@ -399,7 +401,7 @@ export default function OrgIntelligencePage() {
         {showAuth && org && (
           <OrgAuthModal
             orgId={org.id}
-            orgName={org.name}
+            programName={org.name}
             onAuthenticated={(token) => {
               if (orgId) localStorage.setItem(`orgToken_${orgId}`, token);
               setOrgToken(token);

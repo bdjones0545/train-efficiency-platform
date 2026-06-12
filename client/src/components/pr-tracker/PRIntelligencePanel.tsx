@@ -263,7 +263,7 @@ function ExpandCard({
 
 // ─── Summary Card ─────────────────────────────────────────────────────────────
 
-function SummaryCard({ summary, athleteUserId, orgToken, onUpdated }: { summary: AiSummary; athleteUserId: string; orgToken: string; onUpdated: () => void }) {
+function SummaryCard({ summary, athleteUserId, orgToken, onUpdated }: { summary: AiSummary; athleteUserId: string; orgToken: string | null; onUpdated: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState(summary.editedText || summary.generatedText);
@@ -353,7 +353,7 @@ function SummaryCard({ summary, athleteUserId, orgToken, onUpdated }: { summary:
 
 // ─── Public Profile Card ──────────────────────────────────────────────────────
 
-function PublicProfileCard({ profile, athleteUserId, orgToken, onUpdated }: { profile: PublicProfile; athleteUserId: string; orgToken: string; onUpdated: () => void }) {
+function PublicProfileCard({ profile, athleteUserId, orgToken, onUpdated }: { profile: PublicProfile; athleteUserId: string; orgToken: string | null; onUpdated: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const { toast } = useToast();
 
@@ -431,7 +431,7 @@ function PublicProfileCard({ profile, athleteUserId, orgToken, onUpdated }: { pr
 
 // ─── External Asset Card ──────────────────────────────────────────────────────
 
-function ExternalAssetCard({ asset, athleteUserId, orgToken, onUpdated }: { asset: ExternalAsset; athleteUserId: string; orgToken: string; onUpdated: () => void }) {
+function ExternalAssetCard({ asset, athleteUserId, orgToken, onUpdated }: { asset: ExternalAsset; athleteUserId: string; orgToken: string | null; onUpdated: () => void }) {
   const [expanded, setExpanded] = useState(false);
   const { toast } = useToast();
 
@@ -511,7 +511,7 @@ function ExternalAssetCard({ asset, athleteUserId, orgToken, onUpdated }: { asse
 
 // ─── Research Form ────────────────────────────────────────────────────────────
 
-function ResearchForm({ athleteUserId, orgToken, athleteName, onJobStarted }: { athleteUserId: string; orgToken: string; athleteName: string; onJobStarted: () => void }) {
+function ResearchForm({ athleteUserId, orgToken, athleteName, onJobStarted }: { athleteUserId: string; orgToken: string | null; athleteName: string; onJobStarted: () => void }) {
   const { toast } = useToast();
   const [form, setForm] = useState({
     athleteName,

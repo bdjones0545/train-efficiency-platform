@@ -167,7 +167,7 @@ function AlertCard({
 }: {
   alert: IntelAlert;
   athleteUserId: string;
-  orgToken: string;
+  orgToken: string | null;
   onRead: () => void;
 }) {
   const { toast } = useToast();

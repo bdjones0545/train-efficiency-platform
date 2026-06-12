@@ -79,7 +79,7 @@ export default function CoachGuardianManagementPage() {
 
   // ── Mutations ──────────────────────────────────────────────────────────────
   const inviteMut = useMutation({
-    mutationFn: (data: any) => apiRequest("POST", "/api/org/guardians/invite", data, { headers }),
+    mutationFn: (data: any) => apiRequest("POST", "/api/org/guardians/invite", data, headers),
     onSuccess: (data: any) => {
       refetch();
       setShowInviteForm(false);
@@ -93,12 +93,12 @@ export default function CoachGuardianManagementPage() {
   });
 
   const updateLinkMut = useMutation({
-    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/guardians/link/${id}`, data, { headers }),
+    mutationFn: ({ id, ...data }: any) => apiRequest("PATCH", `/api/org/guardians/link/${id}`, data, headers),
     onSuccess: () => { refetch(); setEditingLinkId(null); toast({ title: "Updated" }); },
   });
 
   const revokeMut = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/org/guardians/link/${id}`, {}, { headers }),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/org/guardians/link/${id}`, {}, headers),
     onSuccess: () => { refetch(); toast({ title: "Guardian access revoked" }); },
   });
 
