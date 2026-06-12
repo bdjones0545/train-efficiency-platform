@@ -9,7 +9,8 @@ import { Button } from "@/components/ui/button";
 import {
   Calendar, Clock, Users, DollarSign, TrendingUp, AlertCircle,
   CheckCircle2, Clock3, BarChart3, ArrowUpRight, Activity, Flame,
-  Sparkles, Target, RefreshCw, ChevronRight, Zap, ChevronDown, Lightbulb
+  Sparkles, Target, RefreshCw, ChevronRight, Zap, ChevronDown, Lightbulb,
+  LayoutDashboard
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link } from "wouter";
@@ -479,21 +480,37 @@ export default function AdminSchedulingCommandCenterPage() {
   if (isError) {
     return (
       <div className="space-y-6" data-testid="scheduling-dashboard-error">
-        <div>
-          <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
-            <Flame className="h-6 w-6 text-primary" />
-            Scheduling Command Center
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm">Live operational heartbeat for scheduling across your organization</p>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
+              <Flame className="h-6 w-6 text-primary" />
+              Scheduling Command Center
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm">Live operational heartbeat for scheduling across your organization</p>
+          </div>
+          <Link href="/scheduling">
+            <Button variant="outline" size="sm" className="gap-2 shrink-0" data-testid="button-open-scheduling-dashboard">
+              <LayoutDashboard className="h-4 w-4" />
+              Open Scheduling Dashboard
+            </Button>
+          </Link>
         </div>
         <Card className="p-6 text-center space-y-3">
           <AlertCircle className="h-8 w-8 text-destructive mx-auto" />
-          <p className="font-semibold">Unable to load dashboard data</p>
-          <p className="text-sm text-muted-foreground">There was a problem fetching your scheduling data. Please try again.</p>
-          <Button variant="outline" onClick={() => refetch()} className="gap-2" data-testid="button-retry-dashboard">
-            <RefreshCw className="h-4 w-4" />
-            Retry
-          </Button>
+          <p className="font-semibold">Unable to load command center data</p>
+          <p className="text-sm text-muted-foreground">There was a problem fetching scheduling operations data. Please try again.</p>
+          <div className="flex items-center justify-center gap-3">
+            <Button variant="outline" onClick={() => refetch()} className="gap-2" data-testid="button-retry-dashboard">
+              <RefreshCw className="h-4 w-4" />
+              Retry
+            </Button>
+            <Link href="/scheduling">
+              <Button className="gap-2" data-testid="button-go-to-schedule">
+                <LayoutDashboard className="h-4 w-4" />
+                Go to Scheduling Dashboard
+              </Button>
+            </Link>
+          </div>
         </Card>
       </div>
     );
@@ -522,12 +539,20 @@ export default function AdminSchedulingCommandCenterPage() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
-          <Flame className="h-6 w-6 text-primary" />
-          Scheduling Command Center
-        </h1>
-        <p className="text-muted-foreground mt-1 text-sm">Live operational heartbeat for scheduling across your organization</p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
+            <Flame className="h-6 w-6 text-primary" />
+            Scheduling Command Center
+          </h1>
+          <p className="text-muted-foreground mt-1 text-sm">Live operational heartbeat for scheduling across your organization</p>
+        </div>
+        <Link href="/scheduling">
+          <Button variant="outline" size="sm" className="gap-2 shrink-0" data-testid="button-open-scheduling-dashboard">
+            <LayoutDashboard className="h-4 w-4" />
+            Open Scheduling Dashboard
+          </Button>
+        </Link>
       </div>
 
       {/* Session Status Cards */}

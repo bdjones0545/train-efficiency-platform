@@ -546,16 +546,20 @@ export function AppSidebar() {
     items: [
       {
         title: "Scheduling Dashboard",
-        url: "/admin/scheduling-command-center",
+        url: "/scheduling",
         icon: LayoutDashboard,
         testId: "nav-scheduling-dashboard",
       },
-      {
-        title: preset.nav.schedule,
-        url: "/scheduling",
-        icon: CalendarDays,
-        testId: "nav-schedule",
-      },
+      ...(isAdmin
+        ? [
+            {
+              title: "Scheduling Command Center",
+              url: "/admin/scheduling-command-center",
+              icon: CalendarDays,
+              testId: "nav-scheduling-command-center",
+            },
+          ]
+        : []),
       {
         title: preset.nav.athletes,
         url: "/coach/users",

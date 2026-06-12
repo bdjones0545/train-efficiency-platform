@@ -464,16 +464,20 @@ export async function registerSchedulingPhase2Routes(app: Express, isAuthenticat
         return reg >= max;
       });
 
-      // Sessions with waitlist entries
-      const waitlistResult = await db.execute(sql`
-        SELECT sw.booking_id, COUNT(*) AS wait_count
-        FROM session_waitlists sw
-        JOIN bookings b ON sw.booking_id = b.id
-        WHERE b.organization_id = ${orgId}
-        GROUP BY sw.booking_id
-      `);
+      // Sessions with waitlist entries (table may not exist — fail gracefully)
       const waitlistCounts = new Map<string, number>();
-      rows(waitlistResult).forEach((r: any) => waitlistCounts.set(r.booking_id, parseInt(r.wait_count)));
+      try {
+        const waitlistResult = await db.execute(sql`
+          SELECT sw.booking_id, COUNT(*) AS wait_count
+          FROM session_waitlists sw
+          JOIN bookings b ON sw.booking_id = b.id
+          WHERE b.organization_id = ${orgId}
+          GROUP BY sw.booking_id
+        `);
+        rows(waitlistResult).forEach((r: any) => waitlistCounts.set(r.booking_id, parseInt(r.wait_count)));
+      } catch {
+        // session_waitlists table not yet provisioned — skip waitlist data
+      }
 
       const waitlistedSessions = all
         .filter((s: any) => waitlistCounts.has(s.id))
