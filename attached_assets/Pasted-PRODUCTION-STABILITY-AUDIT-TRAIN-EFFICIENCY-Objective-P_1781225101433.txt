@@ -1,0 +1,265 @@
+PRODUCTION STABILITY AUDIT — TRAIN EFFICIENCY
+
+Objective:
+Perform a full production stability audit focused on runtime reliability, user-facing failures, error handling, deployment safety, and business-critical workflows.
+
+This audit is separate from TypeScript correctness. Assume the codebase now passes typecheck with zero errors.
+
+──────────────────────────────
+PHASE 1 — APPLICATION CRASH PROTECTION
+──────────────────────────────
+
+Audit all React entry points and determine whether runtime exceptions can white-screen the application.
+
+Tasks:
+
+1. Verify global Error Boundary coverage.
+    * App root
+    * Authenticated app shell
+    * Public landing pages
+    * Admin pages
+    * Org portal pages
+2. Identify pages capable of crashing the entire React tree.
+3. Add route-level Error Boundaries where appropriate.
+4. Ensure all Error Boundaries:
+    * Log errors
+    * Display recovery UI
+    * Include retry actions
+    * Prevent application-wide crashes
+
+Return:
+
+* Existing coverage
+* Missing coverage
+* Recommended implementation locations
+
+──────────────────────────────
+PHASE 2 — REACT QUERY RESILIENCE
+──────────────────────────────
+
+Audit all React Query usage.
+
+Tasks:
+
+1. Identify queries missing:
+    * Error handling
+    * Loading states
+    * Empty states
+2. Identify mutations lacking:
+    * Error toast
+    * Retry strategy
+    * Failure visibility
+3. Identify query chains that can break if one request fails.
+4. Verify:
+    * Query invalidation correctness
+    * Cache update safety
+    * Optimistic update rollback behavior
+
+Return:
+
+* High-risk queries
+* High-risk mutations
+* Missing loading/error states
+
+──────────────────────────────
+PHASE 3 — AUTHENTICATION & SESSION RESILIENCE
+──────────────────────────────
+
+Audit:
+
+* Coach authentication
+* Admin authentication
+* Org authentication
+* Portal authentication
+
+Tasks:
+
+1. Verify expired sessions redirect safely.
+2. Verify unauthorized requests do not crash pages.
+3. Verify:
+    * Missing org token
+    * Invalid org token
+    * Expired session cookie
+    * Permission denial
+
+all produce safe UI behavior.
+
+4. Verify all protected routes.
+
+Return:
+
+* Broken auth flows
+* Missing guards
+* Pages that assume authentication incorrectly
+
+──────────────────────────────
+PHASE 4 — API FAILURE AUDIT
+──────────────────────────────
+
+Simulate API failures.
+
+For each critical page:
+
+* Network timeout
+* 500 error
+* Empty response
+* Malformed response
+
+Verify:
+
+1. No runtime crashes occur.
+2. User sees actionable feedback.
+3. Loading state exits correctly.
+4. Retry path exists.
+
+Audit:
+
+* Scheduling
+* Command Center
+* Athlete Management
+* Lead Capture
+* Billing
+* Education
+* Intelligence
+* Notifications
+* AI Departments
+
+Return:
+
+* Failure points
+* Missing fallbacks
+* Crash scenarios
+
+──────────────────────────────
+PHASE 5 — BUSINESS CRITICAL WORKFLOWS
+──────────────────────────────
+
+Run full workflow validation.
+
+Scheduling:
+
+* Create session
+* Edit session
+* Cancel session
+* Athlete booking
+* Coach booking
+* Waitlist
+
+Lead Capture:
+
+* Submit lead
+* Confirmation email
+* Admin notification
+* Revenue attribution
+
+Athlete Management:
+
+* Add athlete
+* Edit athlete
+* Attendance
+* PR entry
+
+Billing:
+
+* Purchase
+* Wallet credit
+* Redemption
+* Revenue reporting
+
+Approvals:
+
+* Create approval
+* Approve
+* Reject
+* Notification generation
+
+Return:
+
+* Pass/fail matrix
+* Broken workflows
+* Data integrity risks
+
+──────────────────────────────
+PHASE 6 — RUNTIME OBSERVABILITY
+──────────────────────────────
+
+Audit current visibility into failures.
+
+Verify:
+
+1. Frontend runtime error logging
+2. API request failure logging
+3. React Query failure tracking
+4. Workflow failure logging
+5. Agent failure logging
+6. Notification failure logging
+
+Return:
+
+* Existing monitoring
+* Blind spots
+* Recommended instrumentation
+
+──────────────────────────────
+PHASE 7 — DEPLOYMENT SAFETY
+──────────────────────────────
+
+Audit deployment process.
+
+Verify:
+
+1. Typecheck runs before build.
+2. Build fails on TypeScript errors.
+3. Production bundle generation succeeds.
+4. Missing imports cannot deploy.
+5. Route registration validation exists.
+6. Environment variable validation exists.
+7. Database migration validation exists.
+
+Return:
+
+* Current protections
+* Missing protections
+* Recommended build gates
+
+──────────────────────────────
+PHASE 8 — PERFORMANCE & STABILITY HOTSPOTS
+──────────────────────────────
+
+Identify:
+
+* Largest React pages
+* Excessive re-renders
+* N+1 query patterns
+* Duplicate API calls
+* Large bundle contributors
+* Memory leak risks
+* Unbounded polling
+* Infinite query risks
+
+Return:
+
+* Top 20 stability/performance risks
+* Severity ranking
+* Recommended fixes
+
+──────────────────────────────
+FINAL REPORT REQUIRED
+──────────────────────────────
+
+Provide:
+
+1. Executive Summary
+2. Critical Issues
+3. High-Risk Issues
+4. Medium-Risk Issues
+5. Low-Risk Issues
+6. Stability Score (0–100)
+7. Production Readiness Score (0–100)
+8. Recommended Fix Order
+9. Estimated effort by phase
+10. Quick Wins (< 30 minutes)
+11. Major Refactors (> 1 day)
+
+Goal:
+Determine whether TrainEfficiency is production-ready for scaling and identify all remaining runtime risks that TypeScript alone cannot detect.
