@@ -63,6 +63,7 @@ export default function AdminCeoHeartbeatPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [bannerDismissed, setBannerDismissed] = useState(false);
+  const [hasRunOnce, setHasRunOnce] = useState(false);
 
   const { data: sessionCtx } = useQuery<{ orgId: string | null; orgName: string | null }>({
     queryKey: ["/api/admin/ceo-heartbeat/session-context"],
@@ -163,12 +164,15 @@ export default function AdminCeoHeartbeatPage() {
           ? "Your operational baseline has been established."
           : "CEO Heartbeat is running now.",
       });
+      if (wasFirst) {
+        setHasRunOnce(true);
+        setBannerDismissed(true);
+      }
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/status", orgId] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/health", orgId] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/priorities", orgId] });
       queryClient.invalidateQueries({ queryKey: timelineQKey });
       queryClient.invalidateQueries({ queryKey: ["/api/reliability/executive-summary"] });
-      if (wasFirst) setBannerDismissed(true);
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -215,25 +219,26 @@ export default function AdminCeoHeartbeatPage() {
   const timeline = timelineData?.entries ?? [];
   const isPaused = status?.isPaused ?? false;
   const isRunning = status?.isRunning ?? false;
-  const hasNeverRun = !!orgId && !statusLoading && !lastRun;
+  const isInitializing = runMutation.isPending;
+  const hasNeverRun = !!orgId && !statusLoading && !lastRun && !hasRunOnce && !isInitializing;
   const showOnboardingBanner = hasNeverRun && !bannerDismissed;
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto overflow-x-hidden pb-28">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
-            <Brain className="h-6 w-6 text-indigo-500" />
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+            <Brain className="h-5 w-5 sm:h-6 sm:w-6 text-indigo-500 flex-shrink-0" />
             CEO Heartbeat
           </h1>
-          <p className="text-muted-foreground text-sm mt-1">
+          <p className="text-muted-foreground text-xs sm:text-sm mt-1">
             Unified orchestration layer — coordinates all agents, approvals, and outcomes from one center
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-shrink-0">
           <Badge variant={isPaused ? "destructive" : isRunning ? "secondary" : "outline"}
             className="text-xs">
             {isPaused ? "⏸ Paused" : isRunning ? "⟳ Running" : "● Active"}
@@ -287,69 +292,69 @@ export default function AdminCeoHeartbeatPage() {
 
       {/* ── Platform Reliability Card ── */}
       {reliabilitySummary && (
-        <Card className={`border-l-4 ${
+        <Card className={`border-l-4 w-full overflow-hidden ${
           reliabilitySummary.status === "operational" ? "border-l-emerald-500 bg-emerald-500/5" :
           reliabilitySummary.status === "degraded"    ? "border-l-yellow-500 bg-yellow-500/5" :
                                                         "border-l-red-500 bg-red-500/5"
         }`} data-testid="card-reliability-summary">
           <CardContent className="pt-4 pb-3">
-            <div className="flex items-start justify-between gap-4 flex-wrap">
-              <div className="flex items-center gap-3">
-                <Shield className={`h-5 w-5 ${
-                  reliabilitySummary.status === "operational" ? "text-emerald-500" :
-                  reliabilitySummary.status === "degraded"    ? "text-yellow-500" : "text-red-500"
-                }`} />
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-semibold">Platform Status</span>
-                    <Badge className={`text-[10px] capitalize ${
-                      reliabilitySummary.status === "operational" ? "bg-emerald-500/15 text-emerald-700 border-emerald-200" :
-                      reliabilitySummary.status === "degraded"    ? "bg-yellow-500/15 text-yellow-700 border-yellow-200" :
-                                                                    "bg-red-500/15 text-red-700 border-red-200"
-                    }`}>{reliabilitySummary.status}</Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">{reliabilitySummary.recommendation}</p>
+            <div className="flex items-start gap-3 mb-3">
+              <Shield className={`h-5 w-5 flex-shrink-0 mt-0.5 ${
+                reliabilitySummary.status === "operational" ? "text-emerald-500" :
+                reliabilitySummary.status === "degraded"    ? "text-yellow-500" : "text-red-500"
+              }`} />
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm font-semibold">Platform Status</span>
+                  <Badge className={`text-[10px] capitalize ${
+                    reliabilitySummary.status === "operational" ? "bg-emerald-500/15 text-emerald-700 border-emerald-200" :
+                    reliabilitySummary.status === "degraded"    ? "bg-yellow-500/15 text-yellow-700 border-yellow-200" :
+                                                                  "bg-red-500/15 text-red-700 border-red-200"
+                  }`}>{reliabilitySummary.status}</Badge>
                 </div>
+                <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{reliabilitySummary.recommendation}</p>
               </div>
-              <div className="flex items-center gap-6 text-center">
-                <div>
-                  <div className="text-lg font-bold tabular-nums">{reliabilitySummary.uptime}%</div>
-                  <div className="text-[10px] text-muted-foreground">Uptime</div>
-                </div>
-                <div>
-                  <div className={`text-lg font-bold tabular-nums ${reliabilitySummary.criticalAlerts > 0 ? "text-red-500" : "text-emerald-500"}`}>
-                    {reliabilitySummary.criticalAlerts}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Critical Alerts</div>
-                </div>
-                <div>
-                  <div className={`text-lg font-bold tabular-nums ${reliabilitySummary.clientErrorsLastHour > 5 ? "text-orange-500" : "text-muted-foreground"}`}>
-                    {reliabilitySummary.clientErrorsLastHour}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Client Errors/hr</div>
-                </div>
-                <div>
-                  <div className="text-lg font-bold tabular-nums">
-                    {reliabilitySummary.healthChecksTotal > 0
-                      ? `${reliabilitySummary.healthChecksPass}/${reliabilitySummary.healthChecksTotal}`
-                      : "—"}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">Checks Passing</div>
-                </div>
-                <div>
-                  <div className={`text-lg font-bold tabular-nums ${
-                    (reliabilitySummary.dlqPending ?? 0) >= 20 ? "text-red-500" :
-                    (reliabilitySummary.dlqPending ?? 0) >= 5  ? "text-yellow-500" :
-                    "text-muted-foreground"
-                  }`}>
-                    {reliabilitySummary.dlqPending ?? 0}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground">DLQ Pending</div>
-                </div>
-                <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
-                  <a href="/admin/reliability" data-testid="link-reliability-dashboard">View Dashboard</a>
-                </Button>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 text-center">
+              <div className="p-2 rounded border bg-card/50">
+                <div className="text-base font-bold tabular-nums">{reliabilitySummary.uptime}%</div>
+                <div className="text-[10px] text-muted-foreground">Uptime</div>
               </div>
+              <div className="p-2 rounded border bg-card/50">
+                <div className={`text-base font-bold tabular-nums ${reliabilitySummary.criticalAlerts > 0 ? "text-red-500" : "text-emerald-500"}`}>
+                  {reliabilitySummary.criticalAlerts}
+                </div>
+                <div className="text-[10px] text-muted-foreground">Critical Alerts</div>
+              </div>
+              <div className="p-2 rounded border bg-card/50">
+                <div className={`text-base font-bold tabular-nums ${reliabilitySummary.clientErrorsLastHour > 5 ? "text-orange-500" : "text-muted-foreground"}`}>
+                  {reliabilitySummary.clientErrorsLastHour}
+                </div>
+                <div className="text-[10px] text-muted-foreground">Client Errors/hr</div>
+              </div>
+              <div className="p-2 rounded border bg-card/50">
+                <div className="text-base font-bold tabular-nums">
+                  {reliabilitySummary.healthChecksTotal > 0
+                    ? `${reliabilitySummary.healthChecksPass}/${reliabilitySummary.healthChecksTotal}`
+                    : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground">Checks Passing</div>
+              </div>
+              <div className="p-2 rounded border bg-card/50">
+                <div className={`text-base font-bold tabular-nums ${
+                  (reliabilitySummary.dlqPending ?? 0) >= 20 ? "text-red-500" :
+                  (reliabilitySummary.dlqPending ?? 0) >= 5  ? "text-yellow-500" :
+                  "text-muted-foreground"
+                }`}>
+                  {reliabilitySummary.dlqPending ?? 0}
+                </div>
+                <div className="text-[10px] text-muted-foreground">DLQ Pending</div>
+              </div>
+            </div>
+            <div className="mt-3">
+              <Button size="sm" variant="outline" className="h-7 text-xs w-full sm:w-auto" asChild>
+                <a href="/admin/reliability" data-testid="link-reliability-dashboard">View Dashboard</a>
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -451,38 +456,44 @@ export default function AdminCeoHeartbeatPage() {
         <CardHeader className="pb-3">
           <CardTitle className="text-sm flex items-center gap-2"><Settings className="h-4 w-4" />Manual Controls</CardTitle>
         </CardHeader>
-        <CardContent className="flex flex-wrap gap-2">
+        <CardContent className="grid grid-cols-1 sm:flex sm:flex-wrap gap-2">
           <Button size="sm" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || isRunning}
             data-testid="button-run-heartbeat"
-            className={hasNeverRun ? "bg-indigo-600 hover:bg-indigo-700 text-white" : ""}>
+            className={`w-full sm:w-auto text-sm whitespace-normal ${hasNeverRun ? "bg-indigo-600 hover:bg-indigo-700 text-white" : ""}`}>
             {hasNeverRun
-              ? <Sparkles className="h-4 w-4 mr-1" />
-              : <Play className="h-4 w-4 mr-1" />}
-            {runMutation.isPending
-              ? (hasNeverRun ? "Initializing…" : "Running…")
-              : (hasNeverRun ? "Initialize Heartbeat" : "Run Heartbeat Now")}
+              ? <Sparkles className="h-4 w-4 mr-1 flex-shrink-0" />
+              : <Play className="h-4 w-4 mr-1 flex-shrink-0" />}
+            {isInitializing
+              ? "Initializing heartbeat…"
+              : runMutation.isPending
+                ? "Running…"
+                : (hasNeverRun ? "Initialize Heartbeat" : "Run Heartbeat Now")}
           </Button>
           {isPaused ? (
             <Button size="sm" variant="outline" onClick={() => resumeMutation.mutate()}
-              disabled={resumeMutation.isPending} data-testid="button-resume-automation">
-              <Play className="h-4 w-4 mr-1" />
+              disabled={resumeMutation.isPending || isInitializing} data-testid="button-resume-automation"
+              className="w-full sm:w-auto text-sm">
+              <Play className="h-4 w-4 mr-1 flex-shrink-0" />
               Resume Automation
             </Button>
           ) : (
             <Button size="sm" variant="outline" onClick={() => pauseMutation.mutate()}
-              disabled={pauseMutation.isPending} data-testid="button-pause-automation">
-              <Pause className="h-4 w-4 mr-1" />
+              disabled={pauseMutation.isPending || isInitializing} data-testid="button-pause-automation"
+              className="w-full sm:w-auto text-sm">
+              <Pause className="h-4 w-4 mr-1 flex-shrink-0" />
               Pause All Automation
             </Button>
           )}
           <Button size="sm" variant="outline" onClick={() => retryMutation.mutate()}
-            disabled={retryMutation.isPending} data-testid="button-retry-failed">
-            <RotateCcw className="h-4 w-4 mr-1" />
+            disabled={retryMutation.isPending || isInitializing} data-testid="button-retry-failed"
+            className="w-full sm:w-auto text-sm">
+            <RotateCcw className="h-4 w-4 mr-1 flex-shrink-0" />
             {retryMutation.isPending ? "Retrying…" : "Retry Failed Jobs"}
           </Button>
           <Button size="sm" variant="outline" onClick={() => recalcMutation.mutate()}
-            disabled={recalcMutation.isPending} data-testid="button-recalculate-priorities">
-            <Brain className="h-4 w-4 mr-1" />
+            disabled={recalcMutation.isPending || isInitializing} data-testid="button-recalculate-priorities"
+            className="w-full sm:w-auto text-sm">
+            <Brain className="h-4 w-4 mr-1 flex-shrink-0" />
             {recalcMutation.isPending ? "Recalculating…" : "Recalculate Priorities"}
           </Button>
         </CardContent>
