@@ -83,23 +83,28 @@ export function CoachAgentLauncher() {
 
   return (
     <>
-      {/* Floating launcher button */}
+      {/* Floating launcher button — positioned clearly above the Brain FAB.
+          Brain FAB: bottom=1.25rem, height=4rem (sm+) → top edge ≈ 5.25rem.
+          Bot FAB bottom starts at 6.5rem (104px) giving a clean 1.25rem gap. */}
       <button
+        type="button"
         data-testid="coach-agent-launcher"
         aria-label="Open scheduling agent"
-        onClick={() => setOpen(true)}
+        onClick={(e) => {
+          e.stopPropagation();
+          console.log("[BotFAB:click] pathname =", location);
+          setOpen(true);
+        }}
         className={[
           "fixed z-50 flex items-center justify-center rounded-full shadow-lg",
           "bg-primary text-primary-foreground",
           "transition-transform hover:scale-105 active:scale-95",
-          "bottom-6 right-5",
-          "w-13 h-13",
           hasPulsed ? "animate-[pulse_0.8s_ease-in-out_2]" : "",
         ].join(" ")}
         style={{
           width: 52,
           height: 52,
-          bottom: `max(5rem, calc(env(safe-area-inset-bottom) + 4.5rem))`,
+          bottom: `max(6.5rem, calc(env(safe-area-inset-bottom, 0px) + 6rem))`,
           right: "1.25rem",
         }}
       >

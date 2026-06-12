@@ -1,0 +1,73 @@
+Fix ChatWidget Brain FAB changing route to /admin/attention.
+
+Current behavior:
+- User is on a page like /admin/scheduling-command-center.
+- Pressing or closing the Brain FAB eventually changes the URL to:
+  /admin/attention
+- Then PageErrorBoundary shows:
+  “Something went wrong loading this page.”
+- This should never happen. Brain FAB should stay on the current URL.
+
+Expected behavior:
+- Brain FAB opens drawer only.
+- Closing drawer closes drawer only.
+- Current pathname must remain unchanged.
+- No automatic navigation to /admin/attention.
+
+Audit:
+1. Search the full client codebase for:
+   - "/admin/attention"
+   - navigate("/admin/attention")
+   - setLocation("/admin/attention")
+   - href="/admin/attention"
+   - attention route redirects
+   - notification click handlers
+   - attention badge click handlers
+   - bot/FAB click handlers
+   - onOpen/onClose callbacks inside ChatWidget
+
+2. Inspect ChatWidget and floating buttons:
+   - Brain FAB onClick must only call handleOpen/handleClose.
+   - Bot FAB with badge must not overlap/take the Brain click.
+   - Check z-index and pointer-events.
+   - Make sure tapping Brain is not also hitting the attention/bot FAB or notification badge.
+
+3. Inspect App.tsx / AuthenticatedLayout:
+   - Confirm no effect redirects to /admin/attention when attention count exists.
+   - Confirm ChatWidgetSafetyBoundary does not redirect on error.
+   - Confirm PageErrorBoundary “Return home” is not being triggered accidentally.
+
+4. Add route guard logging:
+Log the pathname before and after:
+   - Brain FAB click
+   - Bot FAB click
+   - drawer open
+   - drawer close
+   - backdrop click
+   - transition end
+   - attention badge click
+
+Expected logs:
+All Brain open/close logs should remain the original route.
+
+5. Fix:
+- Remove any automatic redirect to /admin/attention from Brain open/close.
+- If /admin/attention navigation belongs to the bot/attention FAB, separate the click targets clearly.
+- Ensure the Brain FAB has higher/lower z-index correctly and does not share a parent onClick with attention.
+- Use event.stopPropagation() on FAB clicks if needed.
+- Brain button must be:
+  <button type="button" onClick={(e) => { e.preventDefault(); e.stopPropagation(); ... }}>
+
+6. Final test:
+- Go to /admin/scheduling-command-center.
+- Press Brain FAB.
+- Close Brain drawer.
+- URL must stay /admin/scheduling-command-center.
+- Repeat on /admin/attention and /admin/schedule.
+- No PageErrorBoundary.
+- No unexpected route changes.
+
+Return:
+- exact code that caused navigation to /admin/attention
+- files changed
+- final before/after behavior

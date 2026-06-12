@@ -884,14 +884,14 @@ export function ChatWidget() {
   const pendingCount = approvalMetrics?.pending ?? 0;
 
   const handleOpen = () => {
-    console.log("[ChatWidget:open] route →", pathname);
+    console.log("[BrainFAB:open] pathname =", pathname);
     setIsClosing(false);
     setIsMounted(true);
     requestAnimationFrame(() => setIsOpen(true));
   };
 
   const handleClose = () => {
-    console.log("[ChatWidget:close] route →", pathname);
+    console.log("[BrainFAB:close] pathname =", pathname);
     // Drop tab content immediately — prevents ANY query-powered tab component
     // from rendering (and potentially crashing) during the slide-out animation.
     setIsClosing(true);
@@ -906,7 +906,7 @@ export function ChatWidget() {
     if (e.currentTarget !== (e.target as Element)) return;
     if (e.propertyName !== "transform") return;
     if (isOpen) return;
-    console.log("[ChatWidget:unmounted] route →", pathname);
+    console.log("[BrainFAB:unmounted] pathname =", pathname);
     setIsMounted(false);
     setIsClosing(false);
   };
@@ -924,7 +924,11 @@ export function ChatWidget() {
       {isMounted && (
         <div
           aria-hidden="true"
-          onClick={handleClose}
+          onClick={(e) => {
+            e.stopPropagation();
+            console.log("[BrainFAB:backdrop-click] pathname =", pathname);
+            handleClose();
+          }}
           className="fixed inset-0 z-[9990] bg-black/50 transition-opacity duration-300"
           style={{ opacity: isOpen ? 1 : 0, pointerEvents: isOpen ? "auto" : "none" }}
         />
@@ -1024,7 +1028,12 @@ export function ChatWidget() {
         type="button"
         className="fixed right-5 z-[9999] flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 rounded-full bg-green-600 text-white shadow-[0_4px_24px_rgba(34,197,94,0.4)] hover:scale-105 active:scale-95 transition-transform"
         style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
-        onClick={() => (isOpen ? handleClose() : handleOpen())}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log("[BrainFAB:click] isOpen=", isOpen, "pathname =", pathname);
+          isOpen ? handleClose() : handleOpen();
+        }}
         data-testid="button-toggle-chat"
       >
         {isOpen ? (
