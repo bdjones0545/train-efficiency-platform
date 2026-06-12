@@ -32,6 +32,8 @@ import {
 } from "@shared/schema";
 import { eq, and, gt, sql } from "drizzle-orm";
 import { evaluatePolicy } from "./autonomy-policy-engine";
+import { pushToDeadLetter } from "./agent-dead-letter-service";
+import { logSystemEvent } from "../reliability-routes";
 
 let executorRunning = false;
 let executorInterval: NodeJS.Timeout | null = null;
@@ -309,6 +311,18 @@ export async function runActionExecutorCycle(): Promise<{
         .update(gmailAgentActions)
         .set({ status: "awaiting_approval", approvalRequired: true } as any)
         .where(eq(gmailAgentActions.id, action.id));
+      // Audit: every failed agent action → dead-letter + system_log
+      pushToDeadLetter({
+        jobName: "agent_action_executor",
+        orgId: action.orgId,
+        error: err,
+        payload: { actionId: action.id, actionType: action.actionType, orgId: action.orgId },
+      }).catch(() => {});
+      logSystemEvent("error", "agent_action_executor", "agent_action_failed", err instanceof Error ? err.message : String(err), {
+        orgId: action.orgId,
+        actionId: action.id,
+        actionType: action.actionType,
+      }).catch(() => {});
     }
   }
 

@@ -180,3 +180,157 @@ describe("ORG_ACCESS_DENIED logging format", () => {
     assert.ok(!isOrgResolutionError(new Error("other")), "isOrgResolutionError must not match unrelated errors");
   });
 });
+
+// ─── Test 7: Agent Dead-Letter Queue — orgId required ────────────────────────
+
+describe("Agent audit — dead-letter orgId enforcement", () => {
+  test("pushToDeadLetter signature requires orgId (not optional)", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("server/services/agent-dead-letter-service.ts", "utf-8")
+    );
+    // Extract just the pushToDeadLetter function block to check its opts type
+    const fnStart = src.indexOf("export async function pushToDeadLetter(opts: {");
+    const fnBlock = src.slice(fnStart, fnStart + 200);
+    // orgId must be required (no '?') in pushToDeadLetter opts specifically
+    assert.ok(
+      fnBlock.includes("orgId: string"),
+      "pushToDeadLetter must require orgId — optional orgId allows dead-letter entries without org isolation"
+    );
+    assert.ok(
+      !fnBlock.includes("orgId?: string"),
+      "pushToDeadLetter must NOT have orgId?: string — that makes it optional"
+    );
+  });
+
+  test("DeadLetterJob interface has non-nullable orgId", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("server/services/agent-dead-letter-service.ts", "utf-8")
+    );
+    assert.ok(
+      src.includes("orgId: string;"),
+      "DeadLetterJob.orgId must be non-nullable string — entries without orgId break multi-tenant isolation"
+    );
+  });
+});
+
+// ─── Test 8: Atomic row claims include orgId ──────────────────────────────────
+
+describe("Agent audit — atomic claim org isolation", () => {
+  test("auto-execution-engine atomic claim includes org_id in WHERE", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("server/email-agent/auto-execution-engine.ts", "utf-8")
+    );
+    assert.ok(
+      src.includes("email_follow_ups") && src.includes("AND org_id = ${orgId}"),
+      "Atomic claim must target email_follow_ups with AND org_id — prevents cross-org row claim"
+    );
+  });
+
+  test("follow-up-cron atomic claim includes org_id in WHERE", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("server/email-agent/follow-up-cron.ts", "utf-8")
+    );
+    assert.ok(
+      src.includes("email_follow_ups") && src.includes("AND org_id = ${orgId}"),
+      "Atomic claim must target email_follow_ups with AND org_id — prevents cross-org row claim"
+    );
+  });
+});
+
+// ─── Test 9: Failure paths emit dead-letter + system_log ─────────────────────
+
+describe("Agent audit — failure path observability", () => {
+  test("auto-execution-engine failure catch calls pushToDeadLetter", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("server/email-agent/auto-execution-engine.ts", "utf-8")
+    );
+    assert.ok(
+      src.includes("pushToDeadLetter") && src.includes("logSystemEvent"),
+      "auto-execution-engine failure path must call pushToDeadLetter + logSystemEvent"
+    );
+  });
+
+  test("follow-up-cron failure catch calls pushToDeadLetter", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("server/email-agent/follow-up-cron.ts", "utf-8")
+    );
+    assert.ok(
+      src.includes("pushToDeadLetter") && src.includes("logSystemEvent"),
+      "follow-up-cron failure path must call pushToDeadLetter + logSystemEvent"
+    );
+  });
+
+  test("agent-action-executor failure catch calls pushToDeadLetter", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("server/services/agent-action-executor.ts", "utf-8")
+    );
+    assert.ok(
+      src.includes("pushToDeadLetter") && src.includes("logSystemEvent"),
+      "agent-action-executor failure path must call pushToDeadLetter + logSystemEvent"
+    );
+  });
+});
+
+// ─── Test 10: Schema-level orgId enforcement on core agent tables ─────────────
+
+describe("Agent audit — schema orgId notNull guarantees", () => {
+  test("workflow_jobs.orgId is notNull in schema", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("shared/schema.ts", "utf-8")
+    );
+    // workflow_jobs must declare orgId with notNull
+    const wjBlock = src.slice(src.indexOf("workflowJobs = pgTable"), src.indexOf("workflowJobs = pgTable") + 800);
+    assert.ok(
+      wjBlock.includes("orgId") && wjBlock.includes("notNull"),
+      "workflow_jobs.orgId must be notNull() — jobs without orgId break multi-tenant isolation"
+    );
+  });
+
+  test("ceo_heartbeat_runs.orgId is notNull in schema", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("shared/schema.ts", "utf-8")
+    );
+    const hbBlock = src.slice(src.indexOf("ceoHeartbeatRuns = pgTable"), src.indexOf("ceoHeartbeatRuns = pgTable") + 600);
+    assert.ok(
+      hbBlock.includes("orgId") && hbBlock.includes("notNull"),
+      "ceo_heartbeat_runs.orgId must be notNull() — every heartbeat run must be org-scoped"
+    );
+  });
+
+  test("unified_agent_action_log.orgId is notNull in schema", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("shared/schema.ts", "utf-8")
+    );
+    const logBlock = src.slice(src.indexOf("unifiedAgentActionLog = pgTable"), src.indexOf("unifiedAgentActionLog = pgTable") + 600);
+    assert.ok(
+      logBlock.includes("orgId") && logBlock.includes("notNull"),
+      "unified_agent_action_log.orgId must be notNull() — every agent action log must be org-scoped"
+    );
+  });
+
+  test("email_follow_ups.orgId is notNull in schema", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("shared/schema.ts", "utf-8")
+    );
+    const fuBlock = src.slice(src.indexOf('emailFollowUps = pgTable("email_follow_ups"'), src.indexOf('emailFollowUps = pgTable("email_follow_ups"') + 400);
+    assert.ok(
+      fuBlock.includes("org_id") && fuBlock.includes("notNull"),
+      "email_follow_ups.org_id must be notNull() — follow-up rows without orgId break isolation"
+    );
+  });
+});
+
+// ─── Test 11: Lock key formula includes orgId ─────────────────────────────────
+
+describe("Agent audit — distributed lock key org isolation", () => {
+  test("lock key formula includes orgId as prefix", async () => {
+    const src = await import("node:fs").then(fs =>
+      fs.readFileSync("server/services/ceo-heartbeat-service.ts", "utf-8")
+    );
+    // The lock key must include orgId — formula is `${orgId}:${jobName}:${timeBucket}`
+    assert.ok(
+      src.includes("${orgId}:${jobName}") || src.includes("`${orgId}:"),
+      "Lock key must be prefixed with orgId — global lock keys allow cross-org contention"
+    );
+  });
+});

@@ -44,7 +44,7 @@ ensureTable().catch(() => {});
 export interface DeadLetterJob {
   id: string;
   jobName: string;
-  orgId: string | null;
+  orgId: string;
   errorMessage: string;
   errorStack: string | null;
   retryCount: number;
@@ -61,7 +61,7 @@ export interface DeadLetterJob {
 
 export async function pushToDeadLetter(opts: {
   jobName: string;
-  orgId?: string;
+  orgId: string;
   error: Error | string;
   payload?: unknown;
   maxRetries?: number;
@@ -77,7 +77,7 @@ export async function pushToDeadLetter(opts: {
       INSERT INTO agent_dead_letter_queue
         (job_name, org_id, error_message, error_stack, max_retries, next_retry_at, payload, status)
       VALUES
-        (${opts.jobName}, ${opts.orgId ?? null}, ${errorMessage}, ${errorStack},
+        (${opts.jobName}, ${opts.orgId}, ${errorMessage}, ${errorStack},
          ${maxRetries}, ${nextRetryAt.toISOString()},
          ${JSON.stringify(opts.payload ?? null)}::jsonb, 'pending')
       RETURNING id
@@ -86,7 +86,7 @@ export async function pushToDeadLetter(opts: {
     const id = Array.isArray(rows)
       ? (rows as any[])[0]?.id
       : (rows as any).rows?.[0]?.id;
-    console.warn(`[DeadLetter] Queued: ${opts.jobName} org=${opts.orgId ?? "global"} id=${id}`);
+    console.warn(`[DeadLetter] Queued: ${opts.jobName} org=${opts.orgId} id=${id}`);
     return id ?? null;
   } catch (err: any) {
     console.error("[DeadLetter] pushToDeadLetter error:", err.message);

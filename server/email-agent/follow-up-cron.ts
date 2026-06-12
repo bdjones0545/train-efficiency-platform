@@ -9,6 +9,8 @@ import { db } from "../db";
 import { gmailAgentActions, appSettings } from "@shared/schema";
 import { acquireJobLock, releaseJobLock } from "../services/ceo-heartbeat-service";
 import { like, sql } from "drizzle-orm";
+import { pushToDeadLetter } from "../services/agent-dead-letter-service";
+import { logSystemEvent } from "../reliability-routes";
 
 // Base follow-up sequence schedule: days after initial send
 const BASE_FOLLOW_UP_DAYS = [3, 7, 14];
@@ -171,11 +173,12 @@ export async function processFollowUpsForOrg(
 
     try {
       // ── PHASE 2: Atomic Row Claim — prevents duplicate sends if follow-up-cron
-      // and auto-execution-engine both pick up the same row concurrently. ─────────
+      // and auto-execution-engine both pick up the same row concurrently.
+      // Includes org_id in the WHERE clause to guarantee cross-tenant isolation. ──
       const claimResult = await db.execute(sql`
-        UPDATE follow_ups
+        UPDATE email_follow_ups
         SET status = 'processing'
-        WHERE id = ${followUp.id} AND status = 'pending'
+        WHERE id = ${followUp.id} AND org_id = ${orgId} AND status = 'pending'
         RETURNING id
       `).catch(() => null);
       const claimedRows = Array.isArray(claimResult)
@@ -478,6 +481,18 @@ export async function processFollowUpsForOrg(
         blockReason: "INVALID_STAGE",
         reasoning: `Error during follow-up processing: ${err.message}`,
       });
+      // Audit: every failed agent action → dead-letter + system_log
+      pushToDeadLetter({
+        jobName: "follow_up_cron",
+        orgId,
+        error: err,
+        payload: { followUpId: followUp.id, prospectId: followUp.prospectId, stepNumber: followUp.stepNumber },
+      }).catch(() => {});
+      logSystemEvent("error", "follow_up_cron", "agent_action_failed", err.message, {
+        orgId,
+        followUpId: followUp.id,
+        prospectId: followUp.prospectId,
+      }).catch(() => {});
     }
   }
 

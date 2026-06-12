@@ -3,6 +3,8 @@ import { buildGlobalActionQueue, type GlobalAction } from "./global-priority-eng
 import { logTriggerEvent, updateTriggerEvent } from "./trigger-logger";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { pushToDeadLetter } from "../services/agent-dead-letter-service";
+import { logSystemEvent } from "../reliability-routes";
 
 const MAX_AUTO_EXEC_PER_DAY = 3;
 const RISK_THRESHOLD = 40;
@@ -89,11 +91,12 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
   const followUp = prospectFollowUps[0];
 
   // PHASE 2: Atomic row claim — atomically transition status from 'pending' → 'processing'.
+  // Includes org_id in the WHERE clause to guarantee cross-tenant isolation.
   // If 0 rows returned, another worker (follow-up-cron) already claimed this row; skip.
   const claimResult = await db.execute(sql`
-    UPDATE follow_ups
+    UPDATE email_follow_ups
     SET status = 'processing'
-    WHERE id = ${followUp.id} AND status = 'pending'
+    WHERE id = ${followUp.id} AND org_id = ${orgId} AND status = 'pending'
     RETURNING id
   `).catch(() => null);
   const claimedRows = Array.isArray(claimResult)
@@ -495,6 +498,18 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
       blockReason: "INVALID_STAGE",
       reasoning: `Execution error: ${err.message}`,
     });
+    // Audit: every failed agent action → dead-letter + system_log
+    pushToDeadLetter({
+      jobName: "auto_execution_engine",
+      orgId,
+      error: err,
+      payload: { actionType: eligibleAction.actionType, prospectId: eligibleAction.prospectId },
+    }).catch(() => {});
+    logSystemEvent("error", "auto_execution_engine", "agent_action_failed", err.message, {
+      orgId,
+      actionType: eligibleAction.actionType,
+      prospectId: eligibleAction.prospectId,
+    }).catch(() => {});
     return { executed: false, execution, reason: err.message };
   }
 
