@@ -13,7 +13,7 @@ import {
   Activity, Play, Pause, RotateCcw, Zap, AlertTriangle, CheckCircle2,
   Clock, Brain, ShieldAlert, BarChart3, Filter, RefreshCw, TrendingUp,
   XCircle, ChevronRight, Calendar, Users, Target, Settings, Crosshair,
-  ArrowRight, Star, Shield
+  ArrowRight, Star, Shield, Sparkles, X, Timer
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -62,6 +62,7 @@ function actionTypeIcon(t: string) {
 export default function AdminCeoHeartbeatPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [bannerDismissed, setBannerDismissed] = useState(false);
 
   const { data: sessionCtx } = useQuery<{ orgId: string | null; orgName: string | null }>({
     queryKey: ["/api/admin/ceo-heartbeat/session-context"],
@@ -147,12 +148,25 @@ export default function AdminCeoHeartbeatPage() {
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
   const runMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/run?orgId=${orgId}`),
-    onSuccess: () => {
-      toast({ title: "Heartbeat cycle started", description: "CEO Heartbeat is running now." });
+    mutationFn: () => {
+      const isFirst = !status?.lastRun;
+      return apiRequest("POST", `/api/admin/ceo-heartbeat/run?orgId=${orgId}`)
+        .then((r) => ({ ...r, _isFirst: isFirst }));
+    },
+    onSuccess: (data: any) => {
+      const wasFirst = data?._isFirst ?? false;
+      toast({
+        title: wasFirst ? "CEO Heartbeat initialized successfully." : "Heartbeat cycle started",
+        description: wasFirst
+          ? "Your operational baseline has been established."
+          : "CEO Heartbeat is running now.",
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/status", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/health", orgId] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/priorities", orgId] });
       queryClient.invalidateQueries({ queryKey: timelineQKey });
       queryClient.invalidateQueries({ queryKey: ["/api/reliability/executive-summary"] });
+      if (wasFirst) setBannerDismissed(true);
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -199,6 +213,8 @@ export default function AdminCeoHeartbeatPage() {
   const timeline = timelineData?.entries ?? [];
   const isPaused = status?.isPaused ?? false;
   const isRunning = status?.isRunning ?? false;
+  const hasNeverRun = !!orgId && !statusLoading && !lastRun;
+  const showOnboardingBanner = hasNeverRun && !bannerDismissed;
 
   // ─── Render ──────────────────────────────────────────────────────────────────
 
@@ -226,6 +242,46 @@ export default function AdminCeoHeartbeatPage() {
           </Button>
         </div>
       </div>
+
+      {/* ── First-Run Onboarding Banner ── */}
+      {showOnboardingBanner && (
+        <Card className="border-l-4 border-l-indigo-500 bg-indigo-500/5" data-testid="card-onboarding-banner">
+          <CardContent className="pt-4 pb-4">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <Sparkles className="h-5 w-5 text-indigo-500 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-sm font-semibold text-indigo-700 dark:text-indigo-400">
+                    Welcome to CEO Heartbeat
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5 max-w-xl">
+                    CEO Heartbeat monitors agents, approvals, workflows, and operational health for your organization.
+                    The first heartbeat establishes your operational baseline and coordinates all active agents.
+                  </p>
+                  <div className="flex items-center gap-2 mt-3">
+                    <Button size="sm" onClick={() => runMutation.mutate()}
+                      disabled={runMutation.isPending || isRunning}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white"
+                      data-testid="button-banner-initialize">
+                      <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+                      {runMutation.isPending ? "Initializing…" : "Initialize Heartbeat"}
+                    </Button>
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Timer className="h-3.5 w-3.5" />
+                      Automatic heartbeat runs every 30 minutes
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <button onClick={() => setBannerDismissed(true)}
+                className="text-muted-foreground hover:text-foreground transition-colors flex-shrink-0 mt-0.5"
+                data-testid="button-dismiss-banner" aria-label="Dismiss banner">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* ── Platform Reliability Card ── */}
       {reliabilitySummary && (
@@ -299,38 +355,91 @@ export default function AdminCeoHeartbeatPage() {
 
       {/* System Status Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card>
+        {/* Card 1 — Last Heartbeat */}
+        <Card data-testid="card-last-heartbeat" className={hasNeverRun ? "border-indigo-200 dark:border-indigo-800" : ""}>
           <CardContent className="pt-4 pb-3">
-            <div className="text-xs text-muted-foreground mb-1">Last Heartbeat</div>
-            <div className="font-medium text-sm">{lastRun ? fmtTime(lastRun.startedAt) : "Not run yet"}</div>
-            {lastRun && (
-              <div className="text-xs text-muted-foreground mt-1">
-                {fmtMs(lastRun.durationMs)} • <span className={lastRun.status === "completed" ? "text-green-600" : "text-red-500"}>{lastRun.status}</span>
-              </div>
+            {hasNeverRun ? (
+              <>
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <Sparkles className="h-3.5 w-3.5 text-indigo-500" />
+                  <div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400">Heartbeat Ready</div>
+                </div>
+                <p className="text-xs text-muted-foreground leading-snug mb-2.5">
+                  Your organization has not completed its first heartbeat cycle yet.
+                </p>
+                <Button size="sm" className="h-7 text-xs w-full" onClick={() => runMutation.mutate()}
+                  disabled={runMutation.isPending || isRunning} data-testid="button-first-run-card">
+                  <Play className="h-3 w-3 mr-1" />
+                  {runMutation.isPending ? "Initializing…" : "Run First Heartbeat"}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="text-xs text-muted-foreground mb-1">Last Heartbeat</div>
+                <div className="font-medium text-sm">{fmtTime(lastRun?.startedAt)}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  {fmtMs(lastRun?.durationMs)} • <span className={lastRun?.status === "completed" ? "text-green-600" : "text-red-500"}>{lastRun?.status}</span>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
-        <Card>
+
+        {/* Card 2 — Next Heartbeat / Automatic indicator */}
+        <Card data-testid="card-next-heartbeat">
           <CardContent className="pt-4 pb-3">
             <div className="text-xs text-muted-foreground mb-1">Next Heartbeat</div>
             <div className="font-medium text-sm">{status?.nextHeartbeatAt ? fmtTime(status.nextHeartbeatAt) : "Automatic"}</div>
-            <div className="text-xs text-muted-foreground mt-1">Runs every 30 minutes</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="text-xs text-muted-foreground mb-1">Agents Coordinated</div>
-            <div className="font-bold text-xl">{lastRun?.agentsCoordinated ?? "—"}</div>
-            <div className="text-xs text-muted-foreground mt-1">{lastRun ? `${lastRun.actionsEvaluated ?? 0} actions evaluated` : "Run heartbeat to see data"}</div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 pb-3">
-            <div className="text-xs text-muted-foreground mb-1">Errors (last run)</div>
-            <div className={`font-bold text-xl ${(lastRun?.errorsEncountered ?? 0) > 0 ? "text-red-500" : lastRun ? "text-green-600" : "text-muted-foreground"}`}>
-              {lastRun ? (lastRun.errorsEncountered ?? 0) : "—"}
+            <div className="flex items-center gap-1 text-xs text-muted-foreground mt-1">
+              <Timer className="h-3 w-3 text-indigo-400" />
+              {hasNeverRun
+                ? <span className="text-indigo-600 dark:text-indigo-400 font-medium">Auto-schedule active</span>
+                : "Runs every 30 minutes"}
             </div>
-            <div className="text-xs text-muted-foreground mt-1">{lastRun ? `${lastRun.actionsPendingApproval ?? 0} pending approval` : "No run data yet"}</div>
+          </CardContent>
+        </Card>
+
+        {/* Card 3 — Agents Coordinated */}
+        <Card data-testid="card-agents-coordinated" className={hasNeverRun ? "border-dashed" : ""}>
+          <CardContent className="pt-4 pb-3">
+            {hasNeverRun ? (
+              <>
+                <div className="text-xs text-muted-foreground mb-1">Agents Coordinated</div>
+                <div className="font-medium text-sm text-indigo-600 dark:text-indigo-400">Waiting For First Run</div>
+                <div className="text-xs text-muted-foreground mt-1 leading-snug">
+                  The first heartbeat will discover and coordinate available agents.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs text-muted-foreground mb-1">Agents Coordinated</div>
+                <div className="font-bold text-xl">{lastRun?.agentsCoordinated ?? "—"}</div>
+                <div className="text-xs text-muted-foreground mt-1">{`${lastRun?.actionsEvaluated ?? 0} actions evaluated`}</div>
+              </>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Card 4 — Errors */}
+        <Card data-testid="card-errors-last-run" className={hasNeverRun ? "border-dashed" : ""}>
+          <CardContent className="pt-4 pb-3">
+            {hasNeverRun ? (
+              <>
+                <div className="text-xs text-muted-foreground mb-1">Errors (last run)</div>
+                <div className="font-medium text-sm text-muted-foreground">No Runs Yet</div>
+                <div className="text-xs text-muted-foreground mt-1 leading-snug">
+                  No heartbeat cycles have been executed.
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="text-xs text-muted-foreground mb-1">Errors (last run)</div>
+                <div className={`font-bold text-xl ${(lastRun?.errorsEncountered ?? 0) > 0 ? "text-red-500" : "text-green-600"}`}>
+                  {lastRun?.errorsEncountered ?? 0}
+                </div>
+                <div className="text-xs text-muted-foreground mt-1">{`${lastRun?.actionsPendingApproval ?? 0} pending approval`}</div>
+              </>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -342,9 +451,14 @@ export default function AdminCeoHeartbeatPage() {
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => runMutation.mutate()} disabled={runMutation.isPending || isRunning}
-            data-testid="button-run-heartbeat">
-            <Play className="h-4 w-4 mr-1" />
-            {runMutation.isPending ? "Running…" : "Run Heartbeat Now"}
+            data-testid="button-run-heartbeat"
+            className={hasNeverRun ? "bg-indigo-600 hover:bg-indigo-700 text-white" : ""}>
+            {hasNeverRun
+              ? <Sparkles className="h-4 w-4 mr-1" />
+              : <Play className="h-4 w-4 mr-1" />}
+            {runMutation.isPending
+              ? (hasNeverRun ? "Initializing…" : "Running…")
+              : (hasNeverRun ? "Initialize Heartbeat" : "Run Heartbeat Now")}
           </Button>
           {isPaused ? (
             <Button size="sm" variant="outline" onClick={() => resumeMutation.mutate()}

@@ -1,0 +1,174 @@
+CEO HEARTBEAT UX IMPROVEMENT — FIRST-RUN EXPERIENCE
+
+Objective:
+
+The CEO Heartbeat functionality now works correctly and resolves org context from the authenticated session.
+
+The remaining issue is user experience.
+
+Currently, organizations with no previous heartbeat show:
+
+“Not run yet”
+
+This creates ambiguity and can appear broken even though the system is functioning correctly.
+
+──────────────────────────────
+PROBLEM
+──────────────────────────────
+
+Current State:
+
+Last Heartbeat
+Not run yet
+
+Agents Coordinated
+—
+
+Errors (last run)
+—
+
+This looks like:
+
+* failed initialization
+* missing data
+* broken automation
+
+Instead of:
+
+* new organization
+* heartbeat ready to initialize
+
+──────────────────────────────
+DESIRED EXPERIENCE
+──────────────────────────────
+
+Detect:
+
+hasHeartbeatRun === false
+
+When no heartbeat records exist for the org:
+
+Replace the empty state with a guided onboarding state.
+
+──────────────────────────────
+CARD 1 — LAST HEARTBEAT
+──────────────────────────────
+
+Before:
+
+Not run yet
+
+After:
+
+Heartbeat Ready
+
+Your organization has not completed its first heartbeat cycle yet.
+
+[ Run First Heartbeat ]
+
+──────────────────────────────
+CARD 2 — AGENTS COORDINATED
+──────────────────────────────
+
+Before:
+
+—
+
+After:
+
+Waiting For First Run
+
+The first heartbeat will discover and coordinate available agents.
+
+──────────────────────────────
+CARD 3 — ERRORS (LAST RUN)
+──────────────────────────────
+
+Before:
+
+—
+
+After:
+
+No Runs Yet
+
+No heartbeat cycles have been executed.
+
+──────────────────────────────
+MANUAL CONTROLS
+──────────────────────────────
+
+If no heartbeat exists:
+
+Rename button:
+
+Run Heartbeat Now
+→
+Initialize Heartbeat
+
+After first successful run:
+
+Automatically switch back to:
+
+Run Heartbeat Now
+
+──────────────────────────────
+FIRST-RUN SUCCESS STATE
+──────────────────────────────
+
+Immediately after the first successful heartbeat:
+
+1. Invalidate all CEO Heartbeat queries.
+2. Refresh dashboard data.
+3. Show success toast:
+
+“CEO Heartbeat initialized successfully.”
+
+4. Update cards with actual metrics.
+
+──────────────────────────────
+OPTIONAL IMPROVEMENT
+──────────────────────────────
+
+Add a small onboarding banner:
+
+CEO Heartbeat monitors agents, approvals, workflows, and operational health for your organization.
+
+The first heartbeat establishes your operational baseline.
+
+[ Initialize Heartbeat ]
+
+Dismissible after first successful run.
+
+──────────────────────────────
+AUTOMATIC BOOTSTRAP INDICATOR
+──────────────────────────────
+
+If startup automation is enabled:
+
+Display:
+
+Automatic Heartbeat Active
+
+Organizations are automatically included in the scheduled heartbeat cycle every 30 minutes.
+
+This reassures users that the system is functioning even before the first manual run.
+
+──────────────────────────────
+VALIDATION
+──────────────────────────────
+
+Test:
+
+1. Brand-new org with zero heartbeat runs.
+2. Existing org with heartbeat history.
+3. First successful initialization.
+4. Page refresh after initialization.
+5. Mobile layout.
+
+Return:
+
+* files changed
+* screenshots/results
+* first-run behavior before/after
+* confirmation that no org can remain permanently stuck in a “Not run yet” state
