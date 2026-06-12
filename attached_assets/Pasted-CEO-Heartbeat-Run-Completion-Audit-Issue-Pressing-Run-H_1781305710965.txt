@@ -1,0 +1,100 @@
+CEO Heartbeat Run Completion Audit
+
+Issue:
+Pressing Run Heartbeat Now shows:
+“Heartbeat cycle started”
+
+But the dashboard still shows:
+- Last Heartbeat: —
+- Agents Coordinated: —
+- Actions Evaluated: 0
+- Priorities empty
+
+This means either:
+1. runHeartbeatCycle is not inserting/completing a ceo_heartbeat_runs row,
+2. the run endpoint returns before completion,
+3. the status endpoint cannot read the completed row,
+4. frontend field mapping is wrong,
+5. query invalidation/refetch happens too early.
+
+Tasks:
+
+1. Backend run endpoint audit
+- Log before/after runHeartbeatCycle(orgId).
+- Confirm whether it awaits completion.
+- Return the completed run object in the response.
+- Response must include:
+  id, startedAt, completedAt, status, durationMs, agentsCoordinated, actionsEvaluated, errorsEncountered.
+
+2. DB verification
+Immediately after pressing Run Heartbeat Now, query:
+SELECT *
+FROM ceo_heartbeat_runs
+WHERE organization_id = '<orgId>'
+ORDER BY started_at DESC
+LIMIT 5;
+
+Report:
+- row exists?
+- status?
+- completed_at?
+- agents_coordinated?
+- actions_evaluated?
+- errors_encountered?
+
+3. Status endpoint audit
+Check:
+GET /api/admin/ceo-heartbeat/status
+
+Confirm response includes:
+lastRun: {
+  id,
+  startedAt,
+  completedAt,
+  status,
+  durationMs,
+  agentsCoordinated,
+  actionsEvaluated,
+  errorsEncountered
+}
+
+If DB row exists but lastRun is blank, fix the status query or field mapping.
+
+4. Frontend mapping audit
+In admin-ceo-heartbeat.tsx:
+- Identify exactly what field Last Heartbeat reads.
+- Identify what field Agents Coordinated reads.
+- Identify what field Actions Evaluated reads.
+- Confirm camelCase vs snake_case mapping.
+
+5. Refetch timing
+After run mutation success:
+- await queryClient.invalidateQueries(...)
+- then await queryClient.refetchQueries(...)
+- do not show final success toast until status.lastRun exists.
+If run endpoint is async:
+- show “Heartbeat started”
+- poll status until completed
+- then show “Heartbeat completed.”
+
+6. Fix platform status stale outage
+The reliability card still shows stale critical alerts.
+- Move stale alert auto-resolve out of executive-summary and into alert engine/retention cron.
+- Ensure executive-summary counts only resolved_at IS NULL.
+- Confirm current active critical alerts count.
+
+Validation:
+- Press Run Heartbeat Now once.
+- Confirm backend logs show run started and completed.
+- Confirm DB row inserted.
+- Confirm status endpoint returns lastRun.
+- Confirm UI shows Last Heartbeat timestamp and real metrics.
+- Confirm no second button press needed.
+- Run typecheck/build.
+
+Return:
+- old run response
+- new run response
+- DB row sample
+- status endpoint response
+- exact frontend fields fixed

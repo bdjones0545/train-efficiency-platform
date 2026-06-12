@@ -122,17 +122,24 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
         notes: "Manual heartbeat trigger from admin UI",
       });
 
+      console.log(`[CEO Heartbeat] Manual run starting — orgId=${orgId}`);
       const result = await runHeartbeatCycle({ orgId, triggeredBy: "manual" });
+      console.log(`[CEO Heartbeat] Manual run complete — runId=${result.runId} success=${result.success} errors=${result.errors.length}`);
 
       // Fetch the completed run record so the frontend can render Last Heartbeat
       // immediately without waiting for a separate status refetch.
-      const [completedRun] = await db.select()
-        .from(ceoHeartbeatRuns)
-        .where(eq(ceoHeartbeatRuns.id, result.runId))
-        .limit(1)
-        .catch(() => []);
+      let completedRun: any = null;
+      if (result.runId) {
+        const [row] = await db.select()
+          .from(ceoHeartbeatRuns)
+          .where(eq(ceoHeartbeatRuns.id, result.runId))
+          .limit(1)
+          .catch(() => []);
+        completedRun = row ?? null;
+      }
+      console.log(`[CEO Heartbeat] Run record fetched — status=${completedRun?.status} agents=${completedRun?.agentsCoordinated}`);
 
-      res.json({ ...result, run: completedRun ?? null });
+      res.json({ ...result, run: completedRun });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }
