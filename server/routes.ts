@@ -297,6 +297,10 @@ export async function registerRoutes(
       stack: stack ? String(stack).slice(0, 1000) : undefined,
       userAgent: userAgent ? String(userAgent).slice(0, 200) : undefined,
     });
+    // Persist to DB (fire-and-forget — reliability tables may not be ready yet at startup)
+    import("./reliability-routes").then(({ persistClientError }) =>
+      persistClientError({ route, message, stack, userAgent, source, lineno, colno }).catch(() => {})
+    ).catch(() => {});
     res.status(204).end();
   });
   // ──────────────────────────────────────────────────────────────────────────
@@ -29246,6 +29250,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
 
   const { registerAgentQualityRoutes } = await import("./agent-quality-routes");
   await registerAgentQualityRoutes(app, isAuthenticated, requireRole);
+
+  const { registerReliabilityRoutes } = await import("./reliability-routes");
+  await registerReliabilityRoutes(app);
 
   return httpServer;
 }

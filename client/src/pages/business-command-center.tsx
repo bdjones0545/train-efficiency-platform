@@ -59,6 +59,7 @@ import {
   AlertCircle,
   Lightbulb,
   CalendarCheck,
+  Shield,
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 
@@ -3526,6 +3527,11 @@ export default function BusinessCommandCenterPage() {
     queryKey: ["/api/business-command-center"],
   });
 
+  const { data: reliabilitySummary } = useQuery<any>({
+    queryKey: ["/api/reliability/executive-summary"],
+    refetchInterval: 60_000,
+  });
+
   const runBrainMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/admin/business-brain/run").then(r => r.json()),
     onSuccess: () => {
@@ -3664,6 +3670,29 @@ export default function BusinessCommandCenterPage() {
           </Button>
         </div>
       </DashPageHeader>
+
+      {/* ─── Platform Reliability Strip ───────────────────── */}
+      {reliabilitySummary && (
+        <div className={`flex items-center gap-3 px-4 py-2.5 rounded-xl border ${
+          reliabilitySummary.status === "operational" ? "bg-emerald-500/8 border-emerald-500/25" :
+          reliabilitySummary.status === "degraded"    ? "bg-yellow-500/8 border-yellow-500/25" :
+                                                        "bg-red-500/8 border-red-500/25"
+        }`} data-testid="strip-reliability-status">
+          <Shield className={`h-4 w-4 shrink-0 ${
+            reliabilitySummary.status === "operational" ? "text-emerald-500" :
+            reliabilitySummary.status === "degraded"    ? "text-yellow-500" : "text-red-500"
+          }`} />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium truncate">{reliabilitySummary.recommendation}</p>
+            <p className="text-[10px] text-muted-foreground">
+              Uptime {reliabilitySummary.uptime}% · {reliabilitySummary.criticalAlerts} critical alert{reliabilitySummary.criticalAlerts !== 1 ? "s" : ""} · {reliabilitySummary.clientErrorsLastHour} errors/hr
+            </p>
+          </div>
+          <a href="/admin/reliability" className="text-[10px] text-muted-foreground hover:text-foreground underline shrink-0" data-testid="link-bcc-reliability">
+            Dashboard →
+          </a>
+        </div>
+      )}
 
       {/* ─── 4 KPI Cards ──────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2" data-testid="section-kpi-cards">

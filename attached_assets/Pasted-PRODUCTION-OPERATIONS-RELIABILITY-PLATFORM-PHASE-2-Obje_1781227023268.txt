@@ -1,0 +1,326 @@
+PRODUCTION OPERATIONS & RELIABILITY PLATFORM — PHASE 2
+
+Objective:
+
+TrainEfficiency is now production-hardened.
+
+The next step is operational excellence:
+
+* Detect failures automatically
+* Measure platform health continuously
+* Alert before customers notice
+* Create a CEO-level reliability dashboard
+
+This phase is about operating TrainEfficiency as a SaaS platform.
+
+──────────────────────────────
+TASK 1 — STRUCTURED LOGGING LAYER
+──────────────────────────────
+
+Current State:
+
+Frontend crashes, query failures, API errors, and agent failures are logged but mostly exist in console output.
+
+Goal:
+
+Persist critical operational events.
+
+Create:
+
+system_logs
+client_errors
+query_failures
+
+tables.
+
+──────────────────────────────
+system_logs
+──────────────────────────────
+
+Fields:
+
+id
+createdAt
+level (info/warn/error/critical)
+service
+eventType
+message
+metadata JSONB
+
+Examples:
+
+API failures
+agent failures
+workflow failures
+Stripe failures
+SendGrid failures
+deployment events
+
+──────────────────────────────
+client_errors
+──────────────────────────────
+
+Fields:
+
+id
+createdAt
+route
+message
+stack
+userAgent
+source
+line
+column
+
+Connect to:
+
+/api/client-errors
+
+Store instead of console-only logging.
+
+──────────────────────────────
+query_failures
+──────────────────────────────
+
+Fields:
+
+id
+createdAt
+route
+queryKey
+statusCode
+message
+
+Connect to:
+
+QueryCache global error handler.
+
+Return:
+
+* schema
+* migrations
+* retention strategy
+
+──────────────────────────────
+TASK 2 — RELIABILITY DASHBOARD
+──────────────────────────────
+
+Create:
+
+/admin/reliability
+
+Purpose:
+
+Single place to monitor platform health.
+
+Sections:
+
+1. Platform Health
+    * uptime
+    * API success rate
+    * query success rate
+    * client crash rate
+2. Error Trends
+    * client errors
+    * query failures
+    * server errors
+3. Agent Health
+    * success rate
+    * failures
+    * dead-letter queue count
+    * average execution time
+4. Financial Systems
+    * Stripe failures
+    * wallet failures
+    * billing errors
+5. Communications
+    * SendGrid failures
+    * email success rate
+6. Infrastructure
+    * average API response time
+    * slowest endpoints
+    * request volume
+
+Requirements:
+
+* live refresh
+* charts
+* severity badges
+* drill-down views
+
+Return:
+
+* page created
+* widgets created
+* data sources used
+
+──────────────────────────────
+TASK 3 — SYNTHETIC MONITORING
+──────────────────────────────
+
+Goal:
+
+Detect outages before users do.
+
+Create scheduled health checks.
+
+Every 5–15 minutes verify:
+
+1. Homepage
+2. Login endpoint
+3. Scheduling endpoint
+4. Lead capture endpoint
+5. Wallet endpoint
+6. AI endpoint
+7. Database connectivity
+
+Record:
+
+response time
+status
+error message
+
+Store in:
+
+system_logs
+
+Create:
+
+health_check_results table
+
+Fields:
+
+id
+createdAt
+checkName
+status
+responseTimeMs
+details
+
+Return:
+
+* checks implemented
+* schedule used
+* alert conditions
+
+──────────────────────────────
+TASK 4 — SERVICE LEVEL OBJECTIVES
+──────────────────────────────
+
+Create reliability metrics:
+
+Availability
+Target: 99.9%
+
+API Error Rate
+Target: <1%
+
+Client Crash Rate
+Target: <0.1%
+
+Agent Success Rate
+Target: >95%
+
+Billing Success Rate
+Target: >99%
+
+Email Success Rate
+Target: >99%
+
+Create automated calculations.
+
+Expose them in:
+
+/admin/reliability
+
+Return:
+
+* formulas
+* implementation
+* thresholds
+
+──────────────────────────────
+TASK 5 — ALERTING ENGINE
+──────────────────────────────
+
+Create alerts when:
+
+Client crash rate spikes
+API error rate exceeds threshold
+Agent failures spike
+Dead-letter queue grows
+Stripe failures increase
+SendGrid failures increase
+Health checks fail
+
+Severity Levels:
+
+INFO
+WARNING
+CRITICAL
+
+Store alerts in:
+
+system_alerts
+
+Fields:
+
+id
+createdAt
+severity
+title
+description
+resolvedAt
+
+Return:
+
+* alert engine implementation
+* thresholds
+* notification paths
+
+──────────────────────────────
+TASK 6 — EXECUTIVE OPERATIONS VIEW
+──────────────────────────────
+
+Add a CEO Reliability Card to:
+
+CEO Heartbeat
+Business Command Center
+
+Display:
+
+Platform Status
+Critical Alerts
+Uptime
+Agent Health
+Today’s Failures
+Recommended Action
+
+Examples:
+
+“2 critical API failures detected — investigate reliability dashboard”
+
+“Client crash rate elevated on scheduling page”
+
+“All systems operational”
+
+──────────────────────────────
+FINAL REPORT REQUIRED
+──────────────────────────────
+
+Provide:
+
+1. New Tables
+2. New Endpoints
+3. New Dashboards
+4. New Health Checks
+5. New Alert Types
+6. Reliability Metrics
+7. Monitoring Coverage
+8. Remaining Blind Spots
+9. Estimated Uptime Improvement
+10. Operational Readiness Score
+
+Goal:
+
+Transform TrainEfficiency from a production application into a fully monitored, self-reporting SaaS platform with executive-level operational visibility.

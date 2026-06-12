@@ -13,7 +13,7 @@ import {
   Activity, Play, Pause, RotateCcw, Zap, AlertTriangle, CheckCircle2,
   Clock, Brain, ShieldAlert, BarChart3, Filter, RefreshCw, TrendingUp,
   XCircle, ChevronRight, Calendar, Users, Target, Settings, Crosshair,
-  ArrowRight, Star
+  ArrowRight, Star, Shield
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -137,6 +137,11 @@ export default function AdminCeoHeartbeatPage() {
     refetchInterval: 120_000,
   });
 
+  const { data: reliabilitySummary } = useQuery<any>({
+    queryKey: ["/api/reliability/executive-summary"],
+    refetchInterval: 60_000,
+  });
+
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
   const runMutation = useMutation({
@@ -218,6 +223,66 @@ export default function AdminCeoHeartbeatPage() {
           </Button>
         </div>
       </div>
+
+      {/* ── Platform Reliability Card ── */}
+      {reliabilitySummary && (
+        <Card className={`border-l-4 ${
+          reliabilitySummary.status === "operational" ? "border-l-emerald-500 bg-emerald-500/5" :
+          reliabilitySummary.status === "degraded"    ? "border-l-yellow-500 bg-yellow-500/5" :
+                                                        "border-l-red-500 bg-red-500/5"
+        }`} data-testid="card-reliability-summary">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div className="flex items-center gap-3">
+                <Shield className={`h-5 w-5 ${
+                  reliabilitySummary.status === "operational" ? "text-emerald-500" :
+                  reliabilitySummary.status === "degraded"    ? "text-yellow-500" : "text-red-500"
+                }`} />
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold">Platform Status</span>
+                    <Badge className={`text-[10px] capitalize ${
+                      reliabilitySummary.status === "operational" ? "bg-emerald-500/15 text-emerald-700 border-emerald-200" :
+                      reliabilitySummary.status === "degraded"    ? "bg-yellow-500/15 text-yellow-700 border-yellow-200" :
+                                                                    "bg-red-500/15 text-red-700 border-red-200"
+                    }`}>{reliabilitySummary.status}</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">{reliabilitySummary.recommendation}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-6 text-center">
+                <div>
+                  <div className="text-lg font-bold tabular-nums">{reliabilitySummary.uptime}%</div>
+                  <div className="text-[10px] text-muted-foreground">Uptime</div>
+                </div>
+                <div>
+                  <div className={`text-lg font-bold tabular-nums ${reliabilitySummary.criticalAlerts > 0 ? "text-red-500" : "text-emerald-500"}`}>
+                    {reliabilitySummary.criticalAlerts}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Critical Alerts</div>
+                </div>
+                <div>
+                  <div className={`text-lg font-bold tabular-nums ${reliabilitySummary.clientErrorsLastHour > 5 ? "text-orange-500" : "text-muted-foreground"}`}>
+                    {reliabilitySummary.clientErrorsLastHour}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Client Errors/hr</div>
+                </div>
+                <div>
+                  <div className="text-lg font-bold tabular-nums">
+                    {reliabilitySummary.healthChecksTotal > 0
+                      ? `${reliabilitySummary.healthChecksPass}/${reliabilitySummary.healthChecksTotal}`
+                      : "—"}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">Checks Passing</div>
+                </div>
+                <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
+                  <a href="/admin/reliability" data-testid="link-reliability-dashboard">View Dashboard</a>
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* System Status Row */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

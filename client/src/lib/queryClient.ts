@@ -98,6 +98,14 @@ export const queryClient = new QueryClient({
         message: msg,
       });
 
+      // Persist to reliability DB (fire-and-forget — never throw)
+      fetch("/api/reliability/query-failures", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ route: path, queryKey, statusCode, message: msg }),
+        keepalive: true,
+      }).catch(() => {});
+
       // 401: redirect unauthenticated users home
       if (statusCode === 401) {
         if (!isPublicRoute(path)) {
