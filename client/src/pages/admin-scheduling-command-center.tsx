@@ -488,7 +488,7 @@ export default function AdminSchedulingCommandCenterPage() {
             </h1>
             <p className="text-muted-foreground mt-1 text-sm">Live operational heartbeat for scheduling across your organization</p>
           </div>
-          <Link href="/scheduling">
+          <Link href="/coach/dashboard">
             <Button variant="outline" size="sm" className="gap-2 shrink-0" data-testid="button-open-scheduling-dashboard">
               <LayoutDashboard className="h-4 w-4" />
               Open Scheduling Dashboard
@@ -504,7 +504,7 @@ export default function AdminSchedulingCommandCenterPage() {
               <RefreshCw className="h-4 w-4" />
               Retry
             </Button>
-            <Link href="/scheduling">
+            <Link href="/coach/dashboard">
               <Button className="gap-2" data-testid="button-go-to-schedule">
                 <LayoutDashboard className="h-4 w-4" />
                 Go to Scheduling Dashboard
@@ -547,7 +547,7 @@ export default function AdminSchedulingCommandCenterPage() {
           </h1>
           <p className="text-muted-foreground mt-1 text-sm">Live operational heartbeat for scheduling across your organization</p>
         </div>
-        <Link href="/scheduling">
+        <Link href="/coach/dashboard">
           <Button variant="outline" size="sm" className="gap-2 shrink-0" data-testid="button-open-scheduling-dashboard">
             <LayoutDashboard className="h-4 w-4" />
             Open Scheduling Dashboard

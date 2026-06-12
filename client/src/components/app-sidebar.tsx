@@ -546,7 +546,7 @@ export function AppSidebar() {
     items: [
       {
         title: "Scheduling Dashboard",
-        url: "/scheduling",
+        url: "/coach/dashboard",
         icon: LayoutDashboard,
         testId: "nav-scheduling-dashboard",
       },

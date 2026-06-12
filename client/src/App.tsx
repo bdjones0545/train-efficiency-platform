@@ -496,6 +496,7 @@ function AuthenticatedLayout() {
                   <Route path="/wallet" component={WalletPage} />
                   {/* TODO Phase 2 cleanup: /coach redirected to unified Home Screen */}
                   <Route path="/coach" component={RedirectToHome} />
+                  <Route path="/coach/dashboard" component={CoachDashboardPage} />
                   <Route path="/coach/profile" component={CoachProfilePage} />
                   <Route path="/coach/availability" component={AvailabilityManagerPage} />
                   <Route path="/coach/redemptions" component={RedemptionsPage} />
