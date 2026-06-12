@@ -822,6 +822,15 @@ export async function registerReliabilityRoutes(app: Express) {
   // GET /api/reliability/executive-summary — compact card data for CEO / BCC views
   app.get("/api/reliability/executive-summary", async (_req, res) => {
     try {
+      // Auto-resolve any alert that is older than 48 hours and still unresolved.
+      // This prevents stale alerts from perpetually marking the system as critical.
+      await db.execute(sql`
+        UPDATE system_alerts
+        SET resolved_at = NOW()
+        WHERE resolved_at IS NULL
+          AND created_at < NOW() - INTERVAL '48 hours'
+      `).catch(() => {});
+
       const [alertsRes, checksRes, errorsRes, dlq] = await Promise.all([
         db.execute(sql`
           SELECT COUNT(*)::int AS total,

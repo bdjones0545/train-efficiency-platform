@@ -147,10 +147,12 @@ export default function AdminCeoHeartbeatPage() {
 
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
+  const orgQs = orgId ? `?orgId=${orgId}` : "";
+
   const runMutation = useMutation({
     mutationFn: () => {
       const isFirst = !status?.lastRun;
-      return apiRequest("POST", `/api/admin/ceo-heartbeat/run?orgId=${orgId}`)
+      return apiRequest("POST", `/api/admin/ceo-heartbeat/run${orgQs}`)
         .then((r) => ({ ...r, _isFirst: isFirst }));
     },
     onSuccess: (data: any) => {
@@ -172,7 +174,7 @@ export default function AdminCeoHeartbeatPage() {
   });
 
   const pauseMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/pause?orgId=${orgId}`),
+    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/pause${orgQs}`),
     onSuccess: () => {
       toast({ title: "Heartbeat paused", description: "Automation will not auto-execute until resumed." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/status", orgId] });
@@ -181,7 +183,7 @@ export default function AdminCeoHeartbeatPage() {
   });
 
   const resumeMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/resume?orgId=${orgId}`),
+    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/resume${orgQs}`),
     onSuccess: () => {
       toast({ title: "Heartbeat resumed", description: "CEO Heartbeat is active again." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/status", orgId] });
@@ -190,7 +192,7 @@ export default function AdminCeoHeartbeatPage() {
   });
 
   const retryMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/retry-failed?orgId=${orgId}`),
+    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/retry-failed${orgQs}`),
     onSuccess: (data: any) => {
       toast({ title: "Jobs retried", description: `${data?.retried ?? 0} failed jobs queued for retry.` });
       queryClient.invalidateQueries({ queryKey: timelineQKey });
@@ -199,7 +201,7 @@ export default function AdminCeoHeartbeatPage() {
   });
 
   const recalcMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/recalculate-priorities?orgId=${orgId}`),
+    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/recalculate-priorities${orgQs}`),
     onSuccess: () => {
       toast({ title: "Priorities recalculated" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/priorities", orgId] });

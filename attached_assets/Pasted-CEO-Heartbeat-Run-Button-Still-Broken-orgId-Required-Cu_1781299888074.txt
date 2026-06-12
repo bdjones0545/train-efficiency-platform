@@ -1,0 +1,60 @@
+CEO Heartbeat Run Button Still Broken — orgId Required
+
+Current error:
+Pressing "Run Heartbeat Now" still returns:
+
+400: {"message":"orgId required"}
+
+This means the manual heartbeat mutation is still hitting a backend path that requires orgId, or the frontend is still sending an empty orgId.
+
+Tasks:
+
+1. Audit the Run Heartbeat Now mutation in admin-ceo-heartbeat.tsx.
+- Log the exact URL and body being sent.
+- Confirm whether it is calling:
+  - /api/admin/ceo-heartbeat/run
+  - /api/admin/ceo-heartbeat/run?orgId=
+  - or another legacy endpoint.
+
+2. Audit all ceo-heartbeat route handlers.
+- Search for every instance of:
+  - "orgId required"
+  - req.query.orgId
+  - req.body.orgId
+  - getOrgId
+- Confirm the run/manual-trigger route uses the new async getOrgId(req) resolver.
+- Remove any old hard requirement that rejects before session-based org resolution.
+
+3. Fix the run endpoint.
+- The manual run route should resolve orgId from session first.
+- It should not require frontend orgId if the authenticated user has an org profile.
+- If org cannot be resolved, return:
+  400: {"message":"Unable to resolve organization for current session"}
+  not generic "orgId required".
+
+4. Fix frontend mutation.
+- Prefer calling the session-aware endpoint with no orgId.
+- If orgId is included, ensure it comes from /session-context, not window.__orgId.
+- Disable Run button until session-context has loaded.
+
+5. Fix stale platform status card.
+- It still shows 550 critical alerts and 11/12 checks.
+- Confirm CEO card is using the corrected executive-summary response.
+- Add cache invalidation/refetch on page mount.
+- Confirm the backend active alert count filters resolved_at IS NULL.
+- Confirm old stale alerts are resolved or excluded.
+
+Validation:
+- Press Run Heartbeat Now.
+- Confirm no 400.
+- Confirm heartbeat row is created.
+- Confirm Last Heartbeat updates.
+- Confirm Top Priorities refresh.
+- Confirm Platform Status updates to current corrected values.
+- Run typecheck/build.
+
+Return:
+- exact old request URL
+- exact fixed request URL
+- route handler fixed
+- screenshot/result after successful run

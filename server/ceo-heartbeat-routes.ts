@@ -20,31 +20,21 @@ import {
   getExecutionHealth,
   writeTimeline,
 } from "./services/ceo-heartbeat-service";
+import { resolveOrgSession } from "./org-auth";
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
 async function getOrgId(req: any): Promise<string | null> {
-  // 1. Explicit property set by some middleware
-  if (req.user?.orgId) return req.user.orgId as string;
-  // 2. Query param passed from frontend
+  // 1. Explicit query param (takes priority — allows org-switching in debug)
   if (req.query.orgId) return req.query.orgId as string;
-  // 3. DB lookup from authenticated session (Replit OIDC or custom auth)
+  // 2. Full 3-path resolver: X-Org-Auth-Token → OIDC req.user → Bearer token
   try {
-    const userId: string | undefined = req.user?.claims?.sub ?? req.user?.id;
-    if (!userId) return null;
-    const [profile] = await db.select({ orgId: userProfiles.organizationId })
-      .from(userProfiles)
-      .where(eq(userProfiles.userId, userId))
-      .limit(1);
-    if (profile?.orgId) return profile.orgId;
-    const [coach] = await db.select({ orgId: coachProfiles.organizationId })
-      .from(coachProfiles)
-      .where(eq(coachProfiles.userId, userId))
-      .limit(1);
-    return coach?.orgId ?? null;
+    const orgSession = await resolveOrgSession(req);
+    if (orgSession?.orgId) return orgSession.orgId;
   } catch {
-    return null;
+    // fall through
   }
+  return null;
 }
 
 function getAdminId(req: any): string {
