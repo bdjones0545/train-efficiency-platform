@@ -123,7 +123,16 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
       });
 
       const result = await runHeartbeatCycle({ orgId, triggeredBy: "manual" });
-      res.json(result);
+
+      // Fetch the completed run record so the frontend can render Last Heartbeat
+      // immediately without waiting for a separate status refetch.
+      const [completedRun] = await db.select()
+        .from(ceoHeartbeatRuns)
+        .where(eq(ceoHeartbeatRuns.id, result.runId))
+        .limit(1)
+        .catch(() => []);
+
+      res.json({ ...result, run: completedRun ?? null });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

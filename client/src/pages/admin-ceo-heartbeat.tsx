@@ -64,6 +64,7 @@ export default function AdminCeoHeartbeatPage() {
   const queryClient = useQueryClient();
   const [bannerDismissed, setBannerDismissed] = useState(false);
   const [hasRunOnce, setHasRunOnce] = useState(false);
+  const [localLastRun, setLocalLastRun] = useState<any>(null);
 
   const { data: sessionCtx } = useQuery<{ orgId: string | null; orgName: string | null }>({
     queryKey: ["/api/admin/ceo-heartbeat/session-context"],
@@ -158,21 +159,33 @@ export default function AdminCeoHeartbeatPage() {
     },
     onSuccess: (data: any) => {
       const wasFirst = data?._isFirst ?? false;
-      toast({
-        title: wasFirst ? "CEO Heartbeat initialized successfully." : "Heartbeat cycle started",
-        description: wasFirst
-          ? "Your operational baseline has been established."
-          : "CEO Heartbeat is running now.",
-      });
-      if (wasFirst) {
+      const runRecord = data?.run ?? null;
+
+      // Store the completed run record immediately so cards render without
+      // waiting for the background status refetch to complete.
+      if (runRecord) setLocalLastRun(runRecord);
+      if (wasFirst || runRecord) {
         setHasRunOnce(true);
         setBannerDismissed(true);
       }
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/status", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/health", orgId] });
-      queryClient.invalidateQueries({ queryKey: ["/api/admin/ceo-heartbeat/priorities", orgId] });
-      queryClient.invalidateQueries({ queryKey: timelineQKey });
-      queryClient.invalidateQueries({ queryKey: ["/api/reliability/executive-summary"] });
+
+      const title = runRecord?.status === "completed"
+        ? (wasFirst ? "CEO Heartbeat initialized successfully." : "Heartbeat cycle complete")
+        : "Heartbeat cycle started";
+      const description = runRecord
+        ? `${runRecord.agentsCoordinated ?? 0} agents coordinated · ${runRecord.errorsEncountered ?? 0} error(s) · ${fmtMs(runRecord.durationMs)}`
+        : wasFirst
+          ? "Your operational baseline has been established."
+          : "CEO Heartbeat is running now.";
+
+      toast({ title, description });
+
+      // Refetch immediately so background data catches up.
+      queryClient.refetchQueries({ queryKey: ["/api/admin/ceo-heartbeat/status", orgId] });
+      queryClient.refetchQueries({ queryKey: ["/api/admin/ceo-heartbeat/health", orgId] });
+      queryClient.refetchQueries({ queryKey: ["/api/admin/ceo-heartbeat/priorities", orgId] });
+      queryClient.refetchQueries({ queryKey: timelineQKey });
+      queryClient.refetchQueries({ queryKey: ["/api/reliability/executive-summary"] });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
@@ -213,7 +226,9 @@ export default function AdminCeoHeartbeatPage() {
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });
 
-  const lastRun = status?.lastRun;
+  // Prefer localLastRun (set immediately from mutation response) over the
+  // potentially-stale cached status query value.
+  const lastRun = localLastRun ?? status?.lastRun ?? null;
   const health = healthData ?? {};
   const priorities = prioritiesData?.priorities ?? [];
   const timeline = timelineData?.entries ?? [];

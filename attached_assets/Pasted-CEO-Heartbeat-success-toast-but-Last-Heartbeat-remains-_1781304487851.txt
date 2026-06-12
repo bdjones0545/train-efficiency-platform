@@ -1,0 +1,69 @@
+CEO Heartbeat success toast but Last Heartbeat remains blank
+
+Issue:
+After clicking Run Heartbeat Now:
+- Toast says "CEO Heartbeat initialized successfully"
+- But Last Heartbeat still shows —
+- Agents Coordinated still shows —
+- Actions evaluated remains 0
+- Platform Status still shows stale outage values
+
+Tasks:
+
+1. Verify backend run endpoint response
+- Log the response from POST /api/admin/ceo-heartbeat/run
+- Confirm it returns the created heartbeat run:
+  - id
+  - startedAt/completedAt
+  - status
+  - durationMs
+  - agentsCoordinated
+  - actionsEvaluated
+  - errors
+
+2. Verify DB insert
+- Query ceo_heartbeat_runs for this org after clicking Run.
+- Confirm a new row exists and has non-null completed_at/status.
+
+3. Verify status endpoint
+- Check GET /api/admin/ceo-heartbeat/status for the same org.
+- Confirm it returns lastRun populated.
+- If lastRun is blank even though DB row exists, fix the status query.
+
+4. Fix frontend data mapping
+- In admin-ceo-heartbeat.tsx, inspect where Last Heartbeat reads from.
+- Confirm the UI expects the same field names the API returns.
+- Possible mismatch:
+  - completedAt vs completed_at
+  - lastRun.completedAt vs status.lastRun.completedAt
+  - durationMs vs duration_ms
+  - agentsCoordinated vs agents_coordinated
+
+5. Fix success timing
+- Do not show "initialized successfully" unless:
+  - backend run completed
+  - status query refetched
+  - lastRun is populated
+- If run is async, show "Heartbeat started" first, then update when complete.
+
+6. Fix stale reliability card
+- Platform Status still shows stale outage values.
+- Confirm executive-summary endpoint now returns active-only alerts.
+- Confirm frontend is not using cached/stale reliability summary.
+- Force refetch on run success and page mount.
+
+Validation:
+- Press Run Heartbeat Now once.
+- Confirm Last Heartbeat shows timestamp.
+- Confirm duration/status show real values.
+- Confirm Agents Coordinated populates.
+- Confirm Actions Evaluated updates.
+- Confirm Top Priorities refresh.
+- Confirm Platform Status reflects current executive-summary values.
+- Run typecheck/build.
+
+Return:
+- backend run response
+- DB row example
+- status endpoint response before/after
+- field mapping fixed
