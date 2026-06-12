@@ -1,0 +1,142 @@
+UNSAFE ARRAY ASSUMPTION FIX — ORG PAGE CRASH
+
+Issue:
+Logged-in org users are still hitting PageErrorBoundary.
+
+Current runtime error:
+
+(y.data ?? []).slice is not a function
+
+This means frontend code assumes y.data is an array, but the API sometimes returns an object, likely:
+
+* { message: “Unauthorized” }
+* { data: […] }
+* { items: […] }
+* or another non-array response shape
+
+Root problem:
+y.data ?? [] only protects against null/undefined. It does not protect against objects.
+
+──────────────────────────────
+TASK 1 — FIND EXACT CRASH
+──────────────────────────────
+
+Search the frontend for:
+
+(y.data ?? []).slice
+.data ?? []).slice
+.slice(0, 3)
+.slice(0,3)
+
+Also search broadly for unsafe patterns:
+
+(data ?? []).map
+(data ?? []).filter
+(data ?? []).slice
+(data ?? []).reduce
+(data ?? []).find
+
+Identify the exact component/page throwing this error.
+
+Return:
+
+* file
+* line
+* query/data source
+* expected API shape
+* actual API shape
+
+──────────────────────────────
+TASK 2 — PATCH EXACT CRASH
+──────────────────────────────
+
+Replace unsafe array operations with Array.isArray guards.
+
+Before:
+
+(y.data ?? []).slice(0, 3)
+
+After:
+
+(Array.isArray(y.data) ? y.data : []).slice(0, 3)
+
+or:
+
+const rows = Array.isArray(y.data) ? y.data : [];
+rows.slice(0, 3);
+
+If the API returns { data: […] }, normalize it:
+
+const rows = Array.isArray(y)
+? y
+: Array.isArray(y?.data)
+? y.data
+: [];
+
+──────────────────────────────
+TASK 3 — ADD API RESPONSE OK CHECKS
+──────────────────────────────
+
+For the query that feeds this component:
+
+* Check r.ok before r.json()
+* If !r.ok, throw an Error instead of returning the error body
+* This prevents { message: “Unauthorized” } from being treated as real data
+
+Pattern:
+
+const res = await fetch(url, options);
+if (!res.ok) {
+throw new Error(Request failed: ${res.status});
+}
+return res.json();
+
+──────────────────────────────
+TASK 4 — SAFE ARRAY UTILITY
+──────────────────────────────
+
+Add a small helper if useful:
+
+function asArray(value: unknown): T[] {
+return Array.isArray(value) ? value : [];
+}
+
+Use it where multiple array operations exist.
+
+Do not over-refactor unrelated pages.
+
+──────────────────────────────
+TASK 5 — BROADER GUARD PASS
+──────────────────────────────
+
+Patch only high-risk occurrences in org-facing routes where API errors could return objects:
+
+* org-portal
+* org-dashboard
+* CEO Heartbeat
+* messages/notifications
+* scheduling widgets
+* command widgets
+
+Focus on .map, .filter, .slice, .reduce, .find.
+
+──────────────────────────────
+VALIDATION
+──────────────────────────────
+
+Test:
+
+1. Login as org-token user.
+2. Load default org page.
+3. Confirm no PageErrorBoundary.
+4. Confirm no “(…).slice is not a function” error.
+5. Force a 401 response from the relevant endpoint.
+6. Confirm the page shows an error/empty state instead of crashing.
+7. Run typecheck and build.
+
+Return:
+
+* exact crashing component
+* exact API response that caused it
+* patches applied
+* remaining unsafe array assumptions if any
