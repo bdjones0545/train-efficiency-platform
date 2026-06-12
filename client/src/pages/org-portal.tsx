@@ -48,7 +48,8 @@ function formatHour(hour: number) {
   return `${h}:00 ${suffix}`;
 }
 
-function parseTimeSlot(slot: string): number {
+function parseTimeSlot(slot: string | null | undefined): number {
+  if (!slot) return 0;
   return parseInt(slot.split(":")[0], 10);
 }
 

@@ -8,6 +8,7 @@ interface PageErrorBoundaryProps {
 
 interface PageErrorBoundaryState {
   hasError: boolean;
+  errorMessage?: string;
 }
 
 export class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErrorBoundaryState> {
@@ -16,8 +17,8 @@ export class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErr
     this.state = { hasError: false };
   }
 
-  static getDerivedStateFromError(): PageErrorBoundaryState {
-    return { hasError: true };
+  static getDerivedStateFromError(error: Error): PageErrorBoundaryState {
+    return { hasError: true, errorMessage: error?.message };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
@@ -27,6 +28,25 @@ export class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErr
       error
     );
     console.error("[PageErrorBoundary] Full component stack:", info.componentStack);
+
+    // POST to server so crashes are visible in the reliability dashboard
+    try {
+      fetch("/api/client-errors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          type: "PageErrorBoundary",
+          message: error?.message ?? String(error),
+          stack: (error?.stack ?? "") + "\n\n--- Component Stack ---\n" + (info?.componentStack ?? ""),
+          route,
+          source: this.props.pageName ?? route,
+          userAgent: navigator.userAgent,
+        }),
+      }).catch(() => {});
+    } catch {
+      // never throw from error boundary
+    }
   }
 
   render() {
@@ -46,12 +66,17 @@ export class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErr
             <p className="text-sm text-muted-foreground max-w-md">
               A rendering error occurred. Try reloading — if the problem persists, return to the home screen.
             </p>
+            {this.state.errorMessage && (
+              <p className="text-xs font-mono text-muted-foreground/70 max-w-sm mx-auto break-words" data-testid="text-error-message">
+                {this.state.errorMessage}
+              </p>
+            )}
           </div>
           <div className="flex gap-3 flex-wrap justify-center">
             <button
               className="inline-flex items-center gap-2 px-4 py-2 rounded-md bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 transition-colors"
               onClick={() => {
-                this.setState({ hasError: false });
+                this.setState({ hasError: false, errorMessage: undefined });
                 window.location.reload();
               }}
               data-testid="button-error-boundary-reload"
@@ -62,7 +87,7 @@ export class PageErrorBoundary extends Component<PageErrorBoundaryProps, PageErr
             <button
               className="inline-flex items-center gap-2 px-4 py-2 rounded-md border border-input bg-background text-foreground text-sm font-medium hover:bg-muted transition-colors"
               onClick={() => {
-                this.setState({ hasError: false });
+                this.setState({ hasError: false, errorMessage: undefined });
                 window.location.href = "/";
               }}
               data-testid="button-error-boundary-home"
