@@ -1,0 +1,59 @@
+CEO Heartbeat UX + Mobile Fix
+
+Issues:
+1. After pressing Initialize Heartbeat, the UI still shows first-run/no-run cards and requires more button presses.
+2. Initialization should execute the heartbeat cycle, refresh all data, and transition into the normal dashboard state automatically.
+3. Mobile layout is broken:
+   - Platform Status card overflows horizontally
+   - cards are too wide
+   - buttons overflow inside cards
+   - page allows sideways scrolling
+
+Tasks:
+
+1. Fix initialization behavior
+- The Initialize Heartbeat / Run First Heartbeat action should call the same backend runHeartbeatCycle(orgId) endpoint as Run Heartbeat Now.
+- On success:
+  - invalidate/refetch status, health, priorities, timeline, reliability summary
+  - update hasNeverRun to false
+  - hide onboarding banner
+  - show real Last Heartbeat timestamp
+  - populate Agents Coordinated / Errors / Priorities
+- User should not need to press another button.
+
+2. Add optimistic first-run transition
+- While initializing, show "Initializing heartbeat..."
+- Disable all heartbeat buttons.
+- After success, immediately show normal dashboard state.
+- If backend returns no run payload, force refetch before rendering first-run cards again.
+
+3. Fix mobile layout
+- Prevent horizontal scrolling on the page.
+- Platform Status card must be width: 100%, max-width: 100%, overflow-hidden.
+- Metrics inside Platform Status should wrap into 2 columns on mobile instead of one horizontal row.
+- Hide or move "View Dashboard" button below metrics on mobile.
+- Cards should use grid-cols-1 on very small screens and sm:grid-cols-2 / md:grid-cols-4.
+- Buttons inside cards should not exceed card width:
+  - w-full on mobile
+  - text-sm
+  - whitespace-normal or truncate safely
+- Add min-w-0 to flex/grid children where text is overflowing.
+
+4. Fix floating AI buttons overlap
+- On mobile, move floating buttons lower/right or add bottom padding to content.
+- Ensure they do not cover cards or manual controls.
+
+5. Validation
+- Test iPhone-width viewport.
+- Confirm no horizontal scroll.
+- Press Initialize Heartbeat once.
+- Confirm dashboard transitions into normal heartbeat state.
+- Confirm Last Heartbeat is populated.
+- Confirm priorities refresh.
+- Confirm Platform Status card fits screen.
+- Run typecheck/build.
+
+Return:
+- files changed
+- before/after behavior
+- mobile screenshot confirmation
