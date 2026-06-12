@@ -1,0 +1,107 @@
+Fix the mobile floating Brain button crash.
+
+Current behavior:
+- Scheduling Dashboard now loads correctly.
+- On mobile, pressing the lower-right Brain floating action button causes the app-level error boundary:
+  “Something went wrong”
+- This means the Brain button/modal/panel route is throwing a runtime React error.
+
+Audit and fix:
+
+1. Locate the floating Brain button component
+Search for the lower-right floating action buttons:
+- brain icon
+- bot icon
+- floating assistant
+- AI assistant
+- command assistant
+- agent panel
+- mobile FAB
+
+Likely files:
+- client/src/components/*
+- client/src/components/layout/*
+- client/src/components/ai/*
+- client/src/components/agent/*
+- client/src/pages/admin-scheduling-command-center.tsx
+
+2. Reproduce the click path
+Find what happens when Brain button is clicked:
+- opens modal/drawer?
+- navigates to route?
+- toggles state?
+- calls AI endpoint?
+- loads command center agent?
+- reads selected org/session context?
+
+3. Identify the exact runtime error
+Run the app and inspect console stack trace.
+Do not guess. Find the component and line causing the crash.
+
+Likely causes to check:
+- accessing undefined org/user/session data
+- missing provider/context on mobile layout
+- undefined array `.map()` or `.length`
+- invalid route navigation
+- component expects `children`, `messages`, `agent`, or `tools` but receives undefined
+- missing import/icon/component
+- mobile drawer portal target is null
+- window/document access during render
+- assistant panel assumes desktop width/layout data exists
+
+4. Add defensive guards
+The Brain panel should never crash the app.
+
+Before rendering, normalize:
+- messages: []
+- actions: []
+- suggestions: []
+- tools: []
+- agentStatus: null
+- orgId: resolved safely
+- currentPage/context: optional
+
+Avoid direct access like:
+- user.org.id
+- agent.actions.map(...)
+- messages.length
+- selectedAgent.name
+- document.getElementById(...).appendChild(...)
+
+without null checks.
+
+5. Add proper loading/error states inside the Brain panel
+If AI assistant data fails:
+- keep the drawer/modal open
+- show an error card inside the panel
+- include Retry and Close buttons
+- do not trigger the app-wide error boundary
+
+6. Wrap the Brain panel contents in a local error boundary
+The global app should not crash from this floating assistant.
+
+Add a small local boundary around the assistant drawer/panel:
+- catches render errors
+- displays “Assistant failed to load”
+- includes Retry / Close
+- logs the error to console
+
+7. Confirm mobile layout behavior
+On iPhone/mobile:
+- tap Brain icon
+- panel opens correctly
+- no global “Something went wrong”
+- bot icon still works
+- closing/reopening works
+- page behind remains stable
+- no z-index/overlay issues
+
+8. Test on desktop too
+Make sure the same Brain button/panel works on desktop and mobile.
+
+Return:
+- root cause
+- exact console error
+- files changed
+- fix applied
+- before/after behavior
