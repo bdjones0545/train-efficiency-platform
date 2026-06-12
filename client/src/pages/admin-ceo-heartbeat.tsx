@@ -275,6 +275,16 @@ export default function AdminCeoHeartbeatPage() {
                   </div>
                   <div className="text-[10px] text-muted-foreground">Checks Passing</div>
                 </div>
+                <div>
+                  <div className={`text-lg font-bold tabular-nums ${
+                    (reliabilitySummary.dlqPending ?? 0) >= 20 ? "text-red-500" :
+                    (reliabilitySummary.dlqPending ?? 0) >= 5  ? "text-yellow-500" :
+                    "text-muted-foreground"
+                  }`}>
+                    {reliabilitySummary.dlqPending ?? 0}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground">DLQ Pending</div>
+                </div>
                 <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
                   <a href="/admin/reliability" data-testid="link-reliability-dashboard">View Dashboard</a>
                 </Button>

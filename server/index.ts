@@ -82,18 +82,55 @@ app.post(
       return res.status(400).json({ error: 'Missing stripe-signature' });
     }
 
+    // Log webhook received (fire-and-forget, no sensitive data)
+    import("./reliability-routes").then(({ logSystemEvent }) =>
+      logSystemEvent("info", "stripe", "webhook_received", "Stripe webhook received")
+    ).catch(() => {});
+
     try {
       const sig = Array.isArray(signature) ? signature[0] : signature;
 
       if (!Buffer.isBuffer(req.body)) {
         console.error('STRIPE WEBHOOK ERROR: req.body is not a Buffer');
+        import("./reliability-routes").then(({ logSystemEvent }) =>
+          logSystemEvent("error", "stripe", "webhook_failed", "Stripe webhook: req.body not a Buffer")
+        ).catch(() => {});
         return res.status(500).json({ error: 'Webhook processing error' });
       }
 
       await WebhookHandlers.processWebhook(req.body as Buffer, sig);
+
+      // Log success — parse event type and id from body (safe: after verification inside processWebhook)
+      let eventType = "unknown";
+      let eventId = "unknown";
+      let livemode = false;
+      try {
+        const parsed = JSON.parse((req.body as Buffer).toString("utf8"));
+        eventType = parsed.type ?? "unknown";
+        eventId   = parsed.id   ?? "unknown";
+        livemode  = parsed.livemode ?? false;
+      } catch { /* body parse is best-effort only */ }
+
+      import("./reliability-routes").then(({ logSystemEvent }) =>
+        logSystemEvent("info", "stripe", "webhook_processed",
+          `Stripe webhook processed: ${eventType}`,
+          { eventType, eventId, livemode })
+      ).catch(() => {});
+
       res.status(200).json({ received: true });
     } catch (error: any) {
       console.error('Webhook error:', error.message);
+      // Determine if this is an unknown event type or a processing failure
+      const isUnknownType = error.message?.toLowerCase().includes("unknown") ||
+                            error.message?.toLowerCase().includes("unhandled");
+      import("./reliability-routes").then(({ logSystemEvent }) =>
+        logSystemEvent("error", "stripe",
+          isUnknownType ? "webhook_unknown_type" : "webhook_failed",
+          isUnknownType
+            ? `Stripe webhook: unknown/unhandled event type — ${error.message}`
+            : `Stripe webhook processing failed: ${error.message}`,
+          { errorMessage: error.message })
+      ).catch(() => {});
       res.status(400).json({ error: 'Webhook processing error' });
     }
   }
