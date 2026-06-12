@@ -523,7 +523,7 @@ function ProspectCard({
           size="sm"
           variant="ghost"
           className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30 ml-auto"
-          onClick={() => { if (window.confirm(`Delete "${prospect.orgName}"? This cannot be undone.`)) onDelete(prospect.id); }}
+          onClick={() => { if (window.confirm(`Delete "${prospect.prospectName}"? This cannot be undone.`)) onDelete(prospect.id); }}
           data-testid={`button-delete-${prospect.id}`}
         >
           <Trash2 className="h-3 w-3 mr-1" /> Delete

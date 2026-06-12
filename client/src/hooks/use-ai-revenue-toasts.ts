@@ -115,7 +115,7 @@ export function useAiRevenueToasts(
 
     if (!initialized.current) {
       data.impactFeed.forEach(item => seen.add(item.id));
-      sessionStorage.setItem(SEEN_KEY, JSON.stringify([...seen]));
+      sessionStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(seen)));
       initialized.current = true;
       return;
     }
@@ -161,6 +161,6 @@ export function useAiRevenueToasts(
       }
     }
 
-    sessionStorage.setItem(SEEN_KEY, JSON.stringify([...seen]));
+    sessionStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(seen)));
   }, [data?.impactFeed]);
 }

@@ -94,6 +94,7 @@ type ExtendedConfig = {
   bookingButtonText?: string;
   bookingRedirectOnSubmit?: boolean;
   laserEffectsEnabled?: boolean;
+  laserCardsEnabled?: boolean;
   laserIntensity?: "subtle" | "standard" | "high";
   laserPreset?: "performance-orange" | "team-cyan" | "career-purple" | "elite-green";
   heroImageFit?: "cover" | "contain" | "fill";

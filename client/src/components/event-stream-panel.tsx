@@ -131,7 +131,7 @@ export function EventStreamPanel({ orgId, headers, compact }: Props) {
         <div>
           <p className="text-[10px] text-muted-foreground mb-1.5">Active Subscribers</p>
           <div className="flex flex-wrap gap-1">
-            {[...new Set(subscribers.map(s => s.subscriberName))].map((name, i) => (
+            {Array.from(new Set(subscribers.map(s => s.subscriberName))).map((name, i) => (
               <span key={i} className="text-[9px] px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20">
                 {name}
               </span>

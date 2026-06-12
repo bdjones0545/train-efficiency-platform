@@ -752,7 +752,7 @@ function WorkflowNode({ data, selected }: { data: any; selected: boolean }) {
           {category.replace("_", " ")}
         </span>
         {data.requiresApproval && (
-          <ShieldAlert className="h-3 w-3 text-white/80 shrink-0" title="Requires approval" />
+          <ShieldAlert className="h-3 w-3 text-white/80 shrink-0" aria-label="Requires approval" />
         )}
       </div>
       {/* Body */}

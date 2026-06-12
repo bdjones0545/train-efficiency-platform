@@ -1805,7 +1805,7 @@ function PerfTable({
   title, data, loading, keyField, columns
 }: {
   title: string;
-  data: Record<string, unknown>[];
+  data: any[];
   loading: boolean;
   keyField: string;
   columns: PerfCol[];
@@ -1898,7 +1898,7 @@ function LearningTab({
       {/* Performance tables */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <PerfTable
-          title="Source Performance" data={(perf?.sources ?? []) as Record<string, unknown>[]}
+          title="Source Performance" data={perf?.sources ?? []}
           loading={perfLoading} keyField="source"
           columns={[
             { header: "Source",     key: "source" },
@@ -1910,7 +1910,7 @@ function LearningTab({
           ]}
         />
         <PerfTable
-          title="Opportunity Type Performance" data={(perf?.types ?? []) as Record<string, unknown>[]}
+          title="Opportunity Type Performance" data={perf?.types ?? []}
           loading={perfLoading} keyField="type"
           columns={[
             { header: "Type",       key: "type" },
@@ -1922,7 +1922,7 @@ function LearningTab({
           ]}
         />
         <PerfTable
-          title="Positioning Performance" data={(perf?.positioning ?? []) as Record<string, unknown>[]}
+          title="Positioning Performance" data={perf?.positioning ?? []}
           loading={perfLoading} keyField="angle"
           columns={[
             { header: "Angle",        key: "angle" },
@@ -1934,7 +1934,7 @@ function LearningTab({
           ]}
         />
         <PerfTable
-          title="Subject Line Performance" data={(perf?.subjects ?? []) as Record<string, unknown>[]}
+          title="Subject Line Performance" data={perf?.subjects ?? []}
           loading={perfLoading} keyField="subject"
           columns={[
             { header: "Subject",    key: "subject" },

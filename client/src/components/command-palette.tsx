@@ -577,7 +577,7 @@ export function CommandPalette() {
                   icon={c.icon}
                   label={c.label}
                   subtitle={c.subtitle}
-                  onSelect={() => go(c.url, c.label, c.icon.displayName || "Zap")}
+                  onSelect={() => go(c.url, c.label, (c.icon as React.FC).displayName || "Zap")}
                 />
               ))}
             </div>
@@ -610,7 +610,7 @@ export function CommandPalette() {
                   subtitle={a.subtitle}
                   tag={a.advancedOnly ? "Advanced" : undefined}
                   aiStyle={a.advancedOnly}
-                  onSelect={() => go(a.url, a.label, a.icon.displayName || "Zap")}
+                  onSelect={() => go(a.url, a.label, (a.icon as React.FC).displayName || "Zap")}
                 />
               ))}
             </div>
@@ -628,7 +628,7 @@ export function CommandPalette() {
                   subtitle={p.section}
                   tag={p.advancedOnly ? "Advanced" : undefined}
                   aiStyle={p.section === "AI"}
-                  onSelect={() => go(p.url, p.label, p.icon.displayName || "Home")}
+                  onSelect={() => go(p.url, p.label, (p.icon as React.FC).displayName || "Home")}
                 />
               ))}
             </div>

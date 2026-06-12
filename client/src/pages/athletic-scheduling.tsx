@@ -694,7 +694,7 @@ export default function AthleticSchedulingPage() {
                             {booking.trainingType}
                           </Badge>
                           {(booking as any).orgUserId && (
-                            <User className="h-3.5 w-3.5 text-primary/60 flex-shrink-0" title="Booked by a logged-in member" />
+                            <User className="h-3.5 w-3.5 text-primary/60 flex-shrink-0" aria-label="Booked by a logged-in member" />
                           )}
                           <button
                             className="ml-auto flex-shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"

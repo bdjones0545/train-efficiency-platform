@@ -112,7 +112,7 @@ const asArray = <T,>(value: unknown): T[] =>
 
 // Safe fetch wrapper — throws on HTTP errors so TanStack Query treats them as
 // errors (data stays undefined) rather than returning the error JSON as data.
-async function safeFetch(url: string): Promise<unknown> {
+async function safeFetch(url: string): Promise<any> {
   const res = await fetch(url, { credentials: "include" });
   if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
   return res.json();

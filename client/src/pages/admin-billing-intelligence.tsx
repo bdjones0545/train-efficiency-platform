@@ -520,7 +520,7 @@ function EnterpriseTab() {
           <div className="px-4 py-2.5 bg-muted/30 border-b"><h3 className="text-xs font-semibold">Readiness Checklist</h3></div>
           <div className="divide-y">
             {(data?.readinessItems ?? []).map(item => (
-              <div key={item.item} className="flex items-center gap-3 px-4 py-3" data-testid={`readiness-${item.id}`}>
+              <div key={item.item} className="flex items-center gap-3 px-4 py-3" data-testid={`readiness-${item.item}`}>
                 {item.ready ? <CheckCircle className="h-4 w-4 text-emerald-500 shrink-0" /> : <div className="h-4 w-4 rounded-full border-2 border-muted-foreground/30 shrink-0" />}
                 <div className="flex-1">
                   <p className={`text-xs ${item.ready ? "font-medium" : "text-muted-foreground"}`}>{item.item}</p>
