@@ -231,6 +231,28 @@ function SmartHome() {
   return <BookFastPage />;
 }
 
+// Isolates ChatWidget crashes so they can never reach AppErrorBoundary or
+// PageErrorBoundary — renders nothing (silent hide) instead of blowing up the page.
+class ChatWidgetSafetyBoundary extends Component<
+  { children: React.ReactNode },
+  { hasError: boolean }
+> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(): { hasError: boolean } {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[ChatWidget] Safety boundary caught:", error.message, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) return null;
+    return this.props.children;
+  }
+}
+
 class AppErrorBoundary extends Component<
   { children: React.ReactNode },
   { hasError: boolean; error: Error | null }
@@ -615,7 +637,9 @@ function AuthenticatedLayout() {
       <CoachAgentLauncher />
       <ClientAgentLauncher />
       <CommandPalette />
-      <ChatWidget />
+      <ChatWidgetSafetyBoundary>
+        <ChatWidget />
+      </ChatWidgetSafetyBoundary>
     </SidebarProvider>
   );
 }

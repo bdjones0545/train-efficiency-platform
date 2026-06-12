@@ -855,7 +855,6 @@ export function ChatWidget() {
   const [isMounted, setIsMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>("ceo");
-  const closeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: approvalMetrics } = useQuery<any>({
     queryKey: ["/api/ai-approvals/metrics"],
@@ -867,29 +866,25 @@ export function ChatWidget() {
   const pendingCount = approvalMetrics?.pending ?? 0;
 
   const handleOpen = () => {
-    if (closeTimerRef.current) {
-      clearTimeout(closeTimerRef.current);
-      closeTimerRef.current = null;
-    }
     setIsMounted(true);
-    requestAnimationFrame(() => requestAnimationFrame(() => setIsOpen(true)));
-    document.body.style.overflow = "hidden";
+    // one rAF is enough — the panel is in the DOM by the next paint
+    requestAnimationFrame(() => setIsOpen(true));
   };
 
   const handleClose = () => {
     setIsOpen(false);
-    closeTimerRef.current = setTimeout(() => {
-      setIsMounted(false);
-      document.body.style.overflow = "";
-    }, 310);
+    // isMounted → false is driven by the CSS transition completing on the
+    // panel itself (onTransitionEnd), never by a racing setTimeout.
   };
 
-  useEffect(() => {
-    return () => {
-      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-      document.body.style.overflow = "";
-    };
-  }, []);
+  // Unmount the panel only once its slide-out transition has fully finished.
+  // Filtering on "transform" prevents firing twice when multiple properties
+  // transition (e.g. opacity on backdrop vs transform on panel).
+  const handlePanelTransitionEnd = (e: React.TransitionEvent<HTMLDivElement>) => {
+    if (e.propertyName === "transform" && !isOpen) {
+      setIsMounted(false);
+    }
+  };
 
   return (
     <>
@@ -917,6 +912,7 @@ export function ChatWidget() {
             isOpen ? "translate-x-0" : "translate-x-full",
           ].join(" ")}
           style={{ paddingTop: "env(safe-area-inset-top, 0px)" }}
+          onTransitionEnd={handlePanelTransitionEnd}
         >
           {/* Header */}
           <div className="flex items-center justify-between gap-2 px-4 py-3 border-b border-zinc-700/60 bg-zinc-900/95 shrink-0">
@@ -941,7 +937,7 @@ export function ChatWidget() {
 
           {/* Tab content */}
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-            <ChatWidgetErrorBoundary onClose={handleClose}>
+            <ChatWidgetErrorBoundary key={String(isMounted)} onClose={handleClose}>
               {activeTab === "ceo"       && <CeoHomeTab onSwitchTab={setActiveTab} />}
               {activeTab === "chat"      && <ChatTab />}
               {activeTab === "agents"    && <AgentsTab />}
