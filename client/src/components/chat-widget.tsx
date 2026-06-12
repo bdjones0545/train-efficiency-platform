@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Component } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   X, Send, Bot, User, Brain, Activity, CheckCircle2, AlertTriangle,
@@ -104,11 +104,11 @@ function CeoHomeTab({ onSwitchTab }: { onSwitchTab: (t: Tab) => void }) {
     queryFn: () => fetch("/api/admin/ceo-heartbeat/status", { credentials: "include" }).then(r => r.json()),
     refetchInterval: 30000,
   });
-  const { data: priorities } = useQuery<any[]>({
+  const { data: prioritiesData } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/priorities"],
     queryFn: () => fetch("/api/admin/ceo-heartbeat/priorities", { credentials: "include" }).then(r => r.json()),
   });
-  const { data: agents } = useQuery<any[]>({
+  const { data: agents } = useQuery<any>({
     queryKey: ["/api/workforce/agents"],
     queryFn: () => fetch("/api/workforce/agents", { credentials: "include" }).then(r => r.json()),
   });
@@ -117,14 +117,20 @@ function CeoHomeTab({ onSwitchTab }: { onSwitchTab: (t: Tab) => void }) {
     queryFn: () => fetch("/api/ai-approvals/metrics", { credentials: "include" }).then(r => r.json()),
   });
 
-  const activeAgents = agents?.filter(a => a.enabled)?.length ?? 0;
-  const totalAgents = agents?.length ?? 0;
+  const agentsList: any[] = Array.isArray(agents) ? agents : [];
+  const activeAgents = agentsList.filter(a => a.enabled).length;
+  const totalAgents = agentsList.length;
   const pendingApprovals = approvalMetrics?.pending ?? 0;
   const lastRun = heartbeat?.lastRun;
   const nextRun = heartbeat?.nextRun;
   const successRate = heartbeat?.successRate ?? null;
 
-  const topPriorities = (priorities ?? []).slice(0, 3);
+  const rawPriorities: any[] = Array.isArray(prioritiesData?.priorities)
+    ? prioritiesData.priorities
+    : Array.isArray(prioritiesData)
+      ? prioritiesData
+      : [];
+  const topPriorities = rawPriorities.slice(0, 3);
 
   const summaryItems = [
     pendingApprovals > 0 && `${pendingApprovals} approval${pendingApprovals !== 1 ? "s" : ""} waiting for review.`,
@@ -479,10 +485,12 @@ const AGENT_ICON_MAP: Record<string, any> = {
 };
 
 function AgentsTab() {
-  const { data: agents, isLoading } = useQuery<any[]>({
+  const { data: agentsRaw, isLoading } = useQuery<any>({
     queryKey: ["/api/workforce/agents"],
     queryFn: () => fetch("/api/workforce/agents", { credentials: "include" }).then(r => r.json()),
   });
+
+  const agents: any[] = Array.isArray(agentsRaw) ? agentsRaw : [];
 
   if (isLoading) return (
     <div className="flex-1 p-4 space-y-2">
@@ -493,9 +501,9 @@ function AgentsTab() {
   return (
     <div className="flex-1 overflow-y-auto p-4 space-y-2">
       <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-3">
-        {agents?.filter(a => a.enabled)?.length ?? 0} of {agents?.length ?? 0} agents active
+        {agents.filter(a => a.enabled).length} of {agents.length} agents active
       </p>
-      {(agents ?? []).map(agent => {
+      {agents.map(agent => {
         const Icon = AGENT_ICON_MAP[agent.agentType] || Bot;
         const sr = agent.successRate;
         return (
@@ -541,10 +549,15 @@ function AgentsTab() {
 // ─── Tasks Tab ────────────────────────────────────────────────────────────────
 
 function TasksTab() {
-  const { data: runs, isLoading } = useQuery<any[]>({
+  const { data: runsRaw, isLoading } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/runs"],
     queryFn: () => fetch("/api/admin/ceo-heartbeat/runs", { credentials: "include" }).then(r => r.json()),
   });
+  const runs: any[] = Array.isArray(runsRaw?.runs)
+    ? runsRaw.runs
+    : Array.isArray(runsRaw)
+      ? runsRaw
+      : [];
 
   function timeAgo(dt: string) {
     const diff = Date.now() - new Date(dt).getTime();
@@ -774,6 +787,57 @@ function SettingsTab() {
   );
 }
 
+// ─── Local error boundary for the Brain panel ────────────────────────────────
+
+interface ChatWidgetBoundaryState { hasError: boolean }
+
+class ChatWidgetErrorBoundary extends Component<
+  { children: React.ReactNode; onClose: () => void },
+  ChatWidgetBoundaryState
+> {
+  constructor(props: { children: React.ReactNode; onClose: () => void }) {
+    super(props);
+    this.state = { hasError: false };
+  }
+  static getDerivedStateFromError(): ChatWidgetBoundaryState {
+    return { hasError: true };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    console.error("[ChatWidget] Panel render error:", error.message, info.componentStack);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-4">
+          <AlertTriangle className="h-8 w-8 text-amber-400" />
+          <div>
+            <p className="text-sm font-semibold text-zinc-200">Assistant failed to load</p>
+            <p className="text-xs text-zinc-500 mt-1">A rendering error occurred. Try retrying or closing the panel.</p>
+          </div>
+          <div className="flex gap-2">
+            <Button
+              size="sm"
+              className="bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => this.setState({ hasError: false })}
+            >
+              <RefreshCw className="h-3 w-3 mr-1" /> Retry
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              className="border-zinc-700 text-zinc-400 hover:text-zinc-200"
+              onClick={() => this.props.onClose()}
+            >
+              <X className="h-3 w-3 mr-1" /> Close
+            </Button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ─── Tab navigation config ────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
@@ -835,12 +899,14 @@ export function ChatWidget() {
 
           {/* Tab content */}
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
-            {activeTab === "ceo"       && <CeoHomeTab onSwitchTab={setActiveTab} />}
-            {activeTab === "chat"      && <ChatTab />}
-            {activeTab === "agents"    && <AgentsTab />}
-            {activeTab === "tasks"     && <TasksTab />}
-            {activeTab === "approvals" && <ApprovalsTab />}
-            {activeTab === "settings"  && <SettingsTab />}
+            <ChatWidgetErrorBoundary onClose={() => setIsOpen(false)}>
+              {activeTab === "ceo"       && <CeoHomeTab onSwitchTab={setActiveTab} />}
+              {activeTab === "chat"      && <ChatTab />}
+              {activeTab === "agents"    && <AgentsTab />}
+              {activeTab === "tasks"     && <TasksTab />}
+              {activeTab === "approvals" && <ApprovalsTab />}
+              {activeTab === "settings"  && <SettingsTab />}
+            </ChatWidgetErrorBoundary>
           </div>
 
           {/* Bottom tab bar */}
