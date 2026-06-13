@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { OrgMemoryFeed } from "@/components/workflow-memory-panel";
@@ -589,7 +590,7 @@ export default function BusinessBrainPage() {
         triggerReason: rec.description || rec.title,
         triggerSource: "brain_recommendation",
         sourceRecommendationId: rec.id,
-      }).then(r => r.json()),
+      }).then(r => parseApiResponse<any>(r)),
     onSuccess: (data: any) => {
       if (data.duplicate) {
         toast({ title: "Workflow already running", description: data.error, variant: "default" });

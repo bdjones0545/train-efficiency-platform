@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { fetchJson } from "@/lib/api-helpers";
+import { fetchJson, parseApiResponse} from "@/lib/api-helpers";
 import {
   Flame, Thermometer, Snowflake, Brain, Zap, Mail, Phone, MapPin,
   Clock, ChevronRight, CheckCircle2, XCircle, RefreshCw, Target,
@@ -329,7 +329,7 @@ function SchedulingContextPanel({
       apiRequest("POST", "/api/org/scheduling-agent/find-slots", {
         submissionId: intel.submissionId,
         durationMin: 60,
-      }).then(r => r.json()),
+      }).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       toast({ title: `Found ${data.count} available slot${data.count !== 1 ? "s" : ""}` });
       queryClient.invalidateQueries({ queryKey: ["/api/org/scheduling-agent/contexts", intel.submissionId] });
@@ -344,7 +344,7 @@ function SchedulingContextPanel({
         leadId: intel.id,
         gmailThreadId: ctx?.gmailThreadId || undefined,
         durationMin: 60,
-      }).then(r => r.json()),
+      }).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       toast({ title: "Slots offered", description: data.message });
       queryClient.invalidateQueries({ queryKey: ["/api/org/scheduling-agent/contexts", intel.submissionId] });
@@ -360,7 +360,7 @@ function SchedulingContextPanel({
         submissionId: intel.submissionId,
         replyText: confirmReplyText,
         gmailThreadId: ctx?.gmailThreadId || undefined,
-      }).then(r => r.json()),
+      }).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       if (data.success) {
         toast({ title: "Booking confirmed!", description: data.message });
@@ -377,7 +377,7 @@ function SchedulingContextPanel({
   });
 
   const testFlowMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/org/scheduling-agent/test-flow", {}).then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/org/scheduling-agent/test-flow", {}).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       setShowTestResult(data);
       toast({ title: "Test flow complete", description: data.summary || (data.note ? "Note: " + data.note : "") });

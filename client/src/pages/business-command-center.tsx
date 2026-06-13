@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { useLocation } from "wouter";
 import {
   DollarSign,
@@ -678,7 +679,7 @@ function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => 
   }
 
   const startMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/admin/start-my-day").then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/admin/start-my-day").then(r => parseApiResponse<any>(r)),
     onSuccess: (data: StartMyDayResult) => {
       setTasks(data.tasks);
       sessionStorage.setItem("daily_checklist", JSON.stringify({
@@ -702,7 +703,7 @@ function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => 
 
   const executeBrainMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/execute`).then(r => r.json()),
+      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/execute`).then(r => parseApiResponse<any>(r)),
     onSuccess: (data: any, id) => {
       const ns = { ...localStatus, [id]: "done" as const };
       persistStatus(ns);
@@ -721,7 +722,7 @@ function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => 
 
   const dismissBrainMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/dismiss`).then(r => r.json()),
+      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/dismiss`).then(r => parseApiResponse<any>(r)),
     onSuccess: (_, id) => {
       const ns = { ...localStatus, [id]: "dismissed" as const };
       persistStatus(ns);
@@ -731,7 +732,7 @@ function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => 
 
   const executeRevenueMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`).then(r => r.json()),
+      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`).then(r => parseApiResponse<any>(r)),
     onSuccess: (data: any, id) => {
       const ns = { ...localStatus, [id]: "done" as const };
       persistStatus(ns);
@@ -749,7 +750,7 @@ function DailyOperatorMode({ openAgentWith }: { openAgentWith: (msg: string) => 
 
   const dismissRevenueMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/dismiss`).then(r => r.json()),
+      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/dismiss`).then(r => parseApiResponse<any>(r)),
     onSuccess: (_, id) => {
       const ns = { ...localStatus, [id]: "dismissed" as const };
       persistStatus(ns);
@@ -1259,7 +1260,7 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
 
   const executeBrainMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/execute`).then(r => r.json()),
+      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/execute`).then(r => parseApiResponse<any>(r)),
     onSuccess: (data: any, id) => {
       if (data?.toolCall) {
         setToolCallFeedback(prev => ({ ...prev, [id]: { requiresConfirmation: data.toolCall.requiresConfirmation, toolCallId: data.toolCall.toolCallId, success: data.toolCall.success ?? true, toolName: data.toolCall.message } }));
@@ -1280,7 +1281,7 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
 
   const dismissBrainMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/dismiss`).then(r => r.json()),
+      apiRequest("POST", `/api/admin/business-brain/recommendations/${id}/dismiss`).then(r => parseApiResponse<any>(r)),
     onSuccess: (_, id) => {
       setDismissed(prev => new Set([...prev, id]));
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
@@ -1289,7 +1290,7 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
 
   const executeRevenueMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`).then(r => r.json()),
+      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`).then(r => parseApiResponse<any>(r)),
     onSuccess: (data: any, id) => {
       if (data?.toolCall) {
         setToolCallFeedback(prev => ({ ...prev, [id]: { requiresConfirmation: data.toolCall.requiresConfirmation, toolCallId: data.toolCall.toolCallId, success: data.toolCall.success ?? true, toolName: data.toolCall.message } }));
@@ -1309,7 +1310,7 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
 
   const dismissRevenueMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/dismiss`).then(r => r.json()),
+      apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/dismiss`).then(r => parseApiResponse<any>(r)),
     onSuccess: (_, id) => {
       setDismissed(prev => new Set([...prev, id]));
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });
@@ -1361,7 +1362,7 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
         triggerSource: action.source === "brain" ? "brain_recommendation" : "revenue_agent_action",
         sourceRecommendationId: action.source === "brain" ? action.id : undefined,
         sourceRevenueActionId: action.source === "revenue_agent" ? action.id : undefined,
-      }).then(r => r.json());
+      }).then(r => parseApiResponse<any>(r));
     },
     onSuccess: (result: any) => {
       if (result.duplicate) {
@@ -1963,7 +1964,7 @@ function useAutoExecution() {
 
   const undoMutation = useMutation({
     mutationFn: (executionId: string) =>
-      apiRequest("POST", `/api/email-agent/auto-execute/undo/${executionId}`).then((r) => r.json()),
+      apiRequest("POST", `/api/email-agent/auto-execute/undo/${executionId}`).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Auto-execution undone", description: "The action has been reversed." });
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/auto-execute/log"] });
@@ -1972,7 +1973,7 @@ function useAutoExecution() {
   });
 
   const runMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/email-agent/auto-execute/run").then((r) => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/email-agent/auto-execute/run").then(r => parseApiResponse<any>(r)),
     onSuccess: (data: AutoExecResult) => {
       if (!data.executed || !data.execution) return;
       const exec = data.execution;
@@ -2397,33 +2398,33 @@ function ProgramLeadsPanel() {
   };
 
   const moveToDeal = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/move-to-deal`, {}).then((r) => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/move-to-deal`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => { toast({ title: "Moved to Deal Pipeline" }); invalidate(); },
     onError: () => toast({ title: "Failed", variant: "destructive" }),
   });
 
   const sendFollowUp = useMutation({
     mutationFn: ({ id, step }: { id: string; step: string }) =>
-      apiRequest("POST", `/api/lead-capture/submissions/${id}/send-followup`, { step }).then((r) => r.json()),
+      apiRequest("POST", `/api/lead-capture/submissions/${id}/send-followup`, { step }).then(r => parseApiResponse<any>(r)),
     onSuccess: () => { toast({ title: "Follow-up sent" }); invalidate(); },
     onError: () => toast({ title: "Failed to send", variant: "destructive" }),
   });
 
   const startSequence = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/start-sequence`, {}).then((r) => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/start-sequence`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => { toast({ title: "Sequence started" }); invalidate(); },
     onError: () => toast({ title: "Failed", variant: "destructive" }),
   });
 
   const markContacted = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/mark-contacted`, {}).then((r) => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/mark-contacted`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => { toast({ title: "Marked as contacted" }); invalidate(); },
     onError: () => toast({ title: "Failed", variant: "destructive" }),
   });
 
   const updateBooking = useMutation({
     mutationFn: ({ id, status }: { id: string; status: string }) =>
-      apiRequest("POST", `/api/lead-capture/submissions/${id}/update-booking`, { status }).then((r) => r.json()),
+      apiRequest("POST", `/api/lead-capture/submissions/${id}/update-booking`, { status }).then(r => parseApiResponse<any>(r)),
     onSuccess: (_, { status }) => {
       toast({ title: status === "converted" ? "🏆 Marked as Converted!" : status === "booked" ? "📅 Booking confirmed!" : "Status updated" });
       invalidate();
@@ -2433,7 +2434,7 @@ function ProgramLeadsPanel() {
 
   const generateAiAnalysis = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/lead-capture/submissions/${id}/ai-sales-analysis`, {}).then((r) => r.json()),
+      apiRequest("POST", `/api/lead-capture/submissions/${id}/ai-sales-analysis`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: (data, id) => {
       toast({ title: "AI analysis complete" });
       setExpandedAnalysis(id);
@@ -2443,19 +2444,19 @@ function ProgramLeadsPanel() {
   });
 
   const recoverAbandoned = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/abandoned/${id}/recover`, { step: "recovery_30min" }).then((r) => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/abandoned/${id}/recover`, { step: "recovery_30min" }).then(r => parseApiResponse<any>(r)),
     onSuccess: () => { toast({ title: "Recovery email sent" }); invalidate(); },
     onError: () => toast({ title: "Failed to send", variant: "destructive" }),
   });
 
   const resendAdminEmail = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/resend-admin-email`, {}).then((r) => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/resend-admin-email`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => { toast({ title: `Admin notification resent to ${data.sentTo || "admin"}` }); invalidate(); },
     onError: (err: any) => toast({ title: err?.message || "Failed to resend", variant: "destructive" }),
   });
 
   const resendApplicantEmail = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/resend-applicant-email`, {}).then((r) => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/lead-capture/submissions/${id}/resend-applicant-email`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => { toast({ title: `Confirmation email resent to ${data.sentTo || "applicant"}` }); invalidate(); },
     onError: (err: any) => toast({ title: err?.message || "Failed to resend confirmation", variant: "destructive" }),
   });
@@ -3532,7 +3533,7 @@ export default function BusinessCommandCenterPage() {
   });
 
   const runBrainMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/admin/business-brain/run").then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/admin/business-brain/run").then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Business Brain analysis complete", description: "Health score and priorities have been updated." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/business-brain/command-center-summary"] });

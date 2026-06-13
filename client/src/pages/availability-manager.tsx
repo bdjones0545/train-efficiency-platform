@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { getAuthHeaders } from "@/lib/authToken";
 import {
@@ -835,9 +836,9 @@ export default function AvailabilityManagerPage() {
 
   const { data: coaches } = useQuery<CoachWithUser[]>({
     queryKey: ["/api/coaches", avOrgId],
-    queryFn: async () => {
+    queryFn: () => {
       const url = avOrgId ? `/api/coaches?organizationId=${avOrgId}` : "/api/coaches";
-      return fetch(url).then(r => r.json());
+      return fetchJson(url);
     },
   });
 

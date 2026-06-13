@@ -10,6 +10,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import {
   ChevronRight,
@@ -264,7 +265,7 @@ export default function LeadCaptureLanding() {
         email: form.email,
         phone: form.phone || undefined,
         ...utm,
-      }).then((r) => r.json()),
+      }).then(r => parseApiResponse<any>(r)),
     onSuccess: (res) => {
       if (res.abandonedId) setAbandonedId(res.abandonedId);
     },
@@ -276,7 +277,7 @@ export default function LeadCaptureLanding() {
         ...form,
         ...utm,
         abandonedId: abandonedId || undefined,
-      }).then((r) => r.json()),
+      }).then(r => parseApiResponse<any>(r)),
     onSuccess: (res: any) => {
       setSubmitted(true);
       setSubmitResult(res);

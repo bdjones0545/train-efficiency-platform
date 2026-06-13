@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { Card } from "@/components/ui/card";
@@ -262,7 +263,7 @@ function PendingConfirmationsTab() {
   });
 
   const confirmMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/agent-tool-calls/${id}/confirm`).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/admin/agent-tool-calls/${id}/confirm`).then(r => parseApiResponse<any>(r)),
     onSuccess: (result) => {
       toast({
         title: result.success ? "Tool executed" : "Execution failed",
@@ -277,7 +278,7 @@ function PendingConfirmationsTab() {
   });
 
   const rejectMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/agent-tool-calls/${id}/reject`).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/admin/agent-tool-calls/${id}/reject`).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Tool call rejected" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/agent-tool-calls/pending"] });

@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { EntityMemoryPanel } from "@/components/workflow-memory-panel";
 import {
@@ -152,7 +153,7 @@ function TriggerModal({ defs, onClose }: { defs: WorkflowDef[]; onClose: () => v
     mutationFn: () => apiRequest("POST", "/api/admin/workflows/trigger", {
       workflowType: type, entityName: entityName || undefined, entityType: entityType || undefined,
       entityId: entityId || undefined, triggerReason: reason || undefined, triggerSource: "manual",
-    }).then(r => r.json()),
+    }).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       toast({ title: "Workflow started", description: `Run ID: ${data.runId?.slice(0, 8)}…` });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows"] });
@@ -246,7 +247,7 @@ function WorkflowTimeline({ run, onClose }: { run: WorkflowRun; onClose: () => v
 
   const approveMutation = useMutation({
     mutationFn: (opts?: { editedSubject?: string; editedBody?: string }) =>
-      apiRequest("POST", `/api/admin/workflows/${run.id}/approve`, opts ?? {}).then(r => r.json()),
+      apiRequest("POST", `/api/admin/workflows/${run.id}/approve`, opts ?? {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Step approved", description: "Workflow is resuming." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows", run.id] });
@@ -258,7 +259,7 @@ function WorkflowTimeline({ run, onClose }: { run: WorkflowRun; onClose: () => v
 
   const rejectMutation = useMutation({
     mutationFn: (opts?: { feedback?: string }) =>
-      apiRequest("POST", `/api/admin/workflows/${run.id}/reject`, opts ?? {}).then(r => r.json()),
+      apiRequest("POST", `/api/admin/workflows/${run.id}/reject`, opts ?? {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Step rejected", description: "Workflow cancelled." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows", run.id] });
@@ -270,7 +271,7 @@ function WorkflowTimeline({ run, onClose }: { run: WorkflowRun; onClose: () => v
 
   const regenerateMutation = useMutation({
     mutationFn: (opts: { feedback: string }) =>
-      apiRequest("POST", `/api/admin/workflows/${run.id}/regenerate`, opts).then(r => r.json()),
+      apiRequest("POST", `/api/admin/workflows/${run.id}/regenerate`, opts).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Regeneration queued", description: "The step will be re-run with your feedback." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows", run.id] });
@@ -282,7 +283,7 @@ function WorkflowTimeline({ run, onClose }: { run: WorkflowRun; onClose: () => v
   });
 
   const cancelMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/workflows/${run.id}/cancel`).then(r => r.json()),
+    mutationFn: () => apiRequest("POST", `/api/admin/workflows/${run.id}/cancel`).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Workflow cancelled" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows"] });
@@ -719,7 +720,7 @@ export default function AdminWorkflowsPage() {
   });
 
   const resumeMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/admin/workflows/resume-waiting").then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/admin/workflows/resume-waiting").then(r => parseApiResponse<any>(r)),
     onSuccess: (d: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflows"] });
     },

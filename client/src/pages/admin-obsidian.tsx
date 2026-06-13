@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { fetchJson } from "@/lib/api-helpers";
+import { fetchJson, parseApiResponse} from "@/lib/api-helpers";
 import {
   BookOpen, Search, RefreshCw, CheckCircle, XCircle, FileText, Eye,
   Brain, Activity, FolderOpen, Upload, AlertTriangle, ExternalLink,
@@ -95,7 +95,7 @@ function NoteViewer({
 
   const similarMutation = useMutation<{ results: SimilarNote[] }, Error, void>({
     mutationFn: () =>
-      apiRequest("POST", "/api/obsidian/similar", { content, sourceFilename: file }).then(r => r.json()),
+      apiRequest("POST", "/api/obsidian/similar", { content, sourceFilename: file }).then(r => parseApiResponse<any>(r)),
   });
 
   return (
@@ -281,7 +281,7 @@ function SearchTab() {
         query,
         typeFilter: typeFilter || undefined,
         agentFilter: agentFilter || undefined,
-      }).then(r => r.json()),
+      }).then(r => parseApiResponse<any>(r)),
   });
 
   const readMutation = useMutation<{ content: string }, Error, { folder: string; title: string }>({
@@ -492,7 +492,7 @@ function HermesTab() {
   const domains = ["Lead Generation", "Email Outreach", "Booking Conversion", "Client Retention", "Team Training", "Revenue", "Scheduling", "Software"];
 
   const learnMutation = useMutation({
-    mutationFn: (body: typeof form) => apiRequest("POST", "/api/obsidian/learn", body).then(r => r.json()),
+    mutationFn: (body: typeof form) => apiRequest("POST", "/api/obsidian/learn", body).then(r => parseApiResponse<any>(r)),
     onSuccess: (d) => {
       if (d.success) {
         toast({ title: "Learning recorded in Obsidian" });
@@ -569,7 +569,7 @@ function DecisionTab() {
   ];
 
   const decisionMutation = useMutation({
-    mutationFn: (body: any) => apiRequest("POST", "/api/obsidian/decision", body).then(r => r.json()),
+    mutationFn: (body: any) => apiRequest("POST", "/api/obsidian/decision", body).then(r => parseApiResponse<any>(r)),
     onSuccess: (d) => {
       if (d.success) {
         toast({ title: "Decision recorded in journal" });
@@ -644,7 +644,7 @@ function SoftwareKBTab() {
   const { toast } = useToast();
 
   const kbMutation = useMutation({
-    mutationFn: (body: any) => apiRequest("POST", "/api/obsidian/software-kb", body).then(r => r.json()),
+    mutationFn: (body: any) => apiRequest("POST", "/api/obsidian/software-kb", body).then(r => parseApiResponse<any>(r)),
     onSuccess: (d) => {
       if (d.success) {
         toast({ title: "Issue recorded in Software KB" });
@@ -743,7 +743,7 @@ function WriteTab() {
 
   const writeMutation = useMutation({
     mutationFn: (body: { folder: string; title: string; content: string; mode: string }) =>
-      apiRequest("POST", "/api/obsidian/write", { ...body, meta: { type: "manual" } }).then(r => r.json()),
+      apiRequest("POST", "/api/obsidian/write", { ...body, meta: { type: "manual" } }).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       if (data.success) {
         toast({ title: "Note written to Obsidian" });

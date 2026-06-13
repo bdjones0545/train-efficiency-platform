@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/use-auth";
 import { getAuthHeaders } from "@/lib/authToken";
+import { fetchJson } from "@/lib/api-helpers";
 import type { UserProfile } from "@shared/schema";
 
 // ─── Workspace Roles ─────────────────────────────────────────────────────────
@@ -125,11 +126,7 @@ export function usePermissions(orgSlug?: string): WorkspacePermissions {
     isAuthenticated: boolean;
   }>({
     queryKey: [`/api/org/by-slug/${orgSlug}/nav-context`],
-    queryFn: () =>
-      fetch(`/api/org/by-slug/${orgSlug}/nav-context`, {
-        headers: getAuthHeaders(),
-        credentials: "include",
-      }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/by-slug/${orgSlug}/nav-context`, { headers: getAuthHeaders() }),
     enabled: !!orgSlug,
     staleTime: 30_000,
   });

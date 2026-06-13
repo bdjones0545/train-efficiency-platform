@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -192,7 +193,7 @@ export default function AdminWorkflowsLibraryPage() {
   });
 
   const duplicateMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/workflow-graphs/${id}/duplicate`).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/workflow-graphs/${id}/duplicate`).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/workflow-graphs"] });
       toast({ title: "Workflow duplicated", description: data.name });

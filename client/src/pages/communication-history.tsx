@@ -23,7 +23,7 @@ import {
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { fetchJson } from "@/lib/api-helpers";
+import { fetchJson, parseApiResponse} from "@/lib/api-helpers";
 import type { CommunicationLog, TeamTrainingProspect, TeamTrainingOutreachDraft, EmailFollowUp } from "@shared/schema";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -598,7 +598,7 @@ function useAutoExecution() {
 
   const undoMutation = useMutation({
     mutationFn: (executionId: string) =>
-      apiRequest("POST", `/api/email-agent/auto-execute/undo/${executionId}`).then((r) => r.json()),
+      apiRequest("POST", `/api/email-agent/auto-execute/undo/${executionId}`).then(r => parseApiResponse<any>(r)),
     onSuccess: (_, executionId) => {
       toast({ title: "Auto-execution undone", description: "The action has been reversed." });
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/auto-execute/log"] });
@@ -609,7 +609,7 @@ function useAutoExecution() {
   });
 
   const runMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/email-agent/auto-execute/run").then((r) => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/email-agent/auto-execute/run").then(r => parseApiResponse<any>(r)),
     onSuccess: (data: { executed: boolean; execution: AutoExecution | null; reason?: string }) => {
       if (!data.executed || !data.execution) return;
       const exec = data.execution;
@@ -843,7 +843,7 @@ function AutoExecLogSection() {
 
   const undoMutation = useMutation({
     mutationFn: (executionId: string) =>
-      apiRequest("POST", `/api/email-agent/auto-execute/undo/${executionId}`).then((r) => r.json()),
+      apiRequest("POST", `/api/email-agent/auto-execute/undo/${executionId}`).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Undone successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/auto-execute/log"] });
@@ -1107,7 +1107,7 @@ function OverviewTab() {
   });
 
   const buildQueueMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/email-agent/queue/build").then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/email-agent/queue/build").then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       toast({ title: "Queue built", description: `${data.count} prospects queued for today.` });
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/queue"] });
@@ -1118,7 +1118,7 @@ function OverviewTab() {
 
   const generateDraftMutation = useMutation({
     mutationFn: (prospectId: string) =>
-      apiRequest("POST", `/api/admin/team-training/prospects/${prospectId}/generate-email`, {}).then(r => r.json()),
+      apiRequest("POST", `/api/admin/team-training/prospects/${prospectId}/generate-email`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Draft generated", description: "Check the Drafts tab to review." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
@@ -1127,7 +1127,7 @@ function OverviewTab() {
   });
 
   const dncMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/do-not-contact`, {}).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/do-not-contact`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Marked Do Not Contact" });
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/queue"] });
@@ -1410,7 +1410,7 @@ function QueueProspectCard({
   const latestDraft = drafts?.[0];
 
   const sendMutation = useMutation({
-    mutationFn: (draftId: string) => apiRequest("POST", `/api/admin/team-training/drafts/${draftId}/send`, {}).then(r => r.json()),
+    mutationFn: (draftId: string) => apiRequest("POST", `/api/admin/team-training/drafts/${draftId}/send`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Email sent!", description: `Outreach sent to ${prospect.contactEmail}` });
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/overview"] });
@@ -1421,7 +1421,7 @@ function QueueProspectCard({
   });
 
   const approveMutation = useMutation({
-    mutationFn: (draftId: string) => apiRequest("POST", `/api/admin/team-training/drafts/${draftId}/approve`, {}).then(r => r.json()),
+    mutationFn: (draftId: string) => apiRequest("POST", `/api/admin/team-training/drafts/${draftId}/approve`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Draft approved" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects", prospect.id, "drafts"] });
@@ -1576,7 +1576,7 @@ function ProspectsTab() {
   }, [prospects, statusFilter, sportFilter, emailFilter, search]);
 
   const researchMutation = useMutation({
-    mutationFn: (sport?: string) => apiRequest("POST", "/api/admin/team-training/research", { sport: sport || undefined, limit: 10 }).then(r => r.json()),
+    mutationFn: (sport?: string) => apiRequest("POST", "/api/admin/team-training/research", { sport: sport || undefined, limit: 10 }).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       toast({ title: "Research complete", description: `Found ${data.count} prospects.` });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
@@ -1586,7 +1586,7 @@ function ProspectsTab() {
   });
 
   const generateDraftMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/generate-email`, {}).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/generate-email`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Draft generated", description: "Review it in the Drafts tab." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
@@ -1595,7 +1595,7 @@ function ProspectsTab() {
   });
 
   const dncMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/do-not-contact`, {}).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/do-not-contact`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Marked Do Not Contact" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
@@ -1604,7 +1604,7 @@ function ProspectsTab() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("DELETE", `/api/admin/team-training/prospects/${id}`).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("DELETE", `/api/admin/team-training/prospects/${id}`).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Deleted" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
@@ -1917,9 +1917,9 @@ function AddProspectDialog({ open, onClose, prospect }: { open: boolean; onClose
         confidenceScore: 75,
       };
       if (prospect) {
-        return apiRequest("PATCH", `/api/admin/team-training/prospects/${prospect.id}`, body).then(r => r.json());
+        return apiRequest("PATCH", `/api/admin/team-training/prospects/${prospect.id}`, body).then(r => parseApiResponse<any>(r));
       }
-      return apiRequest("POST", "/api/admin/team-training/prospects", body).then(r => r.json());
+      return apiRequest("POST", "/api/admin/team-training/prospects", body).then(r => parseApiResponse<any>(r));
     },
     onSuccess: () => {
       toast({ title: prospect ? "Prospect updated" : "Prospect added" });
@@ -2017,7 +2017,7 @@ function DraftsTab() {
   });
 
   const approveMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/drafts/${id}/approve`, {}).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/drafts/${id}/approve`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Draft approved" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
@@ -2026,7 +2026,7 @@ function DraftsTab() {
   });
 
   const sendMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/drafts/${id}/send`, {}).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/drafts/${id}/send`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Email sent!" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
@@ -2037,7 +2037,7 @@ function DraftsTab() {
 
   const updateDraftMutation = useMutation({
     mutationFn: ({ id, subject, body }: { id: string; subject: string; body: string }) =>
-      apiRequest("PATCH", `/api/admin/team-training/drafts/${id}`, { subject, body }).then(r => r.json()),
+      apiRequest("PATCH", `/api/admin/team-training/drafts/${id}`, { subject, body }).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Draft saved" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
@@ -2234,7 +2234,7 @@ function ReplyDialog({
 
   const markRepliedMutation = useMutation({
     mutationFn: (body: { replyText?: string; replyClassification?: string }) =>
-      apiRequest("POST", `/api/admin/team-training/prospects/${prospectId}/mark-replied`, body).then(r => r.json()),
+      apiRequest("POST", `/api/admin/team-training/prospects/${prospectId}/mark-replied`, body).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       const cls = data.classification ? classificationLabel(data.classification) : null;
       toast({
@@ -2324,7 +2324,7 @@ function FollowUpsTab() {
   });
 
   const cancelMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/email-agent/follow-ups/${id}/cancel`, {}).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/email-agent/follow-ups/${id}/cancel`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Follow-up cancelled" });
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/follow-ups"] });
@@ -2334,7 +2334,7 @@ function FollowUpsTab() {
   });
 
   const cancelSequenceMutation = useMutation({
-    mutationFn: (draftId: string) => apiRequest("POST", `/api/email-agent/follow-ups/cancel-sequence/${draftId}`, {}).then(r => r.json()),
+    mutationFn: (draftId: string) => apiRequest("POST", `/api/email-agent/follow-ups/cancel-sequence/${draftId}`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Sequence cancelled" });
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/follow-ups"] });
@@ -2548,7 +2548,7 @@ function SentTab() {
   });
 
   const markRepliedMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/mark-replied`, {}).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/mark-replied`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Marked as replied" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
@@ -2558,7 +2558,7 @@ function SentTab() {
   });
 
   const dncMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/do-not-contact`, {}).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/admin/team-training/prospects/${id}/do-not-contact`, {}).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Marked Do Not Contact" });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
@@ -2800,7 +2800,7 @@ function SettingsTab() {
   }
 
   const saveMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/email-agent/settings", settings).then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/email-agent/settings", settings).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Settings saved" });
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/settings"] });
@@ -2810,7 +2810,7 @@ function SettingsTab() {
   });
 
   const runJobMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/email-agent/run-daily-job").then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/email-agent/run-daily-job").then(r => parseApiResponse<any>(r)),
     onSuccess: (data: DailyJobResult) => {
       setJobResult(data);
       queryClient.invalidateQueries({ queryKey: ["/api/email-agent/overview"] });

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { fetchJson } from "@/lib/api-helpers";
+import { fetchJson, parseApiResponse} from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -195,7 +195,7 @@ export default function AdminCeoHeartbeatPage() {
     mutationFn: () => {
       const isFirst = !status?.lastRun && !localLastRun;
       return apiRequest("POST", `/api/admin/ceo-heartbeat/run${orgQs}`)
-        .then((r) => r.json())
+        .then(r => parseApiResponse<any>(r))
         .then((json: any) => ({ ...json, _isFirst: isFirst }));
     },
     onSuccess: (data: any) => {
@@ -232,7 +232,7 @@ export default function AdminCeoHeartbeatPage() {
   });
 
   const pauseMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/pause${orgQs}`).then(r => r.json()),
+    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/pause${orgQs}`).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Heartbeat paused", description: "Automation will not auto-execute until resumed." });
       queryClient.refetchQueries({ queryKey: ["/api/admin/ceo-heartbeat/status", orgId] });
@@ -241,7 +241,7 @@ export default function AdminCeoHeartbeatPage() {
   });
 
   const resumeMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/resume${orgQs}`).then(r => r.json()),
+    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/resume${orgQs}`).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Heartbeat resumed", description: "CEO Heartbeat is active again." });
       queryClient.refetchQueries({ queryKey: ["/api/admin/ceo-heartbeat/status", orgId] });
@@ -250,7 +250,7 @@ export default function AdminCeoHeartbeatPage() {
   });
 
   const retryMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/retry-failed${orgQs}`).then(r => r.json()),
+    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/retry-failed${orgQs}`).then(r => parseApiResponse<any>(r)),
     onSuccess: (data: any) => {
       toast({ title: "Jobs retried", description: `${data?.retried ?? 0} failed jobs queued for retry.` });
       queryClient.refetchQueries({ queryKey: timelineQKey });
@@ -259,7 +259,7 @@ export default function AdminCeoHeartbeatPage() {
   });
 
   const recalcMutation = useMutation({
-    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/recalculate-priorities${orgQs}`).then(r => r.json()),
+    mutationFn: () => apiRequest("POST", `/api/admin/ceo-heartbeat/recalculate-priorities${orgQs}`).then(r => parseApiResponse<any>(r)),
     onSuccess: () => {
       toast({ title: "Priorities recalculated" });
       queryClient.refetchQueries({ queryKey: ["/api/admin/ceo-heartbeat/priorities", orgId] });

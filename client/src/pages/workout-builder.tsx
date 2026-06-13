@@ -13,7 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { fetchJson } from "@/lib/api-helpers";
+import { fetchJson, parseApiResponse } from "@/lib/api-helpers";
 import { Slider } from "@/components/ui/slider";
 import {
   Dumbbell, Wifi, WifiOff, Plus, Loader2, ChevronRight, ChevronLeft,
@@ -182,11 +182,7 @@ function ProgramDetail({ programId, orgId, isCoach, onBack, orgSlug, defaultAthl
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/programs", programId],
-    queryFn: () =>
-      fetch(`/api/org/workout-builder/programs/${programId}`, {
-        credentials: "include",
-        headers: getWbHeaders(orgId ?? undefined),
-      }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/workout-builder/programs/${programId}`, { headers: getWbHeaders(orgId ?? undefined) }),
     enabled: !!programId,
   });
 
@@ -434,7 +430,7 @@ function GenerateWizard({ programToolId, bootstrap, onGenerated, onClose }: { pr
         equipment: equipment || undefined,
         constraints: constraints || undefined,
         coachNotes: coachNotes || undefined,
-      }).then((r) => r.json()),
+      }).then(r => parseApiResponse<any>(r)),
     onSuccess: (data) => {
       if (data.generationError) {
         toast({ title: "Generation issue", description: data.generationError, variant: "destructive" });
@@ -808,7 +804,7 @@ function AthleteCreateWizard({ open, onClose, programToolId, onCreated }: {
     mutationFn: () => apiRequest("POST", "/api/org/workout-builder/athlete/generate", {
       programToolId, goal, sport: sport || undefined, durationWeeks, daysPerWeek,
       equipment: equipment || undefined, limitations: limitations || undefined,
-    }).then((r) => r.json()),
+    }).then(r => parseApiResponse<any>(r)),
     onSuccess: (data: any) => {
       if (data.generationError) {
         toast({ title: "Program created with warnings", description: data.generationError });
@@ -982,11 +978,7 @@ function AthleteWorkoutsView({ orgSlug, orgId, programToolId, trainChatConnected
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/my-workouts"],
-    queryFn: () =>
-      fetch("/api/org/workout-builder/my-workouts", {
-        credentials: "include",
-        headers: getWbHeaders(orgId),
-      }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/workout-builder/my-workouts", { headers: getWbHeaders(orgId) }),
   });
 
   const finishMutation = useMutation({
@@ -1315,21 +1307,13 @@ export default function WorkoutBuilderPage({ program, orgSlug, contextAthleteId,
 
   const { data: bootstrap, isLoading } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/bootstrap"],
-    queryFn: () =>
-      fetch("/api/org/workout-builder/bootstrap", {
-        credentials: "include",
-        headers: getWbHeaders(orgId),
-      }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/workout-builder/bootstrap", { headers: getWbHeaders(orgId) }),
   });
 
   // Execution monitor summary for badge count
   const { data: monitorData } = useQuery<any>({
     queryKey: ["/api/org/workout-execution/coach-monitor"],
-    queryFn: () =>
-      fetch("/api/org/workout-execution/coach-monitor", {
-        credentials: "include",
-        headers: getWbHeaders(orgId),
-      }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/workout-execution/coach-monitor", { headers: getWbHeaders(orgId) }),
     enabled: !!(bootstrap?.canManagePrograms),
     refetchInterval: 60000,
   });
