@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -133,7 +134,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const { data, isFetching } = useQuery<{ results: SearchResult[]; query: string }>({
     queryKey: ["/api/command-center/search", q],
-    queryFn: () => fetch(`/api/command-center/search?q=${encodeURIComponent(q)}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/command-center/search?q=${encodeURIComponent(q)}`),
     enabled: q.length >= 1,
     staleTime: 5_000,
   });

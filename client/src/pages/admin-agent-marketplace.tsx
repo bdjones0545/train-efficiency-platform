@@ -14,6 +14,7 @@ import {
   Server, FileText, Banknote, ChevronRight, FlaskConical,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── Cert Badge ───────────────────────────────────────────────────────────────
@@ -189,7 +190,7 @@ function IndustryCard({ industry, metrics }: { industry: string; metrics: Record
 function AdoptionTab() {
   const { data: adoption } = useQuery<any>({
     queryKey: ["/api/marketplace/adoption"],
-    queryFn: () => fetch("/api/marketplace/adoption").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/adoption"),
   });
 
   return (
@@ -267,7 +268,7 @@ function VerificationTab({ agents }: { agents: any[] }) {
 
   const { data: verifications = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/verification"],
-    queryFn: () => fetch("/api/marketplace/verification").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/verification"),
     initialData: [],
   });
 
@@ -370,7 +371,7 @@ function TrialsTab({ agents }: { agents: any[] }) {
 
   const { data: trials = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/trials"],
-    queryFn: () => fetch("/api/marketplace/trials").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/trials"),
     initialData: [],
   });
 
@@ -466,12 +467,12 @@ function TrialsTab({ agents }: { agents: any[] }) {
 function BillingTab() {
   const { data: statement } = useQuery<any>({
     queryKey: ["/api/marketplace/billing/statement"],
-    queryFn: () => fetch("/api/marketplace/billing/statement").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/billing/statement"),
   });
 
   const { data: summary } = useQuery<any>({
     queryKey: ["/api/marketplace/billing/summary"],
-    queryFn: () => fetch("/api/marketplace/billing/summary").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/billing/summary"),
   });
 
   return (
@@ -563,7 +564,7 @@ function BillingTab() {
 function BundlesTab() {
   const { data: bundles = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/recommendation-bundles"],
-    queryFn: () => fetch("/api/marketplace/recommendation-bundles").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/recommendation-bundles"),
     initialData: [],
   });
 
@@ -636,7 +637,7 @@ function RuntimesTab() {
 
   const { data: runtimes = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/runtimes"],
-    queryFn: () => fetch("/api/marketplace/runtimes").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/runtimes"),
     initialData: [],
   });
 
@@ -749,72 +750,72 @@ export default function AdminAgentMarketplace() {
 
   const { data: agents = [], isLoading: agentsLoading, refetch: refetchAgents } = useQuery<any[]>({
     queryKey: ["/api/marketplace/agents"],
-    queryFn: () => fetch("/api/marketplace/agents").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/agents"),
     initialData: [],
   });
 
   const { data: rankings } = useQuery<any>({
     queryKey: ["/api/marketplace/rankings"],
-    queryFn: () => fetch("/api/marketplace/rankings").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/rankings"),
   });
 
   const { data: industryData } = useQuery<any>({
     queryKey: ["/api/marketplace/industry"],
-    queryFn: () => fetch("/api/marketplace/industry").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/industry"),
   });
 
   const { data: analytics } = useQuery<any>({
     queryKey: ["/api/marketplace/analytics"],
-    queryFn: () => fetch("/api/marketplace/analytics").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/analytics"),
   });
 
   const { data: trustLayer = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/trust"],
-    queryFn: () => fetch("/api/marketplace/trust").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/trust"),
     initialData: [],
   });
 
   const { data: versions = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/versions"],
-    queryFn: () => fetch("/api/marketplace/versions").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/versions"),
     initialData: [],
   });
 
   const { data: health } = useQuery<any>({
     queryKey: ["/api/marketplace/health"],
-    queryFn: () => fetch("/api/marketplace/health").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/health"),
   });
 
   const { data: ecosystem } = useQuery<any>({
     queryKey: ["/api/marketplace/ecosystem"],
-    queryFn: () => fetch("/api/marketplace/ecosystem").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/ecosystem"),
     enabled: tab === "ecosystem",
   });
 
   const { data: allReviews = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/reviews"],
-    queryFn: () => fetch("/api/marketplace/reviews").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/reviews"),
     enabled: tab === "reviews",
     initialData: [],
   });
 
   const { data: reputation = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/reputation"],
-    queryFn: () => fetch("/api/marketplace/reputation").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/reputation"),
     enabled: tab === "reviews",
     initialData: [],
   });
 
   const { data: whiteLabelAgents = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/white-label"],
-    queryFn: () => fetch("/api/marketplace/white-label").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/white-label"),
     enabled: tab === "whitelabel",
     initialData: [],
   });
 
   const { data: lifecycleEvents = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/lifecycle"],
-    queryFn: () => fetch("/api/marketplace/lifecycle").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/lifecycle"),
     enabled: tab === "lifecycle",
     initialData: [],
   });

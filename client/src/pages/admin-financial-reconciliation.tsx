@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -218,10 +219,7 @@ export default function AdminFinancialReconciliationPage() {
   // Queries
   const { data: recon, isLoading, refetch } = useQuery<ReconciliationData>({
     queryKey: ["/api/admin/financial-reconciliation", startParam, endParam],
-    queryFn: () => fetch(
-      `/api/admin/financial-reconciliation?start=${encodeURIComponent(startParam)}&end=${encodeURIComponent(endParam)}`,
-      { credentials: "include" }
-    ).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/admin/financial-reconciliation?start=${encodeURIComponent(startParam)}&end=${encodeURIComponent(endParam)}`),
     enabled: !!(startParam && endParam),
   });
 

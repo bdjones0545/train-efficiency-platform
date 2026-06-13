@@ -12,6 +12,7 @@ import {
   Star, Target, Mail, Calendar, Users, BarChart2,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 
 const AGENT_COLORS: Record<string, string> = {
   executive_agent: "bg-indigo-500",
@@ -54,12 +55,12 @@ export default function AdminAiWorkforceLeaderboard() {
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/workforce/leaderboard", period],
-    queryFn: () => fetch(`/api/workforce/leaderboard?period=${period}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/workforce/leaderboard?period=${period}`),
   });
 
   const { data: timeSavings } = useQuery<any>({
     queryKey: ["/api/workforce/time-savings"],
-    queryFn: () => fetch("/api/workforce/time-savings").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/time-savings"),
   });
 
   const agents = data?.agents ?? [];

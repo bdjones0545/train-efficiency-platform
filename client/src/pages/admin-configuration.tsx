@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import {
   UserPlus,
   Plus,
@@ -1371,7 +1372,7 @@ export default function AdminConfigurationPage() {
 
   const { data: athleticPrograms } = useQuery<any[]>({
     queryKey: ["/api/athletic/programs", orgId],
-    queryFn: () => fetch(`/api/athletic/programs?orgId=${orgId}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/athletic/programs?orgId=${orgId}`),
     enabled: athleticEnabled && !!orgId,
   });
 
@@ -1996,7 +1997,7 @@ export default function AdminConfigurationPage() {
 
   const { data: programSchedules } = useQuery<any[]>({
     queryKey: ["/api/athletic/schedules", schedulesProgramId],
-    queryFn: () => fetch(`/api/athletic/schedules?programId=${schedulesProgramId}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/athletic/schedules?programId=${schedulesProgramId}`),
     enabled: !!schedulesProgramId,
   });
 

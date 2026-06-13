@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -76,7 +77,7 @@ export default function AdminFinancialFailuresPage() {
       const url = apiStatus
         ? `/api/admin/financial-event-failures?status=${encodeURIComponent(apiStatus)}`
         : `/api/admin/financial-event-failures`;
-      return fetch(url, { credentials: "include" }).then(r => r.json());
+      return fetchJson(url);
     },
     refetchInterval: 30000,
   });

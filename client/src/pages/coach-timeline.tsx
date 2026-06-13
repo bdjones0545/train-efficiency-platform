@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -111,10 +112,7 @@ export default function CoachTimelinePage() {
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/org/activity/coach/timeline", days, slug],
-    queryFn: () =>
-      fetch(`/api/org/activity/coach/timeline?days=${days}`, {
-        headers: { "X-Org-Auth-Token": orgToken },
-      }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/activity/coach/timeline?days=${days}`, { headers: { "X-Org-Auth-Token": orgToken } }),
     refetchInterval: 60000,
   });
 

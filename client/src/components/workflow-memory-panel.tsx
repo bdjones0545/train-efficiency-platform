@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -148,7 +149,7 @@ export function EntityMemoryPanel({
 
   const { data: memories, isLoading } = useQuery<MemoryEntry[]>({
     queryKey: ["/api/workflow-context", entityType, entityId],
-    queryFn: () => fetch(`/api/workflow-context?entityType=${entityType}&entityId=${entityId}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/workflow-context?entityType=${entityType}&entityId=${entityId}`),
     enabled: open,
   });
 

@@ -3,6 +3,7 @@ import { useParams, useLocation } from "wouter";
 import { navigateWithContext } from "@/lib/navigateWithContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { apiRequest } from "@/lib/queryClient";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -303,10 +304,7 @@ export default function CoachCommandCenterPage() {
   const { data: navCtx } = useQuery<{ orgId: string; effectiveRole: string | null }>({
     queryKey: [`/api/org/by-slug/${slug}/nav-context`],
     queryFn: () =>
-      fetch(`/api/org/by-slug/${slug}/nav-context`, {
-        headers: getAuthHeaders(),
-        credentials: "include",
-      }).then((r) => r.json()),
+      fetchJson(`/api/org/by-slug/${slug}/nav-context`, { headers: getAuthHeaders() }),
   });
 
   useEffect(() => {

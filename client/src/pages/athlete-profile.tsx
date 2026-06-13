@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { OrgSidebar } from "@/components/OrgSidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -396,7 +397,7 @@ export default function AthleteProfilePage() {
   // ── Fetch org ──
   const { data: org } = useQuery<any>({
     queryKey: ["/api/organizations", slug],
-    queryFn: () => fetch(`/api/organizations/${slug}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/organizations/${slug}`),
     enabled: !!slug,
   });
   const orgId: string = org?.id ?? "";
@@ -405,21 +406,21 @@ export default function AthleteProfilePage() {
   // ── Profile data ──
   const { data: profile, isLoading: profileLoading, refetch: refetchProfile } = useQuery<any>({
     queryKey: ["/api/org/athlete-profile", userId, orgId],
-    queryFn: () => fetch(`/api/org/athlete-profile/${userId}`, { credentials: "include", headers }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/athlete-profile/${userId}`, { headers }),
     enabled: !!orgId && !!userId,
   });
 
   // ── Graph data ──
   const { data: graphs, isLoading: graphsLoading } = useQuery<any>({
     queryKey: ["/api/org/athlete-profile/graphs", userId, orgId, graphRange],
-    queryFn: () => fetch(`/api/org/athlete-profile/${userId}/graphs?range=${graphRange}`, { credentials: "include", headers }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/athlete-profile/${userId}/graphs?range=${graphRange}`, { headers }),
     enabled: !!orgId && !!userId,
   });
 
   // ── Timeline ──
   const { data: timeline, isLoading: timelineLoading } = useQuery<any>({
     queryKey: ["/api/org/athlete-profile/timeline", userId, orgId, timelineType],
-    queryFn: () => fetch(`/api/org/athlete-profile/${userId}/timeline?type=${timelineType}`, { credentials: "include", headers }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/athlete-profile/${userId}/timeline?type=${timelineType}`, { headers }),
     enabled: !!orgId && !!userId && activeTab === "timeline",
   });
 

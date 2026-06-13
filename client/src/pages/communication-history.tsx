@@ -23,6 +23,7 @@ import {
 import { format, parseISO, isAfter, isBefore, startOfDay, endOfDay } from "date-fns";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import type { CommunicationLog, TeamTrainingProspect, TeamTrainingOutreachDraft, EmailFollowUp } from "@shared/schema";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -1404,7 +1405,7 @@ function QueueProspectCard({
 
   const { data: drafts } = useQuery<TeamTrainingOutreachDraft[]>({
     queryKey: ["/api/admin/team-training/prospects", prospect.id, "drafts"],
-    queryFn: () => fetch(`/api/admin/team-training/prospects/${prospect.id}/drafts`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/admin/team-training/prospects/${prospect.id}/drafts`),
   });
   const latestDraft = drafts?.[0];
 
@@ -1758,7 +1759,7 @@ function ProspectCard({
 
   const { data: intel, isLoading: intelLoading } = useQuery<ProspectIntelligence>({
     queryKey: ["/api/email-agent/prospects", prospect.id, "intelligence"],
-    queryFn: () => fetch(`/api/email-agent/prospects/${prospect.id}/intelligence`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/email-agent/prospects/${prospect.id}/intelligence`),
     enabled: expanded,
     staleTime: 60_000,
   });

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -145,19 +146,19 @@ export default function CoachEducationProgressPage() {
   // Phase 1 analytics (pathway stats)
   const { data: analyticsData, isLoading } = useQuery<any>({
     queryKey: ["/api/org/education/analytics", slug],
-    queryFn: () => fetch("/api/org/education/analytics", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/education/analytics", { headers }),
   });
 
   // Phase 2 enhanced analytics
   const { data: v2Data, isLoading: loadingV2, refetch: refetchV2 } = useQuery<any>({
     queryKey: ["/api/org/education/analytics/v2", slug],
-    queryFn: () => fetch("/api/org/education/analytics/v2", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/education/analytics/v2", { headers }),
   });
 
   // AI Recommendations
   const { data: recsData, isLoading: loadingRecs } = useQuery<any>({
     queryKey: ["/api/org/education/ai-recommendations", slug],
-    queryFn: () => fetch("/api/org/education/ai-recommendations", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/education/ai-recommendations", { headers }),
     enabled: activeTab === "recommendations",
   });
 

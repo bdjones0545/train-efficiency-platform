@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
@@ -140,7 +141,7 @@ function AthleteDetail({
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/athlete-status", userId],
-    queryFn: () => fetch(`/api/org/athlete-status/${userId}`, { headers, credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/athlete-status/${userId}`, { headers }),
   });
 
   const refreshMut = useMutation({
@@ -405,19 +406,19 @@ export default function CoachAthleteStatusPage() {
 
   const { data: statusData, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/athlete-status", slug],
-    queryFn: () => fetch("/api/org/athlete-status", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/athlete-status", { headers: buildHeaders() }),
     enabled: canLoad,
   });
 
   const { data: flagsData } = useQuery<any>({
     queryKey: ["/api/org/athlete-risk-flags", slug],
-    queryFn: () => fetch("/api/org/athlete-risk-flags", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/athlete-risk-flags", { headers: buildHeaders() }),
     enabled: activeTab === "alerts" && canLoad,
   });
 
   const { data: interventionsData } = useQuery<any>({
     queryKey: ["/api/org/interventions", slug],
-    queryFn: () => fetch("/api/org/interventions", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/interventions", { headers: buildHeaders() }),
     enabled: activeTab === "interventions" && canLoad,
   });
 

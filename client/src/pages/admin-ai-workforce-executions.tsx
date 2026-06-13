@@ -11,6 +11,7 @@ import {
   Shield, BarChart3, Brain, Pause,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -176,19 +177,19 @@ export default function AdminAiWorkforceExecutions() {
 
   const { data: plans, isLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/workforce/executions"],
-    queryFn: () => fetch("/api/workforce/executions").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/executions"),
     initialData: [],
     refetchInterval: 10000,
   });
 
   const { data: trustData } = useQuery<any>({
     queryKey: ["/api/workforce/trust"],
-    queryFn: () => fetch("/api/workforce/trust").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/trust"),
   });
 
   const { data: cooData } = useQuery<any>({
     queryKey: ["/api/workforce/coo-dashboard"],
-    queryFn: () => fetch("/api/workforce/coo-dashboard").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/coo-dashboard"),
   });
 
   const approve = useMutation({

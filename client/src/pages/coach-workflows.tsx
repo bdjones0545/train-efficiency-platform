@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
@@ -421,10 +422,7 @@ export default function CoachWorkflowsPage() {
   // Get orgId for query keys
   const { data: pubCtx } = useQuery<{ orgId: string }>({
     queryKey: [`/api/org/by-slug/${slug}/nav-context`],
-    queryFn: () => fetch(`/api/org/by-slug/${slug}/nav-context`, {
-      headers: buildHeaders(),
-      credentials: "include",
-    }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/by-slug/${slug}/nav-context`, { headers: buildHeaders() }),
     staleTime: 60_000,
     enabled: !!slug,
   });
@@ -434,7 +432,7 @@ export default function CoachWorkflowsPage() {
   const { data: wfData, isLoading: wfLoading, refetch: refetchWf } = useQuery<{ workflows: Workflow[] }>({
     queryKey: ["/api/org/adaptive-workflows", orgId],
     queryFn: () =>
-      fetch("/api/org/adaptive-workflows", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+      fetchJson("/api/org/adaptive-workflows", { headers: buildHeaders() }),
     enabled: canLoad,
     staleTime: 15_000,
   });
@@ -442,7 +440,7 @@ export default function CoachWorkflowsPage() {
   const { data: statsData } = useQuery<Stats>({
     queryKey: ["/api/org/adaptive-workflows/stats", orgId],
     queryFn: () =>
-      fetch("/api/org/adaptive-workflows/stats", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+      fetchJson("/api/org/adaptive-workflows/stats", { headers: buildHeaders() }),
     enabled: canLoad,
     staleTime: 30_000,
   });
@@ -450,7 +448,7 @@ export default function CoachWorkflowsPage() {
   const { data: runsData, isLoading: runsLoading } = useQuery<{ runs: WorkflowRun[] }>({
     queryKey: ["/api/org/adaptive-workflows/runs/recent", orgId],
     queryFn: () =>
-      fetch("/api/org/adaptive-workflows/runs/recent", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+      fetchJson("/api/org/adaptive-workflows/runs/recent", { headers: buildHeaders() }),
     enabled: canLoad && activeTab === "history",
     staleTime: 15_000,
   });
@@ -458,7 +456,7 @@ export default function CoachWorkflowsPage() {
   const { data: followupsData, isLoading: followupsLoading } = useQuery<{ followups: Followup[] }>({
     queryKey: ["/api/org/adaptive-followups", orgId],
     queryFn: () =>
-      fetch("/api/org/adaptive-followups", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+      fetchJson("/api/org/adaptive-followups", { headers: buildHeaders() }),
     enabled: canLoad && activeTab === "followups",
     staleTime: 15_000,
   });
@@ -466,7 +464,7 @@ export default function CoachWorkflowsPage() {
   const { data: interventionsData, isLoading: interventionsLoading } = useQuery<{ interventions: Intervention[] }>({
     queryKey: ["/api/org/interventions/full", orgId],
     queryFn: () =>
-      fetch("/api/org/interventions/full", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+      fetchJson("/api/org/interventions/full", { headers: buildHeaders() }),
     enabled: canLoad && activeTab === "interventions",
     staleTime: 15_000,
   });
@@ -474,7 +472,7 @@ export default function CoachWorkflowsPage() {
   const { data: athletesData } = useQuery<{ members: OrgMember[] }>({
     queryKey: ["/api/org/members/athletes", orgId],
     queryFn: () =>
-      fetch("/api/org/members/athletes", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+      fetchJson("/api/org/members/athletes", { headers: buildHeaders() }),
     enabled: canLoad,
     staleTime: 60_000,
   });

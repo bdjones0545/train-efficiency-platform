@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { getAuthHeaders } from "@/lib/authToken";
 import { useToast } from "@/hooks/use-toast";
 
@@ -91,7 +92,7 @@ class BrainPortalErrorBoundary extends Component<
 function ObsidianStatusCard() {
   const { data } = useQuery<any>({
     queryKey: ["/api/obsidian/status"],
-    queryFn: () => fetch("/api/obsidian/status", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/obsidian/status"),
     staleTime: 60_000,
     retry: false,
   });
@@ -130,20 +131,20 @@ function ObsidianStatusCard() {
 function CeoHomeTab({ onSwitchTab }: { onSwitchTab: (t: Tab) => void }) {
   const { data: heartbeat } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/status"],
-    queryFn: () => fetch("/api/admin/ceo-heartbeat/status", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/admin/ceo-heartbeat/status"),
     refetchInterval: 30000,
   });
   const { data: prioritiesData } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/priorities"],
-    queryFn: () => fetch("/api/admin/ceo-heartbeat/priorities", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/admin/ceo-heartbeat/priorities"),
   });
   const { data: agents } = useQuery<any>({
     queryKey: ["/api/workforce/agents"],
-    queryFn: () => fetch("/api/workforce/agents", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/agents"),
   });
   const { data: approvalMetrics } = useQuery<any>({
     queryKey: ["/api/ai-approvals/metrics"],
-    queryFn: () => fetch("/api/ai-approvals/metrics", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/ai-approvals/metrics"),
   });
 
   const agentsList: any[] = Array.isArray(agents) ? agents : [];
@@ -516,7 +517,7 @@ const AGENT_ICON_MAP: Record<string, any> = {
 function AgentsTab() {
   const { data: agentsRaw, isLoading } = useQuery<any>({
     queryKey: ["/api/workforce/agents"],
-    queryFn: () => fetch("/api/workforce/agents", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/agents"),
   });
 
   const agents: any[] = Array.isArray(agentsRaw) ? agentsRaw : [];
@@ -580,7 +581,7 @@ function AgentsTab() {
 function TasksTab() {
   const { data: runsRaw, isLoading } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/runs"],
-    queryFn: () => fetch("/api/admin/ceo-heartbeat/runs", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/admin/ceo-heartbeat/runs"),
   });
   const runs: any[] = Array.isArray(runsRaw?.runs)
     ? runsRaw.runs
@@ -671,7 +672,7 @@ function ApprovalsTab() {
 
   const { data: approvals, isLoading } = useQuery<any[]>({
     queryKey: ["/api/ai-approvals"],
-    queryFn: () => fetch("/api/ai-approvals?status=proposed&limit=20", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/ai-approvals?status=proposed&limit=20"),
     refetchInterval: 15000,
   });
 
@@ -762,7 +763,7 @@ function ApprovalsTab() {
 function SettingsTab({ onClose }: { onClose: () => void }) {
   const { data: settings, isLoading } = useQuery<any>({
     queryKey: ["/api/workforce/settings"],
-    queryFn: () => fetch("/api/workforce/settings", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/settings"),
   });
 
   const AUTOMATION_MODES = [
@@ -906,7 +907,7 @@ export function ChatWidget() {
 
   const { data: approvalMetrics } = useQuery<any>({
     queryKey: ["/api/ai-approvals/metrics"],
-    queryFn: () => fetch("/api/ai-approvals/metrics", { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson("/api/ai-approvals/metrics"),
     refetchInterval: 30000,
     enabled: isMounted && !isClosing,
   });

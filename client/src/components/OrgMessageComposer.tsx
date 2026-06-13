@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { MessageSquare, Send, Users, User, Megaphone, Loader2 } from "lucide-react";
 
 type ComposerMode = "direct" | "team_announcement";
@@ -47,8 +48,7 @@ export function OrgMessageComposer({
   const { data: athletes = [] } = useQuery<any[]>({
     queryKey: ["/api/org/bootstrap-athletes", orgId],
     queryFn: () =>
-      fetch(`/api/org/workout-builder/bootstrap`, { headers: { "X-Org-Auth-Token": orgToken } })
-        .then((r) => r.json())
+      fetchJson<any>(`/api/org/workout-builder/bootstrap`, { headers: { "X-Org-Auth-Token": orgToken } })
         .then((d) => d.athletes ?? []),
     enabled: open && mode === "direct",
   });
@@ -57,8 +57,7 @@ export function OrgMessageComposer({
   const { data: teams = [] } = useQuery<any[]>({
     queryKey: ["/api/org/bootstrap-teams", orgId],
     queryFn: () =>
-      fetch(`/api/org/workout-builder/bootstrap`, { headers: { "X-Org-Auth-Token": orgToken } })
-        .then((r) => r.json())
+      fetchJson<any>(`/api/org/workout-builder/bootstrap`, { headers: { "X-Org-Auth-Token": orgToken } })
         .then((d) => d.teams ?? []),
     enabled: open && mode === "team_announcement",
   });

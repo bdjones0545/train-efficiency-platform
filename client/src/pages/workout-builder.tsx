@@ -13,6 +13,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Slider } from "@/components/ui/slider";
 import {
   Dumbbell, Wifi, WifiOff, Plus, Loader2, ChevronRight, ChevronLeft,
@@ -1088,7 +1089,7 @@ function ExecutionMonitorTab({ orgId }: { orgId: string }) {
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/workout-execution/coach-monitor"],
-    queryFn: () => fetch("/api/org/workout-execution/coach-monitor").then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/workout-execution/coach-monitor"),
     refetchInterval: 30000,
   });
 

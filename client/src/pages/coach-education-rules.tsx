@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -73,12 +74,12 @@ export default function CoachEducationRulesPage() {
 
   const { data: rulesData, isLoading } = useQuery<any>({
     queryKey: ["/api/org/education/rules", slug],
-    queryFn: () => fetch("/api/org/education/rules", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/education/rules", { headers }),
   });
 
   const { data: pathwaysData } = useQuery<any>({
     queryKey: ["/api/org/education/pathways", slug],
-    queryFn: () => fetch("/api/org/education/pathways", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/education/pathways", { headers }),
   });
 
   const rules: any[] = rulesData?.rules ?? [];

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import { parseApiResponse } from "@/lib/api-helpers";
+import { parseApiResponse, fetchJson} from "@/lib/api-helpers";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
@@ -89,33 +89,33 @@ export default function CoachEducationBuilderPage() {
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: pathwaysData, refetch: refetchPathways } = useQuery<any>({
     queryKey: ["/api/org/education/pathways", slug],
-    queryFn: () => fetch("/api/org/education/pathways", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/education/pathways", { headers: buildHeaders() }),
     enabled: canLoad,
   });
   const pathways: any[] = pathwaysData?.pathways ?? [];
 
   const { data: modulesData, refetch: refetchModules } = useQuery<any>({
     queryKey: ["/api/org/education/pathways/modules", selectedPathway?.slug],
-    queryFn: () => fetch(`/api/org/education/pathways/${selectedPathway?.slug}/modules`, { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/education/pathways/${selectedPathway?.slug}/modules`, { headers: buildHeaders() }),
     enabled: !!selectedPathway && canLoad,
   });
   const modules: any[] = modulesData?.modules ?? [];
 
   const { data: analyticsData } = useQuery<any>({
     queryKey: ["/api/org/education/analytics", slug],
-    queryFn: () => fetch("/api/org/education/analytics", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/education/analytics", { headers: buildHeaders() }),
     enabled: activeTab === "analytics" && canLoad,
   });
 
   const { data: assignmentsData } = useQuery<any>({
     queryKey: ["/api/org/education/assignments", slug],
-    queryFn: () => fetch("/api/org/education/assignments", { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/education/assignments", { headers: buildHeaders() }),
     enabled: activeTab === "assignments" && canLoad,
   });
 
   const { data: quizData } = useQuery<any>({
     queryKey: ["/api/org/education/modules/questions", selectedModule?.id],
-    queryFn: () => fetch(`/api/org/education/modules/${selectedModule?.id}/questions`, { headers: buildHeaders(), credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/education/modules/${selectedModule?.id}/questions`, { headers: buildHeaders() }),
     enabled: !!selectedModule && canLoad,
   });
 

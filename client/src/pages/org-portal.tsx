@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { logoutAllSessions } from "@/lib/logout";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { QueryErrorState } from "@/components/query-error-state";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -230,8 +231,7 @@ function PortalHome({
   const { data: notifData } = useQuery<any>({
     queryKey: ["/api/org/notifications", "unread"],
     queryFn: () =>
-      fetch("/api/org/notifications?unreadOnly=true", { headers: { "X-Org-Auth-Token": orgToken } })
-        .then((r) => r.json()),
+      fetchJson("/api/org/notifications?unreadOnly=true", { headers: { "X-Org-Auth-Token": orgToken } }),
     refetchInterval: 30000,
   });
   const unreadCount: number = notifData?.unreadCount ?? 0;
@@ -240,8 +240,7 @@ function PortalHome({
   const { data: todayEventsData } = useQuery<any>({
     queryKey: ["/api/org/activity/calendar", "today", slug],
     queryFn: () =>
-      fetch("/api/org/activity/calendar?view=today", { headers: { "X-Org-Auth-Token": orgToken } })
-        .then((r) => r.json()),
+      fetchJson("/api/org/activity/calendar?view=today", { headers: { "X-Org-Auth-Token": orgToken } }),
     refetchInterval: 60000,
   });
   const todayEvents: any[] = todayEventsData?.events ?? [];
@@ -250,8 +249,7 @@ function PortalHome({
   const { data: nutritionData } = useQuery<any>({
     queryKey: ["/api/org/nutrition/modules", slug],
     queryFn: () =>
-      fetch("/api/org/nutrition/modules", { headers: { "X-Org-Auth-Token": orgToken } })
-        .then((r) => r.json()),
+      fetchJson("/api/org/nutrition/modules", { headers: { "X-Org-Auth-Token": orgToken } }),
     refetchInterval: 120000,
   });
   const nutritionStats = nutritionData?.stats;
@@ -260,8 +258,7 @@ function PortalHome({
   const { data: educationPathwaysData } = useQuery<any>({
     queryKey: ["/api/org/education/pathways", slug],
     queryFn: () =>
-      fetch("/api/org/education/pathways", { headers: { "X-Org-Auth-Token": orgToken } })
-        .then((r) => r.json()),
+      fetchJson("/api/org/education/pathways", { headers: { "X-Org-Auth-Token": orgToken } }),
     refetchInterval: 120000,
   });
   const educationPathways: any[] = educationPathwaysData?.pathways ?? [];
@@ -270,8 +267,7 @@ function PortalHome({
   const { data: educationAnalyticsData } = useQuery<any>({
     queryKey: ["/api/org/education/analytics", slug],
     queryFn: () =>
-      fetch("/api/org/education/analytics", { headers: { "X-Org-Auth-Token": orgToken } })
-        .then((r) => r.json()),
+      fetchJson("/api/org/education/analytics", { headers: { "X-Org-Auth-Token": orgToken } }),
     enabled: isCoach,
     refetchInterval: 120000,
   });

@@ -10,6 +10,7 @@ import {
   TrendingUp, AlertTriangle, CheckCircle2, Zap, RefreshCw, ChevronRight,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 const RISK_COLORS: Record<string, string> = {
@@ -51,13 +52,13 @@ export default function AdminAiWorkforceSimulator() {
 
   const { data: recs, isLoading: recsLoading } = useQuery<any[]>({
     queryKey: ["/api/workforce/optimization-recommendations"],
-    queryFn: () => fetch("/api/workforce/optimization-recommendations").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/optimization-recommendations"),
     initialData: [],
   });
 
   const { data: trustData } = useQuery<any>({
     queryKey: ["/api/workforce/trust"],
-    queryFn: () => fetch("/api/workforce/trust").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/trust"),
   });
 
   const createPlan = useMutation({

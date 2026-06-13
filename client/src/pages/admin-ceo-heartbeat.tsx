@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -120,7 +121,7 @@ export default function AdminCeoHeartbeatPage() {
       if (timelineFilters.domain) params.set("domain", timelineFilters.domain);
       if (timelineFilters.actionType) params.set("actionType", timelineFilters.actionType);
       if (timelineFilters.actionStatus) params.set("actionStatus", timelineFilters.actionStatus);
-      return fetch(`/api/admin/ceo-heartbeat/timeline?${params}`).then(r => r.json());
+      return fetchJson(`/api/admin/ceo-heartbeat/timeline?${params}`);
     },
     enabled: !!orgId,
     refetchInterval: 30_000,

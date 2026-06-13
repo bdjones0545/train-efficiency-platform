@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -67,7 +68,7 @@ export default function CoachGuardianManagementPage() {
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: guardiansData, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/guardians", slug],
-    queryFn: () => fetch("/api/org/guardians", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/guardians", { headers }),
   });
   const links: any[] = guardiansData?.links ?? [];
 

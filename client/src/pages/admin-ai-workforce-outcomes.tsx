@@ -12,7 +12,7 @@ import {
   BarChart3, Award, Shield,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-import { parseApiResponse } from "@/lib/api-helpers";
+import { parseApiResponse, fetchJson} from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -65,28 +65,28 @@ export default function AdminAiWorkforceOutcomes() {
 
   const { data: roi, isLoading: roiLoading } = useQuery<any>({
     queryKey: ["/api/workforce/roi", period],
-    queryFn: () => fetch(`/api/workforce/roi?period=${period}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/workforce/roi?period=${period}`),
   });
 
   const { data: revenueAttr, isLoading: revLoading } = useQuery<any>({
     queryKey: ["/api/workforce/revenue-attribution", period],
-    queryFn: () => fetch(`/api/workforce/revenue-attribution?period=${period}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/workforce/revenue-attribution?period=${period}`),
   });
 
   const { data: timeSavings } = useQuery<any>({
     queryKey: ["/api/workforce/time-savings"],
-    queryFn: () => fetch("/api/workforce/time-savings").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/time-savings"),
   });
 
   const { data: opportunities, isLoading: oppLoading, refetch: refetchOpps } = useQuery<any[]>({
     queryKey: ["/api/workforce/opportunities"],
-    queryFn: () => fetch("/api/workforce/opportunities").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/opportunities"),
     initialData: [],
   });
 
   const { data: execSummary, isLoading: execLoading } = useQuery<any>({
     queryKey: ["/api/workforce/executive-summary"],
-    queryFn: () => fetch("/api/workforce/executive-summary").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/executive-summary"),
   });
 
   const refreshMutation = useMutation({

@@ -12,6 +12,7 @@ import {
   CheckCircle2, BarChart3, MessageSquare, Plus,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 const CATEGORIES = [
@@ -198,19 +199,19 @@ export default function MarketplaceStore() {
 
   const { data: agents = [], isLoading } = useQuery<any[]>({
     queryKey: ["/api/marketplace/agents"],
-    queryFn: () => fetch("/api/marketplace/agents").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/agents"),
     initialData: [],
   });
 
   const { data: reviews = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/reviews"],
-    queryFn: () => fetch("/api/marketplace/reviews").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/reviews"),
     initialData: [],
   });
 
   const { data: reputation = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/reputation"],
-    queryFn: () => fetch("/api/marketplace/reputation").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/reputation"),
     initialData: [],
   });
 

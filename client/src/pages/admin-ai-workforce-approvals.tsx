@@ -11,6 +11,7 @@ import {
   Shield, Target, DollarSign, Zap,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -34,21 +35,21 @@ export default function AdminAiWorkforceApprovals() {
   // Optimization recommendations (source of approval items)
   const { data: recs, isLoading: recsLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/workforce/optimization-recommendations"],
-    queryFn: () => fetch("/api/workforce/optimization-recommendations").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/optimization-recommendations"),
     initialData: [],
   });
 
   // Memory — approved/rejected/deferred history
   const { data: memory, isLoading: memoryLoading } = useQuery<any[]>({
     queryKey: ["/api/workforce/memory"],
-    queryFn: () => fetch("/api/workforce/memory").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/memory"),
     initialData: [],
   });
 
   // Agent pending actions
   const { data: pendingActions, isLoading: actionsLoading } = useQuery<any[]>({
     queryKey: ["/api/workforce/activity"],
-    queryFn: () => fetch("/api/workforce/activity").then(r => r.json()).then(d => (d.pendingApprovals ?? []).slice(0, 20)),
+    queryFn: () => fetchJson<{ pendingApprovals?: unknown[] }>("/api/workforce/activity").then(d => (d.pendingApprovals ?? []).slice(0, 20)),
     initialData: [],
   });
 

@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { OrgSidebar } from "@/components/OrgSidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -503,7 +504,7 @@ function ExerciseLibraryPanel({
   const { data, isLoading, refetch } = useQuery<{ exercises: LibraryExercise[] }>({
     queryKey: ["/api/org/exercises", q, category, difficulty],
     queryFn: () =>
-      fetch(`/api/org/exercises?${params.toString()}`, { headers }).then((r) => r.json()),
+      fetchJson(`/api/org/exercises?${params.toString()}`, { headers }),
     staleTime: 30_000,
   });
 
@@ -724,7 +725,7 @@ export default function ProgramBuilderPage() {
   // Step 1: Get athletic program (org source of truth — has organizationId)
   const { data: athleticProgram, isLoading: athleticLoading } = useQuery<any>({
     queryKey: ["/api/athletic/programs/by-org-slug", slug, programSlug],
-    queryFn: () => fetch(`/api/athletic/programs/by-org-slug/${slug}/${programSlug}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/athletic/programs/by-org-slug/${slug}/${programSlug}`),
     enabled: !!slug && !!programSlug,
     staleTime: 60_000,
   });
@@ -736,7 +737,7 @@ export default function ProgramBuilderPage() {
   // Step 2: Find the workout program linked to this athletic program tool
   const { data: wbBootstrap } = useQuery<{ programs: any[] }>({
     queryKey: ["/api/org/workout-builder/bootstrap", orgId],
-    queryFn: () => fetch("/api/org/workout-builder/bootstrap", { headers, credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/workout-builder/bootstrap", { headers }),
     enabled: !!orgId,
     staleTime: 30_000,
   });
@@ -750,7 +751,7 @@ export default function ProgramBuilderPage() {
   const { data: builderData, isLoading, refetch } = useQuery<{ program: any; weeks: Week[] }>({
     queryKey: ["/api/org/workout-builder/programs", programId, "sessions"],
     queryFn: () =>
-      fetch(`/api/org/workout-builder/programs/${programId}/sessions`, { headers, credentials: "include" }).then((r) => r.json()),
+      fetchJson(`/api/org/workout-builder/programs/${programId}/sessions`, { headers }),
     enabled: !!programId,
     staleTime: 10_000,
   });

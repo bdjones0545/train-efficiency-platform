@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -173,7 +174,7 @@ function AgentDetail({ agentName, onClose }: { agentName: string; onClose: () =>
   const [window, setWindow] = useState("30");
   const { data: scores } = useQuery<any[]>({
     queryKey: ["/api/admin/agent-quality/scores", agentName],
-    queryFn: () => fetch(`/api/admin/agent-quality/scores/${encodeURIComponent(agentName)}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/admin/agent-quality/scores/${encodeURIComponent(agentName)}`),
   });
 
   const windowScores = (scores ?? []).filter((s) => String(s.window_days) === window && s.communication_domain === "all");

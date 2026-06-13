@@ -6,6 +6,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -726,19 +727,19 @@ export default function AdminAiWorkforcePage() {
 
   const { data: health, refetch: refetchHealth } = useQuery<any>({
     queryKey: ["/api/workforce/health"],
-    queryFn: async () => { const r = await fetch("/api/workforce/health"); return r.json(); },
+    queryFn: () => fetchJson("/api/workforce/health"),
     refetchInterval: 60000,
   });
 
   const { data: readiness } = useQuery<any>({
     queryKey: ["/api/workforce/readiness"],
-    queryFn: async () => { const r = await fetch("/api/workforce/readiness"); return r.json(); },
+    queryFn: () => fetchJson("/api/workforce/readiness"),
     refetchInterval: 120000,
   });
 
   const { data: scorecard } = useQuery<any>({
     queryKey: ["/api/workforce/scorecard", "7d"],
-    queryFn: async () => { const r = await fetch("/api/workforce/scorecard?period=7d"); return r.json(); },
+    queryFn: () => fetchJson("/api/workforce/scorecard?period=7d"),
     refetchInterval: 120000,
   });
 

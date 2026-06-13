@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -85,7 +86,7 @@ export function ActivityFeed({
 
   const { data, isLoading } = useQuery<{ events: any[] }>({
     queryKey: ["org-activity", cacheKey, limit],
-    queryFn: () => fetch(url, { credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson(url),
     staleTime: 30_000,
   });
 

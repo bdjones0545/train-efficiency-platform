@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,18 +34,14 @@ export default function CoachNutritionPage() {
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/org/coach/nutrition/progress", slug],
     queryFn: () =>
-      fetch("/api/org/coach/nutrition/progress", {
-        headers: { "X-Org-Auth-Token": orgToken },
-      }).then((r) => r.json()),
+      fetchJson("/api/org/coach/nutrition/progress", { headers: { "X-Org-Auth-Token": orgToken } }),
     refetchInterval: 60000,
   });
 
   const { data: athleteData, isLoading: athleteLoading } = useQuery<any>({
     queryKey: ["/api/org/coach/nutrition/athlete", selectedAthleteId, slug],
     queryFn: () =>
-      fetch(`/api/org/coach/nutrition/athlete/${selectedAthleteId}`, {
-        headers: { "X-Org-Auth-Token": orgToken },
-      }).then((r) => r.json()),
+      fetchJson(`/api/org/coach/nutrition/athlete/${selectedAthleteId}`, { headers: { "X-Org-Auth-Token": orgToken } }),
     enabled: !!selectedAthleteId,
   });
 

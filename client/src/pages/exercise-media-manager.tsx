@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { OrgSidebar } from "@/components/OrgSidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
@@ -397,7 +398,7 @@ export default function ExerciseMediaManagerPage() {
   // ── Fetch org ──
   const { data: org } = useQuery<any>({
     queryKey: ["/api/organizations", slug],
-    queryFn: () => fetch(`/api/organizations/${slug}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/organizations/${slug}`),
     enabled: !!slug,
   });
   const orgId: string = org?.id ?? "";
@@ -421,11 +422,7 @@ export default function ExerciseMediaManagerPage() {
 
   const { data, isLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/exercises/media-coverage", orgId, search, categoryFilter, coverageFilter],
-    queryFn: () =>
-      fetch(`/api/org/exercises/media-coverage?${qParams}`, {
-        credentials: "include",
-        headers: getHeaders(orgId),
-      }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/exercises/media-coverage?${qParams}`, { headers: getHeaders(orgId) }),
     enabled: !!orgId,
     staleTime: 30_000,
   });

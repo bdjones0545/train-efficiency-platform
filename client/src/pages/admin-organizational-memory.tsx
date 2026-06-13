@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -398,7 +399,7 @@ function SearchTab() {
 
   const { data, isFetching } = useQuery<SearchResult>({
     queryKey: ["/api/organizational-memory/search", submitted],
-    queryFn: () => fetch(`/api/organizational-memory/search?q=${encodeURIComponent(submitted)}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/organizational-memory/search?q=${encodeURIComponent(submitted)}`),
     enabled: submitted.length > 0,
     staleTime: 30_000,
   });

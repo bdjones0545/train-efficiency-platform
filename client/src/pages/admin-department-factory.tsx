@@ -13,6 +13,7 @@ import {
   Building2, Target, TrendingUp, Copy, Check, Info,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast }   from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -473,7 +474,7 @@ function ChecklistTab({ departments }: { departments: DeptOverview[] }) {
 
   const { data: checklist } = useQuery<any>({
     queryKey: ["/api/department-factory/checklist", selected],
-    queryFn:  () => fetch(`/api/department-factory/checklist/${selected}`).then(r => r.json()),
+    queryFn:  () => fetchJson(`/api/department-factory/checklist/${selected}`),
     enabled:  !!selected,
   });
 

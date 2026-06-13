@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -195,9 +196,7 @@ function QuizView({ module, slug, onBack, onComplete }: {
   const { data: questions, isLoading } = useQuery<any[]>({
     queryKey: ["/api/org/nutrition/modules", module.id, "questions"],
     queryFn: () =>
-      fetch(`/api/org/nutrition/modules/${module.id}/questions`, {
-        headers: { "X-Org-Auth-Token": orgToken },
-      }).then((r) => r.json()),
+      fetchJson(`/api/org/nutrition/modules/${module.id}/questions`, { headers: { "X-Org-Auth-Token": orgToken } }),
   });
 
   const submitMutation = useMutation({
@@ -349,9 +348,7 @@ export default function OrgNutritionPage() {
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/org/nutrition/modules", slug],
     queryFn: () =>
-      fetch("/api/org/nutrition/modules", {
-        headers: { "X-Org-Auth-Token": orgToken },
-      }).then((r) => r.json()),
+      fetchJson("/api/org/nutrition/modules", { headers: { "X-Org-Auth-Token": orgToken } }),
   });
 
   const modules: any[] = data?.modules ?? [];

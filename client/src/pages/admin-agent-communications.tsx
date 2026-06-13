@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -168,7 +169,7 @@ function MessagesTab({ selectedConvoId, setSelectedConvoId }: { selectedConvoId:
   const { data: convoData } = useQuery<ConvoData>({ queryKey: ["/api/agent-communications/conversations"], staleTime: 30_000 });
   const { data: threadData, isLoading } = useQuery<MessageData>({
     queryKey: ["/api/agent-communications/messages", selectedConvoId],
-    queryFn: () => fetch(`/api/agent-communications/messages/${selectedConvoId}`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/agent-communications/messages/${selectedConvoId}`),
     enabled: !!selectedConvoId,
     staleTime: 30_000,
   });

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -172,7 +173,7 @@ function EffectivenessTab({ athleteUserId }: { athleteUserId: string }) {
   const orgId = useOrgId();
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/admin/athlete-intelligence/effectiveness", athleteUserId],
-    queryFn: () => fetch(`/api/admin/athlete-intelligence/effectiveness/${athleteUserId}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/admin/athlete-intelligence/effectiveness/${athleteUserId}`),
     enabled: !!athleteUserId,
   });
 
@@ -451,7 +452,7 @@ export default function AdminAthleteIntelligencePage() {
   // Fetch selected athlete profile
   const { data: profileData, refetch: refetchProfile } = useQuery<any>({
     queryKey: ["/api/admin/athlete-intelligence/profile", selectedAthleteId],
-    queryFn: () => fetch(`/api/admin/athlete-intelligence/profile/${selectedAthleteId}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/admin/athlete-intelligence/profile/${selectedAthleteId}`),
     enabled: !!selectedAthleteId,
   });
 

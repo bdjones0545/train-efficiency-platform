@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import {
   Bell, BellOff, CheckCheck, Dumbbell, Trophy, Calendar,
   MessageSquare, Megaphone, AlertTriangle, ArrowLeft, Zap,
@@ -185,9 +186,7 @@ function MessageInbox({ orgToken, slug }: { orgToken: string | null; slug: strin
 
   const { data: messages = [], isLoading, refetch } = useQuery<any[]>({
     queryKey: ["/api/org/messages"],
-    queryFn: () =>
-      fetch("/api/org/messages", { headers: buildH(), credentials: "include" })
-        .then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/messages", { headers: buildH() }),
   });
 
   const readMutation = useMutation({
@@ -317,7 +316,7 @@ export default function OrgNotificationsPage() {
     queryKey: ["/api/org/notifications", activeFilter],
     queryFn: () => {
       const params = activeFilter !== "all" ? `?type=${activeFilter}` : "";
-      return fetch(`/api/org/notifications${params}`, { headers: buildHeaders(), credentials: "include" }).then((r) => r.json());
+      return fetchJson(`/api/org/notifications${params}`, { headers: buildHeaders() });
     },
     enabled: canLoad,
     refetchInterval: 30000,

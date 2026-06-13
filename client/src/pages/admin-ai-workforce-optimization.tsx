@@ -14,6 +14,7 @@ import {
   Calendar, Mail, Users, Star, Eye,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -104,35 +105,35 @@ export default function AdminAiWorkforceOptimization() {
 
   const { data: recs, isLoading: recsLoading, refetch: refetchRecs } = useQuery<any[]>({
     queryKey: ["/api/workforce/optimization-recommendations"],
-    queryFn: () => fetch("/api/workforce/optimization-recommendations").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/optimization-recommendations"),
     initialData: [],
   });
 
   const { data: health, isLoading: healthLoading } = useQuery<any>({
     queryKey: ["/api/workforce/business-health"],
-    queryFn: () => fetch("/api/workforce/business-health").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/business-health"),
   });
 
   const { data: forecast, isLoading: forecastLoading } = useQuery<any[]>({
     queryKey: ["/api/workforce/forecast", forecastWindow],
-    queryFn: () => fetch(`/api/workforce/forecast?window=${forecastWindow}`).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/workforce/forecast?window=${forecastWindow}`),
     initialData: [],
   });
 
   const { data: workflows, isLoading: workflowsLoading } = useQuery<any[]>({
     queryKey: ["/api/workforce/workflow-effectiveness"],
-    queryFn: () => fetch("/api/workforce/workflow-effectiveness").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/workflow-effectiveness"),
     initialData: [],
   });
 
   const { data: execInsights, isLoading: execLoading } = useQuery<any>({
     queryKey: ["/api/workforce/executive-insights"],
-    queryFn: () => fetch("/api/workforce/executive-insights").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/executive-insights"),
   });
 
   const { data: scorecard } = useQuery<any>({
     queryKey: ["/api/workforce/intelligence-scorecard"],
-    queryFn: () => fetch("/api/workforce/intelligence-scorecard").then(r => r.json()),
+    queryFn: () => fetchJson("/api/workforce/intelligence-scorecard"),
   });
 
   const approveRec = useMutation({

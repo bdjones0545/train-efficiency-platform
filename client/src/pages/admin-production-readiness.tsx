@@ -11,6 +11,7 @@ import {
   ChevronRight, FileText, TrendingUp,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 const SCORE_LABELS: Record<string, string> = {
@@ -69,7 +70,7 @@ export default function AdminProductionReadiness() {
 
   const { data: report } = useQuery<any>({
     queryKey: ["/api/marketplace/production-readiness"],
-    queryFn: () => fetch("/api/marketplace/production-readiness").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/production-readiness"),
   });
 
   const runE2E = useMutation({

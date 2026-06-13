@@ -292,7 +292,7 @@ function DraftReviewModal({
 
   const detailQuery = useQuery<ActionDetail>({
     queryKey: ["/api/org/gmail/actions", actionId, "detail"],
-    queryFn: () => apiRequest("GET", `/api/org/gmail/actions/${actionId}/detail`).then(r => r.json()),
+    queryFn: () => apiRequest("GET", `/api/org/gmail/actions/${actionId}/detail`).then(r => parseApiResponse<ActionDetail>(r)),
     enabled: !!actionId,
   });
 

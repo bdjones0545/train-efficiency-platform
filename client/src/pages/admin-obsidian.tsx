@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import {
   BookOpen, Search, RefreshCw, CheckCircle, XCircle, FileText, Eye,
   Brain, Activity, FolderOpen, Upload, AlertTriangle, ExternalLink,
@@ -285,7 +286,7 @@ function SearchTab() {
 
   const readMutation = useMutation<{ content: string }, Error, { folder: string; title: string }>({
     mutationFn: ({ folder, title }) =>
-      fetch(`/api/obsidian/read?folder=${encodeURIComponent(folder)}&title=${encodeURIComponent(title)}`, { credentials: "include" }).then(r => r.json()),
+      fetchJson(`/api/obsidian/read?folder=${encodeURIComponent(folder)}&title=${encodeURIComponent(title)}`),
   });
 
   const openNote = async (r: SearchResult) => {
@@ -386,7 +387,7 @@ function VaultTab() {
 
   const readMutation = useMutation<{ content: string }, Error, { folder: string; title: string }>({
     mutationFn: ({ folder, title }) =>
-      fetch(`/api/obsidian/read?folder=${encodeURIComponent(folder)}&title=${encodeURIComponent(title)}`, { credentials: "include" }).then(r => r.json()),
+      fetchJson(`/api/obsidian/read?folder=${encodeURIComponent(folder)}&title=${encodeURIComponent(title)}`),
   });
 
   const allFiles = vaultData?.files || [];
@@ -658,7 +659,7 @@ function SoftwareKBTab() {
 
   const searchMutation = useMutation<{ results: Array<{ filename: string; context: string; score: number }> }, Error, void>({
     mutationFn: () =>
-      fetch(`/api/obsidian/software-kb/search?q=${encodeURIComponent(searchQ)}&limit=5`, { credentials: "include" }).then(r => r.json()),
+      fetchJson(`/api/obsidian/software-kb/search?q=${encodeURIComponent(searchQ)}&limit=5`),
   });
 
   const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>

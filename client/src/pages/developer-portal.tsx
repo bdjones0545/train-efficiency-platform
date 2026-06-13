@@ -13,6 +13,7 @@ import {
   TrendingUp, Zap, AlertTriangle, ChevronRight, Award, Users,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -53,28 +54,28 @@ export default function DeveloperPortal() {
 
   const { data: profile } = useQuery<any>({
     queryKey: ["/api/developer/profile"],
-    queryFn: () => fetch("/api/developer/profile").then(r => r.json()).catch(() => null),
+    queryFn: () => fetchJson("/api/developer/profile").catch(() => null),
   });
 
   const { data: submissions = [], isLoading: subsLoading } = useQuery<any[]>({
     queryKey: ["/api/developer/submissions"],
-    queryFn: () => fetch("/api/developer/submissions").then(r => r.json()),
+    queryFn: () => fetchJson("/api/developer/submissions"),
     initialData: [],
   });
 
   const { data: analytics } = useQuery<any>({
     queryKey: ["/api/developer/analytics"],
-    queryFn: () => fetch("/api/developer/analytics").then(r => r.json()),
+    queryFn: () => fetchJson("/api/developer/analytics"),
   });
 
   const { data: revenue } = useQuery<any>({
     queryKey: ["/api/developer/revenue"],
-    queryFn: () => fetch("/api/developer/revenue").then(r => r.json()),
+    queryFn: () => fetchJson("/api/developer/revenue"),
   });
 
   const { data: reputation = [] } = useQuery<any[]>({
     queryKey: ["/api/marketplace/reputation"],
-    queryFn: () => fetch("/api/marketplace/reputation").then(r => r.json()),
+    queryFn: () => fetchJson("/api/marketplace/reputation"),
     initialData: [],
   });
 

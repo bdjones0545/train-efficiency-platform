@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -733,7 +734,7 @@ export default function AthleteExecutionPage() {
   // Fetch org context from athletic program (via query key on the existing bootstrap)
   const { data: athleticProgram } = useQuery<any>({
     queryKey: ["/api/athletic/programs/by-org-slug", slug],
-    queryFn: () => fetch(`/api/athletic/programs/by-org-slug/${slug}/${slug}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/athletic/programs/by-org-slug/${slug}/${slug}`),
     enabled: false,
   });
 
@@ -745,7 +746,7 @@ export default function AthleteExecutionPage() {
   const { data: sessionData, isLoading } = useQuery<any>({
     queryKey: ["/api/org/workout-builder/session", sessionId],
     queryFn: () =>
-      fetch(`/api/org/workout-builder/session/${sessionId}`, { credentials: "include", headers }).then((r) => r.json()),
+      fetchJson(`/api/org/workout-builder/session/${sessionId}`, { headers }),
     enabled: !!sessionId,
     staleTime: 60_000,
   });

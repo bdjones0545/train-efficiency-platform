@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -209,7 +210,7 @@ function AthleteDetailView({
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/org/guardian/athlete", athleteId],
-    queryFn: () => fetch(`/api/org/guardian/athlete/${athleteId}`, { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/guardian/athlete/${athleteId}`, { headers }),
   });
 
   if (isLoading) {
@@ -488,7 +489,7 @@ function AthleteDetailView({
 function CoachMessagesInline({ headers, athleteId }: { headers: Record<string, string>; athleteId: string }) {
   const { data } = useQuery<any>({
     queryKey: ["/api/org/guardian/notifications", athleteId],
-    queryFn: () => fetch("/api/org/guardian/notifications", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/guardian/notifications", { headers }),
   });
   const notifs: any[] = (data?.notifications ?? []).filter((n: any) => n.athleteUserId === athleteId).slice(0, 5);
 
@@ -613,7 +614,7 @@ function NotificationsView({
 }) {
   const { data, refetch } = useQuery<any>({
     queryKey: ["/api/org/guardian/notifications"],
-    queryFn: () => fetch("/api/org/guardian/notifications", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/guardian/notifications", { headers }),
   });
   const notifications: any[] = data?.notifications ?? [];
 
@@ -697,7 +698,7 @@ export default function OrgGuardianPage() {
   // Dashboard data
   const { data: dashboardData, isLoading } = useQuery<any>({
     queryKey: ["/api/org/guardian/dashboard", slug],
-    queryFn: () => fetch("/api/org/guardian/dashboard", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/guardian/dashboard", { headers }),
     refetchInterval: 60_000,
   });
 

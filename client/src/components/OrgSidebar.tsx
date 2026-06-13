@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useLocation, Link } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import {
   Sidebar,
   SidebarContent,
@@ -570,10 +571,7 @@ export function OrgSidebar({ orgSlug }: OrgSidebarProps) {
   const { data: pubCtx, isLoading: pubLoading } = useQuery<NavContextResponse>({
     queryKey: [`/api/org/by-slug/${orgSlug}/nav-context`],
     queryFn: () =>
-      fetch(`/api/org/by-slug/${orgSlug}/nav-context`, {
-        headers: getAuthHeaders(),
-        credentials: "include",
-      }).then((r) => r.json()),
+      fetchJson(`/api/org/by-slug/${orgSlug}/nav-context`, { headers: getAuthHeaders() }),
     staleTime: 30_000,
   });
 
@@ -589,13 +587,12 @@ export function OrgSidebar({ orgSlug }: OrgSidebarProps) {
   const { data: authCtx } = useQuery<NavContextResponse>({
     queryKey: [`/api/org/by-slug/${orgSlug}/nav-context`, orgToken],
     queryFn: () =>
-      fetch(`/api/org/by-slug/${orgSlug}/nav-context`, {
+      fetchJson(`/api/org/by-slug/${orgSlug}/nav-context`, {
         headers: {
           ...getAuthHeaders(),
           ...(orgToken ? { "X-Org-Auth-Token": orgToken } : {}),
         },
-        credentials: "include",
-      }).then((r) => r.json()),
+      }),
     enabled: !!orgToken,
     staleTime: 30_000,
   });

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -99,9 +100,7 @@ export default function AthleteTimelinePage() {
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/org/activity/athlete", userId, slug],
     queryFn: () =>
-      fetch(`/api/org/activity/athlete/${userId}`, {
-        headers: { "X-Org-Auth-Token": orgToken },
-      }).then((r) => r.json()),
+      fetchJson(`/api/org/activity/athlete/${userId}`, { headers: { "X-Org-Auth-Token": orgToken } }),
   });
 
   const allEvents: any[] = data?.events ?? [];

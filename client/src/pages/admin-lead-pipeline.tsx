@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import {
   Flame, Thermometer, Snowflake, Brain, Zap, Mail, Phone, MapPin,
   Clock, ChevronRight, CheckCircle2, XCircle, RefreshCw, Target,
@@ -320,9 +321,7 @@ function SchedulingContextPanel({
 
   const { data: ctx, isLoading } = useQuery<SchedulingContext | null>({
     queryKey: ["/api/org/scheduling-agent/contexts", intel.submissionId],
-    queryFn: () =>
-      fetch(`/api/org/scheduling-agent/contexts/${intel.submissionId}`, { credentials: "include" })
-        .then(r => r.json()),
+    queryFn: () => fetchJson(`/api/org/scheduling-agent/contexts/${intel.submissionId}`),
   });
 
   const findSlotsMutation = useMutation({
@@ -775,7 +774,7 @@ function LeadDetailModal({
 
   const { data: drafts, isLoading: draftsLoading } = useQuery<GmailDraftAction[]>({
     queryKey: ["/api/lead-capture/intelligence", intel.submissionId, "drafts"],
-    queryFn: () => fetch(`/api/lead-capture/intelligence/${intel.submissionId}/drafts`, { credentials: "include" }).then(r => r.json()),
+    queryFn: () => fetchJson(`/api/lead-capture/intelligence/${intel.submissionId}/drafts`),
   });
 
   const reprocessMutation = useMutation({

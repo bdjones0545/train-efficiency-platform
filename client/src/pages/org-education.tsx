@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,7 +109,7 @@ export default function OrgEducationPage() {
   // ── Queries ────────────────────────────────────────────────────────────────
   const { data: pathwaysData, isLoading: loadingPathways } = useQuery<any>({
     queryKey: ["/api/org/education/pathways", slug],
-    queryFn: () => fetch("/api/org/education/pathways", { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/education/pathways", { headers }),
   });
   const pathways: any[] = pathwaysData?.pathways ?? [];
 
@@ -116,7 +117,7 @@ export default function OrgEducationPage() {
   const effectiveSlug = pathwaySlug ?? selectedPathway?.slug;
   const { data: pathwayData, isLoading: loadingModules } = useQuery<any>({
     queryKey: ["/api/org/education/pathways/modules", effectiveSlug],
-    queryFn: () => fetch(`/api/org/education/pathways/${effectiveSlug}/modules`, { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/education/pathways/${effectiveSlug}/modules`, { headers }),
     enabled: !!effectiveSlug,
   });
 
@@ -134,14 +135,14 @@ export default function OrgEducationPage() {
 
   const { data: questionsData, isLoading: loadingQuestions } = useQuery<any>({
     queryKey: ["/api/org/education/modules/questions", selectedModule?.id],
-    queryFn: () => fetch(`/api/org/education/modules/${selectedModule?.id}/questions`, { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/education/modules/${selectedModule?.id}/questions`, { headers }),
     enabled: !!selectedModule && view === "quiz",
   });
   const questions: any[] = questionsData?.questions ?? [];
 
   const { data: finalTestData, isLoading: loadingFinalTest } = useQuery<any>({
     queryKey: ["/api/org/education/pathways/final-test", selectedPathway?.id ?? pathway?.id],
-    queryFn: () => fetch(`/api/org/education/pathways/${selectedPathway?.id ?? pathway?.id}/final-test`, { headers }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/education/pathways/${selectedPathway?.id ?? pathway?.id}/final-test`, { headers }),
     enabled: !!(selectedPathway?.id ?? pathway?.id) && view === "final_test",
   });
   const finalTestQuestions: any[] = finalTestData?.questions ?? [];

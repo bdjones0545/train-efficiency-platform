@@ -5,6 +5,7 @@ import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -584,7 +585,7 @@ export default function CoachCommunicationsCenterPage() {
 
   const { data: navCtx } = useQuery<{ orgId: string }>({
     queryKey: [`/api/org/by-slug/${slug}/nav-context`],
-    queryFn: () => fetch(`/api/org/by-slug/${slug}/nav-context`, { credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/org/by-slug/${slug}/nav-context`),
   });
 
   useEffect(() => {

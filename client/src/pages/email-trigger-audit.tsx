@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -240,7 +241,7 @@ export default function EmailTriggerAuditPage() {
 
   const { data, isLoading, refetch, isRefetching } = useQuery<TriggerAuditSummary>({
     queryKey: ["/api/email-agent/trigger-audit", windowHours, filterTrigger, filterAction],
-    queryFn: () => fetch(`/api/email-agent/trigger-audit?${params}`).then((r) => r.json()),
+    queryFn: () => fetchJson(`/api/email-agent/trigger-audit?${params}`),
     refetchInterval: 30_000,
     enabled: !prospectIdFilter,
   });
@@ -248,7 +249,7 @@ export default function EmailTriggerAuditPage() {
   const { data: prospectData, isLoading: prospectLoading } = useQuery<ProspectAudit>({
     queryKey: ["/api/email-agent/trigger-audit/prospect", prospectIdFilter],
     queryFn: () =>
-      fetch(`/api/email-agent/trigger-audit/prospect/${prospectIdFilter}`).then((r) => r.json()),
+      fetchJson(`/api/email-agent/trigger-audit/prospect/${prospectIdFilter}`),
     enabled: !!prospectIdFilter,
     refetchInterval: 30_000,
   });

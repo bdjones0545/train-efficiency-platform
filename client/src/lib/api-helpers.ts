@@ -1,11 +1,19 @@
 /**
- * Shared API response helpers for TanStack Query mutations.
+ * Shared API response helpers for TanStack Query.
  *
  * parseApiResponse<T>(res)
- *   Safe JSON parser for mutation `mutationFn` chains:
+ *   Safe JSON parser for mutation `mutationFn` chains (apiRequest returns Response):
  *   - 204 No Content or empty body → returns {} as T (never throws)
  *   - Invalid JSON body → throws with context (never silent)
  *   - Valid JSON → typed parsed object
+ *
+ * fetchJson<T>(url, init?)
+ *   Safe fetch wrapper for queryFn definitions (raw fetch() calls):
+ *   - Includes credentials: "include" by default
+ *   - Non-2xx response → throws with backend error message (surfaces to TanStack Query error state)
+ *   - 204 / empty body → returns {} as T
+ *   - Invalid JSON → throws with context
+ *   Callers pass init to override headers or method; credentials is always included.
  *
  * getErrorMessage(error, fallback?)
  *   Extracts a human-readable string from any thrown value.
@@ -27,6 +35,23 @@ export async function parseApiResponse<T = Record<string, unknown>>(
       `Failed to parse API response (HTTP ${res.status}): ${text.slice(0, 120)}`
     );
   }
+}
+
+export async function fetchJson<T = Record<string, unknown>>(
+  input: string | URL,
+  init?: RequestInit
+): Promise<T> {
+  const res = await fetch(input, { credentials: "include", ...init });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    let message = `HTTP ${res.status}`;
+    try {
+      const body = JSON.parse(text) as { message?: string; error?: string };
+      message = body.message ?? body.error ?? message;
+    } catch {}
+    throw new Error(message);
+  }
+  return parseApiResponse<T>(res);
 }
 
 export function getErrorMessage(

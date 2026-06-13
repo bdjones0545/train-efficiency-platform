@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -275,7 +276,7 @@ function CreateEventModal({
 
   const { data: targets, isLoading: targetsLoading } = useQuery<any>({
     queryKey: ["/api/org/calendar/targets", slug, orgToken],
-    queryFn: () => fetch("/api/org/calendar/targets", { headers, credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/calendar/targets", { headers }),
     enabled: open,
   });
 
@@ -550,14 +551,14 @@ export default function OrgCalendarPage() {
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/org/activity/calendar", view, slug],
     queryFn: () =>
-      fetch(`/api/org/activity/calendar?view=${view}`, { headers, credentials: "include" }).then((r) => r.json()),
+      fetchJson(`/api/org/activity/calendar?view=${view}`, { headers }),
     refetchInterval: 60000,
   });
 
   // Prefetch targets so modal opens fast
   const { data: targets } = useQuery<any>({
     queryKey: ["/api/org/calendar/targets", slug, orgToken],
-    queryFn: () => fetch("/api/org/calendar/targets", { headers, credentials: "include" }).then((r) => r.json()),
+    queryFn: () => fetchJson("/api/org/calendar/targets", { headers }),
   });
 
   const isCoachOrAdmin = targets?.isAdmin || targets?.isCoach;
