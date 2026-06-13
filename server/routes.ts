@@ -29335,6 +29335,42 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch { return []; }
   }
 
+
+  // GET /api/organizational-memory/auto-capture-stats
+  app.get("/api/organizational-memory/auto-capture-stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId ?? "default";
+
+      const [hermes, decisions, softwareKb, heartbeat] = await Promise.all([
+        db.execute(sql`SELECT COUNT(*) as cnt, MAX(created_at) as last FROM hermes_auto_learnings WHERE org_id = ${orgId}`).catch(() => []),
+        db.execute(sql`SELECT COUNT(*) as cnt, MAX(created_at) as last FROM decision_journal_entries WHERE org_id = ${orgId}`).catch(() => []),
+        db.execute(sql`SELECT COUNT(*) as cnt, MAX(created_at) as last FROM software_kb_entries WHERE (org_id = ${orgId} OR org_id = 'default')`).catch(() => []),
+        db.execute(sql`SELECT COUNT(*) as cnt, MAX(started_at) as last FROM ceo_heartbeat_runs`).catch(() => []),
+      ]);
+
+      const extract = (rows: any) => {
+        const arr = Array.isArray(rows) ? rows : (rows?.rows ?? []);
+        const r = arr[0] ?? {};
+        return { count: parseInt(r.cnt ?? r.count ?? "0") || 0, lastUpdated: r.last ?? null };
+      };
+
+      const sources = [
+        { source: "Hermes Learnings",       ...extract(hermes),    icon: "zap"          },
+        { source: "Decision Journal",        ...extract(decisions), icon: "book"         },
+        { source: "Software KB",             ...extract(softwareKb),icon: "wrench"       },
+        { source: "CEO Heartbeat Reports",   ...extract(heartbeat), icon: "heart"        },
+        { source: "Revenue Intelligence",    count: 0,             lastUpdated: null, icon: "trending-up" },
+        { source: "Growth Intelligence",     count: 0,             lastUpdated: null, icon: "trending-up" },
+        { source: "Scheduling Intelligence", count: 0,             lastUpdated: null, icon: "calendar"    },
+        { source: "Daily Reports",           count: 0,             lastUpdated: null, icon: "file"        },
+        { source: "Weekly Reports",          count: 0,             lastUpdated: null, icon: "file"        },
+      ];
+      res.json({ sources, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load auto-capture stats" }); }
+  });
+
   // GET /api/organizational-memory/overview
   app.get("/api/organizational-memory/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
@@ -29360,9 +29396,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const orgId = profile?.organizationId;
       const q = ((req.query.q as string) ?? "").toLowerCase().trim();
       if (!q) return res.json({ results: [], query: q, total: 0 });
-      const seedResults = ORG_MEMORIES.filter(m => m.title.toLowerCase().includes(q) || m.content.toLowerCase().includes(q) || m.category.toLowerCase().includes(q) || m.memoryType.toLowerCase().includes(q) || m.department.toLowerCase().includes(q));
+      const seedResults = ORG_MEMORIES.filter(m => m.title.toLowerCase().includes(q) || m.content.toLowerCase().includes(q) || m.category.toLowerCase().includes(q) || m.memoryType.toLowerCase().includes(q) || m.department.toLowerCase().includes(q)).map(m => ({ ...m, sourceKind: "human" as const, sourceLabel: "Knowledge Base" }));
       const { searchHermesLearnings } = await import("./services/hermes-learning-service");
-      const dbRows = await searchHermesLearnings(q, orgId, 20);
+      const dbRows = await searchHermesLearnings(q, orgId, 15);
       const dbResults = dbRows.map(r => ({
         id: r.id, title: `[${r.source.replace(/_/g, " ")}] ${r.domain}`,
         memoryType: r.memoryType, category: r.category, department: r.department,
@@ -29370,8 +29406,17 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
         source: r.source, createdByAgent: "Hermes Learning Engine",
         confidenceScore: r.confidenceScore, impactScore: r.impactScore, usageCount: 0,
         createdAt: r.createdAt, updatedAt: r.updatedAt, isAutoLearning: true,
+        sourceKind: "ai" as const, sourceLabel: "Hermes Learnings",
       }));
-      const results = [...seedResults, ...dbResults].slice(0, 20);
+      // Search decision journal
+      const djRows = await db.execute(sql`SELECT id, decision_type, decision_description, reasoning, outcome, confidence, source_type, created_at FROM decision_journal_entries WHERE org_id = ${orgId} AND (decision_description ILIKE ${'%' + q + '%'} OR reasoning ILIKE ${'%' + q + '%'} OR outcome ILIKE ${'%' + q + '%'}) LIMIT 5`).catch(() => []);
+      const djArr = Array.isArray(djRows) ? djRows : (djRows as any)?.rows ?? [];
+      const djResults = djArr.map((r: any) => ({ id: r.id, title: `[Decision] ${r.decision_description?.slice(0,60) ?? ""}`, memoryType: "decision", category: r.decision_type ?? "decision", department: "Decisions", content: [r.decision_description, r.reasoning, r.outcome].filter(Boolean).join("  \n"), source: r.source_type ?? "decision_journal", createdByAgent: "Decision Journal", confidenceScore: Math.round((r.confidence ?? 0.8) * 100), impactScore: 70, usageCount: 0, createdAt: r.created_at, updatedAt: r.created_at, isAutoLearning: true, sourceKind: "ai" as const, sourceLabel: "Decision Journal" }));
+      // Search software KB
+      const skRows = await db.execute(sql`SELECT id, issue, root_cause, fix_applied, outcome, severity, source_type, created_at FROM software_kb_entries WHERE (org_id = ${orgId} OR org_id = 'default') AND (issue ILIKE ${'%' + q + '%'} OR fix_applied ILIKE ${'%' + q + '%'} OR outcome ILIKE ${'%' + q + '%'}) LIMIT 5`).catch(() => []);
+      const skArr = Array.isArray(skRows) ? skRows : (skRows as any)?.rows ?? [];
+      const skResults = skArr.map((r: any) => ({ id: r.id, title: `[Software KB] ${r.issue?.slice(0,60) ?? ""}`, memoryType: "software_fix", category: r.severity ?? "fix", department: "Engineering", content: [r.issue, r.root_cause, r.fix_applied, r.outcome].filter(Boolean).join("  \n"), source: r.source_type ?? "software_kb", createdByAgent: "Software KB", confidenceScore: 90, impactScore: 80, usageCount: 0, createdAt: r.created_at, updatedAt: r.created_at, isAutoLearning: true, sourceKind: "ai" as const, sourceLabel: "Software KB" }));
+      const results = [...seedResults, ...dbResults, ...djResults, ...skResults].slice(0, 25);
       res.json({ results, query: q, total: results.length, generatedAt: new Date().toISOString() });
     } catch (e: any) { res.status(500).json({ message: "Failed to search memories" }); }
   });
@@ -29388,14 +29433,29 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to load memories" }); }
   });
 
+
+  function autoClassifyKnowledge(memoryType: string, folder: string, title: string, content: string): string {
+    const text = `${memoryType} ${folder} ${title} ${content}`.toLowerCase();
+    if (memoryType === "procedure" || folder === "SOPs" || text.includes("sop") || text.includes("procedure")) return "SOP";
+    if (["strategy","vision"].includes(memoryType) || ["Strategic Planning","Vision & Goals"].includes(folder) || text.includes("strateg") || text.includes("vision") || text.includes("goal")) return "Strategy";
+    if (memoryType === "research" || folder?.includes("Research") || text.includes("research") || text.includes("market") || text.includes("competitor")) return "Research";
+    if (memoryType === "product" || folder === "Product Roadmap" || text.includes("product") || text.includes("roadmap") || text.includes("feature")) return "Product";
+    if (memoryType === "hiring" || folder === "Hiring & Talent" || text.includes("hiring") || text.includes("talent") || text.includes("recruit")) return "Hiring";
+    if (memoryType === "partnership" || folder === "Partnerships" || text.includes("partner")) return "Partnerships";
+    return "Operations";
+  }
+
   // POST /api/organizational-memory/create
   app.post("/api/organizational-memory/create", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId).catch(() => null);
       const orgId = profile?.organizationId ?? "default";
-      const { title, memoryType, category, department, content, source, createdByAgent, confidenceScore } = req.body;
+      const { title, memoryType, folder, category, department, content, source, createdByAgent, confidenceScore } = req.body;
       if (!title || !content) return res.status(400).json({ message: "title and content required" });
+      const derivedDept = department ?? "Operations";
+      const derivedType = memoryType ?? "insight";
+      const classification = autoClassifyKnowledge(derivedType, folder ?? "", title, content);
       const { recordHermesLearning } = await import("./services/hermes-learning-service");
       const id = await recordHermesLearning({
         orgId,
@@ -29404,13 +29464,13 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
         observation: content,
         learning: content,
         source: "human_admin",
-        memoryType: (memoryType as any) ?? "insight",
-        department: department ?? "Operations",
-        category: category ?? "General",
+        memoryType: derivedType as any,
+        department: derivedDept,
+        category: folder ?? category ?? "General",
         confidenceScore: confidenceScore ?? 80,
         impactScore: 75,
       });
-      res.json({ success: true, memory: { id: id ?? `m-${Date.now()}`, title, memoryType: memoryType ?? "insight", category: category ?? "General", department: department ?? "Operations", content, source: source ?? "Human Admin", createdByAgent: createdByAgent ?? "Human Admin", confidenceScore: confidenceScore ?? 80, impactScore: 75, usageCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), isAutoLearning: false } });
+      res.json({ success: true, classification, memory: { id: id ?? `m-${Date.now()}`, title, memoryType: derivedType, category: folder ?? category ?? "General", department: derivedDept, content, source: source ?? "Human Admin", createdByAgent: createdByAgent ?? "Human Admin", confidenceScore: confidenceScore ?? 80, impactScore: 75, usageCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), isAutoLearning: false } });
     } catch (e: any) { res.status(500).json({ message: "Failed to create memory" }); }
   });
 

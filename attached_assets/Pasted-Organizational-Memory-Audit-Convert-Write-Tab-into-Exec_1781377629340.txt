@@ -1,0 +1,203 @@
+Organizational Memory Audit — Convert Write Tab into Executive Knowledge Layer
+
+Philosophy Change
+
+The Organizational Memory system has evolved.
+
+Hermes Learnings, Decision Journal, Software KB, CEO Heartbeat Reports, Revenue Intelligence, and other operational knowledge are now automatically captured by agents and system workflows.
+
+The Write tab should no longer function as a manual alternative to systems that already auto-capture.
+
+The new philosophy:
+
+Humans contribute strategic knowledge.
+Agents contribute operational knowledge.
+
+⸻
+
+Objective
+
+Refactor the Organizational Memory “Write” experience into an Executive Knowledge Layer focused on human-generated institutional knowledge.
+
+Remove operational folders that are now automatically populated elsewhere.
+
+⸻
+
+Folder Audit
+
+Remove from manual Write interface
+
+These should remain searchable and browsable in memory, but should NOT appear as selectable destinations in the Write form:
+
+* CEO Heartbeat
+* Agent Decisions
+* Software Improvements
+* Software KB
+* Hermes Learning
+* Decision Journal
+* Revenue Intelligence
+* Growth Intelligence
+* Scheduling Intelligence
+* Daily Reports
+* Weekly Reports
+
+Reason:
+
+All of these are now auto-generated and maintained by the AI workforce.
+
+Manual entry creates duplication and conflicting sources of truth.
+
+⸻
+
+Keep / Add Human Knowledge Folders
+
+The Write interface should focus on executive and organizational knowledge.
+
+Target folders:
+
+* Executive Notes
+* SOPs
+* Strategic Planning
+* Vision & Goals
+* Meeting Notes
+* Market Research
+* Competitor Research
+* Playbooks
+* Client Success Stories
+* Hiring & Talent
+* Partnerships
+* Product Roadmap
+
+These become the primary destinations for manual writing.
+
+⸻
+
+UX Changes
+
+Rename:
+
+Current
+
+Write to Organizational Memory
+
+New
+
+Executive Knowledge Capture
+
+Subtitle:
+
+Record strategic knowledge, operating procedures, research, and organizational context for the AI workforce.
+
+⸻
+
+Auto-Captured Memory Indicator
+
+Add a new section above the form:
+
+Automatically Captured
+
+Display read-only badges/cards:
+
+* Hermes Learnings
+* Decision Journal
+* Software KB
+* CEO Heartbeat Reports
+* Revenue Intelligence
+* Growth Intelligence
+* Scheduling Intelligence
+* Daily Reports
+* Weekly Reports
+
+Each should show:
+
+* Source
+* Record count
+* Last updated timestamp
+
+Purpose:
+
+Users immediately understand these areas are already being maintained automatically.
+
+⸻
+
+Knowledge Classification
+
+When a manual note is submitted:
+
+Automatically classify it into one of:
+
+* Strategy
+* Operations
+* Research
+* SOP
+* Product
+* Hiring
+* Partnerships
+
+Store classification metadata.
+
+Expose it later in Search and Browse.
+
+⸻
+
+Search Integration
+
+When searching Organizational Memory:
+
+Return unified results from:
+
+Automatic Memory
+
+* Hermes Learnings
+* Decision Journal
+* Software KB
+* Reports
+* Intelligence
+
+Human Memory
+
+* Executive Notes
+* SOPs
+* Research
+* Playbooks
+* Strategy
+
+Display source badges so users know where information originated.
+
+⸻
+
+Browse Experience
+
+Split Browse into two sections:
+
+AI Generated Knowledge
+
+* Hermes Learnings
+* Decisions
+* Software KB
+* Reports
+* Intelligence
+
+Human Generated Knowledge
+
+* Executive Notes
+* SOPs
+* Research
+* Playbooks
+* Strategy
+
+⸻
+
+Success Criteria
+
+The Write tab is no longer a generic note writer.
+
+Instead:
+
+* Agents automatically document operations.
+* Humans document strategy.
+* Search spans both.
+* Browse clearly separates AI knowledge from executive knowledge.
+* No duplicate manual entry paths exist for systems already auto-captured.
+
+The Organizational Memory system should feel like a true institutional memory platform rather than a collection of disconnected note folders.

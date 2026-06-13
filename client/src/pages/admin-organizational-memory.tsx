@@ -15,14 +15,19 @@ import {
   Filter, PenLine, Bot, Send, ThumbsUp, ThumbsDown, Edit3,
   ListChecks, Cpu, MessageSquare, CalendarDays, Download,
   Wrench, Bug, ServerCrash, Code2, ShieldAlert, PackageCheck, FileCode2,
+  Notebook, Target, Flag, FileText, Sparkles, Handshake,
+  Package, UserPlus, Trophy, Pencil,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Memory = { id: string; title: string; memoryType: string; category: string; department: string; content: string; source: string; createdByAgent: string; confidenceScore: number; impactScore: number; usageCount: number; createdAt: string; updatedAt: string; isAutoLearning?: boolean };
+type Memory = { id: string; title: string; memoryType: string; category: string; department: string; content: string; source: string; createdByAgent: string; confidenceScore: number; impactScore: number; usageCount: number; createdAt: string; updatedAt: string; isAutoLearning?: boolean; sourceKind?: "ai" | "human"; sourceLabel?: string };
 type Overview = { total: number; autoLearnings?: number; byType: Record<string, number>; avgConfidenceScore: number; totalUsageEvents: number; knowledgeHealthScore: number; learningVelocity: number; institutionalIntelligenceScore: number; relationships: number; generatedAt: string };
 type SearchResult = { results: Memory[]; query: string; total: number; generatedAt: string };
+type AutoCaptureSource = { source: string; count: number; lastUpdated: string | null; icon: string };
+type AutoCaptureStats = { sources: AutoCaptureSource[]; generatedAt: string };
+type ExecKbCreateResult = { success: boolean; classification: string; memory: Memory };
 type PlaybooksData = { playbooks: Memory[]; policies: Memory[]; totalPlaybooks: number; totalPolicies: number; generatedAt: string };
 type GraphNode = { id: string; label: string; type: string; department: string; confidenceScore: number; usageCount: number };
 type GraphEdge = { id: string; sourceMemoryId: string; relatedMemoryId: string; relationshipType: string; sourceTitle: string; relatedTitle: string };
@@ -85,12 +90,57 @@ type SoftwareKbSearchResult = { results: SoftwareKbEntry[]; query: string; total
 const TYPE_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
   decision:  { label: "Decision",  color: "bg-primary/10 text-primary",                                     icon: <CheckSquare  className="h-3.5 w-3.5" /> },
   lesson:    { label: "Lesson",    color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",   icon: <Lightbulb    className="h-3.5 w-3.5" /> },
-  playbook:  { label: "Playbook",  color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300", icon: <BookOpen  className="h-3.5 w-3.5" /> },
-  policy:    { label: "Policy",    color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",    icon: <Shield    className="h-3.5 w-3.5" /> },
-  procedure: { label: "Procedure", color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",            icon: <ArrowRightLeft className="h-3.5 w-3.5" /> },
-  research:  { label: "Research",  color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",            icon: <Search    className="h-3.5 w-3.5" /> },
-  insight:   { label: "Insight",   color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",            icon: <TrendingUp className="h-3.5 w-3.5" /> },
-  outcome:   { label: "Outcome",   color: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",           icon: <Activity  className="h-3.5 w-3.5" /> },
+  playbook:       { label: "Playbook",        color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300", icon: <BookOpen  className="h-3.5 w-3.5" /> },
+  policy:         { label: "Policy",          color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",    icon: <Shield    className="h-3.5 w-3.5" /> },
+  procedure:      { label: "SOP",             color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",            icon: <FileText  className="h-3.5 w-3.5" /> },
+  research:       { label: "Research",        color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300",            icon: <Search    className="h-3.5 w-3.5" /> },
+  insight:        { label: "Insight",         color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",            icon: <TrendingUp className="h-3.5 w-3.5" /> },
+  outcome:        { label: "Outcome",         color: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",           icon: <Activity  className="h-3.5 w-3.5" /> },
+  executive_note: { label: "Executive Note",  color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300",    icon: <Notebook  className="h-3.5 w-3.5" /> },
+  strategy:       { label: "Strategy",        color: "bg-primary/10 text-primary",                                                  icon: <Target    className="h-3.5 w-3.5" /> },
+  vision:         { label: "Vision & Goals",  color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",        icon: <Flag      className="h-3.5 w-3.5" /> },
+  meeting_note:   { label: "Meeting Note",    color: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",           icon: <Users     className="h-3.5 w-3.5" /> },
+  success_story:  { label: "Client Success",  color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",            icon: <Trophy    className="h-3.5 w-3.5" /> },
+  hiring:         { label: "Hiring & Talent", color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300",    icon: <UserPlus  className="h-3.5 w-3.5" /> },
+  partnership:    { label: "Partnership",     color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300",    icon: <Handshake className="h-3.5 w-3.5" /> },
+  product:        { label: "Product Roadmap", color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300",            icon: <Package   className="h-3.5 w-3.5" /> },
+};
+
+// ─── Human Knowledge Folders ─────────────────────────────────────────────────
+
+const HUMAN_FOLDERS = [
+  { label: "Executive Notes",     memoryType: "executive_note", department: "Executive",        description: "Personal leadership observations and strategic notes" },
+  { label: "SOPs",                memoryType: "procedure",      department: "Operations",       description: "Standard operating procedures and process documentation" },
+  { label: "Strategic Planning",  memoryType: "strategy",       department: "Strategy",         description: "Long-range plans and competitive positioning" },
+  { label: "Vision & Goals",      memoryType: "vision",         department: "Strategy",         description: "Company vision, mission, and goal frameworks" },
+  { label: "Meeting Notes",       memoryType: "meeting_note",   department: "Operations",       description: "Key takeaways and decisions from important meetings" },
+  { label: "Market Research",     memoryType: "research",       department: "Marketing",        description: "Market data, trends, and competitive landscape" },
+  { label: "Competitor Research", memoryType: "research",       department: "Marketing",        description: "Competitor analysis and positioning intelligence" },
+  { label: "Playbooks",           memoryType: "playbook",       department: "Revenue",          description: "Proven processes and winning formulas for repeatable success" },
+  { label: "Client Success",      memoryType: "success_story",  department: "Customer Success", description: "Client wins, transformations, and success patterns" },
+  { label: "Hiring & Talent",     memoryType: "hiring",         department: "Operations",       description: "Hiring criteria, interview insights, and talent observations" },
+  { label: "Partnerships",        memoryType: "partnership",    department: "Partnerships",     description: "Partner relationships, opportunities, and joint ventures" },
+  { label: "Product Roadmap",     memoryType: "product",        department: "Engineering",      description: "Product direction, feature priorities, and build decisions" },
+];
+
+const CLASSIFICATION_COLORS: Record<string, string> = {
+  Strategy:     "bg-primary/10 text-primary border-primary/30",
+  Operations:   "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800",
+  Research:     "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-teal-200 dark:border-teal-800",
+  SOP:          "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 border-violet-200 dark:border-violet-800",
+  Product:      "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800",
+  Hiring:       "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-200 dark:border-orange-800",
+  Partnerships: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800",
+};
+
+const AUTO_CAPTURE_ICON_MAP: Record<string, React.ReactNode> = {
+  zap:         <Zap         className="h-3.5 w-3.5" />,
+  book:        <BookOpen    className="h-3.5 w-3.5" />,
+  wrench:      <Wrench      className="h-3.5 w-3.5" />,
+  heart:       <Activity    className="h-3.5 w-3.5" />,
+  "trending-up": <TrendingUp className="h-3.5 w-3.5" />,
+  calendar:    <CalendarDays className="h-3.5 w-3.5" />,
+  file:        <FileText    className="h-3.5 w-3.5" />,
 };
 
 function TypeBadge({ t }: { t: string }) {
@@ -161,71 +211,195 @@ function MemoryCard({ memory, expanded = false }: { memory: Memory; expanded?: b
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: "overview",     label: "Overview",        icon: Brain        },
-  { id: "hermes",       label: "Hermes Learnings",icon: Zap          },
-  { id: "knowledge",    label: "Knowledge Base",  icon: BookOpen     },
-  { id: "decisions",    label: "Decisions",       icon: CheckSquare  },
-  { id: "software-kb",  label: "Software KB",     icon: Wrench       },
-  { id: "lessons",      label: "Lessons Learned", icon: Lightbulb    },
-  { id: "playbooks",    label: "Playbooks",       icon: BookOpen     },
-  { id: "policies",     label: "Policies",        icon: Shield       },
-  { id: "search",       label: "Search",          icon: Search       },
-  { id: "graph",        label: "Knowledge Graph", icon: GitBranch    },
-  { id: "analytics",    label: "Analytics",       icon: BarChart3    },
+  { id: "overview",      label: "Overview",               icon: Brain        },
+  { id: "executive-kb",  label: "Executive Knowledge",    icon: Pencil       },
+  { id: "hermes",        label: "Hermes Learnings",       icon: Zap          },
+  { id: "knowledge",     label: "Knowledge Base",         icon: BookOpen     },
+  { id: "decisions",     label: "Decisions",              icon: CheckSquare  },
+  { id: "software-kb",   label: "Software KB",            icon: Wrench       },
+  { id: "lessons",       label: "Lessons Learned",        icon: Lightbulb    },
+  { id: "playbooks",     label: "Playbooks",              icon: BookOpen     },
+  { id: "policies",      label: "Policies",               icon: Shield       },
+  { id: "search",        label: "Search",                 icon: Search       },
+  { id: "graph",         label: "Knowledge Graph",        icon: GitBranch    },
+  { id: "analytics",     label: "Analytics",              icon: BarChart3    },
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
-// ─── Create Memory Modal ──────────────────────────────────────────────────────
+// ─── Tab: Executive Knowledge Capture ────────────────────────────────────────
 
-function CreateMemoryModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+function ExecutiveKbTab() {
   const { toast } = useToast();
-  const [form, setForm] = useState({ title: "", content: "", memoryType: "lesson", category: "", department: "Revenue", confidenceScore: 80 });
+  const qc = useQueryClient();
+  const [selectedFolder, setSelectedFolder] = useState(HUMAN_FOLDERS[0]);
+  const [form, setForm] = useState({ title: "", content: "", confidenceScore: 85 });
+  const [lastClassification, setLastClassification] = useState<string | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
 
-  const createMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/organizational-memory/create", { ...form, createdByAgent: "Human Admin", source: "Human Admin" }),
-    onSuccess: () => { toast({ title: "Memory saved to knowledge base" }); onCreated(); onClose(); },
-    onError: () => toast({ title: "Failed to save memory", variant: "destructive" }),
+  const { data: acStats } = useQuery<AutoCaptureStats>({
+    queryKey: ["/api/organizational-memory/auto-capture-stats"],
+    staleTime: 60_000,
+  });
+
+  const createMutation = useMutation<ExecKbCreateResult>({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/organizational-memory/create", {
+        title: form.title,
+        content: form.content,
+        folder: selectedFolder.label,
+        memoryType: selectedFolder.memoryType,
+        department: selectedFolder.department,
+        createdByAgent: "Human Admin",
+        source: "Human Admin",
+        confidenceScore: form.confidenceScore,
+      });
+      return res.json() as Promise<ExecKbCreateResult>;
+    },
+    onSuccess: (data: ExecKbCreateResult) => {
+      setLastClassification(data.classification ?? null);
+      setShowSuccess(true);
+      setForm({ title: "", content: "", confidenceScore: 85 });
+      qc.invalidateQueries({ queryKey: ["/api/organizational-memory/memories"] });
+      qc.invalidateQueries({ queryKey: ["/api/organizational-memory/overview"] });
+      toast({ title: "Knowledge captured", description: `Filed under ${selectedFolder.label}` });
+      setTimeout(() => setShowSuccess(false), 6000);
+    },
+    onError: () => toast({ title: "Failed to save knowledge", variant: "destructive" }),
   });
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4" data-testid="create-memory-modal">
-      <div className="bg-background rounded-2xl border shadow-xl w-full max-w-lg space-y-4 p-5">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-bold">Add to Organizational Memory</p>
-          <button onClick={onClose} className="text-muted-foreground hover:text-foreground" data-testid="button-close-memory-modal"><X className="h-4 w-4" /></button>
-        </div>
-        <div className="space-y-2.5">
-          <input value={form.title} onChange={e => setForm(p => ({ ...p, title: e.target.value }))} placeholder="Knowledge title…" className="w-full h-9 px-3 rounded-lg border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary" data-testid="input-memory-title" />
-          <textarea value={form.content} onChange={e => setForm(p => ({ ...p, content: e.target.value }))} placeholder="Full knowledge content — the more detail, the more useful this becomes as institutional memory…" className="w-full h-28 px-3 py-2 rounded-lg border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary resize-none" data-testid="input-memory-content" />
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <p className="text-[9px] text-muted-foreground mb-1">Memory Type</p>
-              <select value={form.memoryType} onChange={e => setForm(p => ({ ...p, memoryType: e.target.value }))} className="w-full h-8 px-2.5 rounded-lg border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary" data-testid="select-memory-type">
-                {Object.keys(TYPE_CONFIG).map(t => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <p className="text-[9px] text-muted-foreground mb-1">Department</p>
-              <select value={form.department} onChange={e => setForm(p => ({ ...p, department: e.target.value }))} className="w-full h-8 px-2.5 rounded-lg border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary" data-testid="select-memory-dept">
-                {["Revenue","Operations","Marketing","Customer Success","Intelligence","Engineering","Partnerships"].map(d => <option key={d}>{d}</option>)}
-              </select>
-            </div>
-            <div>
-              <p className="text-[9px] text-muted-foreground mb-1">Category</p>
-              <input value={form.category} onChange={e => setForm(p => ({ ...p, category: e.target.value }))} placeholder="e.g. Pricing, Sales, Email…" className="w-full h-8 px-2.5 rounded-lg border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary" data-testid="input-memory-category" />
-            </div>
-            <div>
-              <p className="text-[9px] text-muted-foreground mb-1">Confidence ({form.confidenceScore}%)</p>
-              <input type="range" min={0} max={100} value={form.confidenceScore} onChange={e => setForm(p => ({ ...p, confidenceScore: +e.target.value }))} className="w-full mt-1" data-testid="range-confidence" />
-            </div>
+    <div className="space-y-5" data-testid="tab-executive-kb">
+
+      {/* Auto-Captured Memory Indicator */}
+      <div className="p-4 rounded-xl border bg-gradient-to-r from-primary/5 to-violet-500/5 space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="p-1.5 rounded-lg bg-primary/10">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+          </div>
+          <div>
+            <p className="text-xs font-bold">Automatically Captured</p>
+            <p className="text-[10px] text-muted-foreground">These areas are maintained by your AI workforce — no manual entry needed.</p>
           </div>
         </div>
-        <div className="flex gap-2 justify-end">
-          <Button variant="outline" size="sm" onClick={onClose} data-testid="button-cancel-memory">Cancel</Button>
-          <Button size="sm" onClick={() => createMutation.mutate()} disabled={!form.title.trim() || !form.content.trim() || createMutation.isPending} data-testid="button-confirm-memory">
-            {createMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin mr-1.5" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
-            Save Memory
-          </Button>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+          {(acStats?.sources ?? [
+            { source: "Hermes Learnings", count: 0, lastUpdated: null, icon: "zap" },
+            { source: "Decision Journal", count: 0, lastUpdated: null, icon: "book" },
+            { source: "Software KB", count: 0, lastUpdated: null, icon: "wrench" },
+            { source: "CEO Heartbeat Reports", count: 0, lastUpdated: null, icon: "heart" },
+            { source: "Revenue Intelligence", count: 0, lastUpdated: null, icon: "trending-up" },
+            { source: "Growth Intelligence", count: 0, lastUpdated: null, icon: "trending-up" },
+            { source: "Scheduling Intelligence", count: 0, lastUpdated: null, icon: "calendar" },
+            { source: "Daily Reports", count: 0, lastUpdated: null, icon: "file" },
+            { source: "Weekly Reports", count: 0, lastUpdated: null, icon: "file" },
+          ]).map(src => (
+            <div key={src.source} className="flex items-center gap-2 p-2.5 rounded-lg bg-background border">
+              <div className="p-1 rounded bg-muted shrink-0 text-muted-foreground">
+                {AUTO_CAPTURE_ICON_MAP[src.icon] ?? <Zap className="h-3.5 w-3.5" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-medium truncate">{src.source}</p>
+                <div className="flex items-center gap-1.5 mt-0.5">
+                  <span className="text-[9px] font-bold text-primary">{src.count}</span>
+                  <span className="text-[9px] text-muted-foreground">records</span>
+                  {src.lastUpdated && (
+                    <span className="text-[8px] text-muted-foreground hidden sm:inline">· {formatDistanceToNow(new Date(src.lastUpdated), { addSuffix: true })}</span>
+                  )}
+                </div>
+              </div>
+              <Badge className="text-[7px] px-1 py-0 h-4 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 shrink-0">Auto</Badge>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Write Form */}
+      <div className="p-5 rounded-xl border bg-card space-y-5">
+        <div>
+          <h2 className="text-sm font-bold">Executive Knowledge Capture</h2>
+          <p className="text-[10px] text-muted-foreground mt-0.5">Record strategic knowledge, operating procedures, research, and organizational context for the AI workforce.</p>
+        </div>
+
+        {/* Success banner */}
+        {showSuccess && lastClassification && (
+          <div className="flex items-center gap-2.5 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-200 dark:border-emerald-800" data-testid="classification-success">
+            <CheckCircle className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-medium text-emerald-700 dark:text-emerald-300">Knowledge captured and classified</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[9px] text-emerald-600 dark:text-emerald-400">Filed as:</span>
+                <Badge className={`text-[9px] px-1.5 py-0 h-4 border ${CLASSIFICATION_COLORS[lastClassification] ?? "bg-muted text-muted-foreground"}`}>
+                  {lastClassification}
+                </Badge>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Folder picker */}
+        <div>
+          <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-2">Choose Knowledge Folder</p>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {HUMAN_FOLDERS.map(folder => {
+              const cfg = TYPE_CONFIG[folder.memoryType] ?? { color: "bg-muted text-muted-foreground", icon: null, label: folder.label };
+              const isSelected = selectedFolder.label === folder.label;
+              return (
+                <button key={folder.label} onClick={() => setSelectedFolder(folder)} data-testid={`folder-${folder.label.toLowerCase().replace(/\s+/g, "-")}`}
+                  className={`flex items-center gap-2 p-2.5 rounded-lg border text-left transition-all text-xs font-medium ${isSelected ? "border-primary bg-primary/5 text-primary" : "border-border bg-background hover:border-primary/40 hover:bg-muted/50 text-foreground"}`}>
+                  <span className={`p-1 rounded ${isSelected ? "bg-primary/10" : "bg-muted"}`}>
+                    {cfg.icon ?? <FileText className="h-3.5 w-3.5" />}
+                  </span>
+                  <span className="truncate">{folder.label}</span>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-[9px] text-muted-foreground mt-2">{selectedFolder.description}</p>
+        </div>
+
+        {/* Content form */}
+        <div className="space-y-3">
+          <input
+            value={form.title}
+            onChange={e => setForm(p => ({ ...p, title: e.target.value }))}
+            placeholder={`${selectedFolder.label} title…`}
+            className="w-full h-9 px-3 rounded-lg border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary"
+            data-testid="input-exec-kb-title"
+          />
+          <textarea
+            value={form.content}
+            onChange={e => setForm(p => ({ ...p, content: e.target.value }))}
+            placeholder="Full knowledge content — the more detail, the more useful this becomes as institutional memory for your AI workforce…"
+            rows={6}
+            className="w-full px-3 py-2 rounded-lg border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            data-testid="input-exec-kb-content"
+          />
+          <div className="flex items-center justify-between gap-4">
+            <div className="flex-1">
+              <p className="text-[9px] text-muted-foreground mb-1">Confidence score ({form.confidenceScore}%)</p>
+              <input type="range" min={50} max={100} value={form.confidenceScore} onChange={e => setForm(p => ({ ...p, confidenceScore: +e.target.value }))} className="w-full" data-testid="range-exec-confidence" />
+            </div>
+            <Button
+              onClick={() => createMutation.mutate()}
+              disabled={!form.title.trim() || !form.content.trim() || createMutation.isPending}
+              className="gap-1.5 shrink-0"
+              data-testid="button-capture-knowledge"
+            >
+              {createMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+              Capture Knowledge
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      {/* Philosophy note */}
+      <div className="p-4 rounded-xl border bg-muted/40 flex items-start gap-3">
+        <div className="p-1.5 rounded-lg bg-background border shrink-0">
+          <Brain className="h-3.5 w-3.5 text-primary" />
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold mb-0.5">Human + AI Knowledge Division</p>
+          <p className="text-[10px] text-muted-foreground">Agents automatically document operations, decisions, and system learnings. This interface is reserved for executive and strategic knowledge that only humans can provide — vision, judgment, relationships, and context.</p>
         </div>
       </div>
     </div>
@@ -488,40 +662,83 @@ function HermesLearningsTab() {
 
 // ─── Tab: Knowledge Base (all memories) ──────────────────────────────────────
 
+
 function KnowledgeBaseTab() {
   const { data, isLoading } = useQuery<{ memories: Memory[]; total: number }>({ queryKey: ["/api/organizational-memory/memories"], staleTime: 30_000 });
+  const [section, setSection] = useState<"all" | "ai" | "human">("all");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [deptFilter, setDeptFilter] = useState("all");
 
   const memories = data?.memories ?? [];
-  const depts = [...new Set(memories.map(m => m.department))];
-  const filtered = memories.filter(m => (typeFilter === "all" || m.memoryType === typeFilter) && (deptFilter === "all" || m.department === deptFilter));
+
+  const aiMems = memories.filter(m => m.isAutoLearning || m.createdByAgent !== "Human Admin");
+  const humanMems = memories.filter(m => !m.isAutoLearning && m.createdByAgent === "Human Admin");
+  const displayed = section === "ai" ? aiMems : section === "human" ? humanMems : memories;
+  const filtered = displayed.filter(m => typeFilter === "all" || m.memoryType === typeFilter);
   const sorted = [...filtered].sort((a, b) => b.usageCount - a.usageCount);
 
   return (
     <div className="space-y-4" data-testid="tab-knowledge-base">
-      <div className="flex flex-wrap gap-1.5">
-        <div className="flex gap-1 flex-wrap">
-          {["all", ...Object.keys(TYPE_CONFIG)].map(t => (
-            <button key={t} onClick={() => setTypeFilter(t)} data-testid={`filter-type-${t}`}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-medium capitalize transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
-              {t}
+      {/* Section toggle */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex rounded-lg border overflow-hidden">
+          {([["all", "All Knowledge", memories.length], ["ai", "AI Generated", aiMems.length], ["human", "Human Generated", humanMems.length]] as const).map(([val, label, count]) => (
+            <button key={val} onClick={() => setSection(val)} data-testid={`kb-section-${val}`}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-medium transition-colors border-r last:border-r-0 ${section === val ? "bg-primary text-primary-foreground" : "bg-background text-muted-foreground hover:text-foreground"}`}>
+              {val === "ai" && <Bot className="h-3 w-3" />}
+              {val === "human" && <Pencil className="h-3 w-3" />}
+              {label}
+              <span className={`px-1 rounded text-[8px] font-bold ${section === val ? "bg-white/20" : "bg-muted"}`}>{count}</span>
             </button>
           ))}
         </div>
-        <div className="flex gap-1 flex-wrap">
-          {["all", ...depts].map(d => (
-            <button key={d} onClick={() => setDeptFilter(d)} data-testid={`filter-dept-${d}`}
-              className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-colors ${deptFilter === d ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
-              {d}
+        <div className="flex gap-1 flex-wrap ml-auto">
+          {["all", "decision", "lesson", "playbook", "research", "procedure", "insight"].map(t => (
+            <button key={t} onClick={() => setTypeFilter(t)} data-testid={`filter-type-${t}`}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-medium capitalize transition-colors ${typeFilter === t ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
+              {t === "all" ? "All Types" : (TYPE_CONFIG[t]?.label ?? t)}
             </button>
           ))}
         </div>
       </div>
-      {isLoading ? <Skeleton className="h-64 rounded-xl" /> : (
+
+      {/* Two-section view when "all" is selected */}
+      {isLoading ? <Skeleton className="h-64 rounded-xl" /> : section === "all" ? (
+        <div className="space-y-6">
+          {aiMems.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-3">
+                <div className="p-1 rounded bg-violet-100 dark:bg-violet-900/30">
+                  <Bot className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+                </div>
+                <p className="text-[10px] font-semibold text-violet-600 dark:text-violet-400 uppercase tracking-wide">AI Generated Knowledge</p>
+                <Badge className="text-[8px] px-1.5 py-0 h-4 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">{aiMems.length}</Badge>
+              </div>
+              <div className="space-y-2.5">
+                {aiMems.filter(m => typeFilter === "all" || m.memoryType === typeFilter).slice(0, 8).map(m => <MemoryCard key={m.id} memory={m} />)}
+                {aiMems.length > 8 && <p className="text-[9px] text-muted-foreground text-center">+ {aiMems.length - 8} more — switch to AI Generated filter to see all</p>}
+              </div>
+            </div>
+          )}
+          {humanMems.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-3">
+                <div className="p-1 rounded bg-emerald-100 dark:bg-emerald-900/30">
+                  <Pencil className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <p className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Human Generated Knowledge</p>
+                <Badge className="text-[8px] px-1.5 py-0 h-4 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">{humanMems.length}</Badge>
+              </div>
+              <div className="space-y-2.5">
+                {humanMems.filter(m => typeFilter === "all" || m.memoryType === typeFilter).map(m => <MemoryCard key={m.id} memory={m} />)}
+              </div>
+            </div>
+          )}
+          {memories.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">No memories in the knowledge base yet.</div>}
+        </div>
+      ) : (
         <div className="space-y-3">
           {sorted.map(m => <MemoryCard key={m.id} memory={m} />)}
-          {sorted.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">No memories match the selected filters.</div>}
+          {sorted.length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">No {section === "ai" ? "AI-generated" : "human-generated"} memories found.</div>}
         </div>
       )}
     </div>
@@ -1250,6 +1467,22 @@ function PlaybooksTab({ showPolicies }: { showPolicies?: boolean }) {
   );
 }
 
+// ─── Source Kind Badge ────────────────────────────────────────────────────────
+
+function SourceKindBadge({ sourceKind, sourceLabel }: { sourceKind?: "ai" | "human"; sourceLabel?: string }) {
+  if (!sourceKind) return null;
+  if (sourceKind === "ai") return (
+    <Badge className="text-[8px] px-1.5 py-0 h-4 gap-0.5 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 border border-violet-200 dark:border-violet-800 flex items-center">
+      <Bot className="h-2.5 w-2.5" />{sourceLabel ?? "AI Agent"}
+    </Badge>
+  );
+  return (
+    <Badge className="text-[8px] px-1.5 py-0 h-4 gap-0.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center">
+      <Pencil className="h-2.5 w-2.5" />{sourceLabel ?? "Human"}
+    </Badge>
+  );
+}
+
 // ─── Tab: Search ──────────────────────────────────────────────────────────────
 
 function SearchTab() {
@@ -1267,10 +1500,18 @@ function SearchTab() {
 
   const EXAMPLE_QUERIES = ["pricing experiments", "referral campaign", "email follow-up", "partner outreach", "retention playbook"];
 
+  const aiResults = (data?.results ?? []).filter(m => m.sourceKind === "ai" || m.isAutoLearning);
+  const humanResults = (data?.results ?? []).filter(m => m.sourceKind === "human" || (!m.sourceKind && !m.isAutoLearning));
+  const allResults = data?.results ?? [];
+
   return (
     <div className="space-y-4" data-testid="tab-search-memory">
       <div className="p-4 rounded-xl border bg-card space-y-3">
-        <p className="text-[9px] text-muted-foreground uppercase tracking-wide">Search Organizational Memory</p>
+        <div className="flex items-center gap-2">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <p className="text-xs font-semibold">Search Organizational Memory</p>
+          <span className="text-[9px] text-muted-foreground ml-auto">Searches AI-captured + human knowledge</span>
+        </div>
         <div className="flex gap-2">
           <input value={query} onChange={e => setQuery(e.target.value)} onKeyDown={e => { if (e.key === "Enter") handleSearch(); }} placeholder="What do you want to know? e.g. 'What pricing experiments increased revenue?'" className="flex-1 h-9 px-3 rounded-lg border bg-background text-xs focus:outline-none focus:ring-1 focus:ring-primary" data-testid="input-memory-search" />
           <Button className="h-9 gap-1.5 shrink-0" onClick={handleSearch} disabled={!query.trim() || isFetching} data-testid="button-search-memory">
@@ -1292,17 +1533,70 @@ function SearchTab() {
         <div>
           {isFetching ? <Skeleton className="h-48 rounded-xl" /> : (
             <>
-              <p className="text-[9px] text-muted-foreground mb-3">
-                {data?.total ?? 0} result{data?.total !== 1 ? "s" : ""} for "<span className="font-semibold text-foreground">{submitted}</span>"
-              </p>
-              <div className="space-y-3">
-                {(data?.results ?? []).map(m => <MemoryCard key={m.id} memory={m} />)}
-                {data?.total === 0 && (
-                  <div className="py-8 text-center text-muted-foreground text-sm">
-                    No matching memories found. Consider adding this knowledge to the organizational memory.
-                  </div>
-                )}
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <p className="text-[9px] text-muted-foreground">
+                  {allResults.length} result{allResults.length !== 1 ? "s" : ""} for "<span className="font-semibold text-foreground">{submitted}</span>"
+                </p>
+                <div className="flex items-center gap-2">
+                  {aiResults.length > 0 && (
+                    <Badge className="text-[8px] px-1.5 py-0 h-5 gap-0.5 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                      <Bot className="h-2.5 w-2.5" />{aiResults.length} AI
+                    </Badge>
+                  )}
+                  {humanResults.length > 0 && (
+                    <Badge className="text-[8px] px-1.5 py-0 h-5 gap-0.5 bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                      <Pencil className="h-2.5 w-2.5" />{humanResults.length} Human
+                    </Badge>
+                  )}
+                </div>
               </div>
+
+              {allResults.length > 0 ? (
+                <div className="space-y-5">
+                  {aiResults.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Bot className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
+                        <p className="text-[9px] font-semibold text-violet-600 dark:text-violet-400 uppercase tracking-wide">AI-Generated Knowledge</p>
+                      </div>
+                      <div className="space-y-2.5">
+                        {aiResults.map(m => (
+                          <div key={m.id} className="relative">
+                            <MemoryCard memory={m} />
+                            <div className="absolute top-3 right-3">
+                              <SourceKindBadge sourceKind="ai" sourceLabel={m.sourceLabel ?? m.source?.replace(/_/g, " ")} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {humanResults.length > 0 && (
+                    <div>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Pencil className="h-3.5 w-3.5 text-emerald-600 dark:text-emerald-400" />
+                        <p className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide">Human-Generated Knowledge</p>
+                      </div>
+                      <div className="space-y-2.5">
+                        {humanResults.map(m => (
+                          <div key={m.id} className="relative">
+                            <MemoryCard memory={m} />
+                            <div className="absolute top-3 right-3">
+                              <SourceKindBadge sourceKind="human" sourceLabel={m.sourceLabel ?? "Knowledge Base"} />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="py-10 text-center space-y-2">
+                  <Search className="h-8 w-8 text-muted-foreground mx-auto opacity-40" />
+                  <p className="text-sm text-muted-foreground">No memories found for "{submitted}"</p>
+                  <p className="text-[10px] text-muted-foreground">Try the <span className="font-medium">Executive Knowledge</span> tab to add strategic context.</p>
+                </div>
+              )}
             </>
           )}
         </div>
@@ -1509,14 +1803,11 @@ function AnalyticsTab() {
 
 export default function AdminOrgMemoryPage() {
   const [activeTab, setActiveTab] = useState<TabId>("overview");
-  const [showCreate, setShowCreate] = useState(false);
-  const qc = useQueryClient();
 
   const { data: overview } = useQuery<Overview>({ queryKey: ["/api/organizational-memory/overview"], staleTime: 60_000 });
 
   return (
     <div className="p-4 sm:p-6 space-y-5 max-w-6xl mx-auto" data-testid="page-organizational-memory">
-      {showCreate && <CreateMemoryModal onClose={() => setShowCreate(false)} onCreated={() => { qc.invalidateQueries({ queryKey: ["/api/organizational-memory/memories"] }); qc.invalidateQueries({ queryKey: ["/api/organizational-memory/overview"] }); }} />}
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
@@ -1551,8 +1842,8 @@ export default function AdminOrgMemoryPage() {
               ))}
             </div>
           )}
-          <Button className="gap-1.5 h-9" onClick={() => setShowCreate(true)} data-testid="button-add-memory">
-            <Plus className="h-4 w-4" />Add Memory
+          <Button className="gap-1.5 h-9" onClick={() => setActiveTab("executive-kb")} data-testid="button-add-memory">
+            <Pencil className="h-4 w-4" />Capture Knowledge
           </Button>
         </div>
       </div>
@@ -1606,17 +1897,18 @@ export default function AdminOrgMemoryPage() {
 
       {/* Tab content */}
       <div className="min-h-96">
-        {activeTab === "overview"   && <OverviewTab />}
-        {activeTab === "hermes"     && <HermesLearningsTab />}
-        {activeTab === "knowledge"  && <KnowledgeBaseTab />}
-        {activeTab === "decisions"  && <DecisionsTab />}
-        {activeTab === "software-kb" && <SoftwareKbTab />}
-        {activeTab === "lessons"    && <LessonsTab />}
-        {activeTab === "playbooks"  && <PlaybooksTab />}
-        {activeTab === "policies"   && <PlaybooksTab showPolicies />}
-        {activeTab === "search"     && <SearchTab />}
-        {activeTab === "graph"      && <GraphTab />}
-        {activeTab === "analytics"  && <AnalyticsTab />}
+        {activeTab === "overview"      && <OverviewTab />}
+        {activeTab === "executive-kb"  && <ExecutiveKbTab />}
+        {activeTab === "hermes"        && <HermesLearningsTab />}
+        {activeTab === "knowledge"     && <KnowledgeBaseTab />}
+        {activeTab === "decisions"     && <DecisionsTab />}
+        {activeTab === "software-kb"   && <SoftwareKbTab />}
+        {activeTab === "lessons"       && <LessonsTab />}
+        {activeTab === "playbooks"     && <PlaybooksTab />}
+        {activeTab === "policies"      && <PlaybooksTab showPolicies />}
+        {activeTab === "search"        && <SearchTab />}
+        {activeTab === "graph"         && <GraphTab />}
+        {activeTab === "analytics"     && <AnalyticsTab />}
       </div>
 
       {/* Forward nav → SOP Operating System */}
