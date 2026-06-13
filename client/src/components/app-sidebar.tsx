@@ -83,8 +83,8 @@ type NavSection = {
 // Storage helpers
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// v2 key — does not conflict with the old simplified/advanced localStorage keys
-const OPEN_KEY = "sidebar_open_sections_v2";
+// v3 key — section IDs changed; don't inherit stale v2 values
+const OPEN_KEY = "sidebar_open_sections_v3";
 
 function ls<T>(key: string, fallback: T): T {
   try {
@@ -155,7 +155,7 @@ function NavLink({
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// DirectNavLink — top-level single-destination link (Home, Approvals)
+// DirectNavLink — top-level single-destination link (Home, Messages, Approvals)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function DirectNavLink({
@@ -214,13 +214,15 @@ function AccordionSection({
   location,
   onNavClick,
   variant = "default",
+  maxHeight = "700px",
 }: {
   section: NavSection;
   isOpen: boolean;
   onToggle: (id: string) => void;
   location: string;
   onNavClick: () => void;
-  variant?: "default" | "engineering";
+  variant?: "default" | "advanced";
+  maxHeight?: string;
 }) {
   const active = sectionIsActive(location, section.items);
 
@@ -231,11 +233,11 @@ function AccordionSection({
         data-testid={`section-${section.id}`}
         className={cn(
           "w-full flex items-center justify-between px-3 py-2 rounded-md text-xs font-semibold uppercase tracking-wider transition-colors",
-          variant === "engineering"
+          variant === "advanced"
             ? "text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20"
             : "text-muted-foreground hover:bg-muted/60",
-          active && variant !== "engineering" ? "text-foreground" : "",
-          active && variant === "engineering"
+          active && variant !== "advanced" ? "text-foreground" : "",
+          active && variant === "advanced"
             ? "text-orange-700 dark:text-orange-300"
             : ""
         )}
@@ -247,7 +249,7 @@ function AccordionSection({
             <span
               className={cn(
                 "h-1.5 w-1.5 rounded-full",
-                variant === "engineering" ? "bg-orange-500" : "bg-primary"
+                variant === "advanced" ? "bg-orange-500" : "bg-primary"
               )}
             />
           )}
@@ -263,8 +265,9 @@ function AccordionSection({
       <div
         className={cn(
           "overflow-hidden transition-all duration-200 ease-in-out",
-          isOpen ? "max-h-[600px] opacity-100" : "max-h-0 opacity-0"
+          isOpen ? "opacity-100" : "max-h-0 opacity-0"
         )}
+        style={isOpen ? { maxHeight } : undefined}
       >
         <div className="mt-0.5 space-y-0.5 pb-1">
           {section.items.map((item) => (
@@ -359,7 +362,7 @@ interface SetupStatus {
 }
 
 function WorkforceCta({ onNavClick }: { onNavClick: () => void }) {
-  const { data: status, isLoading } = useQuery<SetupStatus>({
+  const { data: _status, isLoading } = useQuery<SetupStatus>({
     queryKey: ["/api/ai-workforce/setup-status"],
     staleTime: 2 * 60 * 1000,
   });
@@ -367,7 +370,7 @@ function WorkforceCta({ onNavClick }: { onNavClick: () => void }) {
   if (isLoading) return null;
 
   return (
-    <Link href="/admin/ai-governance" onClick={onNavClick}>
+    <Link href="/admin/ai-workforce" onClick={onNavClick}>
       <div
         className="mx-2 mb-2 flex items-center gap-2.5 px-3 py-2.5 rounded-md border border-violet-200/60 dark:border-violet-800/40 bg-gradient-to-r from-violet-50/80 to-purple-50/80 dark:from-violet-900/20 dark:to-purple-900/20 hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-900/30 dark:hover:to-purple-900/30 transition-colors cursor-pointer"
         data-testid="cta-workforce-dashboard"
@@ -397,9 +400,9 @@ export function AppSidebar() {
   const { user, isAuthenticated, logout } = useAuth();
   const { isMobile, setOpenMobile } = useSidebar();
 
-  // Default: Operations + Growth open, Engineering closed
+  // Default: Schedule open, all advanced sections closed
   const [openSections, setOpenSections] = useState<Set<string>>(() =>
-    new Set(ls<string[]>(OPEN_KEY, ["operations", "growth"]))
+    new Set(ls<string[]>(OPEN_KEY, ["schedule"]))
   );
 
   // ── Queries ──────────────────────────────────────────────────────────────────
@@ -409,7 +412,6 @@ export function AppSidebar() {
     enabled: isAuthenticated,
   });
 
-  // Attention count for Approvals badge
   const { data: attentionItems = [] } = useQuery<any[]>({
     queryKey: ["/api/attention"],
     enabled: isAuthenticated,
@@ -510,17 +512,17 @@ export function AppSidebar() {
   ).length;
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  // Section definitions
+  // Section definitions — outcome-based primary nav
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  // OPERATIONS
-  const operationsSection: NavSection = {
-    id: "operations",
-    label: "Operations",
+  // ── SCHEDULE ─────────────────────────────────────────────────────────────────
+  const scheduleSection: NavSection = {
+    id: "schedule",
+    label: "Schedule",
     icon: CalendarDays,
     items: [
       {
-        title: "Scheduling Dashboard",
+        title: "Dashboard",
         url: "/coach/dashboard",
         icon: LayoutDashboard,
         testId: "nav-scheduling-dashboard",
@@ -528,19 +530,31 @@ export function AppSidebar() {
       ...(isAdmin
         ? [
             {
-              title: "Scheduling Command Center",
+              title: "Command Center",
               url: "/admin/scheduling-command-center",
               icon: CalendarDays,
               testId: "nav-scheduling-command-center",
             },
+            {
+              title: "Scheduling Copilot",
+              url: "/admin/scheduling-copilot",
+              icon: Bot,
+              testId: "nav-scheduling-copilot",
+            },
+            {
+              title: "Opportunity Inbox",
+              url: "/admin/scheduling-opportunity-inbox",
+              icon: Inbox,
+              testId: "nav-scheduling-opportunity-inbox",
+            },
+            {
+              title: "Coach Capacity",
+              url: "/admin/coach-capacity",
+              icon: BarChart2,
+              testId: "nav-coach-capacity",
+            },
           ]
         : []),
-      {
-        title: preset.nav.athletes,
-        url: "/coach/users",
-        icon: Users,
-        testId: "nav-athletes",
-      },
       {
         title: preset.nav.groupSessions,
         url: "/sessions",
@@ -559,18 +573,6 @@ export function AppSidebar() {
         icon: CalendarClock,
         testId: "nav-availability",
       },
-      // Outreach (AgentMail renamed) — admin only
-      ...(isAdmin
-        ? [
-            {
-              title: "Outreach",
-              url: "/admin/agentmail",
-              icon: MessageSquare,
-              testId: "nav-outreach",
-            },
-          ]
-        : []),
-      // Athletic program link if enabled
       ...(athleticEnabled
         ? [
             {
@@ -587,83 +589,31 @@ export function AppSidebar() {
     ],
   };
 
-  // GROWTH — admin sees Leads + Pipeline + Revenue; coach sees Revenue only
-  const growthSection: NavSection = {
-    id: "growth",
-    label: "Growth",
-    icon: TrendingUp,
+  // ── ATHLETES ─────────────────────────────────────────────────────────────────
+  const athletesSection: NavSection = {
+    id: "athletes",
+    label: "Athletes",
+    icon: Users,
     items: [
+      {
+        title: "All Athletes",
+        url: "/coach/users",
+        icon: Users,
+        testId: "nav-athletes",
+      },
       ...(isAdmin
         ? [
             {
-              title: preset.nav.leads,
-              url: "/admin/athlete-leads",
-              icon: Users,
-              testId: "nav-athlete-leads",
+              title: "Athlete Intelligence",
+              url: "/admin/athlete-intelligence",
+              icon: Brain,
+              testId: "nav-athlete-intelligence",
             },
             {
-              title: preset.nav.businessLeads,
-              url: "/admin/team-training-leads",
-              icon: Building2,
-              testId: "nav-business-leads",
-            },
-            {
-              title: preset.nav.pipeline,
-              url: "/admin/team-training-deals",
-              icon: KanbanSquare,
-              testId: "nav-pipeline",
-            },
-            {
-              title: "Opportunity Acquisition",
-              url: "/admin/opportunity-acquisition",
-              icon: Target,
-              testId: "nav-opportunity-acquisition",
-            },
-            {
-              title: "Hiring Department",
-              url: "/admin/hiring",
-              icon: Briefcase,
-              testId: "nav-hiring-department",
-            },
-            {
-              title: "Partnerships Department",
-              url: "/admin/partnerships",
-              icon: Handshake,
-              testId: "nav-partnerships-department",
-            },
-            {
-              title: "Departments",
-              url: "/admin/departments",
-              icon: Building2,
-              testId: "nav-departments",
-            },
-            {
-              title: "Sponsorship Department",
-              url: "/admin/sponsorships",
-              icon: BadgeDollarSign,
-              testId: "nav-sponsorships-department",
-            },
-            {
-              title: "Department Factory",
-              url: "/admin/department-factory",
-              icon: Factory,
-              testId: "nav-department-factory",
-            },
-            {
-              title: "Department OS v2",
-              url: "/admin/department-os-v2",
-              icon: Layers,
-              testId: "nav-department-os-v2",
-            },
-          ]
-        : []),
-      ...(coachTransactionsVisible
-        ? [
-            {
-              title: preset.nav.revenue,
-              url: "/coach/transactions",
-              icon: DollarSign,
-              testId: "nav-revenue",
+              title: "Customer Success",
+              url: "/admin/customer-success-os",
+              icon: Trophy,
+              testId: "nav-customer-success",
             },
           ]
         : []),
@@ -676,35 +626,141 @@ export function AppSidebar() {
     ],
   };
 
-  // INSIGHTS — admin only
-  // TODO Phase 5: consolidate into /intelligence tabbed hub
-  const insightsSection: NavSection = {
-    id: "insights",
-    label: "Insights",
-    icon: BookOpen,
+  // ── LEADS — admin only ────────────────────────────────────────────────────────
+  const leadsSection: NavSection = {
+    id: "leads",
+    label: "Leads",
+    icon: Target,
     items: [
+      {
+        title: preset.nav.leads,
+        url: "/admin/athlete-leads",
+        icon: Users,
+        testId: "nav-athlete-leads",
+      },
+      {
+        title: preset.nav.businessLeads,
+        url: "/admin/team-training-leads",
+        icon: Building2,
+        testId: "nav-business-leads",
+      },
+      {
+        title: preset.nav.pipeline,
+        url: "/admin/team-training-deals",
+        icon: KanbanSquare,
+        testId: "nav-pipeline",
+      },
+      {
+        title: "Opportunities",
+        url: "/admin/opportunity-acquisition",
+        icon: Target,
+        testId: "nav-opportunity-acquisition",
+      },
+    ],
+  };
+
+  // ── REVENUE ──────────────────────────────────────────────────────────────────
+  const revenueSection: NavSection = {
+    id: "revenue",
+    label: "Revenue",
+    icon: DollarSign,
+    items: [
+      ...(isAdmin
+        ? [
+            {
+              title: "Overview",
+              url: "/admin/financial-brain",
+              icon: BarChart2,
+              testId: "nav-revenue-overview",
+            },
+            {
+              title: "Forecast",
+              url: "/admin/forecast",
+              icon: TrendingUp,
+              testId: "nav-forecasting",
+            },
+          ]
+        : []),
+      ...(coachTransactionsVisible
+        ? [
+            {
+              title: "Transactions",
+              url: "/coach/transactions",
+              icon: DollarSign,
+              testId: "nav-revenue",
+            },
+          ]
+        : []),
+    ],
+  };
+
+  // ── AI WORKFORCE — admin only ─────────────────────────────────────────────────
+  const aiWorkforceSection: NavSection = {
+    id: "ai-workforce",
+    label: "AI Workforce",
+    icon: Bot,
+    items: [
+      {
+        title: "Agent Status",
+        url: "/admin/ai-workforce",
+        icon: Bot,
+        testId: "nav-workforce-health",
+      },
+      {
+        title: "Activity",
+        url: "/admin/ai-workforce/activity",
+        icon: BarChart2,
+        testId: "nav-workforce-activity",
+      },
+      {
+        title: "Approvals",
+        url: "/admin/ai-approvals",
+        icon: CheckSquare,
+        testId: "nav-ai-approvals",
+      },
+      {
+        title: "Leaderboard",
+        url: "/admin/ai-workforce/leaderboard",
+        icon: Trophy,
+        testId: "nav-workforce-leaderboard",
+      },
+    ],
+  };
+
+  // ── INTELLIGENCE — admin only ─────────────────────────────────────────────────
+  const intelligenceSection: NavSection = {
+    id: "intelligence",
+    label: "Intelligence",
+    icon: Brain,
+    items: [
+      {
+        title: "CEO Heartbeat",
+        url: "/admin/ceo-heartbeat",
+        icon: Brain,
+        testId: "nav-business-overview",
+      },
+      {
+        title: "Recommendations",
+        url: "/admin/recommendations",
+        icon: Zap,
+        testId: "nav-recommendations",
+      },
+      {
+        title: "Org Memory",
+        url: "/admin/organizational-memory",
+        icon: BookOpen,
+        testId: "nav-org-memory",
+      },
       {
         title: "Learning",
         url: "/admin/obsidian",
         icon: BookOpen,
         testId: "nav-learning",
       },
-      {
-        title: "Forecasting",
-        url: "/admin/forecast",
-        icon: TrendingUp,
-        testId: "nav-forecasting",
-      },
-      {
-        title: "Business Overview",
-        url: "/admin/ceo-heartbeat",
-        icon: Brain,
-        testId: "nav-business-overview",
-      },
     ],
   };
 
-  // SETTINGS — profile + org settings
+  // ── SETTINGS ─────────────────────────────────────────────────────────────────
   const settingsSection: NavSection = {
     id: "settings",
     label: "Settings",
@@ -766,18 +822,45 @@ export function AppSidebar() {
     ],
   };
 
-  // ENGINEERING — admin only, collapsed by default
-  // Contains: all advanced/developer/internal tools hidden from standard nav
-  const engineeringSection: NavSection = {
-    id: "engineering",
-    label: "Engineering",
+  // ── ADVANCED — admin only, collapsed by default, orange accent ────────────────
+  // Contains all advanced/system tools demoted from primary nav.
+  // Routes remain valid — this section is an expert access layer, not a removal.
+  const advancedSection: NavSection = {
+    id: "advanced",
+    label: "Advanced",
     icon: Wrench,
     items: [
+      // Agent Operations & Monitoring
       {
         title: "System Health",
         url: "/admin/agent-ops",
         icon: ShieldAlert,
         testId: "nav-system-health",
+      },
+      {
+        title: "Reliability",
+        url: "/admin/reliability",
+        icon: Shield,
+        testId: "nav-reliability",
+      },
+      {
+        title: "Agent Quality",
+        url: "/admin/agent-quality",
+        icon: BarChart2,
+        testId: "nav-agent-quality",
+      },
+      {
+        title: "Communication Intel",
+        url: "/admin/communication-intelligence",
+        icon: MessageSquare,
+        testId: "nav-communication-intelligence",
+      },
+      // Workflow & Execution
+      {
+        title: "Workflow Builder",
+        url: "/admin/workflow-builder",
+        icon: Zap,
+        testId: "nav-workflow-builder",
       },
       {
         title: "Automations",
@@ -786,28 +869,92 @@ export function AppSidebar() {
         testId: "nav-automations",
       },
       {
-        title: "AI Permissions",
-        url: "/admin/autonomy",
+        title: "Execution Center",
+        url: "/admin/execution-center",
+        icon: Layers,
+        testId: "nav-execution-center",
+      },
+      {
+        title: "Action Center",
+        url: "/admin/action-center",
+        icon: Target,
+        testId: "nav-action-center",
+      },
+      // Governance
+      {
+        title: "Governance",
+        url: "/admin/governance",
         icon: Shield,
-        testId: "nav-ai-permissions",
+        testId: "nav-governance",
       },
       {
-        title: "Email Logs",
-        url: "/admin/email-audit",
-        icon: Mail,
-        testId: "nav-email-logs",
-      },
-      {
-        title: "Automation Settings",
+        title: "Autonomy Controls",
         url: "/admin/autonomy-controls",
         icon: Settings,
         testId: "nav-automation-settings",
       },
       {
-        title: "Workflow Builder",
-        url: "/admin/workflow-builder",
-        icon: Zap,
-        testId: "nav-workflow-builder",
+        title: "AI Governance",
+        url: "/admin/ai-governance",
+        icon: Shield,
+        testId: "nav-ai-governance",
+      },
+      {
+        title: "Autonomy Trust",
+        url: "/admin/autonomy",
+        icon: Shield,
+        testId: "nav-ai-permissions",
+      },
+      // AI Intelligence Systems
+      {
+        title: "Hermes",
+        url: "/admin/hermes",
+        icon: Brain,
+        testId: "nav-hermes",
+      },
+      {
+        title: "Workforce OS",
+        url: "/admin/workforce-os",
+        icon: Bot,
+        testId: "nav-workforce-os",
+      },
+      {
+        title: "AI Infrastructure",
+        url: "/admin/ai-infrastructure",
+        icon: Layers,
+        testId: "nav-ai-infrastructure",
+      },
+      {
+        title: "AI Operations",
+        url: "/admin/ai-operations",
+        icon: Bot,
+        testId: "nav-ai-operations",
+      },
+      // Email & Messaging Audit
+      {
+        title: "Email Audit",
+        url: "/admin/email-audit",
+        icon: Mail,
+        testId: "nav-email-logs",
+      },
+      {
+        title: "Trigger Audit",
+        url: "/admin/trigger-audit",
+        icon: Shield,
+        testId: "nav-trigger-audit",
+      },
+      {
+        title: "Gmail Conversations",
+        url: "/admin/gmail-conversations",
+        icon: Mail,
+        testId: "nav-gmail-conversations",
+      },
+      // Integrations & Tools
+      {
+        title: "Integrations",
+        url: "/admin/integrations",
+        icon: Globe,
+        testId: "nav-integrations",
       },
       {
         title: "Agent Tools",
@@ -821,34 +968,73 @@ export function AppSidebar() {
         icon: Globe,
         testId: "nav-integration-status",
       },
+      // Software & Platform
       {
-        title: "Workforce Health",
-        url: "/admin/ai-workforce",
-        icon: Users,
-        testId: "nav-workforce-health",
+        title: "Software Improvement",
+        url: "/admin/software-improvement",
+        icon: Wrench,
+        testId: "nav-software-improvement",
       },
       {
-        title: "Gmail Conversations",
-        url: "/admin/gmail-conversations",
-        icon: Mail,
-        testId: "nav-gmail-conversations",
+        title: "Platform Brain",
+        url: "/admin/platform-brain",
+        icon: Brain,
+        testId: "nav-platform-brain",
+      },
+      // Growth / Departments (internal)
+      {
+        title: "Hiring Department",
+        url: "/admin/hiring",
+        icon: Briefcase,
+        testId: "nav-hiring-department",
       },
       {
-        title: "Trigger Audit",
-        url: "/admin/trigger-audit",
-        icon: Shield,
-        testId: "nav-trigger-audit",
+        title: "Partnerships",
+        url: "/admin/partnerships",
+        icon: Handshake,
+        testId: "nav-partnerships-department",
       },
       {
-        title: "AI Governance",
-        url: "/admin/ai-governance",
-        icon: Shield,
-        testId: "nav-ai-governance",
+        title: "Departments",
+        url: "/admin/departments",
+        icon: Building2,
+        testId: "nav-departments",
+      },
+      {
+        title: "Sponsorships",
+        url: "/admin/sponsorships",
+        icon: BadgeDollarSign,
+        testId: "nav-sponsorships-department",
+      },
+      {
+        title: "Department Factory",
+        url: "/admin/department-factory",
+        icon: Factory,
+        testId: "nav-department-factory",
+      },
+      {
+        title: "Department OS v2",
+        url: "/admin/department-os-v2",
+        icon: Layers,
+        testId: "nav-department-os-v2",
+      },
+      // Ecosystem / Marketplace
+      {
+        title: "Agent Marketplace",
+        url: "/admin/agent-marketplace",
+        icon: Globe,
+        testId: "nav-agent-marketplace",
+      },
+      {
+        title: "Ecosystem",
+        url: "/admin/ecosystem",
+        icon: Globe,
+        testId: "nav-ecosystem",
       },
     ],
   };
 
-  // STAFF — simplified scheduling-only view
+  // ── STAFF — simplified scheduling-only view ───────────────────────────────────
   const staffSection: NavSection = {
     id: "operations",
     label: "Operations",
@@ -887,7 +1073,7 @@ export function AppSidebar() {
     ],
   };
 
-  // CLIENT flat list
+  // ── CLIENT flat list ──────────────────────────────────────────────────────────
   const clientItems: NavItem[] = [
     { title: "Coaches", url: "/coaches", icon: Users, testId: "nav-coaches" },
     {
@@ -928,9 +1114,8 @@ export function AppSidebar() {
     },
   ];
 
-  // HOME direct link item
-  // TODO Phase 2: /command-center, /coach, /admin/dashboard are migration targets
-  // for the unified Home Screen. Do not remove routes yet.
+  // ── Top-level direct link items ───────────────────────────────────────────────
+
   const homeItem: NavItem = {
     title: "Home",
     url: "/",
@@ -938,7 +1123,13 @@ export function AppSidebar() {
     testId: "nav-home",
   };
 
-  // APPROVALS direct link item
+  const messagesItem: NavItem = {
+    title: "Messages",
+    url: "/admin/agentmail",
+    icon: MessageSquare,
+    testId: "nav-messages",
+  };
+
   const approvalsItem: NavItem = {
     title: "Approvals",
     url: "/admin/attention",
@@ -952,11 +1143,14 @@ export function AppSidebar() {
 
   useEffect(() => {
     const allSections = [
-      operationsSection,
-      growthSection,
-      insightsSection,
+      scheduleSection,
+      athletesSection,
+      leadsSection,
+      revenueSection,
+      aiWorkforceSection,
+      intelligenceSection,
       settingsSection,
-      engineeringSection,
+      advancedSection,
     ];
     const active = allSections.find((s) => sectionIsActive(location, s.items));
     if (active && !openSections.has(active.id)) {
@@ -1024,6 +1218,7 @@ export function AppSidebar() {
       </div>
 
       <SidebarContent className="px-2 py-2 flex flex-col">
+
         {/* ── COACH / ADMIN view ──────────────────────────────────────────── */}
         {isCoachOrAdmin && (
           <>
@@ -1031,7 +1226,8 @@ export function AppSidebar() {
             <AttentionCountChip role={role} onNavClick={handleNavClick} />
 
             <div className="space-y-0.5 flex-1">
-              {/* HOME — single direct link */}
+
+              {/* HOME */}
               <div className="mb-1">
                 <DirectNavLink
                   item={homeItem}
@@ -1040,27 +1236,80 @@ export function AppSidebar() {
                 />
               </div>
 
-              {/* OPERATIONS */}
+              {/* SCHEDULE */}
               <AccordionSection
-                section={operationsSection}
-                isOpen={openSections.has("operations")}
+                section={scheduleSection}
+                isOpen={openSections.has("schedule")}
                 onToggle={toggleSection}
                 location={location}
                 onNavClick={handleNavClick}
               />
 
-              {/* GROWTH */}
-              {growthSection.items.length > 0 && (
+              {/* ATHLETES */}
+              <AccordionSection
+                section={athletesSection}
+                isOpen={openSections.has("athletes")}
+                onToggle={toggleSection}
+                location={location}
+                onNavClick={handleNavClick}
+              />
+
+              {/* LEADS — admin only */}
+              {isAdmin && (
                 <AccordionSection
-                  section={growthSection}
-                  isOpen={openSections.has("growth")}
+                  section={leadsSection}
+                  isOpen={openSections.has("leads")}
                   onToggle={toggleSection}
                   location={location}
                   onNavClick={handleNavClick}
                 />
               )}
 
-              {/* APPROVALS — single direct link with badge */}
+              {/* MESSAGES — admin only, direct link */}
+              {isAdmin && (
+                <div className="mb-0.5">
+                  <DirectNavLink
+                    item={messagesItem}
+                    location={location}
+                    onClick={handleNavClick}
+                  />
+                </div>
+              )}
+
+              {/* REVENUE */}
+              {revenueSection.items.length > 0 && (
+                <AccordionSection
+                  section={revenueSection}
+                  isOpen={openSections.has("revenue")}
+                  onToggle={toggleSection}
+                  location={location}
+                  onNavClick={handleNavClick}
+                />
+              )}
+
+              {/* AI WORKFORCE — admin only */}
+              {isAdmin && (
+                <AccordionSection
+                  section={aiWorkforceSection}
+                  isOpen={openSections.has("ai-workforce")}
+                  onToggle={toggleSection}
+                  location={location}
+                  onNavClick={handleNavClick}
+                />
+              )}
+
+              {/* INTELLIGENCE — admin only */}
+              {isAdmin && (
+                <AccordionSection
+                  section={intelligenceSection}
+                  isOpen={openSections.has("intelligence")}
+                  onToggle={toggleSection}
+                  location={location}
+                  onNavClick={handleNavClick}
+                />
+              )}
+
+              {/* APPROVALS — direct link with attention badge */}
               <div className="mb-0.5">
                 <DirectNavLink
                   item={approvalsItem}
@@ -1069,17 +1318,6 @@ export function AppSidebar() {
                   badge={approvalsCount > 0 ? approvalsCount : undefined}
                 />
               </div>
-
-              {/* INSIGHTS — admin only */}
-              {isAdmin && (
-                <AccordionSection
-                  section={insightsSection}
-                  isOpen={openSections.has("insights")}
-                  onToggle={toggleSection}
-                  location={location}
-                  onNavClick={handleNavClick}
-                />
-              )}
 
               {/* PROGRAM TOOLS — dynamic (if org has active tools) */}
               {programToolItems.length > 0 && (
@@ -1106,17 +1344,18 @@ export function AppSidebar() {
                 onNavClick={handleNavClick}
               />
 
-              {/* ENGINEERING — admin only, collapsed by default */}
+              {/* ADVANCED — admin only, collapsed by default, orange accent */}
               {isAdmin && (
                 <>
                   <div className="my-2 border-t border-border/40" />
                   <AccordionSection
-                    section={engineeringSection}
-                    isOpen={openSections.has("engineering")}
+                    section={advancedSection}
+                    isOpen={openSections.has("advanced")}
                     onToggle={toggleSection}
                     location={location}
                     onNavClick={handleNavClick}
-                    variant="engineering"
+                    variant="advanced"
+                    maxHeight="2400px"
                   />
                 </>
               )}
