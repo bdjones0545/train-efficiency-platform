@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -22,6 +22,8 @@ import {
   Zap,
   FlaskConical,
   ChevronRight,
+  Activity,
+  WifiOff,
 } from "lucide-react";
 
 type GmailConversation = {
@@ -66,6 +68,13 @@ type GmailAgentAction = {
   executedAt?: string;
 };
 
+type GmailSyncStatus = {
+  lastGmailSyncAt: string | null;
+  nextGmailSyncAt: string | null;
+  lastGmailSyncStatus: "idle" | "running" | "success" | "failed" | "skipped";
+  lastGmailSyncError: string | null;
+};
+
 const INTENT_LABELS: Record<string, { label: string; color: string }> = {
   interested: { label: "Interested", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
   wants_more_info: { label: "Wants Info", color: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300" },
@@ -101,7 +110,7 @@ const RISK_COLORS: Record<string, string> = {
   critical: "bg-red-200 text-red-900 dark:bg-red-900/50 dark:text-red-200",
 };
 
-function timeAgo(dateStr?: string): string {
+function timeAgo(dateStr?: string | null): string {
   if (!dateStr) return "—";
   const diff = Date.now() - new Date(dateStr).getTime();
   const mins = Math.floor(diff / 60000);
@@ -111,6 +120,16 @@ function timeAgo(dateStr?: string): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function timeUntil(dateStr?: string | null): string {
+  if (!dateStr) return "—";
+  const diff = new Date(dateStr).getTime() - Date.now();
+  if (diff <= 0) return "any moment";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `in ${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  return `in ${hrs}h`;
 }
 
 function suggestNextAction(convo: GmailConversation): string {
@@ -125,6 +144,69 @@ function suggestNextAction(convo: GmailConversation): string {
   }
 }
 
+function SyncStatusRow({
+  syncStatus,
+  isSyncing,
+}: {
+  syncStatus: GmailSyncStatus | undefined;
+  isSyncing: boolean;
+}) {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 30_000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const status = isSyncing ? "running" : (syncStatus?.lastGmailSyncStatus ?? "idle");
+
+  const statusConfig: Record<string, { label: string; className: string; Icon: typeof Activity }> = {
+    idle: { label: "Idle", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", Icon: Clock },
+    running: { label: "Running", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", Icon: RefreshCw },
+    success: { label: "Healthy", className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300", Icon: CheckCircle },
+    failed: { label: "Failed", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300", Icon: WifiOff },
+    skipped: { label: "Skipped", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", Icon: Clock },
+  };
+
+  const cfg = statusConfig[status] ?? statusConfig.idle;
+  const { Icon } = cfg;
+
+  return (
+    <div
+      className="flex items-center gap-4 px-3 py-2 rounded-lg bg-muted/50 border text-xs flex-wrap"
+      data-testid="sync-status-row"
+    >
+      <div className="flex items-center gap-1.5">
+        <Activity className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-muted-foreground font-medium">Auto-sync</span>
+      </div>
+
+      <div className="flex items-center gap-1 text-muted-foreground" data-testid="sync-last-synced">
+        <Clock className="h-3 w-3" />
+        <span>Last synced: <span className="font-medium text-foreground">{timeAgo(syncStatus?.lastGmailSyncAt)}</span></span>
+      </div>
+
+      <div className="flex items-center gap-1 text-muted-foreground" data-testid="sync-next-sync">
+        <RefreshCw className="h-3 w-3" />
+        <span>Next sync: <span className="font-medium text-foreground">{timeUntil(syncStatus?.nextGmailSyncAt)}</span></span>
+      </div>
+
+      <div className="flex items-center gap-1.5" data-testid="sync-status-badge">
+        <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${cfg.className}`}>
+          <Icon className={`h-3 w-3 ${status === "running" ? "animate-spin" : ""}`} />
+          {cfg.label}
+        </span>
+      </div>
+
+      {syncStatus?.lastGmailSyncError && status === "failed" && (
+        <span className="text-red-600 dark:text-red-400 truncate max-w-xs" data-testid="sync-error-msg">
+          {syncStatus.lastGmailSyncError}
+        </span>
+      )}
+    </div>
+  );
+}
+
 export default function AdminGmailConversationsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -133,21 +215,38 @@ export default function AdminGmailConversationsPage() {
 
   const conversationsQuery = useQuery<GmailConversation[]>({
     queryKey: ["/api/org/gmail/conversations"],
+    refetchInterval: 60 * 60 * 1000,
   });
 
   const actionsQuery = useQuery<GmailAgentAction[]>({
     queryKey: ["/api/org/gmail/actions"],
+    refetchInterval: 60 * 60 * 1000,
+  });
+
+  const syncStatusQuery = useQuery<GmailSyncStatus>({
+    queryKey: ["/api/org/gmail/sync-status"],
+    refetchInterval: 60_000,
   });
 
   const syncMutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/org/gmail/sync-replies"),
     onSuccess: (data: any) => {
-      toast({ title: "Sync complete", description: `${data.synced} replies synced, ${data.classified} classified, ${data.actionsQueued} actions queued` });
+      if (data?.message === "Sync already in progress") {
+        toast({ title: "Sync already in progress", description: "An hourly sync is running — try again shortly.", variant: "destructive" });
+        return;
+      }
+      toast({ title: "Sync complete", description: `${data.synced ?? 0} replies synced, ${data.classified ?? 0} classified, ${data.actionsQueued ?? 0} actions queued` });
       queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/conversations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/actions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/sync-status"] });
     },
     onError: (err: any) => {
+      if (err?.status === 409) {
+        toast({ title: "Sync already in progress", description: "An hourly sync is running — try again shortly." });
+        return;
+      }
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/sync-status"] });
     },
   });
 
@@ -228,14 +327,20 @@ export default function AdminGmailConversationsPage() {
           <Button
             size="sm"
             onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
+            disabled={syncMutation.isPending || syncStatusQuery.data?.lastGmailSyncStatus === "running"}
             data-testid="button-sync-replies"
           >
             <RefreshCw className={`h-4 w-4 mr-1 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-            Sync Replies
+            {syncMutation.isPending ? "Syncing…" : "Sync Replies"}
           </Button>
         </div>
       </div>
+
+      {/* Sync Status Row */}
+      <SyncStatusRow
+        syncStatus={syncStatusQuery.data}
+        isSyncing={syncMutation.isPending}
+      />
 
       {/* Phase 8 — Gmail Draft-Only Safety Notice */}
       <div className="flex items-start gap-3 p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 text-sm" data-testid="banner-gmail-safety">

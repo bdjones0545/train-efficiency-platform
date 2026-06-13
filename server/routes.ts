@@ -18706,6 +18706,21 @@ Respond with this exact JSON structure:
     }
   });
 
+  // GET /api/org/gmail/sync-status — return current Gmail sync state
+  app.get("/api/org/gmail/sync-status", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { getGmailSyncStatus } = await import("./services/gmail-sync-state");
+      res.json(getGmailSyncStatus(orgId));
+    } catch (err: any) {
+      console.error("[gmail/sync-status] error:", err);
+      res.status(500).json({ message: err.message ?? "Failed to get sync status" });
+    }
+  });
+
   // POST /api/org/gmail/sync-replies — run the Lead Reply Recovery workflow
   app.post("/api/org/gmail/sync-replies", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
@@ -18713,10 +18728,13 @@ Respond with this exact JSON structure:
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
       const orgId = profile.organizationId;
-      const { runLeadReplyRecovery } = await import("./services/gmail-agent-service");
-      const result = await runLeadReplyRecovery(orgId);
+      const { runGmailSyncForOrg } = await import("./services/gmail-sync-state");
+      const result = await runGmailSyncForOrg(orgId, "manual");
+      if (result.alreadyRunning) {
+        return res.status(409).json({ message: "Sync already in progress" });
+      }
       console.log(`[gmail/sync-replies] orgId=${orgId}`, result);
-      res.json({ success: true, ...result });
+      res.json({ success: result.success, ...result });
     } catch (err: any) {
       console.error("[gmail/sync-replies] error:", err);
       res.status(500).json({ message: err.message ?? "Failed to sync replies" });

@@ -608,6 +608,10 @@ app.use((req, res, next) => {
   const { startAttendanceReportCron } = await import("./attendance-report-cron");
   startAttendanceReportCron();
 
+  // ─── Gmail Hourly Sync Cron ───────────────────────────────────────────────
+  const { startGmailSyncCron } = await import("./services/gmail-sync-state");
+  startGmailSyncCron();
+
   app.use(orgErrorMiddleware);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

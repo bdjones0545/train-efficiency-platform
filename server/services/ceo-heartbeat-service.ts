@@ -689,7 +689,24 @@ async function coordinateAgents(orgId: string, heartbeatId: string): Promise<{
     errors.push(`software_improvement_agent: ${err.message}`);
   }
 
-  // 8. Ledger Drift Check — validate wallet balance integrity every cycle
+  // 8. Gmail Sync — trigger if last sync is missing or older than 60 minutes
+  try {
+    const { runGmailSyncIfStale } = await import("./gmail-sync-state");
+    const syncResult = await runGmailSyncIfStale(orgId, heartbeatId);
+    agentsCoordinated++;
+    await writeTimeline({
+      orgId, heartbeatId, agentName: "gmail_sync_agent",
+      systemName: "CEO Heartbeat", actionType: "gmail_sync_check",
+      actionStatus: syncResult.triggered ? "completed" : "skipped",
+      summary: syncResult.triggered
+        ? `Gmail Sync (heartbeat): triggered — ${syncResult.reason}`
+        : `Gmail Sync (heartbeat): skipped — ${syncResult.reason}`,
+    });
+  } catch (err: any) {
+    errors.push(`gmail_sync: ${err.message}`);
+  }
+
+  // 9. Ledger Drift Check — validate wallet balance integrity every cycle
   try {
     const driftResult = await runLedgerDriftCheck(orgId);
     agentsCoordinated++;
