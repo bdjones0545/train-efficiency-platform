@@ -138,7 +138,7 @@ export default function AdminAiGovernancePage() {
   const [emergencyReason, setEmergencyReason] = useState("");
   const [showEmergencyDialog, setShowEmergencyDialog] = useState(false);
 
-  const { data: settings, isLoading: settingsLoading } = useQuery<GovernanceSettings>({
+  const { data: settings, isLoading: settingsLoading, isError: settingsError } = useQuery<GovernanceSettings>({
     queryKey: ["/api/governance/settings"],
   });
 
@@ -369,8 +369,27 @@ export default function AdminAiGovernancePage() {
 
         {/* ── Policies Tab ─────────────────────────────────────────────────── */}
         <TabsContent value="policies" className="space-y-4 mt-4">
-          {settingsLoading ? <Skeleton className="h-80" /> : settings && (
+          {settingsLoading ? (
+            <div className="space-y-4" data-testid="policies-loading">
+              <Skeleton className="h-48 rounded-xl" />
+              <Skeleton className="h-64 rounded-xl" />
+            </div>
+          ) : settingsError ? (
+            <div className="rounded-xl border border-destructive/40 bg-destructive/5 p-6 flex items-start gap-3" data-testid="policies-error">
+              <XCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5" />
+              <div>
+                <p className="font-semibold text-sm text-destructive">Unable to load governance policies.</p>
+                <p className="text-xs text-muted-foreground mt-1">Check server logs or try refreshing the page.</p>
+              </div>
+            </div>
+          ) : settings ? (
             <GovernancePoliciesPanel settings={settings} onUpdate={(u) => updateSettingsMutation.mutate(u)} saving={updateSettingsMutation.isPending} />
+          ) : (
+            <div className="rounded-xl border border-border bg-muted/30 p-8 text-center" data-testid="policies-empty">
+              <Shield className="h-8 w-8 text-muted-foreground mx-auto mb-3" />
+              <p className="text-sm font-medium text-muted-foreground">No governance policies configured.</p>
+              <p className="text-xs text-muted-foreground mt-1">Visit this page again to auto-provision defaults.</p>
+            </div>
           )}
         </TabsContent>
 
