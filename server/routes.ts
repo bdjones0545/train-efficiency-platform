@@ -11536,6 +11536,15 @@ Refine this email following the instruction above. Preserve the core message and
             classification,
           });
         } catch (_) {}
+        // Decision Journal: capture reply classification
+        try {
+          const { recordReplyClassificationDecision } = await import("./services/decision-journal-service");
+          await recordReplyClassificationDecision({
+            orgId: profile.organizationId,
+            prospectId: req.params.id,
+            classification,
+          });
+        } catch (_) {}
       }
 
       res.json({ ok: true, classification, dealCreated });
@@ -13686,6 +13695,22 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
             editedDraft: !!(editedSubject || editedBody),
           });
         } catch (_) {}
+        // Decision Journal: capture workflow approval
+        try {
+          const { recordWorkflowDecision } = await import("./services/decision-journal-service");
+          const { db: _djdb } = await import("./db");
+          const { workflowRuns: _djwr } = await import("@shared/schema");
+          const { eq: _djeq } = await import("drizzle-orm");
+          const [_djrun] = await _djdb.select().from(_djwr).where(_djeq(_djwr.id, req.params.id));
+          await recordWorkflowDecision({
+            orgId,
+            workflowId: req.params.id,
+            workflowType: _djrun?.workflowType ?? "unknown",
+            displayName: _djrun?.displayName ?? undefined,
+            status: "approved",
+            editedDraft: !!(editedSubject || editedBody),
+          });
+        } catch (_) {}
       }
 
       res.json(result);
@@ -13735,6 +13760,22 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
             workflowId: req.params.id,
             workflowType: _run3?.workflowType ?? "unknown",
             displayName: _run3?.displayName ?? undefined,
+            status: "rejected",
+            feedback: feedback ?? undefined,
+          });
+        } catch (_) {}
+        // Decision Journal: capture workflow rejection
+        try {
+          const { recordWorkflowDecision } = await import("./services/decision-journal-service");
+          const { db: _djdb2 } = await import("./db");
+          const { workflowRuns: _djwr2 } = await import("@shared/schema");
+          const { eq: _djeq2 } = await import("drizzle-orm");
+          const [_djrun2] = await _djdb2.select().from(_djwr2).where(_djeq2(_djwr2.id, req.params.id));
+          await recordWorkflowDecision({
+            orgId,
+            workflowId: req.params.id,
+            workflowType: _djrun2?.workflowType ?? "unknown",
+            displayName: _djrun2?.displayName ?? undefined,
             status: "rejected",
             feedback: feedback ?? undefined,
           });
@@ -18261,6 +18302,17 @@ Respond with this exact JSON structure:
         metadata: { recommendationId: req.params.id },
         triggeredBy: req.user.id,
       });
+      // Decision Journal: capture recommendation acceptance
+      try {
+        const { recordRecommendationDecision } = await import("./services/decision-journal-service");
+        await recordRecommendationDecision({
+          orgId: req.user.orgId,
+          recommendationId: req.params.id,
+          action: "execute",
+          source: "recommendation",
+          agentType: "system_agent",
+        });
+      } catch (_) {}
       res.json({ success: true });
     } catch (e: any) {
       res.json({ success: true });
@@ -19264,6 +19316,18 @@ Respond with this exact JSON structure:
           communicationDomain: updated.communicationDomain ?? undefined,
         });
       } catch (_) {}
+      // Decision Journal: capture gmail approval
+      try {
+        const { recordGmailDecision } = await import("./services/decision-journal-service");
+        await recordGmailDecision({
+          orgId,
+          actionId: updated.id,
+          actionType: updated.actionType ?? "outreach",
+          decision: "approved",
+          communicationDomain: updated.communicationDomain ?? undefined,
+          subject: updated.subject ?? undefined,
+        });
+      } catch (_) {}
       res.json({ success: true, action: updated });
     } catch (err: any) {
       console.error("[gmail/actions/approve] error:", err);
@@ -19311,6 +19375,19 @@ Respond with this exact JSON structure:
           decision: "rejected",
           communicationDomain: updated.communicationDomain ?? undefined,
           reason: reason ?? undefined,
+        });
+      } catch (_) {}
+      // Decision Journal: capture gmail rejection
+      try {
+        const { recordGmailDecision } = await import("./services/decision-journal-service");
+        await recordGmailDecision({
+          orgId,
+          actionId: updated.id,
+          actionType: updated.actionType ?? "outreach",
+          decision: "rejected",
+          communicationDomain: updated.communicationDomain ?? undefined,
+          reason: reason ?? undefined,
+          subject: updated.subject ?? undefined,
         });
       } catch (_) {}
       res.json({ success: true, action: updated });
@@ -19370,6 +19447,18 @@ Respond with this exact JSON structure:
           actionType: updated.actionType ?? "outreach",
           decision: "edited_and_approved",
           communicationDomain: updated.communicationDomain ?? undefined,
+        });
+      } catch (_) {}
+      // Decision Journal: capture edit-and-approve
+      try {
+        const { recordGmailDecision } = await import("./services/decision-journal-service");
+        await recordGmailDecision({
+          orgId,
+          actionId: updated.id,
+          actionType: updated.actionType ?? "outreach",
+          decision: "edited_and_approved",
+          communicationDomain: updated.communicationDomain ?? undefined,
+          subject: updated.subject ?? undefined,
         });
       } catch (_) {}
       res.json({ success: true, action: updated });
@@ -22092,6 +22181,17 @@ Respond with this exact JSON structure:
           ON CONFLICT DO NOTHING
         `).catch(() => {});
       } catch {}
+      // Decision Journal: capture executive recommendation action
+      try {
+        const { recordRecommendationDecision } = await import("./services/decision-journal-service");
+        await recordRecommendationDecision({
+          orgId,
+          recommendationId: id,
+          action: action as any,
+          source: "executive_agent",
+          agentType: "executive_agent",
+        });
+      } catch (_) {}
       res.json({ success: true, recommendationId: id, action, message: action === "approve" ? "Recommendation approved and queued for execution." : action === "schedule" ? `Recommendation scheduled for ${scheduledFor ?? "later"}.` : "Recommendation rejected." });
     } catch (e: any) {
       console.error("[executive/recommendations/action] error:", e);
@@ -29359,18 +29459,71 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to load Hermes learnings" }); }
   });
 
-  // GET /api/organizational-memory/decisions
+  // GET /api/organizational-memory/decisions — now DB-backed
   app.get("/api/organizational-memory/decisions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId).catch(() => null);
       const orgId = profile?.organizationId;
-      const { getHermesLearnings } = await import("./services/hermes-learning-service");
-      const dbDecisions = await getHermesLearnings({ orgId, memoryType: "decision", limit: 50 });
-      const dbMapped = dbDecisions.map(r => ({ id: r.id, title: `[Auto] ${r.domain}`, memoryType: r.memoryType, category: r.category, department: r.department, content: [r.outcome, r.observation, r.learning].filter(Boolean).join("  \n"), source: r.source, createdByAgent: "Hermes Learning Engine", confidenceScore: r.confidenceScore, impactScore: r.impactScore, usageCount: 0, createdAt: r.createdAt, updatedAt: r.updatedAt, isAutoLearning: true }));
-      const decisions = [...ORG_MEMORIES.filter(m => m.memoryType === "decision"), ...dbMapped];
-      res.json({ decisions, total: decisions.length, generatedAt: new Date().toISOString() });
+      const { sourceType, agent, decisionType, limit = 100, offset = 0 } = req.query as Record<string, any>;
+      const { getDecisions } = await import("./services/decision-journal-service");
+      const dbDecisions = await getDecisions({ orgId, sourceType, agent, decisionType, limit: Number(limit), offset: Number(offset) });
+      res.json({ decisions: dbDecisions, total: dbDecisions.length, generatedAt: new Date().toISOString() });
     } catch (e: any) { res.status(500).json({ message: "Failed to load decisions" }); }
+  });
+
+  // GET /api/organizational-memory/decisions/stats — KPI stats for decision journal
+  app.get("/api/organizational-memory/decisions/stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const { getDecisionStats } = await import("./services/decision-journal-service");
+      const stats = await getDecisionStats(orgId);
+      res.json({ ...stats, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load decision stats" }); }
+  });
+
+  // GET /api/organizational-memory/decisions/search — search decisions
+  app.get("/api/organizational-memory/decisions/search", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const q = ((req.query.q as string) ?? "").trim();
+      if (!q) return res.json({ results: [], query: q, total: 0 });
+      const { searchDecisions } = await import("./services/decision-journal-service");
+      const results = await searchDecisions(q, orgId, 30);
+      res.json({ results, query: q, total: results.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to search decisions" }); }
+  });
+
+  // POST /api/organizational-memory/decisions/record — manual decision entry
+  app.post("/api/organizational-memory/decisions/record", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId ?? "default";
+      const { agent, decision, reasoning, outcome, followUp, confidence, decisionType, department, relatedEntityType, relatedEntityId } = req.body;
+      if (!decision) return res.status(400).json({ message: "decision is required" });
+      const { recordDecision } = await import("./services/decision-journal-service");
+      const id = await recordDecision({
+        orgId,
+        agent: agent ?? "Human Admin",
+        sourceType: "human_admin",
+        source: "Manual Entry",
+        decision,
+        reasoning: reasoning ?? "",
+        outcome: outcome ?? "",
+        followUp: followUp ?? "",
+        confidence: confidence ?? 90,
+        decisionType: decisionType ?? "manual",
+        department: department ?? "Operations",
+        relatedEntityType: relatedEntityType ?? undefined,
+        relatedEntityId: relatedEntityId ?? undefined,
+      });
+      res.json({ success: true, id });
+    } catch (e: any) { res.status(500).json({ message: "Failed to record decision" }); }
   });
 
   // GET /api/organizational-memory/lessons

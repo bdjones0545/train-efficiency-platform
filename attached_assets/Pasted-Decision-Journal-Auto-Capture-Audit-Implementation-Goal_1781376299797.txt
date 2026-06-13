@@ -1,0 +1,212 @@
+Decision Journal Auto-Capture Audit & Implementation
+
+Goal:
+Apply the same philosophy used for Hermes Learnings.
+
+The Decision Journal should primarily be populated automatically from real agent and human decisions occurring throughout the platform.
+
+The manual decision form should remain available, but it should not be the primary source of decision history.
+
+Current Problem:
+The Decisions tab is form-first.
+
+Current flow:
+
+Human
+↓
+Fill out form
+↓
+Decision Journal
+
+Desired flow:
+
+Executive Agent
+↓
+Recommendation
+↓
+Approve / Reject / Execute
+↓
+Decision Journal
+
+CEO Heartbeat
+↓
+Recommendation
+↓
+Decision Journal
+
+Workflow Engine
+↓
+Approval / Rejection
+↓
+Decision Journal
+
+Gmail Approval
+↓
+Approve / Reject / Edit
+↓
+Decision Journal
+
+Agent Action
+↓
+Execution
+↓
+Decision Journal
+
+Human Decision
+↓
+Manual Entry
+↓
+Decision Journal
+
+Implement:
+
+1. Create decision recording service
+
+recordDecision({
+  orgId,
+  agent,
+  confidence,
+  decision,
+  reasoning,
+  outcome,
+  followUp,
+  source,
+  sourceType,
+  relatedEntityType,
+  relatedEntityId,
+  metadata
+})
+
+2. Create persistent storage
+
+decision_journal_entries
+
+Suggested fields:
+
+id
+orgId
+agent
+confidence
+decision
+reasoning
+outcome
+followUp
+source
+sourceType
+relatedEntityType
+relatedEntityId
+createdAt
+updatedAt
+
+3. Automatically capture decisions from:
+
+Executive Agent recommendations
+CEO Heartbeat recommendations
+Approval Center approvals
+Approval Center rejections
+Workflow approvals
+Workflow rejections
+Gmail draft approvals
+Gmail draft rejections
+Gmail edit-and-approve
+Agent action execution
+Revenue recommendations
+Customer Success recommendations
+Scheduling recommendations
+Opportunity Acquisition recommendations
+
+4. Decision lifecycle
+
+Decision
+↓
+Reasoning
+↓
+Outcome
+↓
+Follow-Up
+↓
+Historical Record
+
+5. UI Changes
+
+Current manual form:
+Move behind:
+
++ Record Manual Decision
+
+Default Decisions tab should show:
+
+Decision Journal
+
+Grouped by:
+- Executive Agent
+- CEO Heartbeat
+- Hermes
+- Workflow Engine
+- AgentMail
+- Human Decisions
+
+Each card should display:
+
+Agent
+Confidence
+Decision
+Reasoning
+Outcome
+Follow-Up
+Timestamp
+Source
+
+6. Search and Analytics
+
+Allow filtering by:
+
+Agent
+Confidence
+Date
+Source
+Decision Type
+Outcome
+
+7. Dashboard Integration
+
+Add KPIs:
+
+Total Decisions
+Agent Decisions
+Human Decisions
+Approval Rate
+Execution Success Rate
+
+8. Persistence Requirements
+
+All decisions must:
+- survive deploys
+- survive restarts
+- survive heartbeat cycles
+- be tied to orgId
+- be searchable
+- be exportable
+
+Deliverables:
+
+1. Decision source audit.
+2. Automatic capture matrix.
+3. decision_journal_entries implementation.
+4. Wiring points added.
+5. Decision Journal UI redesign.
+6. Manual form relocation.
+7. Search/filter support.
+8. Analytics support.
+9. TypeScript result.
+10. Server startup result.
+
+Acceptance Criteria:
+
+- Decision Journal is automatically populated by real platform activity.
+- Manual decision entry remains available but secondary.
+- Every major recommendation and approval is captured.
+- Decisions survive deployments.
+- Decision history becomes a searchable operating record of the organization.
+- TypeScript passes.
+- Server starts cleanly.

@@ -12,6 +12,8 @@ import {
   BookOpen, CheckSquare, Lightbulb, Shield, GitBranch, BarChart3,
   X, Plus, TrendingUp, Star, Activity, Users, AlertTriangle,
   CheckCircle, ArrowRightLeft, ClipboardList, Zap, Clock, Tag,
+  Filter, PenLine, Bot, Send, ThumbsUp, ThumbsDown, Edit3,
+  ListChecks, Cpu, MessageSquare, CalendarDays, Download,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -41,6 +43,24 @@ type HermesLearningsData = {
   byDomain: Record<string, number>;
   generatedAt: string;
 };
+
+type DecisionEntry = {
+  id: string; orgId: string; agent: string; sourceType: string; source: string;
+  decision: string; reasoning: string; outcome: string; followUp: string;
+  confidence: number; decisionType: string; department: string;
+  relatedEntityType: string | null; relatedEntityId: string | null;
+  metadata: Record<string, any>; createdAt: string; updatedAt: string;
+};
+type DecisionStats = {
+  total: number; agentDecisions: number; humanDecisions: number;
+  approvalCount: number; rejectionCount: number; avgConfidence: number;
+  last7DaysCount: number;
+  bySourceType: Record<string, number>;
+  byAgent: Record<string, number>;
+  byDecisionType: Record<string, number>;
+  generatedAt: string;
+};
+type DecisionSearchResult = { results: DecisionEntry[]; query: string; total: number; generatedAt: string };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -489,20 +509,283 @@ function KnowledgeBaseTab() {
   );
 }
 
-// ─── Tab: Decisions ───────────────────────────────────────────────────────────
+// ─── Tab: Decisions (Decision Journal Auto-Capture) ──────────────────────────
+
+// ─── Decision Journal helpers ──────────────────────────────────────────────────
+
+const DJ_SOURCE_CONFIG: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+  workflow:              { label: "Workflow Engine",       color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-700",     icon: <ListChecks className="h-3 w-3" /> },
+  gmail:                 { label: "AgentMail",             color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700", icon: <MessageSquare className="h-3 w-3" /> },
+  ceo_heartbeat:         { label: "CEO Heartbeat",         color: "bg-primary/10 text-primary border-primary/20",                                                              icon: <Cpu className="h-3 w-3" /> },
+  executive_agent:       { label: "Executive Agent",       color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 border-violet-200 dark:border-violet-700", icon: <Bot className="h-3 w-3" /> },
+  revenue_agent:         { label: "Revenue Agent",         color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-700", icon: <TrendingUp className="h-3 w-3" /> },
+  business_brain:        { label: "Business Brain",        color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700", icon: <Brain className="h-3 w-3" /> },
+  recommendation:        { label: "Recommendations",       color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-teal-200 dark:border-teal-700",   icon: <Star className="h-3 w-3" /> },
+  reply_classification:  { label: "Reply Intelligence",    color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 border-rose-200 dark:border-rose-700",   icon: <MessageSquare className="h-3 w-3" /> },
+  human_admin:           { label: "Human Admin",           color: "bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-300 border-slate-200 dark:border-slate-700", icon: <PenLine className="h-3 w-3" /> },
+};
+
+const DJ_TYPE_CONFIG: Record<string, { label: string; icon: React.ReactNode; color: string }> = {
+  approval:       { label: "Approval",      icon: <ThumbsUp   className="h-2.5 w-2.5" />, color: "text-emerald-600 dark:text-emerald-400" },
+  rejection:      { label: "Rejection",     icon: <ThumbsDown className="h-2.5 w-2.5" />, color: "text-rose-500" },
+  edit_approval:  { label: "Edit + Approve",icon: <Edit3      className="h-2.5 w-2.5" />, color: "text-blue-600 dark:text-blue-400" },
+  execution:      { label: "Execution",     icon: <Send       className="h-2.5 w-2.5" />, color: "text-violet-600 dark:text-violet-400" },
+  recommendation: { label: "Recommendation",icon: <Star       className="h-2.5 w-2.5" />, color: "text-amber-600 dark:text-amber-400" },
+  action:         { label: "Action",        icon: <Activity   className="h-2.5 w-2.5" />, color: "text-primary" },
+  manual:         { label: "Manual Entry",  icon: <PenLine    className="h-2.5 w-2.5" />, color: "text-muted-foreground" },
+  scheduling:     { label: "Scheduling",    icon: <CalendarDays className="h-2.5 w-2.5" />, color: "text-teal-600 dark:text-teal-400" },
+};
+
+function DJSourceBadge({ sourceType }: { sourceType: string }) {
+  const cfg = DJ_SOURCE_CONFIG[sourceType] ?? { label: sourceType.replace(/_/g, " "), color: "bg-muted text-muted-foreground border-border", icon: <Activity className="h-3 w-3" /> };
+  return (
+    <Badge variant="outline" className={`text-[8px] px-1.5 py-0 h-4 gap-0.5 border flex items-center ${cfg.color}`}>
+      {cfg.icon}
+      <span className="ml-0.5">{cfg.label}</span>
+    </Badge>
+  );
+}
+
+function DJTypePill({ decisionType }: { decisionType: string }) {
+  const cfg = DJ_TYPE_CONFIG[decisionType] ?? { label: decisionType.replace(/_/g, " "), icon: <Activity className="h-2.5 w-2.5" />, color: "text-muted-foreground" };
+  return (
+    <span className={`flex items-center gap-0.5 text-[9px] font-medium ${cfg.color}`}>
+      {cfg.icon}
+      {cfg.label}
+    </span>
+  );
+}
+
+function DecisionCard({ entry }: { entry: DecisionEntry }) {
+  const [open, setOpen] = useState(false);
+  const conf = entry.confidence;
+  const confColor = conf >= 90 ? "text-emerald-600 dark:text-emerald-400" : conf >= 75 ? "text-amber-600 dark:text-amber-400" : "text-rose-500";
+
+  return (
+    <div className="p-4 rounded-xl border bg-card hover:shadow-sm transition-shadow" data-testid={`decision-card-${entry.id}`}>
+      <div className="flex items-start gap-3">
+        <div className={`p-1.5 rounded-lg border shrink-0 mt-0.5 ${(DJ_SOURCE_CONFIG[entry.sourceType]?.color ?? "bg-muted border-border").split(" ").slice(0, 2).join(" ")}`}>
+          {DJ_SOURCE_CONFIG[entry.sourceType]?.icon ?? <Activity className="h-3 w-3" />}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-1.5 flex-wrap mb-1">
+            <p className="text-[11px] font-semibold flex-1 leading-snug">{entry.decision}</p>
+          </div>
+          <div className="flex items-center gap-2 flex-wrap text-[9px] text-muted-foreground mb-2">
+            <DJSourceBadge sourceType={entry.sourceType} />
+            <DJTypePill decisionType={entry.decisionType} />
+            <span className={`font-bold ${confColor}`}>{conf}%</span>
+            <span>·</span>
+            <span>{entry.agent}</span>
+            <span>·</span>
+            <span className="flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{formatDistanceToNow(new Date(entry.createdAt), { addSuffix: true })}</span>
+          </div>
+          {entry.reasoning && (
+            <p className="text-[10px] text-muted-foreground mb-1.5 leading-relaxed">
+              <span className="font-semibold text-foreground">Reasoning: </span>{entry.reasoning.slice(0, open ? undefined : 140)}{!open && entry.reasoning.length > 140 ? "…" : ""}
+            </p>
+          )}
+          {open && (
+            <div className="space-y-1.5 mt-1.5">
+              {entry.outcome && <p className="text-[10px]"><span className="font-semibold">Outcome: </span><span className="text-muted-foreground">{entry.outcome}</span></p>}
+              {entry.followUp && <p className="text-[10px]"><span className="font-semibold">Follow-Up: </span><span className="text-muted-foreground">{entry.followUp}</span></p>}
+              {entry.relatedEntityType && <p className="text-[9px] text-muted-foreground">Ref: {entry.relatedEntityType}{entry.relatedEntityId ? ` · ${entry.relatedEntityId.slice(0, 12)}…` : ""}</p>}
+            </div>
+          )}
+          <button onClick={() => setOpen(!open)} className="mt-1 text-[9px] text-primary hover:underline" data-testid={`toggle-decision-${entry.id}`}>
+            {open ? "Show less ↑" : "Show outcome & follow-up ↓"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManualDecisionForm({ onRecorded, onClose }: { onRecorded: () => void; onClose: () => void }) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({ agent: "", decision: "", reasoning: "", outcome: "", followUp: "", confidence: 90, department: "Operations", decisionType: "manual" });
+  const mut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/organizational-memory/decisions/record", form),
+    onSuccess: () => { toast({ title: "Decision recorded" }); onRecorded(); onClose(); },
+    onError: () => toast({ title: "Failed to record", variant: "destructive" }),
+  });
+
+  return (
+    <div className="p-4 rounded-xl border bg-card space-y-3" data-testid="manual-decision-form">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold">Record Manual Decision</p>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+      </div>
+      <div className="grid gap-2">
+        <div>
+          <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Decision *</label>
+          <textarea rows={2} className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background resize-none" placeholder="What was decided?" value={form.decision} onChange={e => setForm(f => ({ ...f, decision: e.target.value }))} data-testid="input-decision" />
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Agent / Person</label>
+            <input className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background" placeholder="Who decided?" value={form.agent} onChange={e => setForm(f => ({ ...f, agent: e.target.value }))} data-testid="input-agent" />
+          </div>
+          <div>
+            <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Confidence %</label>
+            <input type="number" min={0} max={100} className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background" value={form.confidence} onChange={e => setForm(f => ({ ...f, confidence: Number(e.target.value) }))} data-testid="input-confidence" />
+          </div>
+        </div>
+        <div>
+          <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Reasoning</label>
+          <textarea rows={2} className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background resize-none" placeholder="Why was this decision made?" value={form.reasoning} onChange={e => setForm(f => ({ ...f, reasoning: e.target.value }))} data-testid="input-reasoning" />
+        </div>
+        <div>
+          <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Expected Outcome</label>
+          <input className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background" placeholder="What is the intended result?" value={form.outcome} onChange={e => setForm(f => ({ ...f, outcome: e.target.value }))} data-testid="input-outcome" />
+        </div>
+        <div>
+          <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Follow-Up Action</label>
+          <input className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background" placeholder="What happens next?" value={form.followUp} onChange={e => setForm(f => ({ ...f, followUp: e.target.value }))} data-testid="input-followup" />
+        </div>
+      </div>
+      <div className="flex gap-2 justify-end pt-1">
+        <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+        <Button size="sm" disabled={!form.decision.trim() || mut.isPending} onClick={() => mut.mutate()} data-testid="button-submit-decision">
+          {mut.isPending ? "Saving…" : "Record Decision"}
+        </Button>
+      </div>
+    </div>
+  );
+}
 
 function DecisionsTab() {
-  const { data, isLoading } = useQuery<{ decisions: Memory[]; total: number }>({ queryKey: ["/api/organizational-memory/decisions"], staleTime: 30_000 });
+  const qc = useQueryClient();
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchSubmitted, setSearchSubmitted] = useState("");
+  const [showForm, setShowForm] = useState(false);
+
+  const statsQuery = useQuery<DecisionStats>({ queryKey: ["/api/organizational-memory/decisions/stats"], staleTime: 15_000 });
+  const decisionsQuery = useQuery<{ decisions: DecisionEntry[]; total: number }>({
+    queryKey: ["/api/organizational-memory/decisions", sourceFilter],
+    queryFn: () => fetchJson(`/api/organizational-memory/decisions${sourceFilter !== "all" ? `?sourceType=${encodeURIComponent(sourceFilter)}` : ""}&limit=100`),
+    staleTime: 15_000,
+  });
+  const searchResultsQuery = useQuery<DecisionSearchResult>({
+    queryKey: ["/api/organizational-memory/decisions/search", searchSubmitted],
+    queryFn: () => fetchJson(`/api/organizational-memory/decisions/search?q=${encodeURIComponent(searchSubmitted)}`),
+    enabled: searchSubmitted.length > 0,
+    staleTime: 15_000,
+  });
+
+  const stats = statsQuery.data;
+  const decisions = searchSubmitted ? (searchResultsQuery.data?.results ?? []) : (decisionsQuery.data?.decisions ?? []);
+  const isLoading = searchSubmitted ? searchResultsQuery.isLoading : decisionsQuery.isLoading;
+
+  // Source types present in stats
+  const activeSources = stats ? Object.keys(stats.bySourceType).sort((a, b) => stats.bySourceType[b] - stats.bySourceType[a]) : [];
+
+  const handleSearch = () => { setSearchSubmitted(searchQuery.trim()); setSourceFilter("all"); };
+  const handleClearSearch = () => { setSearchSubmitted(""); setSearchQuery(""); };
+
+  const handleRecorded = () => {
+    qc.invalidateQueries({ queryKey: ["/api/organizational-memory/decisions"] });
+    qc.invalidateQueries({ queryKey: ["/api/organizational-memory/decisions/stats"] });
+  };
+
   return (
-    <div className="space-y-3" data-testid="tab-decisions">
-      <div className="flex items-center gap-2 p-3 rounded-xl bg-primary/5 border border-primary/20">
-        <CheckSquare className="h-4 w-4 text-primary shrink-0" />
-        <p className="text-[10px] text-muted-foreground">Every major business decision recorded here — searchable, auditable, and referenced by agents before making similar choices.</p>
+    <div className="space-y-4" data-testid="tab-decisions">
+      {/* Header banner */}
+      <div className="flex items-start gap-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
+        <ListChecks className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold mb-0.5">Decision Journal — Automatic Capture</p>
+          <p className="text-[10px] text-muted-foreground">Every approval, rejection, agent execution, and recommendation is automatically recorded here. Manual entries remain available for human decisions.</p>
+        </div>
+        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs shrink-0" onClick={() => setShowForm(!showForm)} data-testid="button-record-manual">
+          <PenLine className="h-3.5 w-3.5" />Record Manual
+        </Button>
       </div>
-      {isLoading ? <Skeleton className="h-64 rounded-xl" /> : (
+
+      {showForm && <ManualDecisionForm onRecorded={handleRecorded} onClose={() => setShowForm(false)} />}
+
+      {/* KPI stats */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Total Decisions",    value: stats.total,            color: "text-primary" },
+            { label: "Agent Decisions",    value: stats.agentDecisions,   color: "text-violet-600 dark:text-violet-400" },
+            { label: "Human Decisions",    value: stats.humanDecisions,   color: "text-slate-600 dark:text-slate-400" },
+            { label: "Approvals",          value: stats.approvalCount,    color: "text-emerald-600 dark:text-emerald-400" },
+            { label: "Rejections",         value: stats.rejectionCount,   color: "text-rose-500" },
+            { label: "Avg Confidence",     value: `${stats.avgConfidence}%`, color: "text-amber-600 dark:text-amber-400" },
+            { label: "This Week",          value: stats.last7DaysCount,   color: "text-blue-600 dark:text-blue-400" },
+            { label: "Approval Rate",      value: stats.total > 0 ? `${Math.round((stats.approvalCount / stats.total) * 100)}%` : "—", color: "text-emerald-600 dark:text-emerald-400" },
+          ].map(k => (
+            <div key={k.label} className="p-3 rounded-xl border bg-card text-center" data-testid={`dj-stat-${k.label.toLowerCase().replace(/\s+/g, "-")}`}>
+              <p className={`text-xl font-extrabold ${k.color}`}>{k.value}</p>
+              <p className="text-[9px] text-muted-foreground">{k.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Search bar */}
+      <div className="flex gap-2">
+        <div className="flex-1 relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            className="w-full pl-8 pr-3 py-2 text-xs rounded-lg border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="Search decisions, reasoning, outcomes…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSearch()}
+            data-testid="input-decision-search"
+          />
+        </div>
+        <Button size="sm" variant="outline" className="h-8 px-3" onClick={handleSearch} data-testid="button-search-decisions">Search</Button>
+        {searchSubmitted && <Button size="sm" variant="ghost" className="h-8 px-2" onClick={handleClearSearch} data-testid="button-clear-search"><X className="h-3.5 w-3.5" /></Button>}
+      </div>
+
+      {/* Source type filter tabs */}
+      {!searchSubmitted && (
+        <div className="flex gap-1 flex-wrap">
+          {["all", ...activeSources].map(s => (
+            <button key={s} onClick={() => setSourceFilter(s)} data-testid={`dj-filter-${s}`}
+              className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-colors flex items-center gap-1 ${sourceFilter === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
+              {s !== "all" && DJ_SOURCE_CONFIG[s]?.icon}
+              {s === "all" ? "All Sources" : (DJ_SOURCE_CONFIG[s]?.label ?? s.replace(/_/g, " "))}
+              {s !== "all" && stats?.bySourceType[s] != null && <span className="opacity-70">({stats.bySourceType[s]})</span>}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {searchSubmitted && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-muted/40 border">
+          <Search className="h-3.5 w-3.5 text-muted-foreground" />
+          <p className="text-[10px] text-muted-foreground flex-1">Showing {searchResultsQuery.data?.total ?? 0} result{(searchResultsQuery.data?.total ?? 0) !== 1 ? "s" : ""} for <span className="font-semibold text-foreground">"{searchSubmitted}"</span></p>
+          <button onClick={handleClearSearch} className="text-[10px] text-primary hover:underline">Clear</button>
+        </div>
+      )}
+
+      {/* Decision cards */}
+      {isLoading ? (
+        <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
+      ) : decisions.length === 0 ? (
+        <div className="py-16 text-center space-y-3">
+          <ListChecks className="h-8 w-8 text-muted-foreground mx-auto opacity-40" />
+          <p className="text-sm text-muted-foreground font-medium">{searchSubmitted ? "No decisions match your search" : "No decisions captured yet"}</p>
+          <p className="text-[10px] text-muted-foreground max-w-xs mx-auto">
+            {searchSubmitted
+              ? "Try a different search term — decisions are searchable by decision text, reasoning, outcome, and agent."
+              : "Decisions are automatically captured when workflows are approved/rejected, AgentMail drafts are reviewed, heartbeats run, and recommendations are acted upon."}
+          </p>
+          {!searchSubmitted && (
+            <Button size="sm" variant="outline" className="gap-1.5 mt-2" onClick={() => setShowForm(true)} data-testid="button-add-first-decision">
+              <PenLine className="h-3.5 w-3.5" />Record your first decision
+            </Button>
+          )}
+        </div>
+      ) : (
         <div className="space-y-3">
-          {(data?.decisions ?? []).map(m => <MemoryCard key={m.id} memory={m} />)}
-          {(data?.decisions ?? []).length === 0 && <div className="py-12 text-center text-muted-foreground text-sm">No decisions recorded yet.</div>}
+          {decisions.map(d => <DecisionCard key={d.id} entry={d} />)}
         </div>
       )}
     </div>

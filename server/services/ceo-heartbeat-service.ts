@@ -998,6 +998,20 @@ export async function runHeartbeatCycle(opts: {
     }).catch(() => {});
   }).catch(() => {});
 
+  // Fire-and-forget: capture decision journal entry for this heartbeat cycle
+  import("./decision-journal-service").then(({ recordHeartbeatDecision }) => {
+    const topPriority = priorities?.[0]?.title ?? priorities?.[0]?.action ?? undefined;
+    recordHeartbeatDecision({
+      orgId,
+      agentsCoordinated,
+      prioritiesGenerated,
+      errors: allErrors,
+      durationMs: Date.now() - startTime,
+      runId: heartbeatId,
+      topPriority,
+    }).catch(() => {});
+  }).catch(() => {});
+
   return { success: allErrors.length === 0, runId: heartbeatId, priorities, errors: allErrors };
 }
 
