@@ -3378,7 +3378,7 @@ export const workflowJobs = pgTable("workflow_jobs", {
   result: jsonb("result"),
 
   // Idempotency + locking
-  idempotencyKey: text("idempotency_key"),
+  idempotencyKey: text("idempotency_key").unique(),
   lockedBy: text("locked_by"),
   lockedAt: timestamp("locked_at"),
 

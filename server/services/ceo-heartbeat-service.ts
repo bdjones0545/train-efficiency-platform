@@ -137,19 +137,18 @@ export async function acquireJobLock(
     return { acquired: true, lockKey };
   } catch {
     // Unique constraint violation = lock already held
-    // Check if an existing lock has expired
-    const expired = await db.select().from(jobExecutionLocks)
+    // Atomic takeover — single UPDATE prevents TOCTOU race between two concurrent workers
+    // both seeing the same expired lock and both trying to claim it.
+    const [taken] = await db
+      .update(jobExecutionLocks)
+      .set({ status: "acquired", acquiredAt: now, expiresAt, releasedAt: null })
       .where(and(
         eq(jobExecutionLocks.lockKey, lockKey),
         lt(jobExecutionLocks.expiresAt, now),
-      )).limit(1);
+      ))
+      .returning({ id: jobExecutionLocks.id });
 
-    if (expired.length > 0) {
-      await db.update(jobExecutionLocks)
-        .set({ status: "acquired", acquiredAt: now, expiresAt, releasedAt: null })
-        .where(eq(jobExecutionLocks.lockKey, lockKey));
-      return { acquired: true, lockKey };
-    }
+    if (taken) return { acquired: true, lockKey };
     return { acquired: false, lockKey };
   }
 }
@@ -702,8 +701,11 @@ export async function runHeartbeatCycle(opts: {
 
   // Acquire lock (prevent duplicate runs within same 30-minute window)
   const { acquired, lockKey } = await acquireJobLock(orgId, "ceo_heartbeat", 28);
-  if (!acquired && triggeredBy === "cron") {
-    return { success: false, runId: "", priorities: [], errors: ["Lock already held — skipping duplicate run"] };
+  if (!acquired) {
+    // Block ALL concurrent runs — cron, manual, and startup — to prevent duplicate AI actions,
+    // priority spam, and recommendation duplication.
+    const trigger = triggeredBy ?? "cron";
+    return { success: false, runId: "", priorities: [], errors: [`Lock already held — skipping duplicate ${trigger} run`] };
   }
 
   // Check global pause

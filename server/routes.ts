@@ -22832,9 +22832,17 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
         const { checkHumanApprovedSendGuards: _guard } = await import("./services/send-guard-service");
         const _guardResult = await _guard(orgId, p.recipientEmail);
         if (_guardResult.blocked) throw new Error(`Send blocked: ${_guardResult.reason}`);
+        // Atomic claim — prevents double-execute under concurrent admin clicks.
+        // Sets executedAt atomically; only the first request claiming the row wins.
+        const [_claimed] = await db
+          .update(gmailAgentActions)
+          .set({ executedAt: new Date() })
+          .where(and(eq(gmailAgentActions.id, p.id), isNull(gmailAgentActions.executedAt)))
+          .returning({ id: gmailAgentActions.id });
+        if (!_claimed) throw new Error("Already executed — concurrent request won the race");
         const { messageId, threadId } = await sendEmail({ orgId, to: p.recipientEmail, subject: p.subject ?? "(no subject)", body: p.bodyPreview ?? "", leadId: p.leadId ?? undefined, dealId: p.dealId ?? undefined });
         await Promise.all([
-          db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, p.id)),
+          db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, p.id)),
           db.insert(agentMessageFeedback).values({ orgId, proposalId: p.id, leadId: p.leadId ?? null, agentName: p.createdByAgent ?? null, messageType: p.actionType.replace("propose_draft:", ""), originalSubject: p.subject ?? null, originalBody: p.bodyPreview ?? null, decision: "approved", reviewedBy: userId, outcome: "sent", communicationDomain: (p as any).communicationDomain ?? "athlete_lead" } as any),
         ]);
         const { createOutcomeOnSend } = await import("./services/outcome-intelligence-service");

@@ -1300,44 +1300,49 @@ export class DatabaseStorage implements IStorage {
       throw new Error(`creditWallet: amountCents must be positive (got ${amountCents})`);
     }
 
-    const [tx] = await db.insert(walletTransactions).values({
-      userId,
-      type: "CREDIT" as const,
-      amountCents,
-      description,
-      sourceType: "stripe",
-      stripeSessionId: stripeSessionId || null,
-      stripePaymentIntentId: stripePaymentIntentId || null,
-      stripeChargeId: stripeChargeId || null,
-      currency: currency || "usd",
-      paymentStatus: paymentStatus || "succeeded",
-      livemode: livemode ?? false,
-    }).onConflictDoNothing().returning();
+    // Wrap INSERT + balance UPDATE in a single transaction to eliminate the ledger
+    // drift risk: a process crash between the two statements previously left the
+    // wallet_transactions row inserted but the user.balance_cents unchanged.
+    return await db.transaction(async (trx) => {
+      const [tx] = await trx.insert(walletTransactions).values({
+        userId,
+        type: "CREDIT" as const,
+        amountCents,
+        description,
+        sourceType: "stripe",
+        stripeSessionId: stripeSessionId || null,
+        stripePaymentIntentId: stripePaymentIntentId || null,
+        stripeChargeId: stripeChargeId || null,
+        currency: currency || "usd",
+        paymentStatus: paymentStatus || "succeeded",
+        livemode: livemode ?? false,
+      }).onConflictDoNothing().returning();
 
-    if (!tx) {
-      // Idempotent: already credited — return existing record without re-updating balance
-      let existing: WalletTransaction | undefined;
-      if (stripePaymentIntentId) {
-        [existing] = await db.select().from(walletTransactions)
-          .where(eq(walletTransactions.stripePaymentIntentId, stripePaymentIntentId))
-          .limit(1);
-      } else if (stripeSessionId) {
-        [existing] = await db.select().from(walletTransactions)
-          .where(eq(walletTransactions.stripeSessionId, stripeSessionId))
-          .limit(1);
+      if (!tx) {
+        // Idempotent: already credited — return existing record without re-updating balance
+        let existing: WalletTransaction | undefined;
+        if (stripePaymentIntentId) {
+          [existing] = await trx.select().from(walletTransactions)
+            .where(eq(walletTransactions.stripePaymentIntentId, stripePaymentIntentId))
+            .limit(1);
+        } else if (stripeSessionId) {
+          [existing] = await trx.select().from(walletTransactions)
+            .where(eq(walletTransactions.stripeSessionId, stripeSessionId))
+            .limit(1);
+        }
+        if (existing) {
+          console.log(`[creditWallet] Idempotent skip — already credited (piId: ${stripePaymentIntentId ?? "none"}, sessionId: ${stripeSessionId ?? "none"}, existingTxId: ${existing.id})`);
+          return existing;
+        }
+        throw new Error(`creditWallet: insert skipped (unique conflict) but no existing record found (piId: ${stripePaymentIntentId}, sessionId: ${stripeSessionId})`);
       }
-      if (existing) {
-        console.log(`[creditWallet] Idempotent skip — already credited (piId: ${stripePaymentIntentId ?? "none"}, sessionId: ${stripeSessionId ?? "none"}, existingTxId: ${existing.id})`);
-        return existing;
-      }
-      throw new Error(`creditWallet: insert skipped (unique conflict) but no existing record found (piId: ${stripePaymentIntentId}, sessionId: ${stripeSessionId})`);
-    }
 
-    await db.update(users).set({
-      balanceCents: sql`COALESCE(${users.balanceCents}, 0) + ${amountCents}`,
-    }).where(eq(users.id, userId));
+      await trx.update(users).set({
+        balanceCents: sql`COALESCE(${users.balanceCents}, 0) + ${amountCents}`,
+      }).where(eq(users.id, userId));
 
-    return tx;
+      return tx;
+    });
   }
 
   async debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction> {

@@ -76,6 +76,13 @@ async function ensureReplyTables(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_approval    ON agent_mail_reply_queue (approval_status)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_inbox       ON agent_mail_reply_queue (inbox)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_inbound     ON agent_mail_reply_queue (inbound_message_id)`);
+    // Unique constraint: one reply draft per inbound message per org.
+    // Prevents the same inbound email from spawning multiple simultaneous drafts
+    // on webhook replay or concurrent worker pickup.
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_reply_queue_inbound_unique
+      ON agent_mail_reply_queue (organization_id, inbound_message_id)
+    `);
   } catch (e: any) {
     console.error("[AgentMail Reply] Queue table error:", e?.message);
   }

@@ -17,10 +17,26 @@
  */
 
 import { db } from "./db";
+import { sql as sqlRaw } from "drizzle-orm";
 import { workflowJobs, agentExecutionLocks, orgExecutionRateLimits } from "@shared/schema";
 import { eq, and, lte, lt, isNull, or, sql, desc, inArray } from "drizzle-orm";
 import { logUnifiedAction } from "./unified-action-logger";
 import { getGovernanceSettings } from "./capability-enforcement-engine";
+
+// Enforce DB-level unique constraint on idempotency_key at startup.
+// This closes the TOCTOU race: two concurrent enqueues with the same key both
+// pass the app-level SELECT check but only one INSERT wins at the DB level.
+(async () => {
+  try {
+    await db.execute(sqlRaw`
+      CREATE UNIQUE INDEX IF NOT EXISTS workflow_jobs_idempotency_key_unique
+      ON workflow_jobs (idempotency_key)
+      WHERE idempotency_key IS NOT NULL
+    `);
+  } catch {
+    // Index may already exist — safe to ignore
+  }
+})();
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -114,21 +130,38 @@ export async function enqueueWorkflowJob(input: EnqueueJobInput): Promise<JobExe
 
   const maxAttempts = input.maxAttempts ?? MAX_ATTEMPTS_BY_TYPE[input.jobType] ?? 3;
 
-  const [job] = await db.insert(workflowJobs).values({
-    id: crypto.randomUUID(),
-    orgId: input.orgId,
-    workflowRunId: input.workflowRunId ?? null,
-    workflowStepId: input.workflowStepId ?? null,
-    jobType: input.jobType,
-    status: "queued",
-    priority: input.priority ?? "normal",
-    scheduledFor: input.scheduledFor ?? new Date(),
-    attempts: 0,
-    maxAttempts,
-    retryBackoffMs: BACKOFF_SCHEDULE[0],
-    payload: input.payload,
-    idempotencyKey: input.idempotencyKey ?? null,
-  }).returning();
+  let job: typeof workflowJobs.$inferSelect;
+  try {
+    const [inserted] = await db.insert(workflowJobs).values({
+      id: crypto.randomUUID(),
+      orgId: input.orgId,
+      workflowRunId: input.workflowRunId ?? null,
+      workflowStepId: input.workflowStepId ?? null,
+      jobType: input.jobType,
+      status: "queued",
+      priority: input.priority ?? "normal",
+      scheduledFor: input.scheduledFor ?? new Date(),
+      attempts: 0,
+      maxAttempts,
+      retryBackoffMs: BACKOFF_SCHEDULE[0],
+      payload: input.payload,
+      idempotencyKey: input.idempotencyKey ?? null,
+    }).returning();
+    job = inserted;
+  } catch (err: any) {
+    // PostgreSQL unique_violation (23505) on idempotency_key — another concurrent
+    // enqueue won the race. Look up and return the existing job instead.
+    if (input.idempotencyKey && err?.code === "23505") {
+      const [racing] = await db
+        .select()
+        .from(workflowJobs)
+        .where(eq(workflowJobs.idempotencyKey, input.idempotencyKey));
+      if (racing) {
+        return { jobId: racing.id, status: racing.status as JobStatus, duplicate: true };
+      }
+    }
+    throw err;
+  }
 
   await logUnifiedAction({
     orgId: input.orgId,

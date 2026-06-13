@@ -1,0 +1,296 @@
+SPRINT 3 — AGENT CONSISTENCY, IDEMPOTENCY & CONCURRENCY AUDIT
+
+Objective:
+
+Sprint 1 established org isolation.
+
+Sprint 2 established agent execution integrity.
+
+Sprint 3 establishes execution consistency under concurrency, retries, crashes, webhook replays, network failures, and duplicate-trigger scenarios.
+
+Goal:
+
+No agent, workflow, email, webhook, heartbeat, approval, billing action, or retry path should be capable of creating duplicate side effects.
+
+──────────────────────────────
+PHASE 1 — WORKFLOW JOB IDEMPOTENCY
+──────────────────────────────
+
+Audit:
+
+workflow_jobs
+agent_execution_locks
+workflow orchestrator
+job retry paths
+
+Verify:
+
+1. Can the same workflow job execute twice?
+2. Can a retry create duplicate side effects?
+3. Can a crashed worker re-run completed work?
+4. Can concurrent workers claim the same job?
+
+For every workflow type:
+
+* identify idempotency key
+* identify lock strategy
+* identify retry strategy
+
+Return:
+
+* duplicate execution risks
+* missing idempotency keys
+* lock weaknesses
+
+──────────────────────────────
+PHASE 2 — HEARTBEAT CONSISTENCY
+──────────────────────────────
+
+Audit:
+
+CEO Heartbeat
+runHeartbeatCycle()
+startup heartbeat
+scheduled heartbeat
+manual heartbeat
+
+Verify:
+
+1. Can two heartbeat runs overlap?
+2. Can startup + manual run collide?
+3. Can startup + cron collide?
+4. Can heartbeat actions execute twice?
+5. Can priorities be duplicated?
+6. Can recommendations be duplicated?
+7. Can approvals be generated twice?
+
+Verify lock behavior:
+
+${orgId}:${jobName}:${timeBucket}
+
+Confirm it prevents overlap.
+
+Return:
+
+* overlap risks
+* duplicate generation risks
+* lock validation
+
+──────────────────────────────
+PHASE 3 — EMAIL & OUTREACH IDEMPOTENCY
+──────────────────────────────
+
+Audit:
+
+AgentMail
+follow-up engine
+outbound email
+prospect automation
+SendGrid integration
+
+Verify:
+
+1. Same email cannot send twice.
+2. Retry does not duplicate send.
+3. Worker restart does not duplicate send.
+4. Atomic claim is correct.
+5. Concurrent workers cannot process same follow-up.
+
+Inspect:
+
+email_follow_ups
+gmail_agent_actions
+agent_mail_followups
+
+Return:
+
+* duplicate send risks
+* missing unique constraints
+* missing claim protections
+
+──────────────────────────────
+PHASE 4 — STRIPE & BILLING IDEMPOTENCY
+──────────────────────────────
+
+Audit:
+
+Stripe webhooks
+wallet credits
+wallet redemptions
+billing intelligence
+revenue attribution
+
+Verify:
+
+1. Same webhook cannot credit twice.
+2. payment_intent replay cannot credit twice.
+3. checkout.session replay cannot credit twice.
+4. charge.succeeded replay cannot credit twice.
+5. retry paths remain safe.
+
+Inspect:
+
+wallet_transactions
+stripe event processing
+unique indexes
+creditWallet()
+
+Return:
+
+* replay vulnerabilities
+* duplicate credit risks
+* validation proof
+
+──────────────────────────────
+PHASE 5 — APPROVAL SYSTEM CONSISTENCY
+──────────────────────────────
+
+Audit:
+
+AI approvals
+agent approvals
+recommendation approvals
+approval queue
+
+Verify:
+
+1. Same recommendation cannot generate multiple approvals.
+2. Approve cannot execute twice.
+3. Reject cannot execute twice.
+4. Retry paths are safe.
+5. Concurrent admin clicks are safe.
+
+Inspect:
+
+approval tables
+approval execution paths
+
+Return:
+
+* replay risks
+* duplicate approval risks
+* race conditions
+
+──────────────────────────────
+PHASE 6 — AGENT ACTION CONSISTENCY
+──────────────────────────────
+
+Audit:
+
+unified_agent_action_log
+agent_actions
+revenue_agent_actions
+
+Verify:
+
+1. Same action cannot be recorded twice.
+2. Same recommendation cannot create duplicate actions.
+3. Same trigger cannot create duplicate agent execution.
+4. Retries remain safe.
+
+Look for:
+
+* missing unique keys
+* missing execution fingerprints
+* duplicate inserts
+
+Return:
+
+* duplication risks
+* missing protections
+
+──────────────────────────────
+PHASE 7 — WEBHOOK & EVENT REPLAY AUDIT
+──────────────────────────────
+
+Audit every inbound event source:
+
+Stripe
+SendGrid
+AgentMail callbacks
+future integrations
+
+Verify:
+
+1. Replay safe.
+2. Out-of-order safe.
+3. Duplicate delivery safe.
+4. Timeout retry safe.
+
+Return:
+
+* replay protection matrix
+* missing event ids
+* missing dedup layers
+
+──────────────────────────────
+PHASE 8 — CONCURRENCY STRESS REVIEW
+──────────────────────────────
+
+Theoretical stress test:
+
+10 concurrent users
+10 concurrent heartbeat runs
+10 concurrent workflow workers
+10 concurrent webhook deliveries
+
+Verify:
+
+* lock acquisition
+* unique constraints
+* transaction boundaries
+* dead-letter handling
+
+Return:
+
+* race conditions
+* lock weaknesses
+* transaction risks
+
+──────────────────────────────
+REQUIRED OUTPUT
+──────────────────────────────
+
+For every finding:
+
+Severity:
+
+* Critical
+* High
+* Medium
+* Low
+
+Classification:
+
+* Duplicate execution
+* Replay vulnerability
+* Race condition
+* Missing idempotency
+* Missing unique constraint
+* Missing lock
+
+Provide:
+
+1. Current protection
+2. Risk
+3. Recommended fix
+4. Estimated implementation effort
+
+──────────────────────────────
+FINAL REPORT
+──────────────────────────────
+
+Provide:
+
+1. Idempotency Score (0–100)
+2. Concurrency Safety Score (0–100)
+3. Replay Protection Score (0–100)
+4. Top 20 Risks
+5. Quick Wins (<30 min)
+6. High-Impact Fixes (<1 day)
+7. Major Refactors (>1 day)
+8. Recommended Sprint 4
+
+Goal:
+
+Prove that TrainEfficiency behaves correctly under retries, crashes, concurrent execution, webhook replays, worker restarts, and high-volume agent activity.
