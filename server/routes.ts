@@ -18780,6 +18780,67 @@ Respond with this exact JSON structure:
     }
   });
 
+  // GET /api/org/gmail/actions/:id/detail — action + joined conversation context
+  app.get("/api/org/gmail/actions/:id/detail", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { db } = await import("./db");
+      const { gmailAgentActions, gmailConversations } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [action] = await db.select().from(gmailAgentActions)
+        .where(and(eq(gmailAgentActions.id, req.params.id), eq(gmailAgentActions.orgId, orgId)))
+        .limit(1);
+      if (!action) return res.status(404).json({ message: "Action not found" });
+      let conversation = null;
+      if (action.gmailThreadId) {
+        const [conv] = await db.select().from(gmailConversations)
+          .where(and(eq(gmailConversations.orgId, orgId), eq(gmailConversations.gmailThreadId, action.gmailThreadId)))
+          .limit(1);
+        conversation = conv ?? null;
+      }
+      res.json({ action, conversation });
+    } catch (err: any) {
+      console.error("[gmail/actions/detail] error:", err);
+      res.status(500).json({ message: "Failed to fetch action detail" });
+    }
+  });
+
+  // POST /api/org/gmail/actions/:id/view — record a "viewed" audit event
+  app.post("/api/org/gmail/actions/:id/view", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { db } = await import("./db");
+      const { gmailAgentActions, agentMessageFeedback } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [action] = await db.select().from(gmailAgentActions)
+        .where(and(eq(gmailAgentActions.id, req.params.id), eq(gmailAgentActions.orgId, orgId)))
+        .limit(1);
+      if (!action) return res.status(404).json({ message: "Action not found" });
+      await db.insert(agentMessageFeedback).values({
+        orgId,
+        proposalId: action.id,
+        leadId: action.leadId ?? undefined,
+        agentName: action.createdByAgent ?? "gmail_agent",
+        messageType: action.actionType,
+        originalSubject: action.subject ?? undefined,
+        originalBody: (action.result as any)?.draftBody ?? action.bodyPreview ?? undefined,
+        decision: "viewed",
+        reviewedBy: userId,
+        communicationDomain: action.communicationDomain ?? "athlete_lead",
+      }).catch(() => {});
+      res.json({ success: true });
+    } catch (err: any) {
+      console.error("[gmail/actions/view] error:", err);
+      res.status(500).json({ message: "Failed to record view event" });
+    }
+  });
+
   // POST /api/org/gmail/actions/:id/approve — approve a proposed action
   app.post("/api/org/gmail/actions/:id/approve", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
@@ -18788,7 +18849,7 @@ Respond with this exact JSON structure:
       if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
       const orgId = profile.organizationId;
       const { db } = await import("./db");
-      const { gmailAgentActions } = await import("@shared/schema");
+      const { gmailAgentActions, agentMessageFeedback } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
       const [updated] = await db
         .update(gmailAgentActions)
@@ -18796,10 +18857,107 @@ Respond with this exact JSON structure:
         .where(and(eq(gmailAgentActions.id, req.params.id), eq(gmailAgentActions.orgId, orgId)))
         .returning();
       if (!updated) return res.status(404).json({ message: "Action not found" });
+      await db.insert(agentMessageFeedback).values({
+        orgId,
+        proposalId: updated.id,
+        leadId: updated.leadId ?? undefined,
+        agentName: updated.createdByAgent ?? "gmail_agent",
+        messageType: updated.actionType,
+        originalSubject: updated.subject ?? undefined,
+        originalBody: (updated.result as any)?.draftBody ?? updated.bodyPreview ?? undefined,
+        decision: "approved",
+        reviewedBy: userId,
+        communicationDomain: updated.communicationDomain ?? "athlete_lead",
+      }).catch(() => {});
       res.json({ success: true, action: updated });
     } catch (err: any) {
       console.error("[gmail/actions/approve] error:", err);
       res.status(500).json({ message: "Failed to approve action" });
+    }
+  });
+
+  // POST /api/org/gmail/actions/:id/reject — reject with optional reason
+  app.post("/api/org/gmail/actions/:id/reject", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { reason } = req.body ?? {};
+      const { db } = await import("./db");
+      const { gmailAgentActions, agentMessageFeedback } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [updated] = await db
+        .update(gmailAgentActions)
+        .set({ status: "rejected", errorMessage: reason ?? "Rejected by reviewer" })
+        .where(and(eq(gmailAgentActions.id, req.params.id), eq(gmailAgentActions.orgId, orgId)))
+        .returning();
+      if (!updated) return res.status(404).json({ message: "Action not found" });
+      await db.insert(agentMessageFeedback).values({
+        orgId,
+        proposalId: updated.id,
+        leadId: updated.leadId ?? undefined,
+        agentName: updated.createdByAgent ?? "gmail_agent",
+        messageType: updated.actionType,
+        originalSubject: updated.subject ?? undefined,
+        originalBody: (updated.result as any)?.draftBody ?? updated.bodyPreview ?? undefined,
+        decision: "rejected",
+        rejectionReason: reason ?? undefined,
+        reviewedBy: userId,
+        communicationDomain: updated.communicationDomain ?? "athlete_lead",
+      }).catch(() => {});
+      res.json({ success: true, action: updated });
+    } catch (err: any) {
+      console.error("[gmail/actions/reject] error:", err);
+      res.status(500).json({ message: "Failed to reject action" });
+    }
+  });
+
+  // POST /api/org/gmail/actions/:id/edit-approve — edit draft then approve
+  app.post("/api/org/gmail/actions/:id/edit-approve", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { subject, body } = req.body ?? {};
+      const { db } = await import("./db");
+      const { gmailAgentActions, agentMessageFeedback } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+      const [original] = await db.select().from(gmailAgentActions)
+        .where(and(eq(gmailAgentActions.id, req.params.id), eq(gmailAgentActions.orgId, orgId)))
+        .limit(1);
+      if (!original) return res.status(404).json({ message: "Action not found" });
+      const updatedResult = { ...(original.result as any ?? {}), draftBody: body };
+      const [updated] = await db
+        .update(gmailAgentActions)
+        .set({
+          status: "approved",
+          approvedBy: userId,
+          subject: subject ?? original.subject,
+          bodyPreview: body ? body.slice(0, 500) : original.bodyPreview,
+          result: updatedResult,
+        })
+        .where(and(eq(gmailAgentActions.id, req.params.id), eq(gmailAgentActions.orgId, orgId)))
+        .returning();
+      await db.insert(agentMessageFeedback).values({
+        orgId,
+        proposalId: updated.id,
+        leadId: updated.leadId ?? undefined,
+        agentName: updated.createdByAgent ?? "gmail_agent",
+        messageType: updated.actionType,
+        originalSubject: original.subject ?? undefined,
+        originalBody: (original.result as any)?.draftBody ?? original.bodyPreview ?? undefined,
+        editedSubject: subject ?? undefined,
+        editedBody: body ?? undefined,
+        decision: "edited_and_approved",
+        reviewedBy: userId,
+        communicationDomain: updated.communicationDomain ?? "athlete_lead",
+      }).catch(() => {});
+      res.json({ success: true, action: updated });
+    } catch (err: any) {
+      console.error("[gmail/actions/edit-approve] error:", err);
+      res.status(500).json({ message: "Failed to edit and approve action" });
     }
   });
 

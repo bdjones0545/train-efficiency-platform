@@ -2,13 +2,21 @@ import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Inbox,
   RefreshCw,
@@ -24,7 +32,17 @@ import {
   ChevronRight,
   Activity,
   WifiOff,
+  Eye,
+  ShieldCheck,
+  ShieldX,
+  Pencil,
+  MessageSquare,
+  Bot,
+  GitBranch,
+  Info,
 } from "lucide-react";
+
+// ─── Types ───────────────────────────────────────────────────────────────────
 
 type GmailConversation = {
   id: string;
@@ -57,15 +75,28 @@ type GmailAgentAction = {
   dealId?: string;
   recipientEmail?: string;
   subject?: string;
+  bodyPreview?: string;
   riskLevel: string;
   approvalRequired: boolean;
   status: string;
-  result?: any;
+  result?: {
+    draftBody?: string;
+    reasoning?: string;
+    confidence?: number;
+    schedulingSlots?: string[];
+    [key: string]: any;
+  };
   errorMessage?: string;
   createdByAgent?: string;
   approvedBy?: string;
   createdAt: string;
   executedAt?: string;
+  communicationDomain?: string;
+};
+
+type ActionDetail = {
+  action: GmailAgentAction;
+  conversation: GmailConversation | null;
 };
 
 type GmailSyncStatus = {
@@ -74,6 +105,8 @@ type GmailSyncStatus = {
   lastGmailSyncStatus: "idle" | "running" | "success" | "failed" | "skipped";
   lastGmailSyncError: string | null;
 };
+
+// ─── Constants ────────────────────────────────────────────────────────────────
 
 const INTENT_LABELS: Record<string, { label: string; color: string }> = {
   interested: { label: "Interested", color: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300" },
@@ -100,6 +133,7 @@ const ACTION_STATUS_COLORS: Record<string, string> = {
   approved: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
   executed: "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300",
   failed: "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300",
+  rejected: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300",
   cancelled: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
 };
 
@@ -110,6 +144,8 @@ const RISK_COLORS: Record<string, string> = {
   critical: "bg-red-200 text-red-900 dark:bg-red-900/50 dark:text-red-200",
 };
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
 function timeAgo(dateStr?: string | null): string {
   if (!dateStr) return "—";
   const diff = Date.now() - new Date(dateStr).getTime();
@@ -118,8 +154,7 @@ function timeAgo(dateStr?: string | null): string {
   if (mins < 60) return `${mins}m ago`;
   const hrs = Math.floor(mins / 60);
   if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  return `${days}d ago`;
+  return `${Math.floor(hrs / 24)}d ago`;
 }
 
 function timeUntil(dateStr?: string | null): string {
@@ -128,8 +163,47 @@ function timeUntil(dateStr?: string | null): string {
   if (diff <= 0) return "any moment";
   const mins = Math.floor(diff / 60000);
   if (mins < 60) return `in ${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  return `in ${hrs}h`;
+  return `in ${Math.floor(mins / 60)}h`;
+}
+
+function formatDate(dateStr?: string | null): string {
+  if (!dateStr) return "—";
+  return new Date(dateStr).toLocaleString();
+}
+
+function deriveReasoning(actionType: string, result?: GmailAgentAction["result"]): string {
+  if (result?.reasoning) return result.reasoning;
+  const map: Record<string, string> = {
+    "propose_draft:scheduling_response": "Scheduling request detected in inbound reply — agent drafted a response with available time slots.",
+    "propose_draft:followup": "Follow-up triggered after no response period — lead recovery workflow initiated.",
+    "propose_draft:lead_recovery": "Lead recovery workflow triggered — prospect went silent after initial contact.",
+    "propose_draft:objection_handling": "Objection detected in reply — agent drafted a handling response.",
+    "propose_draft:info_response": "Information request detected — agent drafted an informational reply.",
+    "propose_draft:scheduling": "Scheduling intent classified from reply — agent drafted a booking response.",
+    "send_draft": "Approved draft queued for send.",
+    "classify_reply": "Inbound reply classification requested.",
+  };
+  const lower = actionType.toLowerCase();
+  for (const [key, label] of Object.entries(map)) {
+    if (lower.includes(key.split(":")[1] ?? key) || lower === key) return label;
+  }
+  if (lower.includes("schedule")) return "Scheduling request detected in inbound reply.";
+  if (lower.includes("followup") || lower.includes("follow")) return "Follow-up triggered after no response period.";
+  if (lower.includes("recovery")) return "Lead recovery workflow triggered.";
+  return `Agent action: ${actionType.replace(/_/g, " ").replace(/:/g, " — ")}`;
+}
+
+function deriveConfidence(action: GmailAgentAction): number {
+  if (action.result?.confidence != null) return Math.round(action.result.confidence);
+  const map: Record<string, number> = { low: 88, medium: 65, high: 42, critical: 25 };
+  return map[action.riskLevel] ?? 65;
+}
+
+function friendlyActionType(actionType: string): string {
+  return actionType
+    .replace(/propose_draft:/i, "Draft: ")
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
 function suggestNextAction(convo: GmailConversation): string {
@@ -144,60 +218,46 @@ function suggestNextAction(convo: GmailConversation): string {
   }
 }
 
-function SyncStatusRow({
-  syncStatus,
-  isSyncing,
-}: {
-  syncStatus: GmailSyncStatus | undefined;
-  isSyncing: boolean;
-}) {
-  const [, setTick] = useState(0);
+// ─── Sync Status Row ─────────────────────────────────────────────────────────
 
+function SyncStatusRow({ syncStatus, isSyncing }: { syncStatus?: GmailSyncStatus; isSyncing: boolean }) {
+  const [, setTick] = useState(0);
   useEffect(() => {
-    const interval = setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => clearInterval(interval);
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
   }, []);
 
   const status = isSyncing ? "running" : (syncStatus?.lastGmailSyncStatus ?? "idle");
-
-  const statusConfig: Record<string, { label: string; className: string; Icon: typeof Activity }> = {
-    idle: { label: "Idle", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", Icon: Clock },
-    running: { label: "Running", className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", Icon: RefreshCw },
-    success: { label: "Healthy", className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300", Icon: CheckCircle },
-    failed: { label: "Failed", className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300", Icon: WifiOff },
-    skipped: { label: "Skipped", className: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", Icon: Clock },
+  const cfgMap = {
+    idle: { label: "Idle", cls: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", Icon: Clock },
+    running: { label: "Running", cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300", Icon: RefreshCw },
+    success: { label: "Healthy", cls: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300", Icon: CheckCircle },
+    failed: { label: "Failed", cls: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300", Icon: WifiOff },
+    skipped: { label: "Skipped", cls: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400", Icon: Clock },
   };
-
-  const cfg = statusConfig[status] ?? statusConfig.idle;
+  const cfg = cfgMap[status as keyof typeof cfgMap] ?? cfgMap.idle;
   const { Icon } = cfg;
 
   return (
-    <div
-      className="flex items-center gap-4 px-3 py-2 rounded-lg bg-muted/50 border text-xs flex-wrap"
-      data-testid="sync-status-row"
-    >
+    <div className="flex items-center gap-4 px-3 py-2 rounded-lg bg-muted/50 border text-xs flex-wrap" data-testid="sync-status-row">
       <div className="flex items-center gap-1.5">
         <Activity className="h-3.5 w-3.5 text-muted-foreground" />
         <span className="text-muted-foreground font-medium">Auto-sync</span>
       </div>
-
       <div className="flex items-center gap-1 text-muted-foreground" data-testid="sync-last-synced">
         <Clock className="h-3 w-3" />
         <span>Last synced: <span className="font-medium text-foreground">{timeAgo(syncStatus?.lastGmailSyncAt)}</span></span>
       </div>
-
       <div className="flex items-center gap-1 text-muted-foreground" data-testid="sync-next-sync">
         <RefreshCw className="h-3 w-3" />
         <span>Next sync: <span className="font-medium text-foreground">{timeUntil(syncStatus?.nextGmailSyncAt)}</span></span>
       </div>
-
       <div className="flex items-center gap-1.5" data-testid="sync-status-badge">
-        <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${cfg.className}`}>
+        <span className={`flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${cfg.cls}`}>
           <Icon className={`h-3 w-3 ${status === "running" ? "animate-spin" : ""}`} />
           {cfg.label}
         </span>
       </div>
-
       {syncStatus?.lastGmailSyncError && status === "failed" && (
         <span className="text-red-600 dark:text-red-400 truncate max-w-xs" data-testid="sync-error-msg">
           {syncStatus.lastGmailSyncError}
@@ -207,10 +267,413 @@ function SyncStatusRow({
   );
 }
 
+// ─── Draft Review Modal ───────────────────────────────────────────────────────
+
+type ModalMode = "view" | "edit" | "reject";
+
+function DraftReviewModal({
+  actionId,
+  onClose,
+  onApproved,
+  onRejected,
+}: {
+  actionId: string | null;
+  onClose: () => void;
+  onApproved: () => void;
+  onRejected: () => void;
+}) {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [mode, setMode] = useState<ModalMode>("view");
+  const [editSubject, setEditSubject] = useState("");
+  const [editBody, setEditBody] = useState("");
+  const [rejectReason, setRejectReason] = useState("");
+
+  const detailQuery = useQuery<ActionDetail>({
+    queryKey: ["/api/org/gmail/actions", actionId, "detail"],
+    queryFn: () => apiRequest("GET", `/api/org/gmail/actions/${actionId}/detail`),
+    enabled: !!actionId,
+  });
+
+  // Record "viewed" audit event once detail loads
+  const viewMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/org/gmail/actions/${actionId}/view`),
+  });
+  useEffect(() => {
+    if (detailQuery.data && actionId) {
+      viewMutation.mutate();
+    }
+  }, [detailQuery.data?.action?.id]);
+
+  // Seed edit fields when data loads
+  useEffect(() => {
+    if (detailQuery.data?.action) {
+      const a = detailQuery.data.action;
+      setEditSubject(a.subject ?? "");
+      setEditBody(a.result?.draftBody ?? a.bodyPreview ?? "");
+    }
+  }, [detailQuery.data?.action?.id]);
+
+  const approveMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/org/gmail/actions/${actionId}/approve`),
+    onSuccess: () => {
+      toast({ title: "Draft approved", description: "Action moved to approved status." });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/actions"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/sync-status"] });
+      onApproved();
+    },
+    onError: (e: any) => toast({ title: "Approval failed", description: e.message, variant: "destructive" }),
+  });
+
+  const editApproveMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/org/gmail/actions/${actionId}/edit-approve`, {
+      subject: editSubject,
+      body: editBody,
+    }),
+    onSuccess: () => {
+      toast({ title: "Draft edited & approved", description: "Your edits have been saved and the action approved." });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/actions"] });
+      onApproved();
+    },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const rejectMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/org/gmail/actions/${actionId}/reject`, {
+      reason: rejectReason || "Rejected by reviewer",
+    }),
+    onSuccess: () => {
+      toast({ title: "Draft rejected", description: "Action marked as rejected." });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/actions"] });
+      onRejected();
+    },
+    onError: (e: any) => toast({ title: "Failed", description: e.message, variant: "destructive" }),
+  });
+
+  const isOpen = !!actionId;
+  const action = detailQuery.data?.action;
+  const conversation = detailQuery.data?.conversation;
+  const isPending = action?.status === "proposed" || action?.status === "awaiting_approval";
+  const draftBody = action?.result?.draftBody ?? action?.bodyPreview ?? "";
+  const confidence = action ? deriveConfidence(action) : 0;
+  const reasoning = action ? deriveReasoning(action.actionType, action.result) : "";
+
+  const handleClose = () => {
+    setMode("view");
+    setRejectReason("");
+    onClose();
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={handleClose}>
+      <DialogContent className="max-w-2xl w-full max-h-[92vh] overflow-y-auto p-0">
+        <DialogHeader className="px-6 pt-6 pb-4 border-b sticky top-0 bg-background z-10">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Eye className="h-5 w-5 text-blue-600 shrink-0" />
+            {mode === "edit" ? "Edit Draft" : mode === "reject" ? "Reject Action" : "Draft Review"}
+          </DialogTitle>
+          {action && (
+            <div className="flex items-center gap-2 mt-1 flex-wrap">
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ACTION_STATUS_COLORS[action.status] ?? ""}`}>
+                {action.status}
+              </span>
+              <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${RISK_COLORS[action.riskLevel] ?? ""}`}>
+                {action.riskLevel} risk
+              </span>
+              {action.approvalRequired && (
+                <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+                  needs approval
+                </span>
+              )}
+            </div>
+          )}
+        </DialogHeader>
+
+        <div className="px-6 py-5 space-y-6">
+          {detailQuery.isLoading && (
+            <div className="space-y-3">
+              {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-12 w-full" />)}
+            </div>
+          )}
+
+          {action && (
+            <>
+              {/* ── Section 1: Metadata ── */}
+              <section data-testid="modal-section-metadata">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Info className="h-3.5 w-3.5" /> Recipient & Details
+                </h3>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {[
+                    { label: "Recipient", value: action.recipientEmail ?? "—", icon: Mail },
+                    { label: "Subject", value: action.subject ?? "—", icon: MessageSquare },
+                    { label: "Created", value: formatDate(action.createdAt), icon: Clock },
+                    { label: "Agent", value: action.createdByAgent?.replace(/_/g, " ") ?? "—", icon: Bot },
+                  ].map(({ label, value, icon: Icon }) => (
+                    <div key={label} className="flex items-start gap-2 p-3 rounded-lg bg-muted/40 border">
+                      <Icon className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-xs text-muted-foreground font-medium">{label}</p>
+                        <p className="text-sm font-medium truncate">{value}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* ── Section 2: Draft Body ── */}
+              <section data-testid="modal-section-draft">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5" /> Draft Body
+                </h3>
+                {mode === "edit" ? (
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Subject</Label>
+                      <Input
+                        value={editSubject}
+                        onChange={(e) => setEditSubject(e.target.value)}
+                        className="mt-1"
+                        data-testid="input-edit-subject"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Body</Label>
+                      <Textarea
+                        value={editBody}
+                        onChange={(e) => setEditBody(e.target.value)}
+                        className="mt-1 min-h-[200px] font-mono text-sm resize-y"
+                        data-testid="textarea-edit-body"
+                      />
+                    </div>
+                  </div>
+                ) : draftBody ? (
+                  <div className="p-4 rounded-lg bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 whitespace-pre-wrap text-sm leading-relaxed font-mono" data-testid="draft-body-text">
+                    {draftBody}
+                  </div>
+                ) : (
+                  <div className="p-4 rounded-lg bg-muted/30 border text-sm text-muted-foreground italic text-center" data-testid="draft-body-empty">
+                    No draft body stored — agent queued this action without generating body text yet.
+                  </div>
+                )}
+              </section>
+
+              <Separator />
+
+              {/* ── Section 3: AI Reasoning ── */}
+              <section data-testid="modal-section-reasoning">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Bot className="h-3.5 w-3.5" /> AI Reasoning
+                </h3>
+                <div className="p-3 rounded-lg bg-purple-50 dark:bg-purple-900/10 border border-purple-100 dark:border-purple-900/30 flex items-start gap-2">
+                  <Zap className="h-4 w-4 text-purple-600 shrink-0 mt-0.5" />
+                  <p className="text-sm text-purple-900 dark:text-purple-200">{reasoning}</p>
+                </div>
+                <div className="mt-2">
+                  <p className="text-xs text-muted-foreground">
+                    Action type: <code className="bg-muted px-1 rounded text-xs">{action.actionType}</code>
+                    {action.communicationDomain && (
+                      <> · Domain: <code className="bg-muted px-1 rounded text-xs">{action.communicationDomain}</code></>
+                    )}
+                  </p>
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* ── Section 4: Risk Assessment ── */}
+              <section data-testid="modal-section-risk">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <ShieldCheck className="h-3.5 w-3.5" /> Risk Assessment
+                </h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg border bg-muted/30">
+                    <p className="text-xs text-muted-foreground mb-1">Risk Level</p>
+                    <span className={`text-sm px-2 py-0.5 rounded-full font-semibold ${RISK_COLORS[action.riskLevel] ?? ""}`}>
+                      {action.riskLevel.charAt(0).toUpperCase() + action.riskLevel.slice(1)}
+                    </span>
+                  </div>
+                  <div className="p-3 rounded-lg border bg-muted/30">
+                    <p className="text-xs text-muted-foreground mb-1">Confidence</p>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${confidence >= 80 ? "bg-green-500" : confidence >= 55 ? "bg-amber-500" : "bg-red-500"}`}
+                          style={{ width: `${confidence}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-semibold tabular-nums">{confidence}%</span>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <Separator />
+
+              {/* ── Section 5: Source Context ── */}
+              <section data-testid="modal-section-context">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <GitBranch className="h-3.5 w-3.5" /> Source Context
+                </h3>
+                {conversation ? (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                      <div className="p-3 rounded-lg bg-muted/30 border">
+                        <p className="text-xs text-muted-foreground mb-0.5">Original Thread Subject</p>
+                        <p className="font-medium truncate">{conversation.subject ?? "—"}</p>
+                      </div>
+                      <div className="p-3 rounded-lg bg-muted/30 border">
+                        <p className="text-xs text-muted-foreground mb-0.5">Participant</p>
+                        <p className="font-medium truncate">{conversation.participantName ?? conversation.participantEmail ?? "—"}</p>
+                        {conversation.participantEmail && conversation.participantName && (
+                          <p className="text-xs text-muted-foreground truncate">{conversation.participantEmail}</p>
+                        )}
+                      </div>
+                    </div>
+                    {conversation.lastSnippet && (
+                      <div className="p-3 rounded-lg bg-muted/30 border">
+                        <p className="text-xs text-muted-foreground mb-1">Most Recent Inbound Message</p>
+                        <p className="text-sm italic text-muted-foreground">"{conversation.lastSnippet}"</p>
+                      </div>
+                    )}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="p-3 rounded-lg bg-muted/30 border">
+                        <p className="text-xs text-muted-foreground mb-0.5">Classification</p>
+                        {conversation.intent ? (
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${INTENT_LABELS[conversation.intent]?.color ?? ""}`}>
+                            {INTENT_LABELS[conversation.intent]?.label ?? conversation.intent}
+                          </span>
+                        ) : <span className="text-muted-foreground text-xs">—</span>}
+                      </div>
+                      <div className="p-3 rounded-lg bg-muted/30 border">
+                        <p className="text-xs text-muted-foreground mb-0.5">Workflow</p>
+                        <p className="text-sm font-medium">{action.createdByAgent?.replace(/_/g, " ") ?? "—"}</p>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 rounded-lg bg-muted/30 border text-sm text-muted-foreground">
+                    {action.gmailThreadId
+                      ? "Conversation context not found for this thread."
+                      : "No thread linked to this action."}
+                  </div>
+                )}
+              </section>
+
+              {/* ── Reject Mode: Reason Input ── */}
+              {mode === "reject" && (
+                <>
+                  <Separator />
+                  <section data-testid="modal-section-reject">
+                    <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3 flex items-center gap-1.5">
+                      <ShieldX className="h-3.5 w-3.5 text-red-500" /> Rejection Reason
+                    </h3>
+                    <Textarea
+                      placeholder="Optional: explain why this draft is being rejected…"
+                      value={rejectReason}
+                      onChange={(e) => setRejectReason(e.target.value)}
+                      className="min-h-[80px] resize-none"
+                      data-testid="textarea-reject-reason"
+                    />
+                  </section>
+                </>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* ── Footer Actions ── */}
+        <DialogFooter className="px-6 py-4 border-t sticky bottom-0 bg-background z-10 flex flex-col sm:flex-row gap-2">
+          {action && isPending && mode === "view" && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setMode("edit")} data-testid="button-edit-draft" className="w-full sm:w-auto order-3 sm:order-1">
+                <Pencil className="h-4 w-4 mr-1.5" /> Edit Draft
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => setMode("reject")}
+                data-testid="button-reject-draft"
+                className="w-full sm:w-auto order-2"
+              >
+                <ShieldX className="h-4 w-4 mr-1.5" /> Reject
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => approveMutation.mutate()}
+                disabled={approveMutation.isPending}
+                data-testid="button-approve-draft"
+                className="w-full sm:w-auto order-1"
+              >
+                <CheckCircle className="h-4 w-4 mr-1.5" />
+                {approveMutation.isPending ? "Approving…" : "Approve"}
+              </Button>
+            </>
+          )}
+
+          {action && isPending && mode === "edit" && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setMode("view")} className="w-full sm:w-auto order-2">
+                Cancel Edit
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => editApproveMutation.mutate()}
+                disabled={editApproveMutation.isPending || !editBody.trim()}
+                data-testid="button-approve-with-edits"
+                className="w-full sm:w-auto order-1"
+              >
+                <CheckCircle className="h-4 w-4 mr-1.5" />
+                {editApproveMutation.isPending ? "Saving…" : "Approve with Edits"}
+              </Button>
+            </>
+          )}
+
+          {action && isPending && mode === "reject" && (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setMode("view")} className="w-full sm:w-auto order-2">
+                Back
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => rejectMutation.mutate()}
+                disabled={rejectMutation.isPending}
+                data-testid="button-confirm-reject"
+                className="w-full sm:w-auto order-1"
+              >
+                <ShieldX className="h-4 w-4 mr-1.5" />
+                {rejectMutation.isPending ? "Rejecting…" : "Confirm Rejection"}
+              </Button>
+            </>
+          )}
+
+          {(!action || !isPending) && (
+            <Button variant="outline" size="sm" onClick={handleClose} className="w-full sm:w-auto" data-testid="button-close-draft-modal">
+              Close
+            </Button>
+          )}
+
+          {action && isPending && mode === "view" && (
+            <Button variant="ghost" size="sm" onClick={handleClose} className="w-full sm:w-auto order-4 sm:mr-auto sm:order-0">
+              Close
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
+
 export default function AdminGmailConversationsPage() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [selectedConvo, setSelectedConvo] = useState<GmailConversation | null>(null);
+  const [draftActionId, setDraftActionId] = useState<string | null>(null);
   const [syncLog, setSyncLog] = useState<string[]>([]);
 
   const conversationsQuery = useQuery<GmailConversation[]>({
@@ -246,7 +709,6 @@ export default function AdminGmailConversationsPage() {
         return;
       }
       toast({ title: "Sync failed", description: err.message, variant: "destructive" });
-      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/sync-status"] });
     },
   });
 
@@ -275,7 +737,7 @@ export default function AdminGmailConversationsPage() {
     },
   });
 
-  const approveActionMutation = useMutation({
+  const quickApproveMutation = useMutation({
     mutationFn: (id: string) => apiRequest("POST", `/api/org/gmail/actions/${id}/approve`),
     onSuccess: () => {
       toast({ title: "Action approved" });
@@ -286,22 +748,24 @@ export default function AdminGmailConversationsPage() {
     },
   });
 
-  const cancelActionMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/org/gmail/actions/${id}/cancel`),
+  const quickRejectMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/org/gmail/actions/${id}/reject`),
     onSuccess: () => {
-      toast({ title: "Action cancelled" });
+      toast({ title: "Action rejected" });
       queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/actions"] });
+    },
+    onError: (err: any) => {
+      toast({ title: "Failed", description: err.message, variant: "destructive" });
     },
   });
 
   const conversations = conversationsQuery.data ?? [];
   const actions = actionsQuery.data ?? [];
-
   const unprocessed = conversations.filter((c) => c.status !== "processed" && c.status !== "suppressed");
   const pendingActions = actions.filter((a) => a.status === "proposed" || a.status === "awaiting_approval");
 
   return (
-    <div className="p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
@@ -313,7 +777,7 @@ export default function AdminGmailConversationsPage() {
             AI-tracked inbound replies, intent classification, and suggested next actions.
           </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Button
             variant="outline"
             size="sm"
@@ -337,12 +801,9 @@ export default function AdminGmailConversationsPage() {
       </div>
 
       {/* Sync Status Row */}
-      <SyncStatusRow
-        syncStatus={syncStatusQuery.data}
-        isSyncing={syncMutation.isPending}
-      />
+      <SyncStatusRow syncStatus={syncStatusQuery.data} isSyncing={syncMutation.isPending} />
 
-      {/* Phase 8 — Gmail Draft-Only Safety Notice */}
+      {/* Draft-Only Safety Notice */}
       <div className="flex items-start gap-3 p-3 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 text-sm" data-testid="banner-gmail-safety">
         <AlertTriangle className="h-4 w-4 mt-0.5 shrink-0 text-purple-500" />
         <span>
@@ -353,7 +814,7 @@ export default function AdminGmailConversationsPage() {
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { label: "Total Conversations", value: conversations.length, icon: Inbox, color: "text-blue-600" },
           { label: "Needs Response", value: unprocessed.length, icon: AlertTriangle, color: "text-amber-600" },
@@ -399,19 +860,21 @@ export default function AdminGmailConversationsPage() {
       <Tabs defaultValue="conversations">
         <TabsList data-testid="tabs-gmail">
           <TabsTrigger value="conversations" data-testid="tab-conversations">
-            Conversations {unprocessed.length > 0 && <span className="ml-1 text-xs bg-amber-500 text-white rounded-full px-1.5">{unprocessed.length}</span>}
+            Conversations {unprocessed.length > 0 && (
+              <span className="ml-1 text-xs bg-amber-500 text-white rounded-full px-1.5">{unprocessed.length}</span>
+            )}
           </TabsTrigger>
           <TabsTrigger value="actions" data-testid="tab-actions">
-            Action Queue {pendingActions.length > 0 && <span className="ml-1 text-xs bg-purple-500 text-white rounded-full px-1.5">{pendingActions.length}</span>}
+            Action Queue {pendingActions.length > 0 && (
+              <span className="ml-1 text-xs bg-purple-500 text-white rounded-full px-1.5">{pendingActions.length}</span>
+            )}
           </TabsTrigger>
         </TabsList>
 
         {/* ── Conversations Tab ── */}
         <TabsContent value="conversations" className="space-y-3 mt-4">
           {conversationsQuery.isLoading ? (
-            Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 w-full rounded-lg" />
-            ))
+            Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-20 w-full rounded-lg" />)
           ) : conversations.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <Inbox className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -469,9 +932,7 @@ export default function AdminGmailConversationsPage() {
         {/* ── Action Queue Tab ── */}
         <TabsContent value="actions" className="space-y-3 mt-4">
           {actionsQuery.isLoading ? (
-            Array.from({ length: 3 }).map((_, i) => (
-              <Skeleton key={i} className="h-20 w-full rounded-lg" />
-            ))
+            Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 w-full rounded-lg" />)
           ) : actions.length === 0 ? (
             <div className="text-center py-16 text-muted-foreground">
               <Zap className="h-12 w-12 mx-auto mb-3 opacity-30" />
@@ -479,76 +940,116 @@ export default function AdminGmailConversationsPage() {
               <p className="text-sm">Actions appear here when the agent proposes drafts or follow-ups.</p>
             </div>
           ) : (
-            actions.map((action) => (
-              <Card key={action.id} data-testid={`card-action-${action.id}`}>
-                <CardContent className="py-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-medium text-sm">{action.actionType.replace(/_/g, " ")}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ACTION_STATUS_COLORS[action.status] ?? "bg-gray-100 text-gray-600"}`}>{action.status}</span>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${RISK_COLORS[action.riskLevel] ?? "bg-gray-100"}`}>
-                          {action.riskLevel} risk
-                        </span>
-                        {action.approvalRequired && (
-                          <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
-                            needs approval
-                          </span>
+            actions.map((action) => {
+              const isPending = action.status === "proposed" || action.status === "awaiting_approval";
+              const displaySubject = action.subject ?? friendlyActionType(action.actionType);
+              const displayPreview = action.result?.draftBody
+                ? action.result.draftBody.slice(0, 120)
+                : action.bodyPreview
+                  ? action.bodyPreview.slice(0, 120)
+                  : null;
+
+              return (
+                <Card key={action.id} data-testid={`card-action-${action.id}`}>
+                  <CardContent className="py-4">
+                    <div className="flex flex-col gap-3">
+                      {/* Top row: labels + time */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${ACTION_STATUS_COLORS[action.status] ?? "bg-gray-100 text-gray-600"}`}>
+                              {action.status}
+                            </span>
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${RISK_COLORS[action.riskLevel] ?? "bg-gray-100"}`}>
+                              {action.riskLevel} risk
+                            </span>
+                            {action.approvalRequired && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
+                                needs approval
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <span className="text-xs text-muted-foreground shrink-0">{timeAgo(action.createdAt)}</span>
+                      </div>
+
+                      {/* Subject + preview */}
+                      <div className="min-w-0">
+                        <p className="font-medium text-sm truncate flex items-center gap-1.5">
+                          <Mail className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                          {displaySubject}
+                        </p>
+                        {displayPreview && (
+                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 italic">
+                            {displayPreview}{displayPreview.length >= 120 ? "…" : ""}
+                          </p>
+                        )}
+                        {action.recipientEmail && (
+                          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                            <User className="h-3 w-3" /> {action.recipientEmail}
+                          </p>
+                        )}
+                        {action.createdByAgent && (
+                          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
+                            <Tag className="h-3 w-3" /> {action.createdByAgent.replace(/_/g, " ")}
+                          </p>
+                        )}
+                        {action.errorMessage && action.status === "rejected" && (
+                          <p className="text-xs text-rose-600 mt-1 flex items-center gap-1">
+                            <XCircle className="h-3 w-3" /> {action.errorMessage}
+                          </p>
+                        )}
+                        {action.errorMessage && action.status === "failed" && (
+                          <p className="text-xs text-red-600 mt-1">{action.errorMessage}</p>
                         )}
                       </div>
-                      {action.recipientEmail && (
-                        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                          <Mail className="h-3 w-3" /> {action.recipientEmail}
-                        </p>
-                      )}
-                      {action.subject && (
-                        <p className="text-xs text-muted-foreground truncate mt-0.5">{action.subject}</p>
-                      )}
-                      {action.createdByAgent && (
-                        <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1">
-                          <Tag className="h-3 w-3" /> {action.createdByAgent}
-                        </p>
-                      )}
-                      {action.errorMessage && (
-                        <p className="text-xs text-red-600 mt-1">{action.errorMessage}</p>
-                      )}
-                    </div>
-                    <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-                      <span className="text-xs text-muted-foreground">{timeAgo(action.createdAt)}</span>
-                      {(action.status === "proposed" || action.status === "awaiting_approval") && (
-                        <div className="flex gap-1.5">
+
+                      {/* Action buttons */}
+                      {isPending && (
+                        <div className="flex flex-wrap gap-2 pt-1 border-t">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 text-xs flex-1 sm:flex-none"
+                            onClick={() => setDraftActionId(action.id)}
+                            data-testid={`button-view-draft-${action.id}`}
+                          >
+                            <Eye className="h-3.5 w-3.5 mr-1.5" /> View Draft
+                          </Button>
                           <Button
                             size="sm"
                             variant="default"
-                            className="h-7 text-xs px-2.5"
-                            onClick={() => approveActionMutation.mutate(action.id)}
-                            disabled={approveActionMutation.isPending}
+                            className="h-8 text-xs flex-1 sm:flex-none"
+                            onClick={() => quickApproveMutation.mutate(action.id)}
+                            disabled={quickApproveMutation.isPending}
                             data-testid={`button-approve-action-${action.id}`}
                           >
-                            <CheckCircle className="h-3 w-3 mr-1" /> Approve
+                            <CheckCircle className="h-3.5 w-3.5 mr-1.5" />
+                            {quickApproveMutation.isPending ? "…" : "Approve"}
                           </Button>
                           <Button
                             size="sm"
                             variant="outline"
-                            className="h-7 text-xs px-2.5"
-                            onClick={() => cancelActionMutation.mutate(action.id)}
-                            disabled={cancelActionMutation.isPending}
-                            data-testid={`button-cancel-action-${action.id}`}
+                            className="h-8 text-xs flex-1 sm:flex-none text-rose-600 border-rose-200 hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                            onClick={() => quickRejectMutation.mutate(action.id)}
+                            disabled={quickRejectMutation.isPending}
+                            data-testid={`button-reject-action-${action.id}`}
                           >
-                            <XCircle className="h-3 w-3 mr-1" /> Cancel
+                            <ShieldX className="h-3.5 w-3.5 mr-1.5" />
+                            {quickRejectMutation.isPending ? "…" : "Reject"}
                           </Button>
                         </div>
                       )}
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))
+                  </CardContent>
+                </Card>
+              );
+            })
           )}
         </TabsContent>
       </Tabs>
 
-      {/* Conversation Detail Dialog */}
+      {/* ── Conversation Detail Dialog ── */}
       <Dialog open={!!selectedConvo} onOpenChange={() => setSelectedConvo(null)}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -629,18 +1130,12 @@ export default function AdminGmailConversationsPage() {
               <Separator />
 
               <div className="flex gap-2 justify-end">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedConvo(null)}
-                  data-testid="button-close-convo-dialog"
-                >
+                <Button variant="outline" size="sm" onClick={() => setSelectedConvo(null)} data-testid="button-close-convo-dialog">
                   Close
                 </Button>
                 {selectedConvo.status !== "processed" && (
                   <Button
                     size="sm"
-                    variant="default"
                     onClick={() => markProcessedMutation.mutate(selectedConvo.gmailThreadId)}
                     disabled={markProcessedMutation.isPending}
                     data-testid="button-mark-processed"
@@ -654,6 +1149,14 @@ export default function AdminGmailConversationsPage() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* ── Draft Review Modal ── */}
+      <DraftReviewModal
+        actionId={draftActionId}
+        onClose={() => setDraftActionId(null)}
+        onApproved={() => setDraftActionId(null)}
+        onRejected={() => setDraftActionId(null)}
+      />
     </div>
   );
 }
