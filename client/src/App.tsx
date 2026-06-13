@@ -127,6 +127,8 @@ import AdminWorkflowHeatmapPage from "@/pages/admin-workflow-heatmap";
 import AdminWorkflowsLibraryPage from "@/pages/admin-workflows-library";
 import OnboardingAiWorkforcePage from "@/pages/onboarding-ai-workforce";
 import AdminRecommendationsPage from "@/pages/admin-recommendations";
+import AdminActionCenterPage from "@/pages/admin-action-center";
+import AdminHermesPage from "@/pages/admin-hermes";
 import AdminAiEmployeeProfilePage from "@/pages/admin-ai-employee-profile";
 import EmailTriggerAuditPage from "@/pages/email-trigger-audit";
 import AdminAiApprovalsPage from "@/pages/admin-ai-approvals";
@@ -618,6 +620,8 @@ function AuthenticatedLayout() {
                   <Route path="/marketplace/store" component={MarketplaceStorePage} />
                   <Route path="/admin/ai-employee/:agentId" component={AdminAiEmployeeProfilePage} />
                   <Route path="/admin/recommendations" component={AdminRecommendationsPage} />
+                  <Route path="/admin/action-center" component={AdminActionCenterPage} />
+                  <Route path="/admin/hermes" component={AdminHermesPage} />
                   <Route path="/admin/workflow-builder" component={AdminWorkflowBuilderPage} />
                   <Route path="/admin/workflows/:id/live" component={AdminWorkflowLivePage} />
                   <Route path="/admin/workflow-heatmap" component={AdminWorkflowHeatmapPage} />

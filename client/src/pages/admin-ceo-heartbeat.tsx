@@ -176,6 +176,16 @@ export default function AdminCeoHeartbeatPage() {
     refetchInterval: 120_000,
   });
 
+  const { data: execMetrics } = useQuery<any>({
+    queryKey: ["/api/executions/metrics"],
+    refetchInterval: 120_000,
+  });
+
+  const { data: actionCenterSummary } = useQuery<any>({
+    queryKey: ["/api/action-center/summary"],
+    refetchInterval: 120_000,
+  });
+
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
   const orgQs = orgId ? `?orgId=${orgId}` : "";
@@ -1130,6 +1140,76 @@ export default function AdminCeoHeartbeatPage() {
             <div className="mt-3 text-xs text-muted-foreground bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 rounded-md px-3 py-2">
               <Lightbulb className="h-3 w-3 text-violet-500 inline mr-1" />
               Hermes will run automatically on the next CEO Heartbeat cycle. Click "Run now" to trigger immediately.
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Execution Engine */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Zap className="h-4 w-4 text-green-500" />
+              Execution Engine
+            </CardTitle>
+            <a href="/admin/action-center" className="text-xs text-green-500 hover:underline flex items-center gap-1">
+              Action Center <ArrowRight className="h-3 w-3" />
+            </a>
+          </div>
+          <CardDescription className="text-xs">Unified approval queue · execution outcomes · cross-agent coordination</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-3">
+            {[
+              {
+                label: "Pending Actions",
+                value: actionCenterSummary?.pending?.total ?? "—",
+                color: "text-yellow-600 dark:text-yellow-400",
+                testId: "heartbeat-exec-pending",
+              },
+              {
+                label: "Total Executed",
+                value: execMetrics?.totalExecutions ?? "—",
+                color: "text-primary",
+                testId: "heartbeat-exec-total",
+              },
+              {
+                label: "Success Rate",
+                value: execMetrics?.successRate != null ? `${execMetrics.successRate}%` : "—",
+                color: execMetrics?.successRate >= 80 ? "text-green-600 dark:text-green-400" : execMetrics?.successRate >= 50 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400",
+                testId: "heartbeat-exec-success-rate",
+              },
+              {
+                label: "Open Conflicts",
+                value: actionCenterSummary?.conflicts?.open ?? "—",
+                color: (actionCenterSummary?.conflicts?.open ?? 0) > 0 ? "text-orange-600 dark:text-orange-400" : "text-green-600 dark:text-green-400",
+                testId: "heartbeat-exec-conflicts",
+              },
+            ].map((s) => (
+              <div key={s.label} className="bg-muted/30 rounded-lg p-3 space-y-1" data-testid={s.testId}>
+                <p className="text-xs text-muted-foreground">{s.label}</p>
+                <p className={`text-xl font-bold ${s.color}`}>{s.value}</p>
+              </div>
+            ))}
+          </div>
+          {execMetrics?.byType && Object.keys(execMetrics.byType).length > 0 && (
+            <div className="space-y-1">
+              {Object.entries(execMetrics.byType as Record<string, number>)
+                .sort(([, a], [, b]) => b - a)
+                .slice(0, 4)
+                .map(([type, count]) => (
+                  <div key={type} className="flex items-center justify-between text-xs py-1 border-b border-border/30 last:border-0">
+                    <span className="text-muted-foreground capitalize">{type.replace(/_/g, " ")}</span>
+                    <span className="font-semibold">{count as number} executions</span>
+                  </div>
+                ))}
+            </div>
+          )}
+          {actionCenterSummary?.coordination?.duplicatesPrevented > 0 && (
+            <div className="mt-2 text-xs text-muted-foreground bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md px-3 py-2">
+              <CheckCircle2 className="h-3 w-3 text-green-500 inline mr-1" />
+              {actionCenterSummary.coordination.duplicatesPrevented} duplicate actions prevented by cross-agent coordination
             </div>
           )}
         </CardContent>

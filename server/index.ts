@@ -608,6 +608,9 @@ app.use((req, res, next) => {
   const { registerHermesRoutes } = await import("./hermes-routes");
   registerHermesRoutes(app);
 
+  const { registerExecutionRoutes } = await import("./execution-routes");
+  registerExecutionRoutes(app);
+
   const { startAttendanceReportCron } = await import("./attendance-report-cron");
   startAttendanceReportCron();
 

@@ -1,0 +1,251 @@
+TrainEfficiency Sprint 3 — Execution Layer & Unified Approval Center
+
+Mission
+
+Convert approved recommendations into real-world actions.
+
+Current state:
+
+Hermes
+→ Recommendation
+→ Queue
+→ Context
+→ Feedback
+
+Missing:
+
+Hermes
+→ Recommendation
+→ Queue
+→ Approval
+→ Execution
+→ Audit
+→ Outcome
+
+⸻
+
+Phase 1 — Unified Approval Center
+
+Create:
+
+/admin/action-center
+
+This becomes the single location for:
+
+* Hermes recommendations
+* Gmail draft approvals
+* Autonomous queue items
+* Scheduling assistant approvals
+
+Replace fragmented review flows.
+
+Display:
+
+* Action title
+* Source agent
+* Confidence
+* Risk
+* Source conversation
+* Draft preview
+* Workflow source
+* Audit history
+
+Actions:
+
+* Approve
+* Reject
+* Edit
+* Escalate
+
+⸻
+
+Phase 2 — Unified Execution Engine
+
+Create:
+
+server/services/unified-execution-engine.ts
+
+Single entrypoint:
+
+executeAction(actionId)
+
+Supported execution types:
+
+* follow_up
+* prospect_outreach
+* schedule_call
+* schedule_meeting
+* lead_recovery
+* workflow_trigger
+* escalation
+* internal_task
+
+Execution result:
+
+{
+success,
+executionId,
+executionType,
+output,
+errors
+}
+
+⸻
+
+Phase 3 — Workflow Builder Execution Wiring
+
+Current gap:
+
+Workflow Builder exists.
+
+Hermes recommendations exist.
+
+They are not connected.
+
+Required:
+
+Approved Hermes recommendations can trigger workflow execution.
+
+Examples:
+
+follow_up
+→ workflow executor
+
+prospect_outreach
+→ workflow executor
+
+lead_recovery
+→ workflow executor
+
+No manual handoff.
+
+⸻
+
+Phase 4 — Cross-Agent Coordination Layer
+
+Create:
+
+server/services/cross-agent-coordination-service.ts
+
+Before creating any action:
+
+Check:
+
+* gmail_thread_id
+* source_conversation_id
+* prospect_id
+* lead_id
+* action_type
+
+If duplicate exists:
+
+Do not create new action.
+
+Instead:
+
+* merge
+* attach source references
+* increase support score
+
+Store:
+
+coordination_decisions
+
+⸻
+
+Phase 5 — Action Conflict Resolution
+
+Create:
+
+server/services/action-resolution-engine.ts
+
+Examples:
+
+Hermes:
+Follow up
+
+Workflow:
+Pause outreach
+
+AgentMail:
+Send email
+
+Conflict detected.
+
+Generate:
+
+attention_item
+
+Require human review.
+
+Human override always wins.
+
+⸻
+
+Phase 6 — Execution Observability
+
+Create:
+
+execution_events
+
+Track:
+
+* action_id
+* source_agent
+* execution_type
+* status
+* started_at
+* completed_at
+* latency
+* error
+
+Expose:
+
+GET /api/executions
+
+GET /api/executions/:id
+
+Add metrics to CEO Heartbeat.
+
+⸻
+
+Phase 7 — Hermes Dashboard
+
+Only after execution exists.
+
+Create:
+
+/admin/hermes
+
+Sections:
+
+* Recommendations
+* Approval Rates
+* Feedback Learning
+* Top Signals
+* Execution Outcomes
+* Success Rates
+
+The dashboard should report execution results, not just recommendations.
+
+⸻
+
+Deliverables
+
+A. Files Created
+
+B. Files Modified
+
+C. New Tables
+
+D. New Endpoints
+
+E. Supported Execution Types
+
+F. Duplicate Actions Prevented
+
+G. Conflicts Resolved
+
+H. Approved Recommendations Executed
+
+I. Remaining Sprint 4 Opportunities
