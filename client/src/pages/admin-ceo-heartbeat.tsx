@@ -201,6 +201,7 @@ export default function AdminCeoHeartbeatPage() {
     onSuccess: (data: any) => {
       const wasFirst = data?._isFirst ?? false;
       const runRecord = data?.run ?? null;
+      const wasLockBlocked = !data?.success && (data?.errors ?? []).some((e: string) => e.includes("Lock already held"));
 
       // Store the completed run record immediately so cards render without
       // waiting for the background status refetch to complete.
@@ -210,14 +211,19 @@ export default function AdminCeoHeartbeatPage() {
         setBannerDismissed(true);
       }
 
-      const title = runRecord?.status === "completed"
-        ? (wasFirst ? "CEO Heartbeat initialized successfully." : "Heartbeat cycle complete")
-        : "Heartbeat cycle started";
-      const description = runRecord
-        ? `${runRecord.agentsCoordinated ?? 0} agents coordinated · ${runRecord.errorsEncountered ?? 0} error(s) · ${fmtMs(runRecord.durationMs)}`
-        : wasFirst
-          ? "Your operational baseline has been established."
-          : "CEO Heartbeat is running now.";
+      let title: string;
+      let description: string;
+
+      if (wasLockBlocked) {
+        title = "Heartbeat already running";
+        description = "A heartbeat cycle just completed. Refreshing latest results…";
+      } else if (runRecord?.status === "completed") {
+        title = wasFirst ? "CEO Heartbeat initialized successfully." : "Heartbeat cycle complete";
+        description = `${runRecord.agentsCoordinated ?? 0} agents coordinated · ${runRecord.errorsEncountered ?? 0} error(s) · ${fmtMs(runRecord.durationMs)}`;
+      } else {
+        title = "Heartbeat cycle started";
+        description = wasFirst ? "Your operational baseline has been established." : "CEO Heartbeat is running now.";
+      }
 
       toast({ title, description });
 
@@ -407,10 +413,30 @@ export default function AdminCeoHeartbeatPage() {
                 <div className="text-[10px] text-muted-foreground">DLQ Pending</div>
               </div>
             </div>
-            <div className="mt-3">
-              <Button size="sm" variant="outline" className="h-7 text-xs w-full sm:w-auto" asChild>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
                 <a href="/admin/reliability" data-testid="link-reliability-dashboard">View Dashboard</a>
               </Button>
+              {reliabilitySummary.criticalAlerts > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 text-xs text-orange-600 border-orange-300 hover:bg-orange-50"
+                  data-testid="button-resolve-stale-alerts"
+                  onClick={async () => {
+                    try {
+                      const r = await fetch("/api/reliability/resolve-all-alerts", { method: "POST" });
+                      const d = await r.json();
+                      toast({ title: "Stale alerts resolved", description: `${d.resolved ?? 0} alert(s) cleared.` });
+                      queryClient.refetchQueries({ queryKey: ["/api/reliability/executive-summary"] });
+                    } catch {
+                      toast({ title: "Error", description: "Could not resolve alerts.", variant: "destructive" });
+                    }
+                  }}
+                >
+                  Resolve {reliabilitySummary.criticalAlerts} Stale Alert{reliabilitySummary.criticalAlerts !== 1 ? "s" : ""}
+                </Button>
+              )}
             </div>
           </CardContent>
         </Card>

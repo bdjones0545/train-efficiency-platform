@@ -766,6 +766,21 @@ export async function registerReliabilityRoutes(app: Express) {
     }
   });
 
+  // POST /api/reliability/resolve-all-alerts — bulk-resolve all unresolved alerts
+  // Useful for clearing a production backlog that accumulated before the 48h auto-resolve was in place.
+  app.post("/api/reliability/resolve-all-alerts", async (_req, res) => {
+    try {
+      const result = await db.execute(sql`
+        UPDATE system_alerts SET resolved_at = NOW()
+        WHERE resolved_at IS NULL
+      `);
+      const resolved = (result as any)?.rowCount ?? (result as any)?.count ?? 0;
+      res.json({ ok: true, resolved });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // POST /api/reliability/run-retention — manual trigger for testing
   app.post("/api/reliability/run-retention", async (_req, res) => {
     try {

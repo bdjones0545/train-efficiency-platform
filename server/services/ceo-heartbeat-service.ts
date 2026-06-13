@@ -156,8 +156,11 @@ export async function acquireJobLock(
 }
 
 export async function releaseJobLock(lockKey: string): Promise<void> {
-  await db.update(jobExecutionLocks)
-    .set({ status: "released", releasedAt: new Date() })
+  // DELETE the row so the same lock key can be re-acquired later in the same
+  // time-bucket window.  An UPDATE to "released" kept the row alive and caused
+  // the UNIQUE constraint to fire on the next manual run, blocking it forever
+  // within the same 28-minute window.
+  await db.delete(jobExecutionLocks)
     .where(eq(jobExecutionLocks.lockKey, lockKey))
     .catch(() => {});
 }
@@ -1005,6 +1008,12 @@ export async function runHeartbeatForAllOrgs(triggeredBy = "cron"): Promise<void
 
 export function startCeoHeartbeat(): void {
   if (_heartbeatInterval) return;
+
+  // One-time cleanup: delete any lingering "released" lock rows left over from
+  // the old UPDATE-to-released strategy (before the fix to DELETE on release).
+  // These rows blocked manual runs within the same 28-minute time window.
+  db.execute(sql`DELETE FROM job_execution_locks WHERE status = 'released'`).catch(() => {});
+
   _nextRunAt = new Date(Date.now() + HEARTBEAT_INTERVAL_MS);
   _heartbeatInterval = setInterval(async () => {
     if (_globalPaused) return;
