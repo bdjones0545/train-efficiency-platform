@@ -1,0 +1,168 @@
+Run a full integration audit of TrainEfficiency's agent ecosystem.
+
+Concern:
+Hermes agent, AgentMail, Gmail Conversations, Action Queue, CEO Heartbeat, Agent Tools, Email Logs, Workflow Builder, Trigger Audit, and Automations may not be fully connected into one coherent system.
+
+Goal:
+Determine what is actually connected, what is partially connected, what is UI-only, what is stale/dead code, and what should be wired together next.
+
+Audit these systems:
+
+1. Hermes Agent
+- Where is Hermes defined?
+- What services/routes/tables does it use?
+- Is Hermes called by CEO Heartbeat?
+- Is Hermes called by Workflow Builder?
+- Can Hermes create actions?
+- Can Hermes create drafts?
+- Can Hermes send to AgentMail?
+- Can Hermes write to Agent Operating Timeline?
+- Can Hermes receive context from Gmail Conversations?
+- Can Hermes use Agent Tools?
+- Is Hermes currently UI-only, backend-only, or fully operational?
+
+2. AgentMail
+- Where is AgentMail implemented?
+- Is it connected to Gmail?
+- Does it create Gmail drafts only, or can it send?
+- Is draft-only mode enforced?
+- Does AgentMail write to Email Logs / Email Audit?
+- Does it require approval before outbound messages?
+- Is it connected to Action Queue?
+- Is it connected to Gmail Conversations?
+- Is it connected to CEO Heartbeat?
+- Are failures logged?
+
+3. Gmail Conversations
+- Where are conversations stored?
+- How are Gmail replies synced?
+- Is automatic hourly sync implemented?
+- Is manual sync using the same service as background sync?
+- Are intent classifications written to the database?
+- Do classifications create Action Queue items?
+- Do action queue items link back to the source conversation?
+- Can the user review the source email/conversation before approving an action?
+
+4. Action Queue
+- What creates action queue items?
+- Are items linked to:
+  - source conversation
+  - source workflow
+  - source agent
+  - draft content
+  - approval state
+  - audit trail
+- Can users view draft content before approval?
+- Does approval create Gmail drafts, send emails, or only mark approved?
+- Does rejection store reason?
+- Are duplicate actions prevented?
+
+5. CEO Heartbeat
+- Which agents are actually called during heartbeat?
+- Is Hermes called?
+- Is Gmail sync called?
+- Is AgentMail called?
+- Is Action Queue reviewed?
+- Are skipped/stale/failed integrations logged?
+- Does heartbeat write integration health to System Health or Timeline?
+
+6. Workflow Builder / Automations
+- Can workflows trigger Hermes?
+- Can workflows trigger AgentMail?
+- Can workflows generate Gmail drafts?
+- Can workflows require approval?
+- Are workflow executions logged?
+- Are failed workflow runs surfaced in Trigger Audit?
+
+7. Agent Tools
+- Are tools registered in a central registry?
+- Which agents can use which tools?
+- Are permissions enforced?
+- Are tool calls logged?
+- Can Hermes use these tools?
+- Can AgentMail use these tools?
+- Are disconnected tools displayed as available?
+
+8. Email Logs / Email Audit
+- What events are logged?
+- Gmail sync?
+- draft created?
+- draft approved?
+- draft rejected?
+- email sent?
+- failure?
+- Does every AgentMail action create an audit row?
+- Are logs connected to source conversations and action queue items?
+
+9. Integration Status / System Health
+- Does Integration Status reflect real backend health checks?
+- Does it check Gmail auth?
+- AgentMail status?
+- Hermes status?
+- CEO Heartbeat status?
+- Workflow queue status?
+- Last successful sync/run timestamps?
+- Or is it static UI/demo data?
+
+10. Database Schema Audit
+Identify tables related to:
+- Hermes
+- agents
+- tools
+- workflows
+- Gmail conversations
+- AgentMail
+- email logs
+- action queue
+- approvals
+- timeline
+- integration health
+
+For each table:
+- Is it written to?
+- Is it read from?
+- Is it exposed in UI?
+- Is it orphaned?
+- What foreign keys are missing?
+
+Deliver a clear report:
+
+SECTION A — Fully Connected Systems
+Systems that are wired end-to-end and working.
+
+SECTION B — Partially Connected Systems
+Systems where UI exists but backend link is incomplete, or backend exists but UI/action flow is incomplete.
+
+SECTION C — Disconnected / UI-only Systems
+Pages, buttons, cards, or dashboards that look operational but do not perform real work.
+
+SECTION D — Broken / Risky Integration Points
+Any places where actions can be approved blindly, logs are missing, syncs are manual-only, or failures are silent.
+
+SECTION E — Recommended Wiring Map
+Show the correct intended architecture:
+
+Gmail Sync
+→ Gmail Conversations
+→ Intent Classification
+→ Hermes
+→ Action Queue
+→ Draft Review
+→ Approval
+→ AgentMail
+→ Gmail Draft
+→ Email Audit Log
+→ CEO Heartbeat
+→ System Health
+
+SECTION F — Patch Plan
+Prioritized implementation plan:
+1. Critical safety fixes
+2. Missing links
+3. Observability/logging
+4. UI clarity
+5. Automation reliability
+
+Important:
+Do not build new features yet.
+First audit and produce exact file names, route names, service names, table names, and missing connections.
