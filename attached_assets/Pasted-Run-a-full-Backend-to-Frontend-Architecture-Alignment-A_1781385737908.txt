@@ -1,0 +1,117 @@
+Run a full Backend-to-Frontend Architecture Alignment Audit.
+
+Core concern:
+The backend is now far more advanced than the frontend experience. TrainEfficiency has Hermes, AgentMail, CEO Heartbeat, workflows, governance, organizational memory, decision capture, Software KB, AI workforce provisioning, integrations, recommendations, and execution systems — but the frontend may not clearly expose the value, status, or outputs of those systems.
+
+Goal:
+Identify where backend systems exist but are:
+- invisible in the UI
+- underrepresented
+- exposed as raw admin tooling instead of user-facing outcomes
+- duplicated across multiple pages
+- confusingly separated
+- showing empty/manual states despite backend automation
+
+Audit every major backend system:
+- Hermes
+- AgentMail
+- CEO Heartbeat
+- Executive Agent
+- AI Workforce
+- Workflow Engine
+- Workflow Builder
+- Execution Engine
+- Approval Center
+- Attention Inbox
+- Organizational Memory
+- Decision Journal
+- Software KB
+- Executive Knowledge
+- Revenue Intelligence
+- Growth Intelligence
+- Scheduling Intelligence
+- Customer Success
+- Integrations
+- Governance
+- Agent Operations Monitor
+
+For each system, produce a matrix:
+
+Backend System | What it does | Main tables/services | Frontend page(s) | User-facing value | Current visibility | Gap | Recommendation
+
+Audit questions:
+1. Is this backend system surfaced clearly in the UI?
+2. Does the UI show what the system did?
+3. Does the UI show why it matters?
+4. Does the UI show status, last run, output, and next action?
+5. Is the frontend too raw/admin-heavy?
+6. Is the same concept spread across too many pages?
+7. Are users asked to manually do something the backend now does automatically?
+8. Are there backend outputs not appearing anywhere?
+9. Are pages showing blank states when backend data exists?
+10. Are advanced systems better hidden behind simple outcome cards?
+
+Create proposed frontend architecture:
+Primary user-facing navigation:
+- Home
+- Schedule
+- Athletes
+- Leads
+- Messages
+- Programs
+- Revenue
+- AI Workforce
+- Organizational Memory
+- Settings
+
+Admin/Advanced navigation:
+- Agent Operations
+- Governance
+- Workflow Builder
+- Execution Center
+- System Health
+- Integration Diagnostics
+- Software Improvement
+
+For every existing route/page, classify as:
+- Primary page
+- Nested tab
+- Backend-only engine
+- Advanced/admin page
+- Merge candidate
+- Deprecate/hide candidate
+
+Key principle:
+Do not remove backend systems.
+Do not delete routes.
+Do not break admin access.
+Simplify the user-facing surface.
+Expose backend intelligence as:
+- status cards
+- recommendations
+- next actions
+- activity history
+- memory entries
+- alerts
+- approval items
+- summaries
+
+Deliverables:
+1. Backend system inventory.
+2. Backend-to-frontend visibility matrix.
+3. Pages where backend value is hidden.
+4. Pages that should be merged or demoted.
+5. Duplicate concepts across the UI.
+6. Missing user-facing outputs.
+7. Proposed simplified frontend IA.
+8. Route classification table.
+9. Low-risk implementation plan.
+10. No code changes unless explicitly approved.
+
+Acceptance criteria:
+- Every major backend system has a clear frontend home.
+- Users can see what the AI workforce is doing without opening 20 admin pages.
+- Backend complexity remains intact.
+- Frontend becomes outcome-based instead of system-based.
+- Manual forms are secondary where auto-capture exists.
+- Empty states explain whether there is truly no data or whether setup/action is needed.
