@@ -14328,6 +14328,290 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // GET /api/admin/agent-ops/ops-monitor — unified infrastructure + integrations status
+  app.get("/api/admin/agent-ops/ops-monitor", async (req, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(401).json({ error: "Unauthorized" });
+
+      const { db } = await import("./db");
+      const { sql: drizzleSql } = await import("drizzle-orm");
+      const { getIntegrationStatusDetails } = await import("./services/integration-status-service");
+      const { isTwilioConfigured } = await import("./sms");
+      const now = new Date().toISOString();
+
+      // ── Helper: safe DB count ─────────────────────────────────────────────
+      async function safeCount(query: string): Promise<number> {
+        try {
+          const result = await db.execute(drizzleSql.raw(query));
+          const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
+          return Number(rows[0]?.count ?? rows[0]?.n ?? 0);
+        } catch { return -1; }
+      }
+
+      // ── Infrastructure checks ─────────────────────────────────────────────
+      let dbOk = false;
+      try { await db.execute(drizzleSql`SELECT 1`); dbOk = true; } catch { /* noop */ }
+
+      const [
+        heartbeatCount,
+        agentmailCount,
+        obsidianCount,
+        executionCount,
+        workflowCount,
+        registryCount,
+        brainCount,
+        pendingApprovals,
+      ] = await Promise.all([
+        safeCount(`SELECT COUNT(*) AS count FROM ceo_heartbeat_runs WHERE org_id = '${orgId}' AND created_at > NOW() - INTERVAL '48 hours'`),
+        safeCount(`SELECT COUNT(*) AS count FROM gmail_agent_actions WHERE org_id = '${orgId}' AND created_at > NOW() - INTERVAL '7 days'`),
+        safeCount(`SELECT COUNT(*) AS count FROM organizational_memories WHERE org_id = '${orgId}'`),
+        safeCount(`SELECT COUNT(*) AS count FROM execution_events WHERE org_id = '${orgId}' AND created_at > NOW() - INTERVAL '7 days'`),
+        safeCount(`SELECT COUNT(*) AS count FROM workflow_runs WHERE org_id = '${orgId}' AND created_at > NOW() - INTERVAL '48 hours'`),
+        safeCount(`SELECT COUNT(*) AS count FROM org_installed_agents WHERE org_id = '${orgId}'`),
+        safeCount(`SELECT COUNT(*) AS count FROM agent_recommendations WHERE org_id = '${orgId}' AND created_at > NOW() - INTERVAL '48 hours'`),
+        safeCount(`SELECT COUNT(*) AS count FROM agent_tool_calls WHERE org_id = '${orgId}' AND status = 'pending_confirmation' AND resolved_at IS NULL`),
+      ]);
+
+      const infrastructure = [
+        {
+          id: "database",
+          label: "Database",
+          status: dbOk ? "operational" : "degraded",
+          reason: dbOk ? "PostgreSQL reachable and responding" : "Cannot connect to database",
+          lastChecked: now,
+          source: "direct_query",
+          fix: dbOk ? null : "Check database connection and credentials",
+        },
+        {
+          id: "hermes",
+          label: "Hermes",
+          status: "operational",
+          reason: "Coordination layer always provisioned",
+          lastChecked: now,
+          source: "org_ai_infrastructure",
+          fix: null,
+        },
+        {
+          id: "agentmail",
+          label: "AgentMail",
+          status: agentmailCount >= 0 ? "operational" : "degraded",
+          reason: agentmailCount > 0
+            ? `${agentmailCount} actions logged in last 7 days`
+            : agentmailCount === 0
+            ? "Provisioned — no recent actions"
+            : "Table unavailable",
+          lastChecked: now,
+          source: "gmail_agent_actions",
+          fix: agentmailCount < 0 ? "Ensure gmail_agent_actions table is migrated" : null,
+        },
+        {
+          id: "obsidian",
+          label: "Obsidian / Org Memory",
+          status: obsidianCount >= 0 ? "operational" : "degraded",
+          reason: obsidianCount > 0
+            ? `${obsidianCount} memories stored`
+            : obsidianCount === 0
+            ? "Provisioned — no memories yet"
+            : "Table unavailable",
+          lastChecked: now,
+          source: "organizational_memories",
+          fix: obsidianCount < 0 ? "Ensure organizational_memories table is migrated" : null,
+        },
+        {
+          id: "ceo_heartbeat",
+          label: "CEO Heartbeat",
+          status: heartbeatCount >= 0 ? (heartbeatCount > 0 ? "operational" : "ready") : "degraded",
+          reason: heartbeatCount > 0
+            ? `${heartbeatCount} heartbeat runs in last 48h`
+            : heartbeatCount === 0
+            ? "Provisioned — no runs triggered yet"
+            : "Table unavailable",
+          lastChecked: now,
+          source: "ceo_heartbeat_runs",
+          fix: heartbeatCount < 0 ? "Ensure ceo_heartbeat_runs table is migrated" : null,
+        },
+        {
+          id: "workflow_runner",
+          label: "Workflow Runner",
+          status: workflowCount >= 0 ? "operational" : "degraded",
+          reason: workflowCount > 0
+            ? `${workflowCount} runs in last 48h`
+            : workflowCount === 0
+            ? "No recent workflow runs"
+            : "Table unavailable",
+          lastChecked: now,
+          source: "workflow_runs",
+          fix: workflowCount < 0 ? "Ensure workflow_runs table is migrated" : null,
+        },
+        {
+          id: "execution_engine",
+          label: "Execution Engine",
+          status: executionCount >= 0 ? "operational" : "degraded",
+          reason: executionCount > 0
+            ? `${executionCount} events in last 7 days`
+            : executionCount === 0
+            ? "Provisioned — no recent events"
+            : "Table unavailable",
+          lastChecked: now,
+          source: "execution_events",
+          fix: executionCount < 0 ? "Ensure execution_events table is migrated" : null,
+        },
+        {
+          id: "approval_center",
+          label: "Approval Center",
+          status: pendingApprovals >= 0 ? "operational" : "degraded",
+          reason: pendingApprovals > 0
+            ? `${pendingApprovals} pending approval(s) awaiting review`
+            : "No pending approvals",
+          lastChecked: now,
+          source: "agent_tool_calls",
+          fix: null,
+        },
+        {
+          id: "business_brain",
+          label: "Business Brain",
+          status: brainCount >= 0 ? "operational" : "degraded",
+          reason: brainCount > 0
+            ? `${brainCount} recommendations generated in last 48h`
+            : brainCount === 0
+            ? "Provisioned — trigger a heartbeat to generate recommendations"
+            : "Table unavailable",
+          lastChecked: now,
+          source: "agent_recommendations",
+          fix: brainCount < 0 ? "Ensure agent_recommendations table is migrated" : null,
+        },
+        {
+          id: "agent_registry",
+          label: "Agent Registry",
+          status: registryCount >= 0 ? "operational" : "degraded",
+          reason: registryCount > 0
+            ? `${registryCount} agents installed for org`
+            : registryCount === 0
+            ? "Registry available — no agents installed yet"
+            : "Table unavailable",
+          lastChecked: now,
+          source: "org_installed_agents",
+          fix: registryCount < 0 ? "Ensure org_installed_agents table is migrated" : null,
+        },
+        {
+          id: "attention_inbox",
+          label: "Attention Inbox",
+          status: "operational",
+          reason: "Always provisioned — surfaces failures and alerts",
+          lastChecked: now,
+          source: "agent_tool_calls",
+          fix: null,
+        },
+      ];
+
+      // ── External integrations ─────────────────────────────────────────────
+      const intDetails = await getIntegrationStatusDetails(orgId);
+      const intMap = new Map(intDetails.map(d => [d.type, d]));
+
+      // Extra check: SendGrid — count recent successful send_email actions
+      let sendgridRecentSuccess = 0;
+      try {
+        const sgRows = await db.execute(drizzleSql`
+          SELECT COUNT(*) AS count FROM gmail_agent_actions
+          WHERE org_id = ${orgId}
+            AND action_type = 'send_email'
+            AND status = 'sent'
+            AND created_at > NOW() - INTERVAL '30 days'
+        `);
+        const sgR = Array.isArray(sgRows) ? sgRows : (sgRows as any).rows ?? [];
+        sendgridRecentSuccess = Number(sgR[0]?.count ?? 0);
+      } catch { /* table may not exist */ }
+
+      // Twilio env override
+      const twilioEnvOk = isTwilioConfigured();
+
+      function buildIntegration(type: string, label: string, fix: string) {
+        const detail = intMap.get(type);
+        let status: string = detail?.status ?? "disconnected";
+        let source: string = detail?.source ?? "none";
+        let reason: string;
+
+        // Override with extra signals
+        if (type === "sendgrid") {
+          const envOk = !!(process.env.SENDGRID_API_KEY);
+          if (status !== "connected" && (envOk || sendgridRecentSuccess > 0)) {
+            status = "connected";
+            source = sendgridRecentSuccess > 0 ? "execution_log" : "env";
+          }
+          reason = status === "connected"
+            ? sendgridRecentSuccess > 0
+              ? `Credential detected and ${sendgridRecentSuccess} successful email(s) sent recently`
+              : "API key present in environment"
+            : "SENDGRID_API_KEY not found";
+        } else if (type === "twilio") {
+          if (status !== "connected" && twilioEnvOk) {
+            status = "connected";
+            source = "env";
+          }
+          reason = status === "connected"
+            ? `TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN present${source === "db" ? " (org credential)" : " (environment)"}`
+            : "TWILIO_ACCOUNT_SID or TWILIO_AUTH_TOKEN missing";
+        } else if (type === "stripe") {
+          const stripeEnvOk = !!(process.env.STRIPE_SECRET_KEY);
+          if (status !== "connected" && stripeEnvOk) {
+            status = "connected";
+            source = "env";
+          }
+          reason = status === "connected"
+            ? `STRIPE_SECRET_KEY present${source === "db" ? " (org credential)" : " (environment)"}`
+            : "STRIPE_SECRET_KEY not found";
+        } else {
+          reason = status === "connected"
+            ? source === "db" ? "Org credential stored in database" : "Credential found in environment"
+            : "No credential found — not yet connected";
+        }
+
+        return {
+          id: type,
+          label,
+          status,
+          reason,
+          lastChecked: now,
+          source,
+          fix: status !== "connected" ? fix : null,
+        };
+      }
+
+      const externalIntegrations = [
+        buildIntegration("gmail",            "Gmail",            "Connect via OAuth in Settings → Integrations"),
+        buildIntegration("google_calendar",  "Google Calendar",  "Connect via OAuth in Settings → Integrations"),
+        buildIntegration("stripe",           "Stripe",           "Add STRIPE_SECRET_KEY to environment secrets"),
+        buildIntegration("twilio",           "Twilio SMS",       "Add TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN to environment secrets"),
+        buildIntegration("sendgrid",         "SendGrid",         "Add SENDGRID_API_KEY to environment secrets"),
+        buildIntegration("slack",            "Slack",            "Add SLACK_BOT_TOKEN to environment secrets"),
+        buildIntegration("openrouter",       "OpenRouter",       "Add OPENROUTER_API_KEY to environment secrets"),
+        buildIntegration("hubspot",          "HubSpot",          "Add HUBSPOT_ACCESS_TOKEN to environment secrets"),
+        buildIntegration("meta_ads",         "Meta Ads",         "Add META_ADS_ACCESS_TOKEN to environment secrets"),
+      ];
+
+      // ── Recent execution log ──────────────────────────────────────────────
+      let executionLog: any[] = [];
+      try {
+        const logRows = await db.execute(drizzleSql`
+          SELECT id, org_id, action_type, status, input_summary, created_at
+          FROM gmail_agent_actions
+          WHERE org_id = ${orgId}
+          ORDER BY created_at DESC
+          LIMIT 20
+        `);
+        executionLog = Array.isArray(logRows) ? logRows : (logRows as any).rows ?? [];
+      } catch { /* noop */ }
+
+      res.json({
+        success: true,
+        data: { infrastructure, externalIntegrations, executionLog },
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message });
+    }
+  });
+
   // GET /api/admin/agent-ops/failure-queue
   app.get("/api/admin/agent-ops/failure-queue", async (req, res) => {
     try {

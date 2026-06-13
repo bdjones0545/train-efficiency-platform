@@ -22,6 +22,7 @@ import {
   GitBranch, RotateCcw, CheckSquare, ExternalLink, AlertCircle,
   Info, Timer, Lock, CircleDot, Play, Link2, Link2Off, CreditCard, Calendar, Inbox, ArrowRight,
   Archive, Repeat, Ban, Plug, Pause, Hash, Search, Cpu, Globe, BarChart3,
+  Server, Network, Bot, Layers, Shield, ChevronDown, ChevronUp, Wifi, WifiOff, Brain, Wrench,
 } from "lucide-react";
 import { Link } from "wouter";
 import { format, formatDistanceToNow } from "date-fns";
@@ -46,6 +47,25 @@ type HealthData = {
   revenueAgentCron: HealthCheck;
   failedJobsLast24h: number;
   pendingApprovalsCount: number;
+};
+
+type OpsMonitorItem = {
+  id: string;
+  label: string;
+  status: "operational" | "ready" | "degraded" | "connected" | "disconnected";
+  reason: string;
+  lastChecked: string;
+  source: string;
+  fix: string | null;
+};
+
+type OpsMonitorData = {
+  success: boolean;
+  data: {
+    infrastructure: OpsMonitorItem[];
+    externalIntegrations: OpsMonitorItem[];
+    executionLog: any[];
+  };
 };
 
 type Alert = {
@@ -369,6 +389,204 @@ function HealthCard({ icon: Icon, label, check }: {
   );
 }
 
+// ─── Ops Monitor Section ──────────────────────────────────────────────────────
+
+const INFRA_ICONS: Record<string, React.ElementType> = {
+  database: Database,
+  hermes: Network,
+  agentmail: Mail,
+  obsidian: Brain,
+  ceo_heartbeat: Activity,
+  workflow_runner: GitBranch,
+  execution_engine: Zap,
+  approval_center: CheckSquare,
+  business_brain: Cpu,
+  agent_registry: Layers,
+  attention_inbox: Inbox,
+};
+
+const EXT_ICONS: Record<string, React.ElementType> = {
+  gmail: Mail,
+  google_calendar: Calendar,
+  stripe: CreditCard,
+  twilio: MessageSquare,
+  sendgrid: Mail,
+  slack: Hash,
+  openrouter: Cpu,
+  hubspot: BarChart3,
+  meta_ads: Globe,
+};
+
+function opsStatusConfig(status: string): { dot: string; badge: string; icon: React.ElementType } {
+  switch (status) {
+    case "operational":
+    case "connected":
+      return { dot: "bg-green-500", badge: "text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-300", icon: CheckCircle };
+    case "ready":
+      return { dot: "bg-blue-400", badge: "text-blue-700 bg-blue-100 dark:bg-blue-900/30 dark:text-blue-300", icon: CircleDot };
+    case "degraded":
+      return { dot: "bg-red-500", badge: "text-red-700 bg-red-100 dark:bg-red-900/30 dark:text-red-300", icon: AlertTriangle };
+    case "disconnected":
+    default:
+      return { dot: "bg-gray-400", badge: "text-gray-600 bg-gray-100 dark:bg-gray-800 dark:text-gray-400", icon: WifiOff };
+  }
+}
+
+function opsStatusLabel(status: string): string {
+  switch (status) {
+    case "operational": return "Operational";
+    case "connected": return "Connected";
+    case "ready": return "Ready";
+    case "degraded": return "Degraded";
+    case "disconnected": return "Disconnected";
+    default: return status;
+  }
+}
+
+function OpsMonitorCard({ item, iconMap }: { item: OpsMonitorItem; iconMap: Record<string, React.ElementType> }) {
+  const [expanded, setExpanded] = useState(false);
+  const Icon = iconMap[item.id] ?? Server;
+  const cfg = opsStatusConfig(item.status);
+  const StatusIcon = cfg.icon;
+  const isWarning = item.status === "degraded" || item.status === "disconnected";
+
+  return (
+    <div
+      className={`rounded-lg border bg-card transition-all ${isWarning ? "border-amber-200 dark:border-amber-800/50" : "border-border"}`}
+      data-testid={`card-opsmonitor-${item.id}`}
+    >
+      <button
+        className="w-full flex items-center gap-3 p-3 text-left"
+        onClick={() => setExpanded(e => !e)}
+        aria-expanded={expanded}
+      >
+        <div className={`p-1.5 rounded-md shrink-0 ${isWarning ? "bg-amber-100 dark:bg-amber-900/30" : "bg-muted"}`}>
+          <Icon className={`h-3.5 w-3.5 ${isWarning ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-semibold truncate">{item.label}</span>
+            <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full ${cfg.badge}`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${cfg.dot}`} />
+              {opsStatusLabel(item.status)}
+            </span>
+          </div>
+          <p className="text-[10px] text-muted-foreground truncate mt-0.5">{item.reason}</p>
+        </div>
+        <div className="shrink-0 text-muted-foreground">
+          {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+        </div>
+      </button>
+
+      {expanded && (
+        <div className="px-3 pb-3 border-t bg-muted/20 space-y-2 pt-2">
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px]">
+            <div>
+              <span className="text-muted-foreground uppercase tracking-wide font-medium">Status</span>
+              <p className="font-semibold mt-0.5 capitalize">{opsStatusLabel(item.status)}</p>
+            </div>
+            <div>
+              <span className="text-muted-foreground uppercase tracking-wide font-medium">Source</span>
+              <p className="font-semibold mt-0.5 font-mono">{item.source}</p>
+            </div>
+            <div className="col-span-2">
+              <span className="text-muted-foreground uppercase tracking-wide font-medium">Reason</span>
+              <p className="mt-0.5">{item.reason}</p>
+            </div>
+            <div className="col-span-2">
+              <span className="text-muted-foreground uppercase tracking-wide font-medium">Last Checked</span>
+              <p className="mt-0.5">{item.lastChecked ? ts(item.lastChecked) : "—"}</p>
+            </div>
+          </div>
+          {item.fix && (
+            <div className="flex items-start gap-2 p-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+              <Wrench className="h-3 w-3 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-[10px] text-amber-700 dark:text-amber-300">{item.fix}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function OpsMonitorSection({ data, isLoading, refetch, isFetching }: {
+  data: OpsMonitorData | undefined;
+  isLoading: boolean;
+  refetch: () => void;
+  isFetching: boolean;
+}) {
+  const infrastructure = data?.data?.infrastructure ?? [];
+  const externalIntegrations = data?.data?.externalIntegrations ?? [];
+
+  const infraDegraded = infrastructure.filter(i => i.status === "degraded").length;
+  const extDisconnected = externalIntegrations.filter(i => i.status === "disconnected").length;
+
+  return (
+    <div className="space-y-4" data-testid="section-ops-monitor">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">System Health</h2>
+        <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={refetch} disabled={isFetching}>
+          <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
+        </Button>
+      </div>
+
+      {/* Product Infrastructure */}
+      <div data-testid="section-infrastructure">
+        <div className="flex items-center gap-2 mb-2">
+          <Server className="h-3.5 w-3.5 text-primary" />
+          <h3 className="text-xs font-semibold text-foreground">Product Infrastructure</h3>
+          {infraDegraded > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-red-700 bg-red-100 dark:bg-red-900/30 dark:text-red-300">
+              {infraDegraded} degraded
+            </span>
+          )}
+          {infraDegraded === 0 && !isLoading && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-green-700 bg-green-100 dark:bg-green-900/30 dark:text-green-300">
+              All operational
+            </span>
+          )}
+        </div>
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {Array.from({ length: 11 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {infrastructure.map(item => (
+              <OpsMonitorCard key={item.id} item={item} iconMap={INFRA_ICONS} />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* External Integrations */}
+      <div data-testid="section-external-integrations">
+        <div className="flex items-center gap-2 mb-2">
+          <Wifi className="h-3.5 w-3.5 text-primary" />
+          <h3 className="text-xs font-semibold text-foreground">External Integrations</h3>
+          {extDisconnected > 0 && (
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full text-gray-600 bg-gray-100 dark:bg-gray-800 dark:text-gray-400">
+              {extDisconnected} not connected
+            </span>
+          )}
+        </div>
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {Array.from({ length: 9 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+            {externalIntegrations.map(item => (
+              <OpsMonitorCard key={item.id} item={item} iconMap={EXT_ICONS} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Failed Tool Call Row ─────────────────────────────────────────────────────
 
 function ToolCallRow({ call, onSelect }: { call: FailedToolCall; onSelect: () => void }) {
@@ -451,6 +669,11 @@ export default function AdminAgentOpsPage() {
     refetchInterval: 60_000,
   });
 
+  const { data: opsMonitor, isLoading: opsMonitorLoading, refetch: refetchOpsMonitor, isFetching: opsMonitorFetching } = useQuery<OpsMonitorData>({
+    queryKey: ["/api/admin/agent-ops/ops-monitor"],
+    refetchInterval: 60_000,
+  });
+
   const { data: alertsData, isLoading: alertsLoading, refetch: refetchAlerts } = useQuery<AlertsData>({
     queryKey: ["/api/admin/agent-ops/alerts"],
     refetchInterval: 30_000,
@@ -515,6 +738,7 @@ export default function AdminAgentOpsPage() {
     refetchAlerts();
     refetchFailure();
     refetchStuck();
+    refetchOpsMonitor();
   }
 
   const alerts = alertsData?.alerts ?? [];
@@ -594,44 +818,13 @@ export default function AdminAgentOpsPage() {
         </div>
       )}
 
-      {/* Health Grid */}
-      <div>
-        <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">System Health</h2>
-        {healthLoading ? (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-lg" />)}
-          </div>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="grid-health">
-            <HealthCard icon={Mail} label="SendGrid" check={health?.sendgrid} />
-            <HealthCard icon={MessageSquare} label="Twilio SMS" check={health?.twilio} />
-            <HealthCard icon={Database} label="Database" check={health?.database} />
-            <HealthCard icon={GitBranch} label="Workflow Runner" check={health?.workflowRunner} />
-            <HealthCard icon={Activity} label="Business Brain" check={health?.businessBrainCron} />
-            <HealthCard icon={Zap} label="Revenue Agent" check={health?.revenueAgentCron} />
-            <Card className="p-4 flex items-center gap-3" data-testid="card-health-failed-jobs">
-              <div className={`p-2 rounded-md ${(health?.failedJobsLast24h ?? 0) === 0 ? "bg-green-100 dark:bg-green-900/30" : "bg-red-100 dark:bg-red-900/30"}`}>
-                <XCircle className={`h-4 w-4 ${(health?.failedJobsLast24h ?? 0) === 0 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400"}`} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground">Failed Jobs (24h)</p>
-                <p className="text-sm font-medium">{health?.failedJobsLast24h ?? 0}</p>
-              </div>
-              <HealthDot status={(health?.failedJobsLast24h ?? 0) === 0 ? "ok" : "err"} />
-            </Card>
-            <Card className="p-4 flex items-center gap-3" data-testid="card-health-pending-approvals">
-              <div className={`p-2 rounded-md ${pendingCount === 0 ? "bg-green-100 dark:bg-green-900/30" : "bg-yellow-100 dark:bg-yellow-900/30"}`}>
-                <Clock className={`h-4 w-4 ${pendingCount === 0 ? "text-green-600 dark:text-green-400" : "text-yellow-600 dark:text-yellow-400"}`} />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-xs text-muted-foreground">Pending Approvals</p>
-                <p className="text-sm font-medium">{pendingCount}</p>
-              </div>
-              <HealthDot status={pendingCount === 0 ? "ok" : "warn"} />
-            </Card>
-          </div>
-        )}
-      </div>
+      {/* Ops Monitor — Infrastructure + External Integrations */}
+      <OpsMonitorSection
+        data={opsMonitor}
+        isLoading={opsMonitorLoading}
+        refetch={refetchOpsMonitor}
+        isFetching={opsMonitorFetching}
+      />
 
       {/* Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
