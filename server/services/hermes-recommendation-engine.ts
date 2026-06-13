@@ -445,6 +445,16 @@ export async function runHermesIntelligenceCycle(
 
   await ensureHermesTables();
 
+  // ── Load top Hermes learnings for context-aware confidence adjustment ───────
+  let hermesContextLearnings: Array<{ domain: string; learning: string; occurrenceCount: number }> = [];
+  try {
+    const { getTopLearningsForContext } = await import("./hermes-learning-service");
+    hermesContextLearnings = await getTopLearningsForContext(orgId, 6);
+    if (hermesContextLearnings.length > 0) {
+      console.log(`[HermesEngine] Loaded ${hermesContextLearnings.length} institutional learnings for context`);
+    }
+  } catch {}
+
   // ── Evaluate all signal sources in parallel ────────────────────────────────
   const [gmailResult, blockedResult, prospectResult, approvalResult, engineeringResult] =
     await Promise.all([

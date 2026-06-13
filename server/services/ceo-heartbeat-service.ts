@@ -490,6 +490,27 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
     console.error("[CEO Heartbeat] Priority build error:", err);
   }
 
+  // ── Inject top Hermes learnings as advisory priorities ────────────────────
+  try {
+    const { getTopLearningsForContext } = await import("./hermes-learning-service");
+    const topLearnings = await getTopLearningsForContext(orgId, 5);
+    const highValueLearnings = topLearnings.filter((l) => l.occurrenceCount >= 2 || l.confidenceScore >= 88);
+    for (const learning of highValueLearnings.slice(0, 3)) {
+      priorities.push({
+        id: `hermes-learning-${learning.id}`,
+        priorityScore: Math.min(75, 40 + learning.occurrenceCount * 5 + Math.floor(learning.confidenceScore / 10)),
+        category: "hermes_insight",
+        action: learning.learning.slice(0, 200),
+        reason: `Hermes institutional memory (${learning.domain}) — observed ${learning.occurrenceCount}× with ${learning.confidenceScore}% confidence`,
+        agentSource: "Hermes Learning Engine",
+        requiresApproval: false,
+        estimatedRevenueCents: 0,
+        urgency: learning.confidenceScore >= 90 ? "medium" : "low",
+        domain: learning.domain,
+      });
+    }
+  } catch {}
+
   // Sort by priority score descending
   priorities.sort((a, b) => b.priorityScore - a.priorityScore);
 

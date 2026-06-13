@@ -263,10 +263,24 @@ export async function runOrchestrator(orgId: string, triggeredBy = "manual"): Pr
       ? Math.round(((schedulingResult?.summary.utilizationPct || 50) / 100) * 5 * 10000)
       : 0;
 
-    const topActions = insertedRecs
-      .sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0))
-      .slice(0, 5)
-      .map((r) => r.title);
+    // Enrich topActions with Hermes institutional learnings
+    let hermesLearningActions: string[] = [];
+    try {
+      const { getTopLearningsForContext } = await import("../services/hermes-learning-service");
+      const topLearnings = await getTopLearningsForContext(orgId, 4);
+      hermesLearningActions = topLearnings
+        .filter((l) => l.occurrenceCount >= 2)
+        .slice(0, 2)
+        .map((l) => `[Hermes] ${l.learning.slice(0, 120)}`);
+    } catch {}
+
+    const topActions = [
+      ...insertedRecs
+        .sort((a, b) => (b.priorityScore || 0) - (a.priorityScore || 0))
+        .slice(0, 5)
+        .map((r) => r.title),
+      ...hermesLearningActions,
+    ];
 
     // --- Store executive brief ---
     await db.insert(executiveBriefs).values({
