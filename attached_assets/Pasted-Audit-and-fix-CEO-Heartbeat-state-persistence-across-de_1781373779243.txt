@@ -1,0 +1,68 @@
+Audit and fix CEO Heartbeat state persistence across deployments.
+
+Problem:
+After every new deployment, CEO Heartbeat shows:
+- Heartbeat Ready
+- Waiting For First Run
+- No Runs Yet
+even though the organization has already run heartbeat cycles before.
+
+This means the UI is likely relying on in-memory state, startup state, missing latest-run query, or a deployment-reset cache instead of persisted heartbeat records.
+
+Audit:
+1. Identify where heartbeat status is calculated.
+2. Identify the endpoint powering:
+   - Heartbeat Ready
+   - Last Heartbeat
+   - Agents Coordinated
+   - Errors last run
+   - Next Heartbeat
+   - Run First Heartbeat
+3. Verify whether the endpoint reads from persistent DB tables:
+   - ceo_heartbeat_runs
+   - agent_operating_timeline
+   - workflow_jobs
+   - agent_execution_locks
+   - any heartbeat history table
+4. Check for runtime-only state:
+   - module-level variables
+   - in-memory lastRun
+   - startup reset flags
+   - cache initialized empty after deploy
+5. Check whether deployment/startup creates a new org-ai state row that overwrites heartbeat status.
+6. Check whether org resolution is correct.
+
+Required fix:
+- Heartbeat status must derive from the latest persisted successful/failed heartbeat run for the org.
+- If prior heartbeat runs exist, never show “Waiting For First Run.”
+- “Run First Heartbeat” should only show when no persisted heartbeat run exists.
+- Deployments must not reset heartbeat history.
+- Startup backfill must not overwrite existing heartbeat status.
+- If no run exists, show a true empty state.
+- If the latest run failed, show failed status with timestamp and error count.
+
+Expected behavior:
+After deployment:
+- Last Heartbeat still shows previous timestamp
+- Agents Coordinated still shows previous count
+- Errors last run still shows previous value
+- Next Heartbeat remains automatic
+- Button should say “Run Heartbeat” not “Run First Heartbeat” if historical runs exist
+
+Deliverables:
+1. Root cause.
+2. Tables currently used.
+3. Whether data exists but is not being read.
+4. Files changed.
+5. Fix applied.
+6. Verification before/after deployment or simulated restart.
+7. TypeScript result.
+8. Server startup result.
+
+Acceptance:
+- Heartbeat state survives deploys/restarts.
+- UI no longer resets to first-run state when history exists.
+- Status derives from DB, not memory.
+- No existing heartbeat history is overwritten.
+- TypeScript passes.
+- Server starts cleanly.
