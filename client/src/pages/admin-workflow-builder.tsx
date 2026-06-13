@@ -356,11 +356,13 @@ function RegistryCard({
 
 function WorkflowRegistryView({
   onLoadInBuilder,
+  onCreateCustom,
 }: {
   onLoadInBuilder: (wf: RegistryWorkflow) => void;
+  onCreateCustom: () => void;
 }) {
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<"system" | "org" | "templates">("system");
+  const [activeTab, setActiveTab] = useState<"active" | "templates" | "custom">("active");
   const [search, setSearch] = useState("");
   const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
   const [conflictPendingToggle, setConflictPendingToggle] = useState<{ wf: RegistryWorkflow; enabled: boolean } | null>(null);
@@ -460,10 +462,17 @@ function WorkflowRegistryView({
   const orgList = filterWorkflows(registry?.orgCustom ?? []);
   const templateList = filterWorkflows(registry?.templates ?? []);
 
+  // "Active" = all system workflows + enabled org workflows
+  const activeList = [
+    ...systemList,
+    ...orgList.filter(w => w.enabled),
+  ];
+  const activeCount = (registry?.system?.length ?? 0) + (registry?.orgCustom ?? []).filter(w => w.enabled).length;
+
   const TABS = [
-    { key: "system" as const, label: "System Workflows", count: systemList.length, icon: Lock },
-    { key: "org" as const, label: "Organization", count: orgList.length, icon: Settings },
+    { key: "active" as const, label: "Active Workflows", count: activeCount, icon: Activity },
     { key: "templates" as const, label: "Templates", count: templateList.length, icon: Star },
+    { key: "custom" as const, label: "Custom Builder", count: orgList.filter(w => !w.enabled || w.source === "org_custom").length, icon: GitBranch },
   ];
 
   return (
@@ -526,54 +535,103 @@ function WorkflowRegistryView({
             <div className="py-12 text-center text-sm text-muted-foreground" data-testid="registry-loading">
               Loading workflow registry…
             </div>
-          ) : activeTab === "system" ? (
+
+          ) : activeTab === "active" ? (
             <>
-              <div className="flex items-start gap-3 p-3 rounded-lg bg-slate-50 dark:bg-slate-900/30 border border-slate-200 dark:border-slate-700 mb-4">
-                <Lock className="h-4 w-4 text-slate-500 mt-0.5 shrink-0" />
+              {/* Summary banner */}
+              <div className="flex items-start gap-3 p-3 rounded-lg bg-emerald-50 dark:bg-emerald-900/10 border border-emerald-200 dark:border-emerald-800 mb-4">
+                <Activity className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
                 <div>
-                  <p className="text-xs font-medium text-slate-700 dark:text-slate-300">System-managed infrastructure</p>
+                  <p className="text-xs font-medium text-emerald-700 dark:text-emerald-300">
+                    {activeList.length} workflow{activeList.length !== 1 ? "s" : ""} currently active
+                  </p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    These workflows are built into TrainEfficiency and automatically maintained. They can be viewed, inspected, and cloned — but not directly edited. Duplicate &amp; Customize to create your own version.
+                    Your automation stack is running. System-managed workflows are maintained by TrainEfficiency. Organization workflows were deployed by your team. All can be inspected and cloned.
                   </p>
                 </div>
               </div>
-              {systemList.length === 0 ? (
-                <div className="py-8 text-center text-sm text-muted-foreground" data-testid="system-empty">No system workflows found.</div>
-              ) : systemList.map(wf => (
-                <RegistryCard
-                  key={wf.id}
-                  wf={wf}
-                  onClone={wf => cloneMutation.mutate(wf.id)}
-                />
-              ))}
-            </>
-          ) : activeTab === "org" ? (
-            <>
-              {orgList.length === 0 ? (
-                <div className="py-12 text-center" data-testid="org-empty">
-                  <Settings className="h-8 w-8 text-muted-foreground/40 mx-auto mb-2" />
-                  <p className="text-sm text-muted-foreground">No organization workflows yet.</p>
-                  <p className="text-xs text-muted-foreground mt-1">Clone a system workflow or use a template to get started.</p>
+
+              {/* System workflows sub-section */}
+              {systemList.length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 pt-1 pb-0.5">
+                    <Lock className="h-3.5 w-3.5 text-slate-500" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      System-Managed · {systemList.length} workflows
+                    </p>
+                    <span className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 rounded px-1.5 py-0.5">
+                      Managed by TrainEfficiency
+                    </span>
+                  </div>
+                  {systemList.map(wf => (
+                    <RegistryCard
+                      key={wf.id}
+                      wf={wf}
+                      onClone={wf => cloneMutation.mutate(wf.id)}
+                    />
+                  ))}
+                </>
+              )}
+
+              {/* Enabled org workflows sub-section */}
+              {orgList.filter(w => w.enabled).length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 pt-3 pb-0.5">
+                    <Settings className="h-3.5 w-3.5 text-emerald-600" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Organization Workflows · {orgList.filter(w => w.enabled).length} active
+                    </p>
+                  </div>
+                  {orgList.filter(w => w.enabled).map(wf => (
+                    <RegistryCard
+                      key={wf.id}
+                      wf={wf}
+                      onClone={wf => cloneMutation.mutate(wf.id)}
+                      onToggle={handleToggle}
+                      onLoadInBuilder={onLoadInBuilder}
+                      onDelete={wf => deleteMutation.mutate(wf.id)}
+                    />
+                  ))}
+                </>
+              )}
+
+              {activeList.length === 0 && (
+                <div className="py-8 text-center text-sm text-muted-foreground" data-testid="active-empty">
+                  No active workflows found.
                 </div>
-              ) : orgList.map(wf => (
-                <RegistryCard
-                  key={wf.id}
-                  wf={wf}
-                  onClone={wf => cloneMutation.mutate(wf.id)}
-                  onToggle={handleToggle}
-                  onLoadInBuilder={onLoadInBuilder}
-                  onDelete={wf => deleteMutation.mutate(wf.id)}
-                />
-              ))}
+              )}
+
+              {/* Inactive org custom workflows */}
+              {orgList.filter(w => !w.enabled).length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 pt-3 pb-0.5">
+                    <Settings className="h-3.5 w-3.5 text-muted-foreground/50" />
+                    <p className="text-xs font-semibold text-muted-foreground/60 uppercase tracking-wide">
+                      Inactive Organization Workflows · {orgList.filter(w => !w.enabled).length}
+                    </p>
+                  </div>
+                  {orgList.filter(w => !w.enabled).map(wf => (
+                    <RegistryCard
+                      key={wf.id}
+                      wf={wf}
+                      onClone={wf => cloneMutation.mutate(wf.id)}
+                      onToggle={handleToggle}
+                      onLoadInBuilder={onLoadInBuilder}
+                      onDelete={wf => deleteMutation.mutate(wf.id)}
+                    />
+                  ))}
+                </>
+              )}
             </>
-          ) : (
+
+          ) : activeTab === "templates" ? (
             <>
               <div className="flex items-start gap-3 p-3 rounded-lg bg-violet-50 dark:bg-violet-900/10 border border-violet-200 dark:border-violet-800 mb-4">
                 <Star className="h-4 w-4 text-violet-500 mt-0.5 shrink-0" />
                 <div>
                   <p className="text-xs font-medium text-violet-700 dark:text-violet-300">Proven workflow templates</p>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    Pre-built templates for common business scenarios. Duplicate &amp; Customize to make them your own, or load them directly into the builder to edit.
+                    Pre-built templates for common business scenarios. Click <strong>Duplicate &amp; Customize</strong> to create your own editable copy, or <strong>Edit in Builder</strong> to load it directly into the canvas.
                   </p>
                 </div>
               </div>
@@ -588,6 +646,61 @@ function WorkflowRegistryView({
                 />
               ))}
             </>
+
+          ) : (
+            /* Custom Builder tab */
+            <div className="space-y-6" data-testid="custom-builder-section">
+              {/* Hero CTA */}
+              <div className="rounded-xl border-2 border-dashed border-primary/30 bg-primary/5 p-8 text-center">
+                <GitBranch className="h-10 w-10 text-primary/40 mx-auto mb-3" />
+                <h3 className="text-base font-semibold mb-1">Build a Custom Workflow</h3>
+                <p className="text-sm text-muted-foreground mb-4 max-w-sm mx-auto">
+                  Use the visual canvas to design bespoke automations using triggers, agent actions, logic gates, approval flows, and outcomes — all governed by the policy engine.
+                </p>
+                <Button
+                  size="default"
+                  className="gap-2"
+                  onClick={onCreateCustom}
+                  data-testid="btn-create-custom-workflow"
+                >
+                  <Plus className="h-4 w-4" />
+                  Create Custom Workflow
+                </Button>
+              </div>
+
+              {/* NL generator hint */}
+              <div className="flex items-start gap-3 p-4 rounded-lg bg-violet-50 dark:bg-violet-900/10 border border-violet-200 dark:border-violet-800">
+                <Sparkles className="h-4 w-4 text-violet-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="text-xs font-semibold text-violet-700 dark:text-violet-300">AI Workflow Generator</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    Describe what you want in plain English and the AI will build the node graph for you. Click <strong>Create Custom Workflow</strong> above, then use the <em>Describe</em> button in the top bar.
+                  </p>
+                </div>
+              </div>
+
+              {/* Existing org custom drafts */}
+              {orgList.length > 0 && (
+                <>
+                  <div className="flex items-center gap-2 pt-1 pb-0.5">
+                    <Settings className="h-3.5 w-3.5 text-muted-foreground" />
+                    <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                      Your Custom Workflows · {orgList.length}
+                    </p>
+                  </div>
+                  {orgList.map(wf => (
+                    <RegistryCard
+                      key={wf.id}
+                      wf={wf}
+                      onClone={wf => cloneMutation.mutate(wf.id)}
+                      onToggle={handleToggle}
+                      onLoadInBuilder={onLoadInBuilder}
+                      onDelete={wf => deleteMutation.mutate(wf.id)}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
           )}
         </div>
       </ScrollArea>
@@ -1109,8 +1222,8 @@ export default function AdminWorkflowBuilderPage() {
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
-  // Registry / builder view toggle
-  const [viewMode, setViewMode] = useState<"builder" | "registry">("builder");
+  // Registry / builder view toggle — default to registry so users see their automation stack first
+  const [viewMode, setViewMode] = useState<"builder" | "registry">("registry");
 
   // UI state
   const [graphName, setGraphName] = useState("New Workflow");
@@ -1373,7 +1486,15 @@ export default function AdminWorkflowBuilderPage() {
 
       {/* ── Registry View ── */}
       {viewMode === "registry" && (
-        <WorkflowRegistryView onLoadInBuilder={handleLoadRegistryWorkflow} />
+        <WorkflowRegistryView
+          onLoadInBuilder={handleLoadRegistryWorkflow}
+          onCreateCustom={() => {
+            setNodes([]);
+            setEdges([]);
+            setGraphName("New Workflow");
+            setViewMode("builder");
+          }}
+        />
       )}
 
       {/* ── Main canvas area ── */}
