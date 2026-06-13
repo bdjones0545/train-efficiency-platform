@@ -1900,6 +1900,11 @@ export async function registerRoutes(
       const orgBranding: OrgBranding = { name: org.name, ownerName: firstName.trim(), ownerEmail: email.toLowerCase().trim() };
       sendCoachWelcomeEmail(email.toLowerCase().trim(), firstName.trim(), undefined, orgBranding).catch(() => {});
 
+      // Provision AI infrastructure for the new org (fire-and-forget, non-blocking)
+      import("./services/org-ai-infrastructure").then(({ ensureOrgAiInfrastructure }) =>
+        ensureOrgAiInfrastructure(org.id).catch(() => {})
+      ).catch(() => {});
+
       res.json({ success: true, organization: org, token, redirect: "/coach" });
     } catch (error) {
       console.error("Organization register error:", error);
@@ -17842,6 +17847,13 @@ Respond with this exact JSON structure:
       });
     } catch { /* audit log is never blocking */ }
 
+    // ── Phase 6 (non-critical): Ensure full AI infrastructure provisioned ───────
+    try {
+      const { ensureOrgAiInfrastructure } = await import("./services/org-ai-infrastructure");
+      await ensureOrgAiInfrastructure(orgId);
+      verificationLog.push("ai_infrastructure_provisioned");
+    } catch { verificationLog.push("ai_infrastructure_check_failed"); }
+
     console.log("[onboarding/complete] complete", { orgId, verificationLog, isFirstTimeSetup });
     return res.json({
       success: true,
@@ -29666,6 +29678,36 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
 
   const { registerReliabilityRoutes } = await import("./reliability-routes");
   await registerReliabilityRoutes(app);
+
+  // ── AI Infrastructure Status ────────────────────────────────────────────────
+
+  // GET /api/admin/ai-infrastructure/status — per-org infrastructure health
+  app.get("/api/admin/ai-infrastructure/status", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "No org context" });
+      const { ensureOrgAiInfrastructure } = await import("./services/org-ai-infrastructure");
+      const report = await ensureOrgAiInfrastructure(orgId);
+      res.json({ success: true, report });
+    } catch (e: any) {
+      console.error("[ai-infrastructure/status] error:", e);
+      res.status(500).json({ message: "Failed to check AI infrastructure status" });
+    }
+  });
+
+  // POST /api/admin/ai-infrastructure/provision — manually trigger provisioning for current org
+  app.post("/api/admin/ai-infrastructure/provision", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "No org context" });
+      const { ensureOrgAiInfrastructure } = await import("./services/org-ai-infrastructure");
+      const report = await ensureOrgAiInfrastructure(orgId);
+      res.json({ success: true, report });
+    } catch (e: any) {
+      console.error("[ai-infrastructure/provision] error:", e);
+      res.status(500).json({ message: "Failed to provision AI infrastructure" });
+    }
+  });
 
   return httpServer;
 }

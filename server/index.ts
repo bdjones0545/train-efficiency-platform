@@ -593,6 +593,15 @@ app.use((req, res, next) => {
 
   await registerRoutes(httpServer, app);
 
+  // ── AI Infrastructure Startup Backfill ────────────────────────────────────
+  // Runs 30 seconds after startup so it never delays the server coming online.
+  // Idempotent — skips records that already exist, only creates what's missing.
+  setTimeout(() => {
+    import("./services/org-ai-infrastructure")
+      .then(({ backfillAllOrgsAiInfrastructure }) => backfillAllOrgsAiInfrastructure())
+      .catch((e) => console.error("[OrgAiInfra][Backfill] startup error:", e));
+  }, 30 * 1000);
+
   const { registerAttendanceRoutes } = await import("./attendance-routes");
   await registerAttendanceRoutes(app);
 
