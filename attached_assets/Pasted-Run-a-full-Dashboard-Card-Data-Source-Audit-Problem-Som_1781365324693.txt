@@ -1,0 +1,73 @@
+Run a full Dashboard/Card Data Source Audit.
+
+Problem:
+Some dashboard cards still show blank or placeholder values:
+- Revenue: —
+- Utilization: —
+- Best Action still says no communication integrations despite Gmail being connected
+
+Goal:
+Every card in the app should pull from the correct authoritative database/service source, not placeholders, stale mocks, or disconnected logic.
+
+Audit all dashboard/card components across the app:
+- Business Health cards
+- Revenue cards
+- Leads cards
+- Utilization cards
+- Retention cards
+- Best Action Today
+- AI Workforce cards
+- Command Center cards
+- Scheduling cards
+- Agent cards
+- Approval cards
+- Financial cards
+- Workflow cards
+- Gmail/AgentMail cards
+- CEO Heartbeat cards
+
+For every card, document:
+1. Frontend component/file
+2. API endpoint used
+3. Backend route/service
+4. Database table(s) queried
+5. Current fallback value
+6. Whether value is real, derived, placeholder, or broken
+7. Correct source of truth
+
+Create a matrix:
+
+Card | Component | Endpoint | Current Source | Correct Source | Status | Fix Needed
+
+Fix requirements:
+- Revenue should pull from real billing/payment/booking source.
+- Utilization should pull from scheduling/session/coach availability source.
+- Leads should pull from lead capture/applicant pipeline source.
+- Retention should pull from athlete/client activity and risk signals.
+- Best Action Today should use the unified integration-status-service.
+- Cards with no data should explain why, not show meaningless “—”.
+- Do not use mock values unless explicitly labeled demo data.
+- Do not silently show empty state if backend errors.
+- Backend should return structured JSON with source metadata where possible.
+
+Suggested response shape for card endpoints:
+{
+  "success": true,
+  "data": {
+    "value": "...",
+    "label": "...",
+    "trend": "...",
+    "source": "wallet_transactions / bookings / leads / sessions",
+    "lastUpdated": "timestamp",
+    "hasData": true,
+    "emptyReason": null
+  }
+}
+
+Acceptance criteria:
+- No important dashboard card shows “—” when real data exists.
+- Every card has a documented source of truth.
+- Placeholder values are removed or clearly labeled.
+- Best Action Today no longer contradicts integration status.
+- TypeScript passes.
+- Server starts cleanly.
