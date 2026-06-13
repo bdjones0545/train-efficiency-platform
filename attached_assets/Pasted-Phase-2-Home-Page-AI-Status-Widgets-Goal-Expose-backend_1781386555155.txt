@@ -1,0 +1,225 @@
+Phase 2 — Home Page AI Status Widgets
+
+Goal
+
+Expose backend intelligence on the Home page so users can immediately see what the AI workforce is doing without opening multiple admin pages.
+
+Do not change backend systems.
+Do not remove routes.
+Do not move data ownership.
+
+Only surface existing intelligence already available in the platform.
+
+Core Principle
+
+The backend is already working.
+
+The Home page should answer:
+
+* What is the AI workforce doing?
+* What needs my attention?
+* What happened recently?
+* What should I do next?
+
+without requiring navigation into Hermes, CEO Heartbeat, AgentMail, Workflow Builder, Governance, or Organizational Memory.
+
+New Home Page Sections
+
+1. AI Workforce Status (Top Priority)
+
+Card title:
+AI Workforce
+
+Display:
+
+* Agents Active
+* Last Heartbeat
+* Pending Approvals
+* Active Workflows
+* Agent Health %
+
+Quick actions:
+
+* Open Workforce
+* Open Approvals
+
+Data sources:
+
+* AI Workforce
+* CEO Heartbeat
+* Workflow Engine
+* Approval Center
+
+2. Best Action Today
+
+Prominent card near top of page.
+
+Display:
+
+* Recommendation title
+* Why it matters
+* Confidence score
+* Source agent
+* Action button
+
+Examples:
+
+“Follow up with 3 high-intent athlete leads”
+
+“Review 2 pending Gmail approvals”
+
+“Capacity reaching 92% utilization”
+
+Data source:
+Existing recommendation engine only.
+
+No new recommendation logic.
+
+3. CEO Heartbeat Summary
+
+Display:
+
+* Last run
+* Agents coordinated
+* Priorities generated
+* Errors detected
+* Next run
+
+Quick action:
+
+* View Heartbeat
+
+Must survive deploys using persisted heartbeat data.
+
+4. Attention Inbox Summary
+
+Display:
+
+* Critical
+* High
+* Medium
+* Low
+
+Click-through:
+
+* Open Attention Inbox
+
+5. Approvals Summary
+
+Display:
+
+* Pending approvals
+* Pending Gmail approvals
+* Pending workflow approvals
+* Pending agent actions
+
+Quick action:
+
+* Review Approvals
+
+6. Organizational Memory Summary
+
+Display:
+
+* Hermes Learnings
+* Decisions Captured
+* Software KB Entries
+* Executive Knowledge Entries
+
+Also show:
+
+* Last learning captured
+* Last decision captured
+
+Quick action:
+
+* Open Memory
+
+7. Revenue Snapshot
+
+Display:
+
+* This Month Revenue
+* Growth %
+* Active Leads
+* Pipeline Value
+
+Use already-fixed revenue endpoints.
+
+8. Agent Activity Feed
+
+Recent activity timeline.
+
+Examples:
+
+* Hermes recorded learning
+* Workflow approved
+* Gmail action completed
+* CEO Heartbeat completed
+* Recommendation accepted
+
+Limit:
+10 most recent events.
+
+Data source:
+agent_operating_timeline
+
+9. System Health Widget
+
+Compact card.
+
+Display:
+
+* Hermes
+* AgentMail
+* CEO Heartbeat
+* Database
+* Integrations
+
+Statuses:
+
+* Operational
+* Degraded
+* Attention Required
+
+Use existing status services.
+
+Visibility Rules
+
+Do NOT expose:
+
+* raw governance controls
+* workflow graphs
+* execution internals
+* developer diagnostics
+* infrastructure configuration
+
+Expose:
+
+* outcomes
+* recommendations
+* activity
+* memory
+* approvals
+* health
+
+Acceptance Criteria
+
+* Users can understand platform activity from the Home page alone.
+* Home page becomes the operational dashboard.
+* Existing backend systems gain visibility.
+* No backend logic changes.
+* No route removals.
+* No duplicate pages created.
+* All cards use real persisted data.
+* Empty states explain why data is unavailable.
+* TypeScript passes.
+* Server starts cleanly.
+
+Bonus Audit
+
+For each widget added, document:
+
+Widget | Endpoint | Backend Source | Database Tables | Refresh Strategy
+
+Ensure every widget has a clearly defined source of truth.
