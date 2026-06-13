@@ -255,7 +255,7 @@ export default function AdminRecommendationsPage() {
                 { label: "Open Workflow Builder", url: "/admin/workflow-builder", icon: GitBranch },
                 { label: "View AI Workforce", url: "/admin/ai-workforce", icon: Cpu },
                 { label: "Configure Governance", url: "/admin/ai-governance", icon: Shield },
-                { label: "Run Setup Wizard", url: "/onboarding/ai-workforce", icon: Zap },
+                { label: "Workforce Preferences", url: "/onboarding/ai-workforce", icon: Zap },
               ].map(a => (
                 <Link key={a.url} href={a.url}>
                   <Button variant="outline" size="sm" className="w-full justify-start gap-2 h-8 text-xs">

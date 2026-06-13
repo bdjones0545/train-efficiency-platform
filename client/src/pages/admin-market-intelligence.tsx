@@ -963,7 +963,7 @@ export default function AdminMarketIntelligencePage() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground overflow-x-auto pb-1">
         {[
-          { label: "Setup Wizard",           href: "/admin/ai-workforce" },
+          { label: "AI Workforce",            href: "/admin/ai-workforce" },
           { label: "Workforce Mgmt",          href: "/admin/ai-workforce/settings" },
           { label: "Operations",              href: "/admin/ai-operations" },
           { label: "Executive Intel",         href: "/admin/executive-intelligence" },

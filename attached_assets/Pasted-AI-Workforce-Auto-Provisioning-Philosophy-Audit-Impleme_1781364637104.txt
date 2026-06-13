@@ -1,0 +1,148 @@
+AI Workforce Auto-Provisioning Philosophy Audit & Implementation
+
+Goal:
+TrainEfficiency should ship as a complete AI operating system.
+
+Organizations should NEVER need to manually install, configure, create, or activate core TrainEfficiency infrastructure.
+
+Every organization should automatically receive the full TrainEfficiency AI stack on creation.
+
+Principle:
+
+Included by Default (Product Infrastructure)
+- Hermes
+- AgentMail
+- CEO Heartbeat
+- Attention Inbox
+- Approval Center
+- Workflow Engine
+- Execution Engine
+- Organizational Memory
+- Obsidian integration layer
+- AI Governance
+- Automation Settings
+- Agent Registry
+- Default AI Workforce
+- Executive Agent
+- Operations Agent
+- Scheduling Agent
+- Customer Success Agent
+- Revenue Agent
+- Opportunity Acquisition Agent
+- Outreach Agent
+- Partnerships Agent
+- Sponsorship Agent
+
+User-Connected Services (External Accounts)
+- Gmail
+- Google Calendar
+- Stripe
+- Slack
+- Twilio
+- SendGrid
+- HubSpot
+- Meta CAPI
+- OpenRouter
+- Any third-party service
+
+Desired UX:
+
+Wrong:
+"Set up Hermes"
+"Install AgentMail"
+"Create Agents"
+"Configure Workforce"
+"Enable CEO Heartbeat"
+
+Correct:
+"Your AI Workforce is ready."
+
+Then show:
+
+AI Workforce Status
+✅ Hermes Ready
+✅ AgentMail Ready
+✅ CEO Heartbeat Ready
+✅ Executive Agent Ready
+✅ Operations Agent Ready
+
+Connect Accounts To Activate Capabilities
+⚠ Gmail not connected
+⚠ Calendar not connected
+⚠ Stripe not connected
+
+The AI workforce already exists.
+External connections simply unlock additional abilities.
+
+Audit Required:
+
+1. Identify every place in the product where users are asked to:
+   - install agents
+   - create agents
+   - activate agents
+   - configure workforce infrastructure
+   - enable Hermes
+   - enable AgentMail
+   - provision AI systems
+
+2. Classify each item:
+   - Product Infrastructure
+   - External Integration
+   - Optional Advanced Configuration
+
+3. Remove or hide setup requirements for Product Infrastructure.
+
+4. Ensure all orgs automatically receive:
+   - workforce settings
+   - governance settings
+   - capability policies
+   - approval rules
+   - default departments
+   - default agents
+   - workflow defaults
+   - heartbeat defaults
+   - memory defaults
+
+5. Verify every new org can:
+   - create account
+   - complete onboarding
+   - immediately see AI Workforce Ready
+
+6. Verify every existing org is automatically backfilled.
+
+7. Replace onboarding language:
+
+Instead of:
+"Set up your AI workforce"
+
+Use:
+"Your AI workforce is ready. Connect accounts to unlock additional capabilities."
+
+8. Create a single readiness score:
+
+Infrastructure Readiness
+- always provisioned by TrainEfficiency
+
+Integration Readiness
+- based on connected external services
+
+AI Workforce Readiness
+- based on agent activation + available integrations
+
+Deliverables:
+1. Full audit of setup friction.
+2. Infrastructure vs Integration classification table.
+3. Screens/pages that still imply manual workforce setup.
+4. Recommended UX changes.
+5. Backfill verification.
+6. End-to-end new organization experience.
+7. TypeScript result.
+8. Server startup result.
+
+Acceptance Criteria:
+- No organization manually installs TrainEfficiency AI systems.
+- Every organization automatically receives the full AI operating stack.
+- External accounts only unlock capabilities.
+- Infrastructure and integrations are clearly separated.
+- A new customer immediately understands:
+  "The AI workforce already exists. I only need to connect accounts."

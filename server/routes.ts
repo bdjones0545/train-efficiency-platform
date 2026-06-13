@@ -20113,12 +20113,12 @@ Respond with this exact JSON structure:
 
       const checklist = [
         {
-          id: "complete_wizard",
-          title: "Complete Setup Wizard",
-          description: "Run the AI Workforce Setup Wizard to configure departments, governance, and starter workflows.",
-          status: wizardCompleted ? "complete" : "incomplete",
-          actionUrl: "/onboarding/ai-workforce",
-          priority: "critical",
+          id: "infrastructure_ready",
+          title: "AI Infrastructure Provisioned",
+          description: "Your full AI operating stack — Hermes, AgentMail, CEO Heartbeat, all agents, governance, and approval rules — is automatically provisioned and ready.",
+          status: "complete",
+          actionUrl: "/admin/ai-workforce",
+          priority: "info",
         },
         {
           id: "connect_gmail",

@@ -893,6 +893,71 @@ export default function AdminAiWorkforcePage() {
         </div>
       )}
 
+      {/* ── Readiness Overview: Infrastructure vs Integrations ─────────────── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="section-readiness-overview">
+        {/* Infrastructure — always provisioned */}
+        <Card className="p-4 border-green-200 bg-green-50/30 dark:border-green-800/40 dark:bg-green-900/10">
+          <div className="flex items-center gap-2 mb-3">
+            <CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <h3 className="text-sm font-semibold">AI Infrastructure Ready</h3>
+            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400 font-medium">Always provisioned</span>
+          </div>
+          <div className="space-y-1.5">
+            {[
+              "Hermes (Coordination Agent)",
+              "AgentMail (Inbox Routing)",
+              "CEO Heartbeat",
+              "Approval Center",
+              "AI Governance & Audit",
+              "Agent Registry & Policies",
+              "Workflow Engine",
+              "Organizational Memory",
+            ].map(item => (
+              <div key={item} className="flex items-center gap-2 text-xs text-green-700 dark:text-green-400">
+                <CheckCircle className="h-3 w-3 shrink-0" />
+                <span>{item}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* External integrations — user-connected */}
+        <Card className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Plug className="h-4 w-4 text-primary" />
+            <h3 className="text-sm font-semibold">Connect Accounts to Expand</h3>
+            <span className="ml-auto text-[10px] px-1.5 py-0.5 rounded-full bg-muted text-muted-foreground font-medium">Optional</span>
+          </div>
+          <div className="space-y-1.5">
+            {[
+              { id: "gmail", label: "Gmail", sub: "email automation + outreach" },
+              { id: "google_calendar", label: "Google Calendar", sub: "session scheduling" },
+              { id: "stripe", label: "Stripe", sub: "payments + subscriptions" },
+              { id: "slack", label: "Slack", sub: "alerts + team notifications" },
+              { id: "sendgrid", label: "SendGrid", sub: "bulk email delivery" },
+              { id: "twilio", label: "Twilio", sub: "SMS messaging" },
+            ].map(int => {
+              const entry = integrationMap.get(int.id);
+              const connected = entry?.status === "connected";
+              return (
+                <div key={int.id} className={`flex items-center gap-2 text-xs ${connected ? "text-green-700 dark:text-green-400" : "text-muted-foreground"}`} data-testid={`readiness-integration-${int.id}`}>
+                  {connected
+                    ? <CheckCircle className="h-3 w-3 shrink-0 text-green-600" />
+                    : <AlertTriangle className="h-3 w-3 shrink-0 text-amber-500" />}
+                  <span className="font-medium">{int.label}</span>
+                  <span className="text-[10px] opacity-70">— {int.sub}</span>
+                </div>
+              );
+            })}
+          </div>
+          <Link href="/admin/integrations">
+            <Button variant="outline" size="sm" className="w-full mt-3 text-xs h-7 gap-1" data-testid="button-manage-integrations">
+              <Plug className="h-3 w-3" />Manage Integrations
+            </Button>
+          </Link>
+        </Card>
+      </div>
+
       {/* Summary stat strip */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <Card className="p-4 text-center" data-testid="stat-total-agents">

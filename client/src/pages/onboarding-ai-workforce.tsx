@@ -132,18 +132,19 @@ function StepWelcome() {
       </div>
 
       <div>
-        <h2 className="text-xl sm:text-2xl font-bold">Set up your AI Workforce preferences</h2>
+        <h2 className="text-xl sm:text-2xl font-bold">Your AI Workforce is ready</h2>
         <p className="text-muted-foreground mt-1.5 sm:mt-2 text-sm sm:text-base leading-relaxed">
-          TrainEfficiency comes with a team of specialized AI agents — each designed to handle
-          a specific part of running your coaching business.
+          Your full AI operating stack is already provisioned and standing by — Hermes, AgentMail,
+          CEO Heartbeat, and your full agent roster. Customize preferences below, then connect
+          external accounts to unlock additional capabilities.
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4 text-left">
         {[
-          { icon: Users, title: "Specialized Agents", desc: "Each AI agent has a specific role — like email, scheduling, or lead research" },
+          { icon: CheckCircle, title: "Infrastructure Provisioned", desc: "All agents, governance rules, and approval workflows are automatically created for your org" },
           { icon: Shield, title: "Governance Protected", desc: "You decide what AI can do autonomously and what requires your approval first" },
-          { icon: Zap, title: "Always Explainable", desc: "Every AI action is logged, explainable, and governed by your organization's approval settings" },
+          { icon: Zap, title: "Connect to Expand", desc: "Gmail, Calendar, Stripe and other external accounts unlock additional agent capabilities" },
         ].map(item => (
           <div key={item.title} className="rounded-xl border p-3 sm:p-4 bg-card space-y-1.5 sm:space-y-2">
             <div className="h-7 w-7 sm:h-8 sm:w-8 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -343,8 +344,8 @@ function StepIntegrations({ selected, onToggle }: { selected: string[]; onToggle
   return (
     <div className="space-y-4">
       <div>
-        <h2 className="text-xl font-bold">Choose tools to connect next</h2>
-        <p className="text-sm text-muted-foreground mt-1">Select the integrations you plan to set up. You'll configure credentials in the Integrations settings after finishing this wizard.</p>
+        <h2 className="text-xl font-bold">Connect accounts to unlock capabilities</h2>
+        <p className="text-sm text-muted-foreground mt-1">Your AI workforce is ready — connecting external accounts expands what agents can do. You can connect or skip these now and configure credentials any time in Integration settings.</p>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         {INTEGRATIONS.map(int => {
@@ -546,7 +547,7 @@ const STEPS = [
   { id: "governance", title: "Governance", subtitle: "Trust & autonomy" },
   { id: "integrations", title: "Integrations", subtitle: "Connect tools" },
   { id: "workflows", title: "Workflows", subtitle: "Starter automations" },
-  { id: "review", title: "Launch", subtitle: "Review & activate" },
+  { id: "review", title: "Save", subtitle: "Review & save preferences" },
 ];
 
 // ─── Main Wizard ──────────────────────────────────────────────────────────────
@@ -578,18 +579,10 @@ export default function OnboardingAiWorkforcePage() {
     staleTime: 0,
   });
 
-  // Redirect configured orgs away from the wizard to the live dashboard
-  useEffect(() => {
-    if (!statusLoading && setupStatus?.isConfigured) {
-      navigate("/admin/ai-governance");
-    }
-  }, [statusLoading, setupStatus, navigate]);
-
-  // Fetch existing configuration — null means first-time setup
+  // Fetch existing configuration to pre-populate preferences
   const { data: existingSettings, isLoading: settingsLoading } = useQuery<any | null>({
     queryKey: ["/api/workforce/settings"],
     staleTime: 0,
-    enabled: !statusLoading && !setupStatus?.isConfigured,
   });
 
   const isEditMode = !settingsLoading && existingSettings != null;
@@ -607,19 +600,6 @@ export default function OnboardingAiWorkforcePage() {
     });
     setPreloaded(true);
   }, [existingSettings, settingsLoading, preloaded]);
-
-  // Block rendering until we know whether this org is configured
-  // (prevents a flash of the wizard UI before the redirect fires)
-  if (statusLoading || setupStatus?.isConfigured) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center space-y-3">
-          <div className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="text-sm text-muted-foreground">Checking workforce status…</p>
-        </div>
-      </div>
-    );
-  }
 
   const toggleGoal = (id: string) => setState(s => ({
     ...s, goals: s.goals.includes(id) ? s.goals.filter(x => x !== id) : [...s.goals, id],
@@ -667,7 +647,7 @@ export default function OnboardingAiWorkforcePage() {
         ? ` Daily Executive Summary was auto-published.`
         : "";
       toast({
-        title: isEditMode ? "AI Workforce updated." : "AI Workforce setup saved.",
+        title: "AI Workforce preferences saved.",
         description: `${workflowMsg}${autoMsg} Governance rules applied.`,
       });
 
@@ -727,7 +707,7 @@ export default function OnboardingAiWorkforcePage() {
             <div className="h-6 w-6 rounded-full bg-primary flex items-center justify-center">
               <Brain className="h-3.5 w-3.5 text-primary-foreground" />
             </div>
-            <span className="text-sm font-semibold">{isEditMode ? "Edit AI Workforce" : "AI Workforce Setup"}</span>
+            <span className="text-sm font-semibold">Customize AI Workforce Preferences</span>
           </div>
           <Progress value={pct} className="flex-1 h-1.5" />
           <span className="text-xs text-muted-foreground shrink-0">{stepIdx + 1} / {STEPS.length}</span>
@@ -783,7 +763,7 @@ export default function OnboardingAiWorkforcePage() {
           <div className="flex items-center gap-2">
             {!isFirst && (
               <Button variant="ghost" size="sm" onClick={() => navigate("/admin/ai-workforce")} className="text-xs text-muted-foreground">
-                {isEditMode ? "Cancel" : "Skip setup"}
+                {isEditMode ? "Cancel" : "Skip for now"}
               </Button>
             )}
             {isLast ? (

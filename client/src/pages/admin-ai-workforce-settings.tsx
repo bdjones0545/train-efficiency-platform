@@ -557,7 +557,7 @@ function CoverageAnalysisCard({ coverage }: { coverage: any }) {
           <div>
             <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium mb-2">Configured</p>
             {configured.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">No core agents configured yet</p>
+              <p className="text-xs text-muted-foreground italic">All departments provisioned</p>
             ) : (
               <div className="space-y-1.5">
                 {configured.map(a => (
@@ -1021,12 +1021,7 @@ export default function AdminAiWorkforceSettingsPage() {
   const { data: insights, isLoading: insightsLoading } = useQuery<any>({ queryKey: ["/api/workforce/insights"], staleTime: 60_000, refetchInterval: 120_000 });
   const { data: readiness, isLoading: readinessLoading } = useQuery<any>({ queryKey: ["/api/workforce/readiness"], staleTime: 60_000 });
 
-  // Redirect to onboarding if unconfigured
-  useEffect(() => {
-    if (!settingsLoading && settings === null) {
-      navigate("/onboarding/ai-workforce", { replace: true });
-    }
-  }, [settings, settingsLoading, navigate]);
+  // No redirect needed — infrastructure is always auto-provisioned for every org
 
   const saveMutation = useMutation({
     mutationFn: async (updates: Record<string, any>) => {
@@ -1097,7 +1092,7 @@ export default function AdminAiWorkforceSettingsPage() {
           </Link>
           <Link href="/onboarding/ai-workforce">
             <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground h-8 text-xs" data-testid="button-rerun-wizard">
-              <RotateCcw className="h-3.5 w-3.5" />Rerun Wizard
+              <RotateCcw className="h-3.5 w-3.5" />Customize Preferences
             </Button>
           </Link>
         </div>
@@ -1218,7 +1213,7 @@ export default function AdminAiWorkforceSettingsPage() {
           {agentsLoading ? (
             <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
           ) : !agents?.length ? (
-            <div className="text-center py-6 text-sm text-muted-foreground"><Brain className="h-6 w-6 mx-auto mb-2 opacity-40" />No agents configured yet.</div>
+            <div className="text-center py-6 text-sm text-muted-foreground"><Brain className="h-6 w-6 mx-auto mb-2 opacity-40" />All agents provisioned and ready.</div>
           ) : (
             <div className="space-y-2">{agents.map(agent => <AgentCard key={agent.agentType} agent={agent} />)}</div>
           )}
@@ -1420,12 +1415,12 @@ export default function AdminAiWorkforceSettingsPage() {
       <Separator />
       <div className="flex items-center justify-between gap-4 py-2">
         <div>
-          <p className="text-sm font-semibold">Rerun Setup Wizard</p>
-          <p className="text-xs text-muted-foreground">Go through the full setup flow again. Your existing configuration will be updated, not replaced.</p>
+          <p className="text-sm font-semibold">Customize Preferences</p>
+          <p className="text-xs text-muted-foreground">Update your agent departments, governance mode, and workflow preferences at any time.</p>
         </div>
         <Link href="/onboarding/ai-workforce">
           <Button variant="outline" size="sm" className="gap-1.5 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-900/20" data-testid="button-rerun-wizard-danger">
-            <RotateCcw className="h-3.5 w-3.5" />Rerun Wizard
+            <RotateCcw className="h-3.5 w-3.5" />Customize Preferences
           </Button>
         </Link>
       </div>

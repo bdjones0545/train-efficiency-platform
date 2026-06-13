@@ -170,7 +170,7 @@ export async function ensureOrgAiInfrastructure(
         governanceMode: "supervised",
         selectedIntegrations: [],
         selectedWorkflowTemplates: [],
-        onboardingCompleted: false,
+        onboardingCompleted: true,
       });
       report.created.push("workforce_settings");
       console.log(`${tag} created workforce_settings`);
@@ -398,20 +398,20 @@ export async function ensureOrgAiInfrastructure(
 
     itemsToSeed.push({
       orgId,
-      level: "suggested",
+      level: "informational",
       category: "insight",
-      title: "Run the AI Workforce onboarding wizard",
-      body: "The setup wizard configures your agent posture, autonomy levels, and department priorities. Takes 5 minutes and unlocks your full AI workforce.",
+      title: "Customize your AI Workforce preferences",
+      body: "Your AI workforce is fully provisioned. Optionally customize agent departments, governance mode, and workflow templates to match your coaching style.",
       source: "onboarding",
       sourceId: `onboarding-wizard-v1-${orgId}`,
-      severity: 50,
-      urgency: 55,
-      businessImpact: 70,
+      severity: 30,
+      urgency: 20,
+      businessImpact: 40,
       confidence: 1.0,
       actionUrl: "/onboarding/ai-workforce",
-      actionLabel: "Start Wizard",
+      actionLabel: "Customize Preferences",
       status: "active",
-      metadata: { type: "onboarding_step", step: "wizard" },
+      metadata: { type: "optional_customization", step: "preferences" },
     });
 
     for (const item of itemsToSeed) {
