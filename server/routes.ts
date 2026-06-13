@@ -20024,10 +20024,11 @@ Respond with this exact JSON structure:
       const activeAgents = identities.filter((_: any, i: number) => enabledFlags[i] && (policyMap.get(identities[i].agentType) as any)?.enabled !== false).length;
       const disabledAgents = identities.length - activeAgents;
 
-      // Integrations
-      const integrations = await storage.getExternalIntegrations(orgId).catch(() => []);
-      const integrationsConnected = integrations.filter((i: any) => i.status === "connected").length;
-      const integrationsMissing = integrations.filter((i: any) => i.status !== "connected").length;
+      // Integrations — unified status (DB first, env-var fallback)
+      const { getEffectiveConnectedIntegrations: _effCxHealth } = await import("./services/integration-status-service");
+      const _healthConnected = await _effCxHealth(orgId);
+      const integrationsConnected = _healthConnected.size;
+      const integrationsMissing = ["gmail", "google_calendar", "stripe"].filter(t => !_healthConnected.has(t)).length;
 
       // Workflows
       const graphs = await storage.getWorkflowGraphs(orgId).catch(() => []);
@@ -20095,14 +20096,14 @@ Respond with this exact JSON structure:
       const { eq } = await import("drizzle-orm");
 
       const [settings] = await db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []);
-      const integrations = await storage.getExternalIntegrations(orgId).catch(() => []);
       const graphs = await storage.getWorkflowGraphs(orgId).catch(() => []);
       const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
-      const { db: _db2, ..._ } = { db: null };
 
-      const gmailConnected = integrations.some((i: any) => i.integrationType === "gmail" && i.status === "connected");
-      const calendarConnected = integrations.some((i: any) => i.integrationType === "google_calendar" && i.status === "connected");
-      const stripeConnected = integrations.some((i: any) => i.integrationType === "stripe" && i.status === "connected");
+      const { getEffectiveConnectedIntegrations: _effCxRdns } = await import("./services/integration-status-service");
+      const _rdnsConnected = await _effCxRdns(orgId);
+      const gmailConnected = _rdnsConnected.has("gmail");
+      const calendarConnected = _rdnsConnected.has("google_calendar");
+      const stripeConnected = _rdnsConnected.has("stripe");
       const hasPublishedWorkflow = graphs.some((g: any) => g.published);
       const hasDraftWorkflow = graphs.some((g: any) => !g.published);
       const wizardCompleted = !!settings?.onboardingCompleted;
@@ -20538,9 +20539,9 @@ Respond with this exact JSON structure:
         if (ts && (!lastActiveByAgent[t] || ts > lastActiveByAgent[t])) lastActiveByAgent[t] = ts;
       }
 
-      // Integration connections per agent (from agent-identities requiredIntegrations)
-      const integrations = await storage.getExternalIntegrations(orgId).catch(() => []);
-      const connectedIntTypes = new Set(integrations.filter((i: any) => i.status === "connected").map((i: any) => i.integrationType));
+      // Integration connections per agent — unified status (DB first, env-var fallback)
+      const { getEffectiveConnectedIntegrations: _effCxMatrix } = await import("./services/integration-status-service");
+      const connectedIntTypes = await _effCxMatrix(orgId);
 
       // Workflow graphs attached to each agent
       const graphs = await storage.getWorkflowGraphs(orgId).catch(() => []);
@@ -21121,11 +21122,12 @@ Respond with this exact JSON structure:
       const { eq } = await import("drizzle-orm");
       const [settings] = await db.select().from(orgAiWorkforceSettings).where(eq(orgAiWorkforceSettings.orgId, orgId)).catch(() => []);
       const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
-      const integrations = await storage.getExternalIntegrations(orgId).catch(() => []);
       const graphs = await storage.getWorkflowGraphs(orgId).catch(() => []);
       const enabledAgentTypes = new Set(agents.filter((a: any) => a.enabled).map((a: any) => a.agentType));
-      const gmailOn = integrations.some((i: any) => i.integrationType === "gmail" && i.status === "connected");
-      const calOn = integrations.some((i: any) => i.integrationType === "google_calendar" && i.status === "connected");
+      const { getEffectiveConnectedIntegrations: _effCxCov } = await import("./services/integration-status-service");
+      const _covConnected = await _effCxCov(orgId);
+      const gmailOn = _covConnected.has("gmail");
+      const calOn = _covConnected.has("google_calendar");
       const hasPublished = graphs.some((g: any) => g.published);
       const enabledDepts: string[] = Array.isArray(settings?.enabledDepartments) ? settings.enabledDepartments : [];
       const CORE = [
@@ -29717,11 +29719,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
 
       const { sql: drizzleSql } = await import("drizzle-orm");
 
-      // ── Integration status ────────────────────────────────────────────────
-      const integrations = await storage.getExternalIntegrations(orgId).catch(() => [] as any[]);
-      const connectedSet = new Set(
-        integrations.filter((i: any) => i.status === "connected").map((i: any) => i.integrationType as string)
-      );
+      // ── Integration status — unified (DB first, env-var fallback) ─────────
+      const { getEffectiveConnectedIntegrations: _effCxDash } = await import("./services/integration-status-service");
+      const connectedSet = await _effCxDash(orgId);
       const gmailOn = connectedSet.has("gmail");
       const calOn = connectedSet.has("google_calendar");
       const agentmailOn = !!(process.env.AGENTMAIL_API_KEY);

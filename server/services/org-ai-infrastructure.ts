@@ -288,15 +288,10 @@ export async function ensureOrgAiInfrastructure(
     console.error(`${tag} error ${msg}`);
   }
 
-  // ── 6. Integration status check ─────────────────────────────────────────────
+  // ── 6. Integration status check — unified (DB first, env-var fallback) ──────
   try {
-    const { storage } = await import("../storage");
-    const connected = await storage.getExternalIntegrations(orgId).catch(() => [] as any[]);
-    const connectedSet = new Set(
-      connected
-        .filter((i: any) => i.status === "connected")
-        .map((i: any) => i.integrationType as string),
-    );
+    const { getEffectiveConnectedIntegrations } = await import("./integration-status-service");
+    const connectedSet = await getEffectiveConnectedIntegrations(orgId);
 
     for (const intType of DEFAULT_INTEGRATION_TYPES) {
       report.integrationStatus[intType] = connectedSet.has(intType)

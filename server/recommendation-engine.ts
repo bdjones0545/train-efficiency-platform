@@ -8,6 +8,7 @@
  */
 
 import type { IStorage } from "./storage";
+import { getEffectiveConnectedIntegrations, COMMUNICATION_INTEGRATION_TYPES } from "./services/integration-status-service";
 
 export interface Recommendation {
   id: string;
@@ -27,16 +28,13 @@ export async function generateRecommendations(
   const recs: Recommendation[] = [];
 
   try {
-    // Load org state
-    const [integrations, graphs, agents] = await Promise.all([
-      storage.getExternalIntegrations(orgId).catch(() => []),
+    // Load org state — use unified integration status (DB first, env-var fallback)
+    const [connectedIntegrationTypes, graphs, agents] = await Promise.all([
+      getEffectiveConnectedIntegrations(orgId),
       storage.getWorkflowGraphs(orgId).catch(() => []),
       storage.getWorkflowJobs(orgId, undefined, 20).catch(() => []),
     ]);
 
-    const connectedIntegrationTypes = new Set(
-      integrations.filter((i: any) => i.status === "connected").map((i: any) => i.integrationType)
-    );
     const publishedWorkflows = graphs.filter((g: any) => g.published);
     const draftWorkflows = graphs.filter((g: any) => !g.published && (g.graphDefinition as any)?.nodes?.length > 0);
 
@@ -55,7 +53,10 @@ export async function generateRecommendations(
       });
     }
 
-    if (!connectedIntegrationTypes.has("gmail") && !connectedIntegrationTypes.has("slack")) {
+    // Only fire "no communication integrations" when NONE of the comm types are connected.
+    // Checks Gmail, Slack, SendGrid, and Twilio via unified status (not just the DB row).
+    const hasAnyCommunicationIntegration = [...COMMUNICATION_INTEGRATION_TYPES].some(t => connectedIntegrationTypes.has(t));
+    if (!hasAnyCommunicationIntegration) {
       recs.push({
         id: "rec-no-integrations",
         type: "integration",
