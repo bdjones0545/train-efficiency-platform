@@ -456,7 +456,7 @@ function AiCsmTab() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const csmMutation = useMutation({
-    mutationFn: (q: string) => apiRequest("POST", "/api/customer-success/ai-csm", { question: q }),
+    mutationFn: (q: string) => apiRequest("POST", "/api/customer-success/ai-csm", { question: q }).then(r => r.json()),
     onSuccess: (data: any) => {
       setConversation(prev => [...prev, { role: "csm", text: data.answer, ts: new Date() }]);
     },

@@ -254,7 +254,7 @@ function CampaignBuilderTab() {
   const { toast } = useToast();
 
   const buildMutation = useMutation({
-    mutationFn: (g: string) => apiRequest("POST", "/api/execution/campaign-builder", { goal: g }),
+    mutationFn: (g: string) => apiRequest("POST", "/api/execution/campaign-builder", { goal: g }).then(r => r.json()),
     onSuccess: (data: any) => setCampaign(data.campaign),
     onError: () => toast({ title: "Campaign generation failed", variant: "destructive" }),
   });
@@ -599,7 +599,7 @@ function AiCooTab() {
   const { toast } = useToast();
 
   const cooMutation = useMutation({
-    mutationFn: (q: string) => apiRequest("POST", "/api/execution/coo", { question: q }),
+    mutationFn: (q: string) => apiRequest("POST", "/api/execution/coo", { question: q }).then(r => r.json()),
     onSuccess: (data: any) => setAnswer(data.answer),
     onError: () => toast({ title: "AI COO unavailable", variant: "destructive" }),
   });

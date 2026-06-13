@@ -156,7 +156,7 @@ export default function CoachEducationBuilderPage() {
   });
 
   const copyPathwayMut = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/org/education/pathways/${id}/copy`, {}, buildHeaders()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/org/education/pathways/${id}/copy`, {}, buildHeaders()).then(r => r.json()),
     onSuccess: (data: any) => {
       refetchPathways();
       toast({ title: "Pathway copied to your library", description: "You can now customize it for your organization." });
@@ -186,7 +186,7 @@ export default function CoachEducationBuilderPage() {
   }
 
   const acceptFullProgramMut = useMutation({
-    mutationFn: (draft: any) => apiRequest("POST", "/api/org/education/ai/accept-full-pathway", { draft }, buildHeaders()),
+    mutationFn: (draft: any) => apiRequest("POST", "/api/org/education/ai/accept-full-pathway", { draft }, buildHeaders()).then(r => r.json()),
     onSuccess: (data: any) => {
       refetchPathways();
       setFullProgramDraft(null);

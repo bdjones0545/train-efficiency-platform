@@ -448,7 +448,7 @@ function ApprovalReviewDrawer({
   const regenMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/ai-approvals/${proposalId}/regenerate`, {
       feedbackText: [regenFeedback, ...regenChips].filter(Boolean).join(". "),
-    }),
+    }).then(r => r.json()),
     onSuccess: (data: any) => setRegenResult({ subject: data.subject, body: data.body }),
     onError: (e: any) => toast({ title: "Regeneration failed", description: e.message, variant: "destructive" }),
   });
@@ -1555,7 +1555,7 @@ function ProposalsPanel({ domain }: { domain: string }) {
   };
 
   const bulkApproveMutation = useMutation({
-    mutationFn: (ids: string[]) => apiRequest("POST", "/api/ai-approvals/bulk-approve", { ids }),
+    mutationFn: (ids: string[]) => apiRequest("POST", "/api/ai-approvals/bulk-approve", { ids }).then(r => r.json()),
     onSuccess: (data: any) => {
       toast({ title: `Bulk approved: ${data.sent} sent` });
       setSelected(new Set()); invalidate();

@@ -215,7 +215,7 @@ export default function AdminAutonomyControlsPage() {
   });
 
   const executorMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/admin/autonomy/executor/run", {}),
+    mutationFn: () => apiRequest("POST", "/api/admin/autonomy/executor/run", {}).then(r => r.json()),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/autonomy/decisions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/autonomy/stats"] });

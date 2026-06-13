@@ -273,7 +273,7 @@ function SpecsTab() {
   const { toast } = useToast();
 
   const specMutation = useMutation({
-    mutationFn: (featureIdea: string) => apiRequest("POST", "/api/platform-engineering/specification", { featureIdea }),
+    mutationFn: (featureIdea: string) => apiRequest("POST", "/api/platform-engineering/specification", { featureIdea }).then(r => r.json()),
     onSuccess: (data: any) => setSpec(data),
     onError: () => toast({ title: "Failed to generate specification", variant: "destructive" }),
   });
@@ -408,7 +408,7 @@ function SimulateTab() {
   const { toast } = useToast();
 
   const simMutation = useMutation({
-    mutationFn: (f: string) => apiRequest("POST", "/api/platform-engineering/simulate", { feature: f }),
+    mutationFn: (f: string) => apiRequest("POST", "/api/platform-engineering/simulate", { feature: f }).then(r => r.json()),
     onSuccess: (data: any) => setResult(data),
     onError: () => toast({ title: "Simulation failed", variant: "destructive" }),
   });
@@ -824,7 +824,7 @@ function AdvisorTab() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const advisorMutation = useMutation({
-    mutationFn: (q: string) => apiRequest("POST", "/api/platform-engineering/advisor", { question: q }),
+    mutationFn: (q: string) => apiRequest("POST", "/api/platform-engineering/advisor", { question: q }).then(r => r.json()),
     onSuccess: (data: any) => setConvo(prev => [...prev, { role: "advisor", text: data.answer }]),
   });
 

@@ -1,0 +1,120 @@
+Run a full TrainEfficiency frontend ↔ backend contract audit across the entire app.
+
+Problem:
+There are signs of frontend/backend disconnects: pages load partially, actions fail with generic “Load failed” errors, and some systems may have mismatched routes, response shapes, auth assumptions, or stale query behavior.
+
+Audit the entire app, not just Gmail.
+
+Scope:
+1. Inventory every frontend API call:
+   - all fetch/apiRequest/queryClient calls
+   - all TanStack Query queries and mutations
+   - all form submissions
+   - all dashboard action buttons
+   - all admin tools
+   - all agent workflows
+   - all scheduling, billing, approvals, TrainChat, AgentMail, Hermes, CEO Heartbeat, software improvement, workflows, athlete, team, PR, education, lead capture, and command center calls
+
+2. Inventory every backend route:
+   - server/routes.ts
+   - all registered route modules
+   - auth middleware
+   - org/user resolution middleware
+   - admin-only routes
+   - public routes
+   - webhook routes
+   - agent/action routes
+
+3. Match frontend calls to backend routes:
+   For every API call, document:
+   - frontend file
+   - method
+   - URL
+   - request body
+   - expected response shape
+   - backend route file
+   - actual method/path
+   - auth required
+   - actual response shape
+   - status: PASS / MISMATCH / MISSING / UNKNOWN
+
+4. Find and fix:
+   - missing routes
+   - wrong paths
+   - wrong HTTP methods
+   - frontend expects `data` but backend returns raw object/array
+   - backend returns `{ success: true }` but frontend expects raw data
+   - inconsistent error shapes
+   - HTML/text errors instead of JSON
+   - route registered after catch-all
+   - incorrect auth middleware
+   - org ID/session mismatch
+   - admin route used by coach route
+   - stale query keys
+   - mutations that do not invalidate/refetch
+   - generic “Load failed” errors
+   - silent failed actions
+   - duplicate endpoints doing same thing
+   - dead frontend buttons
+   - unreachable pages
+   - sidebar links pointing to wrong routes
+   - pages imported but not registered
+   - backend routes registered but unused
+   - frontend calls to deprecated routes
+
+Required standard API contract:
+Success:
+{
+  "success": true,
+  "data": {},
+  "message": "Optional human-readable message"
+}
+
+Failure:
+{
+  "success": false,
+  "error": "Human-readable error",
+  "code": "OPTIONAL_ERROR_CODE",
+  "details": "Development-only diagnostic details"
+}
+
+Frontend requirements:
+- Centralize API handling through a shared helper.
+- Parse JSON error responses.
+- Toast backend `error` when available.
+- Only show “Load failed” when there is no response.
+- Invalidate/refetch correct query keys after mutations.
+- Add route/action level logging for failed mutations.
+- Ensure all buttons have real handlers or are visibly disabled.
+
+Backend requirements:
+- Every API route returns JSON.
+- Every API route has try/catch or centralized error middleware.
+- Auth failures return JSON.
+- Org/session failures return JSON.
+- Missing env/config failures return actionable JSON.
+- Server logs include method, path, user/org context, status, and stack trace on failure.
+
+Deliverables:
+1. Full audit table: frontend call → backend route → PASS/MISMATCH/MISSING.
+2. List of all broken or suspicious connections.
+3. Priority ranking:
+   - Critical: user-facing action broken
+   - High: dashboard/page partially broken
+   - Medium: stale data or weak error handling
+   - Low: unused/deprecated route
+4. Files changed.
+5. Fixes applied.
+6. Manual test checklist by app area.
+7. TypeScript result.
+8. Server startup result.
+
+Acceptance criteria:
+- No generic action failures where backend returned useful details.
+- All sidebar links resolve to valid pages.
+- All registered pages have working primary actions.
+- All frontend API calls map to real backend routes.
+- All backend API routes return consistent JSON.
+- All major mutations refresh affected UI data.
+- Zero TypeScript errors.
+- App starts cleanly.

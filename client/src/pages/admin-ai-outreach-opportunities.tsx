@@ -327,7 +327,7 @@ function BulkGenerateDialog({
   const mutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/ai-outreach/bulk-generate", {
       domain, messageType, prospectIds: selected,
-    }),
+    }).then(r => r.json()),
     onSuccess: (data: any) => {
       toast({ title: `${data.succeeded} drafts queued in AI Comms Center` });
       setSelected([]); setMessageType(""); onDone(); onClose();

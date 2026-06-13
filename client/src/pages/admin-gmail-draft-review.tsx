@@ -259,7 +259,7 @@ export default function AdminGmailDraftReviewPage() {
 
   const approveMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/composio/gmail-draft/${id}/approve`),
+      apiRequest("POST", `/api/composio/gmail-draft/${id}/approve`).then(r => r.json()),
     onMutate: (id) => { setActioningId(id); setActionType("approve"); },
     onSuccess: (data: any) => {
       toast({

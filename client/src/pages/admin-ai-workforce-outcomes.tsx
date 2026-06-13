@@ -89,7 +89,7 @@ export default function AdminAiWorkforceOutcomes() {
   });
 
   const refreshMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/workforce/opportunities/refresh"),
+    mutationFn: () => apiRequest("POST", "/api/workforce/opportunities/refresh").then(r => r.json()),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/workforce/opportunities"] });
       toast({ title: `${data.inserted ?? 0} new opportunities found` });

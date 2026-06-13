@@ -728,7 +728,7 @@ function AdvisorTab() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const advisorMutation = useMutation({
-    mutationFn: (q: string) => apiRequest("POST", "/api/platform-brain/advisor", { question: q }),
+    mutationFn: (q: string) => apiRequest("POST", "/api/platform-brain/advisor", { question: q }).then(r => r.json()),
     onSuccess: (data: any) => {
       setConversation(prev => [...prev, { role: "advisor", text: data.answer, ts: new Date() }]);
     },

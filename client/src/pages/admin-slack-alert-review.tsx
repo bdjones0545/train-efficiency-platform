@@ -300,7 +300,7 @@ export default function AdminSlackAlertReviewPage() {
 
   const approveMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/composio/slack-alert/${id}/approve`),
+      apiRequest("POST", `/api/composio/slack-alert/${id}/approve`).then(r => r.json()),
     onMutate: (id) => { setActioningId(id); setActionType("approve"); },
     onSuccess: (data: any) => {
       toast({

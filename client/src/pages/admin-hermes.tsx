@@ -576,7 +576,7 @@ export default function AdminHermesPage() {
   });
 
   const runMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/hermes/run", {}),
+    mutationFn: () => apiRequest("POST", "/api/hermes/run", {}).then(r => r.json()),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/hermes/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/hermes/recommendations"] });
