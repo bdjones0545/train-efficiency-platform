@@ -389,7 +389,7 @@ function WorkflowRegistryView({
     onSuccess: (cloned) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/workflow-registry"] });
       toast({ title: "Workflow cloned", description: `"${cloned.name}" is ready in Organization Workflows.` });
-      setActiveTab("org");
+      setActiveTab("active");
     },
     onError: (e: any) => toast({ title: "Clone failed", description: e.message, variant: "destructive" }),
   });
