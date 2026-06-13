@@ -26318,14 +26318,47 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     try {
       const orgId = req.user.orgId as string;
       const snap = await getPlatformMetricsSnapshot(orgId);
+
+      // ── Real last-run timestamps from DB (no more hardcoded "now - Xms") ──
+      const { ceoHeartbeatRuns, agentOperatingTimeline } = await import("@shared/schema");
+      const { desc: _desc } = await import("drizzle-orm");
+
+      const [hbRun] = await db.select({ startedAt: ceoHeartbeatRuns.startedAt, status: ceoHeartbeatRuns.status })
+        .from(ceoHeartbeatRuns)
+        .where(eq(ceoHeartbeatRuns.orgId, orgId))
+        .orderBy(_desc(ceoHeartbeatRuns.startedAt))
+        .limit(1)
+        .catch(() => [] as any[]);
+
+      const agentTimeline = async (agentName: string) => {
+        const [row] = await db.select({ createdAt: agentOperatingTimeline.createdAt })
+          .from(agentOperatingTimeline)
+          .where(and(eq(agentOperatingTimeline.orgId, orgId), eq(agentOperatingTimeline.agentName, agentName)))
+          .orderBy(_desc(agentOperatingTimeline.createdAt))
+          .limit(1)
+          .catch(() => [] as any[]);
+        return row?.createdAt ? new Date(row.createdAt).toISOString() : null;
+      };
+
+      const [followUpLast, leadRecoveryLast, revSyncLast, autoExecLast, dlqLast] = await Promise.all([
+        agentTimeline("follow_up_cron"),
+        agentTimeline("lead_recovery_cron"),
+        agentTimeline("revenue_sync_agent"),
+        agentTimeline("auto_execution_engine"),
+        agentTimeline("dead_letter_processor"),
+      ]);
+
+      const hbLastRun = hbRun?.startedAt ? new Date(hbRun.startedAt).toISOString() : null;
+      const hbStatus = hbRun?.status === "failed" ? "degraded" : hbRun ? "healthy" : "unknown";
+
       res.json({
         workflows: [
-          { name: "Email Follow-Up Cron",       successRate: 99.1, retryCount: 2,  failureCount: 1,  lastRun: new Date(Date.now() - 3600000).toISOString(), status: "healthy",  recoveryStatus: "n/a" },
-          { name: "Lead Recovery Cron",          successRate: 99.8, retryCount: 0,  failureCount: 0,  lastRun: new Date(Date.now() - 900000).toISOString(),  status: "healthy",  recoveryStatus: "n/a" },
-          { name: "Revenue Sync Agent",          successRate: 99.4, retryCount: 1,  failureCount: 1,  lastRun: new Date(Date.now() - 1800000).toISOString(), status: "healthy",  recoveryStatus: "n/a" },
-          { name: "CEO Heartbeat",               successRate: 100,  retryCount: 0,  failureCount: 0,  lastRun: new Date(Date.now() - 1800000).toISOString(), status: "healthy",  recoveryStatus: "n/a" },
-          { name: "Auto-Execution Engine",       successRate: snap.totalActions > 0 ? 97.4 : 100, retryCount: snap.totalActions > 10 ? 3 : 0, failureCount: snap.totalActions > 10 ? 2 : 0, lastRun: new Date(Date.now() - 300000).toISOString(), status: "healthy", recoveryStatus: "n/a" },
-          { name: "Dead Letter Queue Processor", successRate: 100,  retryCount: 0,  failureCount: 0,  lastRun: new Date(Date.now() - 600000).toISOString(), status: "healthy",  recoveryStatus: "n/a" },
+          { name: "Email Follow-Up Cron",       successRate: 99.1, retryCount: 2,  failureCount: 1,  lastRun: followUpLast,  status: "healthy",  recoveryStatus: "n/a" },
+          { name: "Lead Recovery Cron",          successRate: 99.8, retryCount: 0,  failureCount: 0,  lastRun: leadRecoveryLast, status: "healthy", recoveryStatus: "n/a" },
+          { name: "Revenue Sync Agent",          successRate: 99.4, retryCount: 1,  failureCount: 1,  lastRun: revSyncLast,   status: "healthy",  recoveryStatus: "n/a" },
+          { name: "CEO Heartbeat",               successRate: 100,  retryCount: 0,  failureCount: 0,  lastRun: hbLastRun,     status: hbStatus,   recoveryStatus: "n/a" },
+          { name: "Auto-Execution Engine",       successRate: snap.totalActions > 0 ? 97.4 : 100, retryCount: snap.totalActions > 10 ? 3 : 0, failureCount: snap.totalActions > 10 ? 2 : 0, lastRun: autoExecLast, status: "healthy", recoveryStatus: "n/a" },
+          { name: "Dead Letter Queue Processor", successRate: 100,  retryCount: 0,  failureCount: 0,  lastRun: dlqLast,       status: "healthy",  recoveryStatus: "n/a" },
         ],
         deadLetterCount: 0,
         retryQueueSize: 0,

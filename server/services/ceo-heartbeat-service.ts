@@ -1006,6 +1006,31 @@ export async function runHeartbeatForAllOrgs(triggeredBy = "cron"): Promise<void
 
 // ─── Start / Stop heartbeat ───────────────────────────────────────────────────
 
+// ─── Global-pause sentinel ────────────────────────────────────────────────────
+// Stored in job_execution_locks so it survives server restarts/deploys.
+// orgId="system", lockKey is fixed — never expires (year 2099).
+const GLOBAL_PAUSE_LOCK_KEY = "system:heartbeat_global_pause:v1";
+
+async function _persistGlobalPause(): Promise<void> {
+  try {
+    await db.insert(jobExecutionLocks).values({
+      orgId: "system",
+      jobName: "heartbeat_global_pause",
+      lockKey: GLOBAL_PAUSE_LOCK_KEY,
+      expiresAt: new Date("2099-12-31T00:00:00Z"),
+      status: "acquired",
+    });
+  } catch {
+    // Unique constraint = row already exists — that's fine
+  }
+}
+
+async function _clearGlobalPause(): Promise<void> {
+  await db.delete(jobExecutionLocks)
+    .where(eq(jobExecutionLocks.lockKey, GLOBAL_PAUSE_LOCK_KEY))
+    .catch(() => {});
+}
+
 export function startCeoHeartbeat(): void {
   if (_heartbeatInterval) return;
 
@@ -1014,7 +1039,42 @@ export function startCeoHeartbeat(): void {
   // These rows blocked manual runs within the same 28-minute time window.
   db.execute(sql`DELETE FROM job_execution_locks WHERE status = 'released'`).catch(() => {});
 
-  _nextRunAt = new Date(Date.now() + HEARTBEAT_INTERVAL_MS);
+  // ── Async init: restore persisted state from DB without blocking startup ──
+  (async () => {
+    try {
+      // 1. Restore global-pause state from DB sentinel row
+      const [pauseRow] = await db.select({ id: jobExecutionLocks.id })
+        .from(jobExecutionLocks)
+        .where(eq(jobExecutionLocks.lockKey, GLOBAL_PAUSE_LOCK_KEY))
+        .limit(1)
+        .catch(() => [] as any[]);
+      if (pauseRow) {
+        _globalPaused = true;
+        console.log("[CEO Heartbeat] Restored paused state from DB");
+      }
+
+      // 2. Seed _nextRunAt from latest DB heartbeat run so the UI shows an
+      //    accurate "Next Heartbeat" time instead of "now + 30 min" on every
+      //    deploy/restart.
+      const [latestRun] = await db.select({ startedAt: ceoHeartbeatRuns.startedAt })
+        .from(ceoHeartbeatRuns)
+        .orderBy(desc(ceoHeartbeatRuns.startedAt))
+        .limit(1)
+        .catch(() => [] as any[]);
+      if (latestRun?.startedAt) {
+        const lastTime = new Date(latestRun.startedAt).getTime();
+        const proposedNext = lastTime + HEARTBEAT_INTERVAL_MS;
+        if (proposedNext > Date.now()) {
+          _nextRunAt = new Date(proposedNext);
+          console.log(`[CEO Heartbeat] Seeded nextRunAt from DB: ${_nextRunAt.toISOString()}`);
+        }
+      }
+    } catch {
+      // Non-fatal — in-memory defaults are safe fallbacks
+    }
+  })();
+
+  _nextRunAt = _nextRunAt ?? new Date(Date.now() + HEARTBEAT_INTERVAL_MS);
   _heartbeatInterval = setInterval(async () => {
     if (_globalPaused) return;
     await runHeartbeatForAllOrgs("cron");
@@ -1025,11 +1085,15 @@ export function startCeoHeartbeat(): void {
 export function pauseCeoHeartbeat(): void {
   _globalPaused = true;
   console.log("[CEO Heartbeat] Paused");
+  // Persist to DB so restart/deploy doesn't clear the paused state
+  _persistGlobalPause().catch(() => {});
 }
 
 export function resumeCeoHeartbeat(): void {
   _globalPaused = false;
   console.log("[CEO Heartbeat] Resumed");
+  // Remove the DB sentinel so restart sees it as unpaused
+  _clearGlobalPause().catch(() => {});
 }
 
 export function getHeartbeatStatus(): HeartbeatStatus {

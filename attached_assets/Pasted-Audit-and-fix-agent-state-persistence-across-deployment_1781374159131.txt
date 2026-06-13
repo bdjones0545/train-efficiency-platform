@@ -1,0 +1,78 @@
+Audit and fix agent state persistence across deployments/restarts.
+
+Problem:
+CEO Heartbeat was resetting after deployments because parts of the UI/status layer relied on runtime/in-memory state instead of persisted DB history. This same issue may exist for agents.
+
+Goal:
+All agent status, activity, last run, output, errors, and coordination state must survive deploys/restarts.
+
+Audit all agents:
+- Hermes
+- Executive Agent
+- Operations Agent
+- Scheduling Agent
+- Customer Success Agent
+- Revenue Agent
+- Opportunity Acquisition Agent
+- Outreach Agent
+- Partnerships Agent
+- Sponsorship Agent
+- AgentMail
+- Workflow agents
+
+For each agent, verify status fields are derived from persistent DB records, not memory:
+- active/inactive status
+- lastRunAt
+- lastHeartbeatAt
+- lastOutputAt
+- lastErrorAt
+- errorCount
+- successRate
+- actionsCreated
+- pendingApprovals
+- messagesProcessed
+- workflowsTriggered
+- recommendationsGenerated
+
+Audit:
+1. Identify every agent status endpoint.
+2. Identify every frontend card/query showing agent status.
+3. Identify all in-memory/module-level state related to agents.
+4. Identify DB tables that should be source of truth:
+   - agent_operating_timeline
+   - workflow_jobs
+   - agent_execution_logs
+   - agent_execution_locks
+   - org_ai_workforce_settings
+   - agent_capability_policies
+   - org_ai_approval_rules
+   - email/AgentMail logs
+   - Hermes logs/events
+   - recommendation/action tables
+
+Required behavior:
+- Deployment/restart must not reset agent status.
+- If an agent has historical activity, UI must not show “never run.”
+- If no history exists, show true empty state.
+- Agent status cards should use latest persisted event/log/job.
+- Run buttons should say “Run Now,” not “Run First,” if history exists.
+- Startup provisioning/backfill must not overwrite agent history.
+- Runtime memory may be used for live execution only, never as the source of truth for displayed state.
+
+Deliverables:
+1. Agent persistence matrix:
+   Agent | Current status source | Persistent source | Gap | Fix
+2. List of in-memory state found.
+3. Frontend cards fixed.
+4. Backend endpoints fixed.
+5. Verification after simulated restart.
+6. TypeScript result.
+7. Server startup result.
+
+Acceptance:
+- All agent status survives deploys/restarts.
+- All agent cards show persisted last run/output/error data.
+- No agent appears brand new after deployment if historical records exist.
+- No history is overwritten by provisioning.
+- TypeScript passes.
+- Server starts cleanly.
