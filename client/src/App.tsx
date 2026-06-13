@@ -194,6 +194,7 @@ import AdminSoftwareImprovementPage from "@/pages/admin-software-improvement";
 import AdminGmailDraftReviewPage from "@/pages/admin-gmail-draft-review";
 import AdminSlackAlertReviewPage from "@/pages/admin-slack-alert-review";
 import AdminAgentMailPage from "@/pages/admin-agentmail";
+import AdminAiInfrastructurePage from "@/pages/admin-ai-infrastructure";
 import AdminAthleteIntelligencePage from "@/pages/admin-athlete-intelligence";
 import AdminCoachCapacityPage from "@/pages/admin-coach-capacity";
 import AdminSchedulingCommandCenterPage from "@/pages/admin-scheduling-command-center";
@@ -604,6 +605,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/org-recruitment" component={AdminOrgRecruitmentPage} />
                   <Route path="/admin/marketplace-proof" component={AdminMarketplaceProofPage} />
                   <Route path="/admin/ceo-heartbeat" component={AdminCeoHeartbeatPage} />
+                  <Route path="/admin/ai-infrastructure" component={AdminAiInfrastructurePage} />
                   <Route path="/admin/agent-quality" component={AdminAgentQualityPage} />
                   <Route path="/admin/reliability" component={AdminReliabilityPage} />
                   <Route path="/admin/software-improvement" component={AdminSoftwareImprovementPage} />

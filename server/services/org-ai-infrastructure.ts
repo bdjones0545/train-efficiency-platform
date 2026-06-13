@@ -26,8 +26,9 @@ import {
   orgAiWorkforceSettings,
   agentCapabilityPolicies,
   orgAiApprovalRules,
+  attentionItems,
 } from "@shared/schema";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql as drizzleSql } from "drizzle-orm";
 import { listAgentIdentities } from "../agent-identities";
 
 export interface OrgInfrastructureReport {
@@ -309,6 +310,126 @@ export async function ensureOrgAiInfrastructure(
     for (const intType of DEFAULT_INTEGRATION_TYPES) {
       report.integrationStatus[intType] = "connect_required";
     }
+  }
+
+  // ── 7. Onboarding attention items ───────────────────────────────────────────
+  // Only seed welcome items when this is genuinely new provisioning (created > 0)
+  // or if they've never been seeded (checked via sourceId dedup).
+  try {
+    const gmailStatus = report.integrationStatus["gmail"] ?? "connect_required";
+    const calStatus = report.integrationStatus["google_calendar"] ?? "connect_required";
+    const agentmailConfigured = !!(process.env.AGENTMAIL_API_KEY);
+    const now = new Date();
+
+    const itemsToSeed: Array<typeof attentionItems.$inferInsert> = [];
+
+    itemsToSeed.push({
+      orgId,
+      level: "informational",
+      category: "insight",
+      title: "AI Workforce activated — your digital team is ready",
+      body: "Your AI agents are provisioned and standing by. Connect integrations and complete the setup steps below to start producing automated results.",
+      source: "onboarding",
+      sourceId: `onboarding-welcome-v1-${orgId}`,
+      severity: 40,
+      urgency: 50,
+      businessImpact: 60,
+      confidence: 1.0,
+      actionUrl: "/admin/ai-infrastructure",
+      actionLabel: "View Activation Status",
+      status: "active",
+      metadata: { type: "welcome", version: 1 },
+    });
+
+    if (gmailStatus === "connect_required") {
+      itemsToSeed.push({
+        orgId,
+        level: "important",
+        category: "insight",
+        title: "Connect Gmail to activate outreach automation",
+        body: "Relay (your Communications agent) needs Gmail access to send emails, classify replies, and run follow-up sequences. Without it, outreach is completely offline.",
+        source: "onboarding",
+        sourceId: `onboarding-gmail-v1-${orgId}`,
+        severity: 70,
+        urgency: 75,
+        businessImpact: 80,
+        confidence: 1.0,
+        actionUrl: "/admin/integrations",
+        actionLabel: "Connect Gmail",
+        status: "active",
+        metadata: { type: "integration_required", integration: "gmail" },
+      });
+    }
+
+    if (calStatus === "connect_required") {
+      itemsToSeed.push({
+        orgId,
+        level: "important",
+        category: "insight",
+        title: "Connect Google Calendar to activate scheduling automation",
+        body: "Tempo (your Scheduling agent) needs Calendar access to book sessions, send reminders, and manage capacity. Without it, scheduling stays manual.",
+        source: "onboarding",
+        sourceId: `onboarding-calendar-v1-${orgId}`,
+        severity: 65,
+        urgency: 65,
+        businessImpact: 75,
+        confidence: 1.0,
+        actionUrl: "/admin/integrations",
+        actionLabel: "Connect Calendar",
+        status: "active",
+        metadata: { type: "integration_required", integration: "google_calendar" },
+      });
+    }
+
+    if (!agentmailConfigured) {
+      itemsToSeed.push({
+        orgId,
+        level: "suggested",
+        category: "insight",
+        title: "Configure AgentMail for agent-first email inboxes",
+        body: "AgentMail powers dedicated AI inboxes (revenue@, scheduling@, support@). Add AGENTMAIL_API_KEY to Replit Secrets to enable inbound email routing.",
+        source: "onboarding",
+        sourceId: `onboarding-agentmail-v1-${orgId}`,
+        severity: 50,
+        urgency: 40,
+        businessImpact: 60,
+        confidence: 1.0,
+        actionUrl: "/admin/agentmail",
+        actionLabel: "Configure AgentMail",
+        status: "active",
+        metadata: { type: "integration_required", integration: "agentmail" },
+      });
+    }
+
+    itemsToSeed.push({
+      orgId,
+      level: "suggested",
+      category: "insight",
+      title: "Run the AI Workforce onboarding wizard",
+      body: "The setup wizard configures your agent posture, autonomy levels, and department priorities. Takes 5 minutes and unlocks your full AI workforce.",
+      source: "onboarding",
+      sourceId: `onboarding-wizard-v1-${orgId}`,
+      severity: 50,
+      urgency: 55,
+      businessImpact: 70,
+      confidence: 1.0,
+      actionUrl: "/onboarding/ai-workforce",
+      actionLabel: "Start Wizard",
+      status: "active",
+      metadata: { type: "onboarding_step", step: "wizard" },
+    });
+
+    for (const item of itemsToSeed) {
+      try {
+        await db.insert(attentionItems).values(item).onConflictDoNothing();
+      } catch { /* non-blocking */ }
+    }
+
+    report.created.push(`onboarding_attention_items(${itemsToSeed.length})`);
+  } catch (e: any) {
+    const msg = `onboarding_items: ${e.message}`;
+    report.errors.push(msg);
+    console.error(`${tag} error ${msg}`);
   }
 
   report.durationMs = Date.now() - t0;

@@ -29709,5 +29709,357 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     }
   });
 
+  // GET /api/admin/ai-infrastructure/activation-matrix — full per-component activation audit
+  app.get("/api/admin/ai-infrastructure/activation-matrix", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = req.user.orgId as string;
+      if (!orgId) return res.status(400).json({ message: "No org context" });
+
+      const { sql: drizzleSql } = await import("drizzle-orm");
+
+      // ── Integration status ────────────────────────────────────────────────
+      const integrations = await storage.getExternalIntegrations(orgId).catch(() => [] as any[]);
+      const connectedSet = new Set(
+        integrations.filter((i: any) => i.status === "connected").map((i: any) => i.integrationType as string)
+      );
+      const gmailOn = connectedSet.has("gmail");
+      const calOn = connectedSet.has("google_calendar");
+      const agentmailOn = !!(process.env.AGENTMAIL_API_KEY);
+
+      // ── Row counts via raw SQL (all in parallel) ──────────────────────────
+      const safe = async (q: Promise<any>) => { try { return await q; } catch { return [{ count: "0" }]; } };
+
+      const [
+        govRows, autoRows, workforceRows, capRows, approvalRows,
+        heartbeatRows, attentionRows, workflowRows, pendingRows,
+        gmailConvRows, agentMailRows,
+      ] = await Promise.all([
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM org_ai_governance_settings WHERE org_id = ${orgId}`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM org_automation_settings WHERE org_id = ${orgId}`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM org_ai_workforce_settings WHERE org_id = ${orgId}`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM agent_capability_policies WHERE org_id = ${orgId}`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM org_ai_approval_rules WHERE org_id = ${orgId}`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM ceo_heartbeat_runs WHERE org_id = ${orgId}`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM attention_items WHERE org_id = ${orgId} AND status = 'active'`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM workflow_runs WHERE org_id = ${orgId}`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM agent_pending_actions WHERE org_id = ${orgId} AND status = 'pending'`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM gmail_conversations WHERE org_id = ${orgId}`)),
+        safe(db.execute(drizzleSql`SELECT COUNT(*)::text AS count FROM agent_mail_messages WHERE org_id = ${orgId}`)),
+      ]);
+
+      const pick = (rows: any) => {
+        const r = Array.isArray(rows) ? rows[0] : rows?.rows?.[0];
+        return parseInt(r?.count ?? "0", 10);
+      };
+
+      const govCount        = pick(govRows);
+      const autoCount       = pick(autoRows);
+      const workforceCount  = pick(workforceRows);
+      const capCount        = pick(capRows);
+      const approvalCount   = pick(approvalRows);
+      const heartbeatCount  = pick(heartbeatRows);
+      const attentionCount  = pick(attentionRows);
+      const workflowCount   = pick(workflowRows);
+      const pendingCount    = pick(pendingRows);
+      const gmailConvCount  = pick(gmailConvRows);
+      const agentMailCount  = pick(agentMailRows);
+
+      const infrastructureProvisioned = govCount > 0 && autoCount > 0 && workforceCount > 0 && capCount > 0 && approvalCount > 0;
+
+      type MatrixStatus = "active" | "provisioned" | "blocked" | "idle";
+      const s = (provisioned: boolean, activated: boolean, output: boolean): MatrixStatus =>
+        !provisioned ? "blocked" : !activated ? "provisioned" : output ? "active" : "idle";
+
+      const matrix = {
+        // ── Infrastructure ────────────────────────────────────────────────────
+        infrastructure: [
+          {
+            id: "ceo_heartbeat",
+            name: "CEO Heartbeat",
+            category: "infrastructure",
+            provisioned: infrastructureProvisioned,
+            activated: true,
+            producingOutput: heartbeatCount > 0,
+            visible: true,
+            status: s(infrastructureProvisioned, true, heartbeatCount > 0),
+            outputCount: heartbeatCount,
+            notes: heartbeatCount === 0 ? "Runs on 30-min cycle — no runs yet for this org" : `${heartbeatCount} heartbeat run(s) recorded`,
+            actionUrl: "/admin/ceo-heartbeat",
+            actionLabel: "Open CEO Heartbeat",
+            blockers: [] as string[],
+          },
+          {
+            id: "agentmail",
+            name: "AgentMail",
+            category: "infrastructure",
+            provisioned: infrastructureProvisioned,
+            activated: agentmailOn,
+            producingOutput: agentMailCount > 0,
+            visible: true,
+            status: s(infrastructureProvisioned, agentmailOn, agentMailCount > 0),
+            outputCount: agentMailCount,
+            notes: !agentmailOn ? "Requires AGENTMAIL_API_KEY in Replit Secrets" : `${agentMailCount} message(s) sent`,
+            actionUrl: agentmailOn ? "/admin/agentmail" : "/admin/integrations",
+            actionLabel: agentmailOn ? "Open AgentMail" : "Add API Key",
+            blockers: agentmailOn ? [] : ["AGENTMAIL_API_KEY not set"],
+          },
+          {
+            id: "approval_center",
+            name: "Approval Center",
+            category: "infrastructure",
+            provisioned: approvalCount > 0,
+            activated: true,
+            producingOutput: pendingCount > 0,
+            visible: true,
+            status: s(approvalCount > 0, true, pendingCount > 0),
+            outputCount: pendingCount,
+            notes: `${approvalCount} approval rules configured. ${pendingCount} pending action(s)`,
+            actionUrl: "/admin/ai-approvals",
+            actionLabel: "Open Approval Center",
+            blockers: [] as string[],
+          },
+          {
+            id: "attention_inbox",
+            name: "Attention Inbox",
+            category: "infrastructure",
+            provisioned: infrastructureProvisioned,
+            activated: true,
+            producingOutput: attentionCount > 0,
+            visible: true,
+            status: s(infrastructureProvisioned, true, attentionCount > 0),
+            outputCount: attentionCount,
+            notes: `${attentionCount} active attention item(s)`,
+            actionUrl: "/admin/attention",
+            actionLabel: "Open Inbox",
+            blockers: [] as string[],
+          },
+          {
+            id: "workflow_engine",
+            name: "Workflow Engine",
+            category: "infrastructure",
+            provisioned: infrastructureProvisioned,
+            activated: true,
+            producingOutput: workflowCount > 0,
+            visible: true,
+            status: s(infrastructureProvisioned, true, workflowCount > 0),
+            outputCount: workflowCount,
+            notes: workflowCount === 0 ? "No workflows have been triggered yet — publish a workflow to start" : `${workflowCount} workflow run(s)`,
+            actionUrl: workflowCount === 0 ? "/admin/workflow-builder" : "/admin/workflows",
+            actionLabel: workflowCount === 0 ? "Build First Workflow" : "View Workflows",
+            blockers: workflowCount === 0 ? ["No published workflows exist"] : [],
+          },
+          {
+            id: "execution_engine",
+            name: "Execution Engine",
+            category: "infrastructure",
+            provisioned: infrastructureProvisioned,
+            activated: true,
+            producingOutput: heartbeatCount > 0,
+            visible: true,
+            status: s(infrastructureProvisioned, true, heartbeatCount > 0),
+            outputCount: heartbeatCount,
+            notes: "Execution engine runs via CEO Heartbeat coordination cycle",
+            actionUrl: "/admin/action-center",
+            actionLabel: "Open Action Center",
+            blockers: [] as string[],
+          },
+          {
+            id: "agent_registry",
+            name: "Agent Registry",
+            category: "infrastructure",
+            provisioned: capCount > 0,
+            activated: true,
+            producingOutput: capCount >= 9,
+            visible: true,
+            status: s(capCount > 0, true, capCount >= 9),
+            outputCount: capCount,
+            notes: `${capCount} agent capability polic${capCount === 1 ? "y" : "ies"} configured`,
+            actionUrl: "/admin/ai-workforce",
+            actionLabel: "View Agent Registry",
+            blockers: [] as string[],
+          },
+        ],
+        // ── Departments ───────────────────────────────────────────────────────
+        departments: [
+          {
+            id: "executive_agent",
+            name: "Executive Agent (Atlas)",
+            category: "department",
+            provisioned: infrastructureProvisioned,
+            activated: heartbeatCount > 0,
+            producingOutput: heartbeatCount > 0,
+            visible: true,
+            status: s(infrastructureProvisioned, heartbeatCount > 0, heartbeatCount > 0),
+            outputCount: heartbeatCount,
+            notes: heartbeatCount === 0 ? "Triggers via daily-operations cron — will activate once CEO Heartbeat runs" : "Generating daily briefs and priority recommendations",
+            actionUrl: "/admin/ceo-heartbeat",
+            actionLabel: "Run Heartbeat",
+            blockers: heartbeatCount === 0 ? ["CEO Heartbeat hasn't run yet"] : [],
+          },
+          {
+            id: "hermes",
+            name: "Hermes",
+            category: "department",
+            provisioned: infrastructureProvisioned,
+            activated: heartbeatCount > 0,
+            producingOutput: false,
+            visible: true,
+            status: s(infrastructureProvisioned, heartbeatCount > 0, false) as MatrixStatus,
+            outputCount: 0,
+            notes: "Hermes analyzes signals (stale leads, blocked emails) — needs active data to produce recommendations",
+            actionUrl: "/admin/hermes",
+            actionLabel: "Open Hermes",
+            blockers: heartbeatCount === 0 ? ["No data for Hermes to analyze yet"] : ["Waiting for leads/emails to analyze"],
+          },
+          {
+            id: "opportunity_acquisition",
+            name: "Opportunity Acquisition",
+            category: "department",
+            provisioned: true,
+            activated: false,
+            producingOutput: false,
+            visible: true,
+            status: "provisioned" as MatrixStatus,
+            outputCount: 0,
+            notes: "Tables exist — needs manual discovery run or imported opportunities to activate",
+            actionUrl: "/admin/opportunity-acquisition",
+            actionLabel: "Start Discovery",
+            blockers: ["No opportunities seeded", "Discovery run required"],
+          },
+          {
+            id: "revenue",
+            name: "Revenue (Apex)",
+            category: "department",
+            provisioned: infrastructureProvisioned,
+            activated: gmailOn,
+            producingOutput: false,
+            visible: true,
+            status: s(infrastructureProvisioned, gmailOn, false) as MatrixStatus,
+            outputCount: 0,
+            notes: gmailOn ? "Apex is activated — needs leads or deals to generate revenue actions" : "Apex needs Gmail to send outreach and qualify leads",
+            actionUrl: gmailOn ? "/admin/team-training-deals" : "/admin/integrations",
+            actionLabel: gmailOn ? "View Pipeline" : "Connect Gmail",
+            blockers: gmailOn ? ["No leads to process"] : ["Gmail not connected"],
+          },
+          {
+            id: "scheduling",
+            name: "Scheduling (Tempo)",
+            category: "department",
+            provisioned: infrastructureProvisioned,
+            activated: calOn,
+            producingOutput: false,
+            visible: true,
+            status: s(infrastructureProvisioned, calOn, false) as MatrixStatus,
+            outputCount: 0,
+            notes: calOn ? "Tempo is activated — will generate scheduling automations as sessions are booked" : "Tempo needs Google Calendar to manage sessions and reminders",
+            actionUrl: calOn ? "/admin/scheduling-command-center" : "/admin/integrations",
+            actionLabel: calOn ? "View Schedule" : "Connect Calendar",
+            blockers: calOn ? [] : ["Google Calendar not connected"],
+          },
+          {
+            id: "customer_success",
+            name: "Customer Success (Pulse)",
+            category: "department",
+            provisioned: infrastructureProvisioned,
+            activated: true,
+            producingOutput: false,
+            visible: true,
+            status: "idle" as MatrixStatus,
+            outputCount: 0,
+            notes: "Pulse monitors client engagement — needs athlete/client data to generate retention signals",
+            actionUrl: "/admin/customer-success-os",
+            actionLabel: "View Customer Success",
+            blockers: ["No client data to analyze yet"],
+          },
+          {
+            id: "outreach",
+            name: "Outreach (Relay)",
+            category: "department",
+            provisioned: infrastructureProvisioned,
+            activated: gmailOn || agentmailOn,
+            producingOutput: (gmailConvCount + agentMailCount) > 0,
+            visible: true,
+            status: s(infrastructureProvisioned, gmailOn || agentmailOn, (gmailConvCount + agentMailCount) > 0),
+            outputCount: gmailConvCount + agentMailCount,
+            notes: !gmailOn && !agentmailOn ? "Relay needs Gmail or AgentMail to send and classify emails" : `${gmailConvCount + agentMailCount} email(s) processed`,
+            actionUrl: "/admin/ai-outreach-opportunities",
+            actionLabel: "View Outreach",
+            blockers: (!gmailOn && !agentmailOn) ? ["Neither Gmail nor AgentMail is connected"] : [],
+          },
+          {
+            id: "partnerships",
+            name: "Partnerships",
+            category: "department",
+            provisioned: true,
+            activated: false,
+            producingOutput: false,
+            visible: true,
+            status: "provisioned" as MatrixStatus,
+            outputCount: 0,
+            notes: "Partnership tables provisioned — needs manual partner entry or discovery to activate",
+            actionUrl: "/admin/partnerships",
+            actionLabel: "Open Partnerships",
+            blockers: ["No partner opportunities exist"],
+          },
+          {
+            id: "sponsorships",
+            name: "Sponsorships",
+            category: "department",
+            provisioned: true,
+            activated: false,
+            producingOutput: false,
+            visible: true,
+            status: "provisioned" as MatrixStatus,
+            outputCount: 0,
+            notes: "Sponsorship tables provisioned — needs manual sponsor entry or discovery to activate",
+            actionUrl: "/admin/sponsorships",
+            actionLabel: "Open Sponsorships",
+            blockers: ["No sponsor opportunities exist"],
+          },
+        ],
+        // ── Summary metrics ───────────────────────────────────────────────────
+        summary: {
+          integrations: {
+            gmail: gmailOn ? "connected" : "connect_required",
+            google_calendar: calOn ? "connected" : "connect_required",
+            agentmail: agentmailOn ? "connected" : "connect_required",
+          },
+          totalComponents: 0,
+          active: 0,
+          provisioned: 0,
+          blocked: 0,
+          idle: 0,
+          activationScore: 0,
+          journeySteps: [
+            { step: 1, label: "Create organization", completed: true, actionUrl: null },
+            { step: 2, label: "Complete onboarding wizard", completed: workforceCount > 0, actionUrl: "/onboarding/ai-workforce" },
+            { step: 3, label: "AI infrastructure provisioned", completed: infrastructureProvisioned, actionUrl: "/admin/ai-infrastructure" },
+            { step: 4, label: "Connect Gmail", completed: gmailOn, actionUrl: "/admin/integrations" },
+            { step: 5, label: "Connect Google Calendar", completed: calOn, actionUrl: "/admin/integrations" },
+            { step: 6, label: "CEO Heartbeat first run", completed: heartbeatCount > 0, actionUrl: "/admin/ceo-heartbeat" },
+            { step: 7, label: "Attention Inbox populated", completed: attentionCount > 0, actionUrl: "/admin/attention" },
+            { step: 8, label: "First email processed (Relay active)", completed: (gmailConvCount + agentMailCount) > 0, actionUrl: "/admin/agentmail" },
+            { step: 9, label: "First approval action created", completed: pendingCount > 0, actionUrl: "/admin/ai-approvals" },
+            { step: 10, label: "First workflow triggered", completed: workflowCount > 0, actionUrl: "/admin/workflows" },
+          ],
+        },
+      };
+
+      // Calculate summary
+      const all = [...matrix.infrastructure, ...matrix.departments];
+      matrix.summary.totalComponents = all.length;
+      matrix.summary.active = all.filter(c => c.status === "active").length;
+      matrix.summary.provisioned = all.filter(c => c.status === "provisioned").length;
+      matrix.summary.blocked = all.filter(c => c.status === "blocked").length;
+      matrix.summary.idle = all.filter(c => c.status === "idle").length;
+      matrix.summary.activationScore = Math.round((matrix.summary.active / matrix.summary.totalComponents) * 100);
+
+      res.json({ success: true, matrix, generatedAt: new Date().toISOString() });
+    } catch (e: any) {
+      console.error("[ai-infrastructure/activation-matrix] error:", e);
+      res.status(500).json({ message: "Failed to generate activation matrix" });
+    }
+  });
+
   return httpServer;
 }

@@ -1,0 +1,130 @@
+Run an AI Workforce Activation Audit.
+
+Provisioning has been completed and verified. We now need to validate activation and end-to-end execution.
+
+Goal:
+Prove that a newly created organization can move from provisioning → activation → output without manual engineering intervention.
+
+Audit every default department and system:
+
+Departments:
+- Executive Agent
+- Hermes
+- Opportunity Acquisition
+- Revenue
+- Scheduling
+- Customer Success
+- Outreach
+- Partnerships
+- Sponsorships
+
+Infrastructure:
+- CEO Heartbeat
+- AgentMail
+- Approval Center
+- Attention Inbox
+- Workflow Engine
+- Execution Engine
+- Agent Registry
+
+For each component determine:
+
+1. Provisioned?
+   - Tables/config rows created
+   - Settings present
+   - Status stored
+
+2. Activated?
+   - Trigger conditions exist
+   - Activation logic exists
+   - Integration prerequisites checked
+
+3. Producing output?
+   - Generates actions
+   - Generates alerts
+   - Generates recommendations
+   - Generates workflow jobs
+   - Generates inbox items
+
+4. Visible?
+   - Appears somewhere in UI
+   - Appears in status page
+   - Appears in command center
+   - Appears in AI workforce view
+
+Create a matrix:
+
+Component | Provisioned | Activated | Producing Output | Visible | Notes
+
+End-to-End Journey Test
+Simulate and validate:
+
+Step 1:
+Create a brand-new organization
+
+Step 2:
+Complete onboarding wizard
+
+Step 3:
+Verify ensureOrgAiInfrastructure runs
+
+Step 4:
+Open dashboard
+
+Step 5:
+Verify AI workforce status is visible
+
+Step 6:
+Verify connect_required integrations appear
+
+Step 7:
+Connect Gmail
+
+Step 8:
+Verify AgentMail activates
+
+Step 9:
+Run first email sync
+
+Step 10:
+Verify conversations populate
+
+Step 11:
+Verify Attention Inbox receives actions
+
+Step 12:
+Verify CEO Heartbeat sees those actions
+
+Step 13:
+Verify Executive Agent receives recommendations
+
+Gap Analysis
+Find components that are:
+
+- Provisioned but never activated
+- Activated but never produce output
+- Producing output but not surfaced in UI
+- Waiting on integrations with no user guidance
+- Missing health/status indicators
+- Missing activation triggers
+
+Deliverables:
+1. Activation matrix
+2. End-to-end workflow results
+3. Components stuck at provisioned-only state
+4. Components producing invisible output
+5. Missing activation paths
+6. Recommended fixes ranked:
+   - Critical
+   - High
+   - Medium
+   - Low
+
+Acceptance criteria:
+- A new org can reach a functioning AI workforce without engineering intervention.
+- Every default department has a clear activation path.
+- Every activated department produces observable output.
+- Every required integration shows actionable connection status.
+- No department remains permanently provisioned-but-idle without explanation.
+- TypeScript passes.
+- Server starts cleanly.
