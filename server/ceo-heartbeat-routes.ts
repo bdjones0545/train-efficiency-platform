@@ -102,6 +102,10 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
 
       res.json({
         ...status,
+        // In-memory _lastRunAt resets to null on every deploy/restart.
+        // Prefer the DB-persisted startedAt from the latest run so the UI
+        // never reverts to "first run" state after a server restart.
+        lastHeartbeatAt: status.lastHeartbeatAt ?? lastRun?.startedAt ?? null,
         lastRun: lastRun ?? null,
         recentRuns,
       });

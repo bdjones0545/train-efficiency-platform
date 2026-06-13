@@ -91,18 +91,21 @@ export default function AdminCeoHeartbeatPage() {
 
   const { data: status, isLoading: statusLoading } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/status", orgId],
+    queryFn: () => fetchJson(`/api/admin/ceo-heartbeat/status?orgId=${encodeURIComponent(orgId)}`),
     enabled: !!orgId,
     refetchInterval: 30_000,
   });
 
   const { data: healthData } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/health", orgId],
+    queryFn: () => fetchJson(`/api/admin/ceo-heartbeat/health?orgId=${encodeURIComponent(orgId)}`),
     enabled: !!orgId,
     refetchInterval: 60_000,
   });
 
   const { data: prioritiesData, isLoading: prioritiesLoading } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/priorities", orgId],
+    queryFn: () => fetchJson(`/api/admin/ceo-heartbeat/priorities?orgId=${encodeURIComponent(orgId)}`),
     enabled: !!orgId,
     refetchInterval: 60_000,
   });
@@ -129,6 +132,7 @@ export default function AdminCeoHeartbeatPage() {
 
   const { data: auditData } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/audit-log", orgId],
+    queryFn: () => fetchJson(`/api/admin/ceo-heartbeat/audit-log?orgId=${encodeURIComponent(orgId)}`),
     enabled: !!orgId,
   });
 
@@ -150,24 +154,28 @@ export default function AdminCeoHeartbeatPage() {
 
   const { data: dlqSummary } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/dead-letter-summary", orgId],
+    queryFn: () => fetchJson(`/api/admin/ceo-heartbeat/dead-letter-summary?orgId=${encodeURIComponent(orgId)}`),
     enabled: !!orgId,
     refetchInterval: 60_000,
   });
 
   const { data: ledgerHealth } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/ledger-health", orgId],
+    queryFn: () => fetchJson(`/api/admin/ceo-heartbeat/ledger-health?orgId=${encodeURIComponent(orgId)}`),
     enabled: !!orgId,
     refetchInterval: 120_000,
   });
 
   const { data: lockContention } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/lock-contention", orgId],
+    queryFn: () => fetchJson(`/api/admin/ceo-heartbeat/lock-contention?orgId=${encodeURIComponent(orgId)}`),
     enabled: !!orgId,
     refetchInterval: 60_000,
   });
 
   const { data: approvalRaceMetrics } = useQuery<any>({
     queryKey: ["/api/admin/ceo-heartbeat/approval-race-metrics", orgId],
+    queryFn: () => fetchJson(`/api/admin/ceo-heartbeat/approval-race-metrics?orgId=${encodeURIComponent(orgId)}`),
     enabled: !!orgId,
     refetchInterval: 60_000,
   });
