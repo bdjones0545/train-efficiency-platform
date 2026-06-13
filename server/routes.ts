@@ -27504,9 +27504,20 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const wAll: any[] = Array.isArray(workflowRows) ? workflowRows : (workflowRows as any).rows ?? [];
       const failedWorkflows = Number(wAll[0]?.cnt ?? 0);
 
+      // ── Hermes health check (D7 — Sprint 2) ─────────────────────────────────
+      const { getHermesHealth: _getHermesHealth } = await import("./services/hermes-recommendation-engine");
+      const hermesHealth = await _getHermesHealth(orgId).catch(() => ({
+        status: "degraded" as const, lastRunAt: null, lastInsightAt: null,
+        minutesSinceLastRun: null, recommendations24h: 0, failures24h: 0,
+        details: "Hermes health unavailable",
+      }));
+      const hermesOk = hermesHealth.status === "healthy";
+      const hermesScore = hermesHealth.status === "healthy" ? 90
+        : hermesHealth.status === "degraded" ? 65 : 30;
+
       const workforceScore = Math.max(0, 88 - (emergencyPause ? 30 : 0) - (pendingApprovals > 20 ? 10 : 0));
       const operationsScore = Math.max(0, 91 - (failedWorkflows * 3) - (emergencyPause ? 20 : 0) - (auditBlocked > 0 ? 5 : 0));
-      const intelligenceScore = Math.max(0, 84 - (!heartbeatOk ? 15 : 0) - (heartbeatAge > 120 ? 10 : 0));
+      const intelligenceScore = Math.max(0, Math.round((84 - (!heartbeatOk ? 15 : 0) - (heartbeatAge > 120 ? 10 : 0) + hermesScore) / 2));
       const platformScore = Math.max(0, 96 - (failedWorkflows > 5 ? 10 : 0));
       const overallScore = Math.round((workforceScore + operationsScore + intelligenceScore + platformScore) / 4);
 
@@ -27522,6 +27533,12 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
         failedWorkflows24h: failedWorkflows,
         lastHeartbeatStatus: hb?.status ?? "unknown",
         lastHeartbeatMinutesAgo: Math.round(heartbeatAge),
+        hermesStatus: hermesHealth.status,
+        hermesLastRunAt: hermesHealth.lastRunAt,
+        hermesLastInsightAt: hermesHealth.lastInsightAt,
+        hermesRecommendations24h: hermesHealth.recommendations24h,
+        hermesFailures24h: hermesHealth.failures24h,
+        hermesDetails: hermesHealth.details,
         zones: [
           {
             id: "workforce", label: "Workforce Zone", score: workforceScore, status: zoneStatus(workforceScore),
@@ -27548,7 +27565,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
             checks: [
               { name: "CEO Heartbeat OK",    pass: heartbeatOk },
               { name: "Heartbeat Recent",    pass: heartbeatAge < 120 },
-              { name: "Risk Monitor",        pass: true },
+              { name: "Hermes Engine OK",    pass: hermesOk },
               { name: "Opp Pipeline",        pass: true },
             ],
             lastChecked: now.toISOString(),
@@ -27561,6 +27578,24 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
               { name: "Database",            pass: true },
               { name: "Workflow Engine",     pass: failedWorkflows < 5 },
             ],
+            lastChecked: now.toISOString(),
+          },
+          {
+            id: "hermes", label: "Hermes Intelligence Zone", score: hermesScore, status: zoneStatus(hermesScore),
+            checks: [
+              { name: "Recent Run (< 2h)",   pass: (hermesHealth.minutesSinceLastRun ?? 999) < 120 },
+              { name: "Failure Rate OK",     pass: hermesHealth.failures24h === 0 },
+              { name: "Recommendations OK",  pass: hermesHealth.recommendations24h >= 0 },
+              { name: "No Critical State",   pass: hermesHealth.status !== "critical" },
+            ],
+            hermesDetails: {
+              status: hermesHealth.status,
+              lastRunAt: hermesHealth.lastRunAt,
+              minutesSinceLastRun: hermesHealth.minutesSinceLastRun,
+              recommendations24h: hermesHealth.recommendations24h,
+              failures24h: hermesHealth.failures24h,
+              explanation: hermesHealth.details,
+            },
             lastChecked: now.toISOString(),
           },
         ],

@@ -605,6 +605,9 @@ app.use((req, res, next) => {
   const { registerCommunicationIntelligenceRoutes } = await import("./communication-intelligence-routes");
   registerCommunicationIntelligenceRoutes(app);
 
+  const { registerHermesRoutes } = await import("./hermes-routes");
+  registerHermesRoutes(app);
+
   const { startAttendanceReportCron } = await import("./attendance-report-cron");
   startAttendanceReportCron();
 

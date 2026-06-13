@@ -13,7 +13,7 @@ import {
   Activity, Play, Pause, RotateCcw, Zap, AlertTriangle, CheckCircle2,
   Clock, Brain, ShieldAlert, BarChart3, Filter, RefreshCw, TrendingUp,
   XCircle, ChevronRight, Calendar, Users, Target, Settings, Crosshair,
-  ArrowRight, Star, Shield, Sparkles, X, Timer
+  ArrowRight, Star, Shield, Sparkles, X, Timer, Lightbulb, Cpu, Layers
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -169,6 +169,11 @@ export default function AdminCeoHeartbeatPage() {
     queryKey: ["/api/admin/ceo-heartbeat/approval-race-metrics", orgId],
     enabled: !!orgId,
     refetchInterval: 60_000,
+  });
+
+  const { data: hermesStats, isLoading: hermesLoading } = useQuery<any>({
+    queryKey: ["/api/hermes/stats"],
+    refetchInterval: 120_000,
   });
 
   // ─── Mutations ──────────────────────────────────────────────────────────────
@@ -969,6 +974,164 @@ export default function AdminCeoHeartbeatPage() {
               </div>
             )}
           </ScrollArea>
+        </CardContent>
+      </Card>
+
+      {/* ── Hermes Intelligence Engine ─────────────────────────────────────── */}
+      <Card className="border-l-4 border-l-violet-500">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <Lightbulb className="h-4 w-4 text-violet-500" />
+                Hermes Intelligence Engine
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Active learning agent — analyzes signals and generates prioritized recommendations
+              </CardDescription>
+            </div>
+            <div className="flex items-center gap-2">
+              {hermesStats && (
+                <Badge
+                  variant="outline"
+                  className={`text-xs ${
+                    hermesStats.lastRunAt
+                      ? "border-violet-300 text-violet-700 dark:border-violet-700 dark:text-violet-400"
+                      : "border-muted-foreground text-muted-foreground"
+                  }`}
+                  data-testid="badge-hermes-status"
+                >
+                  {hermesStats.lastRunAt ? "✓ Active" : "Not yet run"}
+                </Badge>
+              )}
+              <a
+                href="/admin/ceo-heartbeat"
+                className="text-xs text-violet-500 hover:underline flex items-center gap-0.5"
+                data-testid="link-hermes-trigger"
+                onClick={(e) => { e.preventDefault(); runMutation.mutate(); }}
+              >
+                Run now <Zap className="h-3 w-3" />
+              </a>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {hermesLoading ? (
+            <div className="text-xs text-muted-foreground">Loading Hermes stats…</div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {/* Last Run */}
+              <div className="bg-muted/30 rounded-lg p-3 space-y-1" data-testid="hermes-card-last-run">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Clock className="h-3 w-3 flex-shrink-0" />
+                  <span className="text-[10px] font-medium uppercase tracking-wide">Last Run</span>
+                </div>
+                <div className="text-xs font-semibold text-foreground leading-tight">
+                  {hermesStats?.lastRunAt
+                    ? (() => {
+                        const mins = Math.round((Date.now() - new Date(hermesStats.lastRunAt).getTime()) / 60_000);
+                        if (mins < 60) return `${mins}m ago`;
+                        return `${Math.round(mins / 60)}h ago`;
+                      })()
+                    : "Never"}
+                </div>
+                <div className="text-[10px] text-muted-foreground truncate">
+                  {hermesStats?.lastRunAt ? new Date(hermesStats.lastRunAt).toLocaleTimeString() : "—"}
+                </div>
+              </div>
+
+              {/* Signals Processed */}
+              <div className="bg-muted/30 rounded-lg p-3 space-y-1" data-testid="hermes-card-signals">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Activity className="h-3 w-3 flex-shrink-0" />
+                  <span className="text-[10px] font-medium uppercase tracking-wide">Signals (24h)</span>
+                </div>
+                <div className="text-lg font-bold text-violet-600 dark:text-violet-400">
+                  {hermesStats?.signalsProcessed24h ?? "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground">analyzed</div>
+              </div>
+
+              {/* Recommendations Generated */}
+              <div className="bg-muted/30 rounded-lg p-3 space-y-1" data-testid="hermes-card-recommendations">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Lightbulb className="h-3 w-3 flex-shrink-0" />
+                  <span className="text-[10px] font-medium uppercase tracking-wide">Recommendations</span>
+                </div>
+                <div className="text-lg font-bold text-foreground">
+                  {hermesStats?.recommendations24h ?? "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground">
+                  {hermesStats?.queuedForReview24h != null
+                    ? `${hermesStats.queuedForReview24h} queued`
+                    : "last 24h"}
+                </div>
+              </div>
+
+              {/* Average Confidence */}
+              <div className="bg-muted/30 rounded-lg p-3 space-y-1" data-testid="hermes-card-confidence">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Target className="h-3 w-3 flex-shrink-0" />
+                  <span className="text-[10px] font-medium uppercase tracking-wide">Avg Confidence</span>
+                </div>
+                <div className={`text-lg font-bold ${
+                  (hermesStats?.confidenceAverage ?? 0) >= 80
+                    ? "text-green-600 dark:text-green-400"
+                    : (hermesStats?.confidenceAverage ?? 0) >= 60
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-muted-foreground"
+                }`}>
+                  {hermesStats?.confidenceAverage != null
+                    ? `${hermesStats.confidenceAverage}%`
+                    : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground">per recommendation</div>
+              </div>
+
+              {/* Failures 24h */}
+              <div className="bg-muted/30 rounded-lg p-3 space-y-1" data-testid="hermes-card-failures">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+                  <span className="text-[10px] font-medium uppercase tracking-wide">Failures (24h)</span>
+                </div>
+                <div className={`text-lg font-bold ${
+                  (hermesStats?.failures24h ?? 0) > 0
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-green-600 dark:text-green-400"
+                }`}>
+                  {hermesStats?.failures24h ?? "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground">engine errors</div>
+              </div>
+
+              {/* Success Rate */}
+              <div className="bg-muted/30 rounded-lg p-3 space-y-1" data-testid="hermes-card-success-rate">
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <CheckCircle2 className="h-3 w-3 flex-shrink-0" />
+                  <span className="text-[10px] font-medium uppercase tracking-wide">Success Rate</span>
+                </div>
+                <div className={`text-lg font-bold ${
+                  (hermesStats?.successRate ?? 0) >= 70
+                    ? "text-green-600 dark:text-green-400"
+                    : (hermesStats?.successRate ?? 0) >= 40
+                    ? "text-amber-600 dark:text-amber-400"
+                    : "text-muted-foreground"
+                }`}>
+                  {hermesStats?.successRate != null
+                    ? `${hermesStats.successRate}%`
+                    : "—"}
+                </div>
+                <div className="text-[10px] text-muted-foreground">approval rate (7d)</div>
+              </div>
+            </div>
+          )}
+
+          {!hermesLoading && !hermesStats?.lastRunAt && (
+            <div className="mt-3 text-xs text-muted-foreground bg-violet-50 dark:bg-violet-950/20 border border-violet-200 dark:border-violet-800 rounded-md px-3 py-2">
+              <Lightbulb className="h-3 w-3 text-violet-500 inline mr-1" />
+              Hermes will run automatically on the next CEO Heartbeat cycle. Click "Run now" to trigger immediately.
+            </div>
+          )}
         </CardContent>
       </Card>
 

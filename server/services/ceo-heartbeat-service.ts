@@ -625,7 +625,38 @@ async function coordinateAgents(orgId: string, heartbeatId: string): Promise<{
     errors.push(`workflow_orchestrator: ${err.message}`);
   }
 
-  // 6. Department Registry — loop through all registered departments
+  // 6. Hermes Intelligence Engine — analyze signals and generate recommendations
+  try {
+    const { runHermesIntelligenceCycle } = await import("./hermes-recommendation-engine");
+    const hermesResult = await runHermesIntelligenceCycle(orgId, heartbeatId);
+    agentsCoordinated++;
+    actionsEvaluated += hermesResult.recommendationsGenerated;
+    await writeTimeline({
+      orgId, heartbeatId, agentName: "hermes_recommendation_engine",
+      systemName: "CEO Heartbeat", actionType: "heartbeat_cycle",
+      actionStatus: "completed",
+      summary: `Hermes: ${hermesResult.signalsProcessed} signals → ${hermesResult.recommendationsGenerated} recommendation(s) (${hermesResult.queuedForReview} queued, avg confidence ${Math.round(hermesResult.confidenceAverage * 100)}%)`,
+      metadata: {
+        runId: hermesResult.runId,
+        signalsProcessed: hermesResult.signalsProcessed,
+        recommendationsGenerated: hermesResult.recommendationsGenerated,
+        queuedForReview: hermesResult.queuedForReview,
+        confidenceAverage: hermesResult.confidenceAverage,
+        executionTimeMs: hermesResult.executionTimeMs,
+        byType: hermesResult.byType,
+      },
+    });
+  } catch (err: any) {
+    errors.push(`hermes_engine: ${err.message}`);
+    await writeTimeline({
+      orgId, heartbeatId, agentName: "hermes_recommendation_engine",
+      systemName: "CEO Heartbeat", actionType: "heartbeat_cycle",
+      actionStatus: "failed", summary: "Hermes Intelligence Engine failed",
+      errorMessage: err.message,
+    });
+  }
+
+  // 7. Department Registry — loop through all registered departments
   try {
     const { departmentRegistry } = await import("./department-registry");
     const deptResult = await departmentRegistry.runAllHeartbeatReviews(orgId);

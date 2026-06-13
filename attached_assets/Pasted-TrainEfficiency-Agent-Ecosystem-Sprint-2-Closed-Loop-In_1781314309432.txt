@@ -1,0 +1,365 @@
+TrainEfficiency Agent Ecosystem — Sprint 2: Closed-Loop Intelligence & Unified Action System
+
+Objective
+
+Sprint 1 established safety, auditability, and real system health.
+
+Sprint 2 converts Hermes from a passive learning engine into an active intelligence participant that can generate reviewable recommendations and participate directly in CEO Heartbeat decision-making.
+
+The goal is to create a closed operational loop:
+
+Gmail Sync
+→ Conversation Intelligence
+→ Hermes Analysis
+→ Action Recommendation
+→ Human Review
+→ Approved Execution
+→ Audit Trail
+→ CEO Heartbeat
+→ System Health
+
+⸻
+
+Deliverable 1 — Promote Hermes to First-Class Heartbeat Agent
+
+Current State
+
+Hermes only runs indirectly through the Opportunity Acquisition department review process.
+
+Required
+
+Add Hermes as an explicit step inside:
+
+server/services/ceo-heartbeat-service.ts
+
+Current:
+
+coordinateAgents()
+Executive
+Operations
+Outcome Intelligence
+Workflow Orchestrator
+Department Loop
+
+New:
+
+coordinateAgents()
+Executive
+Operations
+Outcome Intelligence
+Workflow Orchestrator
+Hermes
+Department Loop
+
+Hermes Run Output
+
+Every run should generate:
+
+* insightsGenerated
+* recommendationsGenerated
+* confidenceAverage
+* signalsProcessed
+* executionTimeMs
+
+Write results to:
+
+* agent_operating_timeline
+* ceo_heartbeat_runs metadata
+* system health endpoint
+
+⸻
+
+Deliverable 2 — Hermes Recommendation Engine
+
+Current State
+
+Hermes creates learning insights but cannot create actions.
+
+Required
+
+Create:
+
+server/services/hermes-recommendation-engine.ts
+
+Hermes should evaluate:
+
+* Gmail conversations
+* Opportunity replies
+* AgentMail outcomes
+* Lead conversion history
+* Workflow failures
+* Outreach performance
+
+Generate structured recommendations.
+
+Example:
+
+{
+type: “follow_up”,
+title: “Follow up with Coach Mike”,
+reason: “High engagement detected, no response in 5 days”,
+confidence: 0.91,
+sourceSystem: “gmail”,
+sourceConversationId: “…”,
+recommendedAction: “schedule_call”
+}
+
+Store in:
+
+autonomous_action_queue
+
+with:
+
+source_system = ‘hermes’
+
+⸻
+
+Deliverable 3 — Hermes → Action Queue Integration
+
+Current State
+
+Hermes recommendations never enter the approval system.
+
+Required
+
+Create queue items automatically when:
+
+confidence >= configurable threshold
+
+Fields:
+
+* source_system = ‘hermes’
+* source_agent = ‘hermes’
+* confidence_score
+* recommendation_type
+* recommendation_reason
+* gmail_thread_id (if applicable)
+* source_conversation_id
+* source_action_id
+
+Status:
+
+awaiting_review
+
+NOT auto-executed.
+
+Human review remains required.
+
+⸻
+
+Deliverable 4 — Unified Action Queue
+
+Current Problem
+
+Four separate action queues exist:
+
+* gmail_agent_actions
+* autonomous_action_queue
+* agent_pending_actions
+* in-memory daily queue
+
+Required
+
+Create:
+
+server/services/unified-action-queue.ts
+
+Single read layer.
+
+Aggregate:
+
+* Gmail actions
+* Hermes recommendations
+* Autonomy actions
+* Scheduling actions
+
+Return normalized objects:
+
+{
+id,
+sourceAgent,
+sourceSystem,
+type,
+title,
+confidence,
+approvalRequired,
+status,
+createdAt
+}
+
+No UI changes yet.
+
+Create unified service first.
+
+⸻
+
+Deliverable 5 — Action Review Context
+
+Current Problem
+
+Approvals lack sufficient context.
+
+Required
+
+Every queue item must expose:
+
+* originating conversation
+* originating workflow
+* originating agent
+* confidence score
+* recommendation reason
+* draft preview
+* audit history
+
+Add API endpoint:
+
+/api/actions/:id/context
+
+Return complete review package.
+
+This endpoint becomes the foundation for future approval UI.
+
+⸻
+
+Deliverable 6 — Hermes Visibility in CEO Heartbeat
+
+Add Hermes cards to:
+
+CEO Heartbeat
+
+Display:
+
+* Last Run
+* Signals Processed
+* Recommendations Generated
+* Average Confidence
+* Failure Count 24h
+* Success Rate
+
+Data must come from real tables.
+
+No placeholders.
+
+⸻
+
+Deliverable 7 — Hermes Health Monitoring
+
+Extend:
+
+/api/command-center/system-health
+
+Add Hermes checks:
+
+Healthy:
+
+* Recent run < 2h
+* Failure rate < 10%
+
+Degraded:
+
+* No run > 2h
+* Failure rate > 10%
+
+Critical:
+
+* No run > 12h
+* Consecutive failures
+
+Return:
+
+{
+hermesStatus,
+lastRunAt,
+lastInsightAt,
+recommendations24h,
+failures24h
+}
+
+⸻
+
+Deliverable 8 — Recommendation Feedback Loop
+
+When an action is:
+
+* approved
+* rejected
+* edited
+
+record outcome.
+
+Create:
+
+hermes_recommendation_feedback
+
+Fields:
+
+* recommendation_id
+* outcome
+* editor_id
+* timestamp
+
+Hermes should use this data in future confidence calculations.
+
+This creates learning instead of static rule generation.
+
+⸻
+
+Deliverable 9 — Cross-System Traceability
+
+Every recommendation must be traceable:
+
+Hermes Insight
+→ Action Queue Item
+→ Approval Event
+→ Execution Event
+→ Email Audit
+→ Timeline Event
+
+Ensure IDs are preserved through the entire chain.
+
+No orphaned actions.
+
+⸻
+
+Deliverable 10 — Validation Report
+
+Provide:
+
+A. New Files
+
+List every file created.
+
+B. Modified Files
+
+List every file modified.
+
+C. New Tables
+
+List schema additions.
+
+D. New Endpoints
+
+List all APIs added.
+
+E. Queue Statistics
+
+Before:
+
+* fragmented queues
+
+After:
+
+* unified queue counts
+
+F. Remaining Gaps for Sprint 3
+
+Identify:
+
+* Workflow Builder execution gaps
+* Agent Tools integration gaps
+* Hermes tool usage
+* Cross-agent coordination opportunities
+
+Do not build speculative features.
+
+Only implement functionality that connects existing systems into a single operational loop.
