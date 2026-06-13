@@ -29526,6 +29526,90 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to record decision" }); }
   });
 
+  // ── Software KB routes ──────────────────────────────────────────────────────
+
+  // Seed historical fixes once on first access
+  (async () => {
+    try {
+      const { seedHistoricalFixes } = await import("./services/software-kb-service");
+      await seedHistoricalFixes("default");
+    } catch (_) {}
+  })();
+
+  // GET /api/organizational-memory/software-kb
+  app.get("/api/organizational-memory/software-kb", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const { severity, sourceType, limit = 100, offset = 0 } = req.query as Record<string, any>;
+      const { getSoftwareKbEntries } = await import("./services/software-kb-service");
+      const entries = await getSoftwareKbEntries({ orgId, severity, sourceType, limit: Number(limit), offset: Number(offset) });
+      res.json({ entries, total: entries.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load software KB" }); }
+  });
+
+  // GET /api/organizational-memory/software-kb/stats
+  app.get("/api/organizational-memory/software-kb/stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const { getSoftwareKbStats } = await import("./services/software-kb-service");
+      const stats = await getSoftwareKbStats(orgId);
+      res.json({ ...stats, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load software KB stats" }); }
+  });
+
+  // GET /api/organizational-memory/software-kb/search
+  app.get("/api/organizational-memory/software-kb/search", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const q = ((req.query.q as string) ?? "").trim();
+      if (!q) return res.json({ results: [], query: q, total: 0 });
+      const { searchSoftwareKbEntries } = await import("./services/software-kb-service");
+      const results = await searchSoftwareKbEntries(q, orgId, 30);
+      res.json({ results, query: q, total: results.length, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to search software KB" }); }
+  });
+
+  // POST /api/organizational-memory/software-kb/record — manual entry
+  app.post("/api/organizational-memory/software-kb/record", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId ?? "default";
+      const { severity, issue, rootCause, fixApplied, filesModified, outcome, relatedEntityType, relatedEntityId } = req.body;
+      if (!issue) return res.status(400).json({ message: "issue is required" });
+      const { recordSoftwareKbEntry } = await import("./services/software-kb-service");
+      const id = await recordSoftwareKbEntry({
+        orgId, severity: severity ?? "medium", issue,
+        rootCause: rootCause ?? "", fixApplied: fixApplied ?? "",
+        filesModified: filesModified ?? "", outcome: outcome ?? "",
+        source: "Manual Entry", sourceType: "human_admin",
+        relatedEntityType: relatedEntityType ?? undefined,
+        relatedEntityId: relatedEntityId ?? undefined,
+      });
+      res.json({ success: true, id });
+    } catch (e: any) { res.status(500).json({ message: "Failed to record software KB entry" }); }
+  });
+
+  // POST /api/organizational-memory/software-kb/error-boundary — frontend error boundary events
+  app.post("/api/organizational-memory/software-kb/error-boundary", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId ?? "default";
+      const { component, error, url } = req.body;
+      if (!component || !error) return res.status(400).json({ message: "component and error required" });
+      const { recordErrorBoundaryEvent } = await import("./services/software-kb-service");
+      await recordErrorBoundaryEvent({ orgId, component, error, url });
+      res.json({ success: true });
+    } catch (e: any) { res.status(500).json({ message: "Failed to record error boundary event" }); }
+  });
+
   // GET /api/organizational-memory/lessons
   app.get("/api/organizational-memory/lessons", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {

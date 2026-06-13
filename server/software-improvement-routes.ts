@@ -224,6 +224,19 @@ export async function registerSoftwareImprovementRoutes(
         codexPrompt,
       }).returning();
 
+      // Software KB Auto-Capture: record this task as a KB entry
+      try {
+        const { recordSoftwareImprovementFix } = await import("./services/software-kb-service");
+        await recordSoftwareImprovementFix({
+          orgId,
+          taskId: task.id,
+          problemSummary,
+          affectedArea: affectedArea ?? undefined,
+          suspectedFiles: suspectedFiles ?? undefined,
+          severity,
+        });
+      } catch (_) {}
+
       res.status(201).json(task);
     } catch (e: any) {
       res.status(500).json({ message: "Failed to create task", error: e.message });

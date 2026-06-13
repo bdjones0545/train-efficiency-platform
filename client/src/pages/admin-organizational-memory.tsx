@@ -14,6 +14,7 @@ import {
   CheckCircle, ArrowRightLeft, ClipboardList, Zap, Clock, Tag,
   Filter, PenLine, Bot, Send, ThumbsUp, ThumbsDown, Edit3,
   ListChecks, Cpu, MessageSquare, CalendarDays, Download,
+  Wrench, Bug, ServerCrash, Code2, ShieldAlert, PackageCheck, FileCode2,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -61,6 +62,23 @@ type DecisionStats = {
   generatedAt: string;
 };
 type DecisionSearchResult = { results: DecisionEntry[]; query: string; total: number; generatedAt: string };
+
+type SoftwareKbEntry = {
+  id: string; orgId: string;
+  severity: "low" | "medium" | "high" | "critical" | string;
+  issue: string; rootCause: string; fixApplied: string;
+  filesModified: string; outcome: string;
+  source: string; sourceType: string;
+  relatedEntityType: string | null; relatedEntityId: string | null;
+  metadata: Record<string, any>; createdAt: string; updatedAt: string;
+};
+type SoftwareKbStats = {
+  total: number; criticalCount: number; highCount: number;
+  mediumCount: number; lowCount: number; last7DaysCount: number;
+  bySourceType: Record<string, number>; bySeverity: Record<string, number>;
+  topFilesModified: string[]; generatedAt: string;
+};
+type SoftwareKbSearchResult = { results: SoftwareKbEntry[]; query: string; total: number; generatedAt: string };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -143,16 +161,17 @@ function MemoryCard({ memory, expanded = false }: { memory: Memory; expanded?: b
 // ─── Tabs ─────────────────────────────────────────────────────────────────────
 
 const TABS = [
-  { id: "overview",   label: "Overview",        icon: Brain        },
-  { id: "hermes",     label: "Hermes Learnings",icon: Zap          },
-  { id: "knowledge",  label: "Knowledge Base",  icon: BookOpen     },
-  { id: "decisions",  label: "Decisions",       icon: CheckSquare  },
-  { id: "lessons",    label: "Lessons Learned", icon: Lightbulb    },
-  { id: "playbooks",  label: "Playbooks",       icon: BookOpen     },
-  { id: "policies",   label: "Policies",        icon: Shield       },
-  { id: "search",     label: "Search",          icon: Search       },
-  { id: "graph",      label: "Knowledge Graph", icon: GitBranch    },
-  { id: "analytics",  label: "Analytics",       icon: BarChart3    },
+  { id: "overview",     label: "Overview",        icon: Brain        },
+  { id: "hermes",       label: "Hermes Learnings",icon: Zap          },
+  { id: "knowledge",    label: "Knowledge Base",  icon: BookOpen     },
+  { id: "decisions",    label: "Decisions",       icon: CheckSquare  },
+  { id: "software-kb",  label: "Software KB",     icon: Wrench       },
+  { id: "lessons",      label: "Lessons Learned", icon: Lightbulb    },
+  { id: "playbooks",    label: "Playbooks",       icon: BookOpen     },
+  { id: "policies",     label: "Policies",        icon: Shield       },
+  { id: "search",       label: "Search",          icon: Search       },
+  { id: "graph",        label: "Knowledge Graph", icon: GitBranch    },
+  { id: "analytics",    label: "Analytics",       icon: BarChart3    },
 ] as const;
 type TabId = typeof TABS[number]["id"];
 
@@ -792,6 +811,372 @@ function DecisionsTab() {
   );
 }
 
+// ─── Tab: Software KB (Auto-Capture Fix History) ─────────────────────────────
+
+const SKB_SEVERITY_CONFIG: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
+  critical: { label: "Critical", color: "text-red-600 dark:text-red-400",     bg: "bg-red-100 dark:bg-red-900/30 border-red-200 dark:border-red-700",     icon: <ServerCrash className="h-3 w-3" /> },
+  high:     { label: "High",     color: "text-orange-600 dark:text-orange-400", bg: "bg-orange-100 dark:bg-orange-900/30 border-orange-200 dark:border-orange-700", icon: <ShieldAlert className="h-3 w-3" /> },
+  medium:   { label: "Medium",   color: "text-amber-600 dark:text-amber-400",  bg: "bg-amber-100 dark:bg-amber-900/30 border-amber-200 dark:border-amber-700",  icon: <Bug className="h-3 w-3" /> },
+  low:      { label: "Low",      color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-100 dark:bg-emerald-900/30 border-emerald-200 dark:border-emerald-700", icon: <CheckCircle className="h-3 w-3" /> },
+};
+
+const SKB_SOURCE_CONFIG: Record<string, { label: string; color: string }> = {
+  architecture_audit:        { label: "Architecture Audit",    color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 border-violet-200 dark:border-violet-700" },
+  service_fix:               { label: "Service Fix",           color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-700" },
+  api_fix:                   { label: "API Fix",               color: "bg-cyan-100 text-cyan-700 dark:bg-cyan-900/30 dark:text-cyan-300 border-cyan-200 dark:border-cyan-700" },
+  db_fix:                    { label: "Database Fix",          color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-teal-200 dark:border-teal-700" },
+  typescript_fix:            { label: "TypeScript",            color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-700" },
+  integration_fix:           { label: "Integration Fix",       color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700" },
+  persistence_fix:           { label: "Persistence Fix",       color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 border-rose-200 dark:border-rose-700" },
+  security_fix:              { label: "Security Fix",          color: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 border-red-200 dark:border-red-700" },
+  module_fix:                { label: "Module Fix",            color: "bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-300 border-slate-200 dark:border-slate-700" },
+  feature_implementation:    { label: "Feature",               color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700" },
+  software_improvement_agent:{ label: "SW Improvement Agent",  color: "bg-primary/10 text-primary border-primary/20" },
+  error_boundary:            { label: "Error Boundary",        color: "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300 border-orange-200 dark:border-orange-700" },
+  deployment_fix:            { label: "Deployment Fix",        color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 border-rose-200 dark:border-rose-700" },
+  human_admin:               { label: "Manual Entry",          color: "bg-slate-100 text-slate-700 dark:bg-slate-900/30 dark:text-slate-300 border-slate-200 dark:border-slate-700" },
+};
+
+function SkbSeverityBadge({ severity }: { severity: string }) {
+  const cfg = SKB_SEVERITY_CONFIG[severity] ?? SKB_SEVERITY_CONFIG["medium"];
+  return (
+    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0 rounded-md text-[9px] font-bold border ${cfg.bg} ${cfg.color}`}>
+      {cfg.icon}<span className="ml-0.5">{cfg.label}</span>
+    </span>
+  );
+}
+
+function SkbSourceBadge({ sourceType }: { sourceType: string }) {
+  const cfg = SKB_SOURCE_CONFIG[sourceType] ?? { label: sourceType.replace(/_/g, " "), color: "bg-muted text-muted-foreground border-border" };
+  return (
+    <Badge variant="outline" className={`text-[8px] px-1.5 py-0 h-4 border ${cfg.color}`}>{cfg.label}</Badge>
+  );
+}
+
+function SoftwareKbCard({ entry, searchQuery }: { entry: SoftwareKbEntry; searchQuery?: string }) {
+  const [open, setOpen] = useState(false);
+  const sev = SKB_SEVERITY_CONFIG[entry.severity] ?? SKB_SEVERITY_CONFIG["medium"];
+
+  return (
+    <div className={`p-4 rounded-xl border bg-card hover:shadow-sm transition-shadow`} data-testid={`skb-card-${entry.id}`}>
+      {/* Left accent bar by severity */}
+      <div className="flex items-start gap-3">
+        <div className={`p-1.5 rounded-lg border shrink-0 mt-0.5 ${sev.bg}`}>
+          {sev.icon}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-start gap-2 mb-1.5">
+            <p className="text-[11px] font-semibold flex-1 leading-snug">{entry.issue}</p>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap mb-2">
+            <SkbSeverityBadge severity={entry.severity} />
+            <SkbSourceBadge sourceType={entry.sourceType} />
+            <span className="text-[9px] text-muted-foreground flex items-center gap-0.5">
+              <Clock className="h-2.5 w-2.5" />{formatDistanceToNow(new Date(entry.createdAt), { addSuffix: true })}
+            </span>
+          </div>
+
+          {entry.rootCause && (
+            <div className="mb-1.5">
+              <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide mb-0.5">Root Cause</p>
+              <p className="text-[10px] text-muted-foreground leading-relaxed">
+                {entry.rootCause.slice(0, open ? undefined : 120)}{!open && entry.rootCause.length > 120 ? "…" : ""}
+              </p>
+            </div>
+          )}
+
+          {open && (
+            <div className="space-y-2 mt-2 pt-2 border-t">
+              {entry.fixApplied && (
+                <div>
+                  <p className="text-[9px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wide mb-0.5 flex items-center gap-1"><PackageCheck className="h-3 w-3" />Fix Applied</p>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">{entry.fixApplied}</p>
+                </div>
+              )}
+              {entry.filesModified && (
+                <div>
+                  <p className="text-[9px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-0.5 flex items-center gap-1"><FileCode2 className="h-3 w-3" />Files Modified</p>
+                  <p className="text-[10px] font-mono text-muted-foreground bg-muted/40 px-2 py-1 rounded-lg">{entry.filesModified}</p>
+                </div>
+              )}
+              {entry.outcome && (
+                <div>
+                  <p className="text-[9px] font-semibold text-primary uppercase tracking-wide mb-0.5">Outcome</p>
+                  <p className="text-[10px] text-muted-foreground leading-relaxed">{entry.outcome}</p>
+                </div>
+              )}
+              <p className="text-[9px] text-muted-foreground">Source: {entry.source}</p>
+            </div>
+          )}
+
+          <button onClick={() => setOpen(!open)} className="mt-1 text-[9px] text-primary hover:underline" data-testid={`toggle-skb-${entry.id}`}>
+            {open ? "Show less ↑" : "Show fix, files & outcome ↓"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ManualKbFixForm({ onRecorded, onClose }: { onRecorded: () => void; onClose: () => void }) {
+  const { toast } = useToast();
+  const [form, setForm] = useState({ severity: "medium", issue: "", rootCause: "", fixApplied: "", filesModified: "", outcome: "" });
+  const mut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/organizational-memory/software-kb/record", form),
+    onSuccess: () => { toast({ title: "Fix recorded in Software KB" }); onRecorded(); onClose(); },
+    onError: () => toast({ title: "Failed to record fix", variant: "destructive" }),
+  });
+
+  return (
+    <div className="p-4 rounded-xl border bg-card space-y-3" data-testid="manual-kb-form">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold flex items-center gap-1.5"><Wrench className="h-4 w-4 text-primary" />Record Manual Fix</p>
+        <button onClick={onClose} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+      </div>
+      <div className="grid gap-2">
+        <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Severity *</label>
+            <select className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background" value={form.severity} onChange={e => setForm(f => ({ ...f, severity: e.target.value }))} data-testid="select-severity">
+              {["critical","high","medium","low"].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Issue *</label>
+            <input className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background" placeholder="What was the problem?" value={form.issue} onChange={e => setForm(f => ({ ...f, issue: e.target.value }))} data-testid="input-kb-issue" />
+          </div>
+        </div>
+        <div>
+          <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Root Cause</label>
+          <textarea rows={2} className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background resize-none" placeholder="Why did this happen?" value={form.rootCause} onChange={e => setForm(f => ({ ...f, rootCause: e.target.value }))} data-testid="input-kb-rootcause" />
+        </div>
+        <div>
+          <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Fix Applied</label>
+          <textarea rows={2} className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background resize-none" placeholder="What was done to fix it?" value={form.fixApplied} onChange={e => setForm(f => ({ ...f, fixApplied: e.target.value }))} data-testid="input-kb-fix" />
+        </div>
+        <div>
+          <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Files Modified</label>
+          <input className="w-full mt-0.5 px-2.5 py-1.5 text-xs font-mono rounded-lg border bg-background" placeholder="server/routes.ts, client/src/pages/..." value={form.filesModified} onChange={e => setForm(f => ({ ...f, filesModified: e.target.value }))} data-testid="input-kb-files" />
+        </div>
+        <div>
+          <label className="text-[9px] text-muted-foreground uppercase tracking-wide">Outcome</label>
+          <input className="w-full mt-0.5 px-2.5 py-1.5 text-xs rounded-lg border bg-background" placeholder="What is the result?" value={form.outcome} onChange={e => setForm(f => ({ ...f, outcome: e.target.value }))} data-testid="input-kb-outcome" />
+        </div>
+      </div>
+      <div className="flex gap-2 justify-end">
+        <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+        <Button size="sm" disabled={!form.issue.trim() || mut.isPending} onClick={() => mut.mutate()} data-testid="button-submit-kb">
+          {mut.isPending ? "Saving…" : "Record Fix"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function SoftwareKbTab() {
+  const qc = useQueryClient();
+  const [severityFilter, setSeverityFilter] = useState("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchSubmitted, setSearchSubmitted] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [dupCheckQuery, setDupCheckQuery] = useState("");
+
+  const statsQuery = useQuery<SoftwareKbStats>({
+    queryKey: ["/api/organizational-memory/software-kb/stats"],
+    staleTime: 15_000,
+  });
+  const entriesQuery = useQuery<{ entries: SoftwareKbEntry[]; total: number }>({
+    queryKey: ["/api/organizational-memory/software-kb", severityFilter],
+    queryFn: () => fetchJson(`/api/organizational-memory/software-kb${severityFilter !== "all" ? `?severity=${encodeURIComponent(severityFilter)}` : ""}&limit=100`),
+    staleTime: 15_000,
+  });
+  const searchQuery2 = useQuery<SoftwareKbSearchResult>({
+    queryKey: ["/api/organizational-memory/software-kb/search", searchSubmitted],
+    queryFn: () => fetchJson(`/api/organizational-memory/software-kb/search?q=${encodeURIComponent(searchSubmitted)}`),
+    enabled: searchSubmitted.length > 0,
+    staleTime: 15_000,
+  });
+  // Duplicate check before opening form
+  const dupQuery = useQuery<SoftwareKbSearchResult>({
+    queryKey: ["/api/organizational-memory/software-kb/search", dupCheckQuery],
+    queryFn: () => fetchJson(`/api/organizational-memory/software-kb/search?q=${encodeURIComponent(dupCheckQuery)}`),
+    enabled: dupCheckQuery.length >= 3,
+    staleTime: 10_000,
+  });
+
+  const stats = statsQuery.data;
+  const entries = searchSubmitted ? (searchQuery2.data?.results ?? []) : (entriesQuery.data?.entries ?? []);
+  const isLoading = searchSubmitted ? searchQuery2.isLoading : entriesQuery.isLoading;
+  const dupResults = dupQuery.data?.results ?? [];
+
+  const handleSearch = () => { setSearchSubmitted(searchQuery.trim()); setSeverityFilter("all"); };
+  const handleClearSearch = () => { setSearchSubmitted(""); setSearchQuery(""); };
+  const handleRecorded = () => {
+    qc.invalidateQueries({ queryKey: ["/api/organizational-memory/software-kb"] });
+    qc.invalidateQueries({ queryKey: ["/api/organizational-memory/software-kb/stats"] });
+  };
+
+  const activeSources = stats ? Object.keys(stats.bySourceType).sort((a, b) => stats.bySourceType[b] - stats.bySourceType[a]).slice(0, 6) : [];
+
+  return (
+    <div className="space-y-4" data-testid="tab-software-kb">
+      {/* Header */}
+      <div className="flex items-start gap-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
+        <Wrench className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold mb-0.5">Software Knowledge Base — Auto-Capture</p>
+          <p className="text-[10px] text-muted-foreground">Every detected fix, audit resolution, TypeScript error, crash, and deployment issue is automatically captured here. Search before logging a new issue to avoid duplicates.</p>
+        </div>
+        <Button size="sm" variant="outline" className="h-7 gap-1 text-xs shrink-0" onClick={() => setShowForm(!showForm)} data-testid="button-record-fix">
+          <PenLine className="h-3.5 w-3.5" />Record Fix
+        </Button>
+      </div>
+
+      {/* Duplicate check search (before opening form) */}
+      {!showForm && (
+        <div className="p-3 rounded-xl border bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-700 space-y-2">
+          <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 flex items-center gap-1"><Search className="h-3 w-3" />Search for existing fixes before adding a new one</p>
+          <div className="flex gap-2">
+            <input
+              className="flex-1 px-2.5 py-1.5 text-xs rounded-lg border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              placeholder="Describe the issue to check for duplicates…"
+              value={dupCheckQuery}
+              onChange={e => setDupCheckQuery(e.target.value)}
+              data-testid="input-dup-check"
+            />
+            {dupCheckQuery.length >= 3 && (
+              <button onClick={() => setDupCheckQuery("")} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            )}
+          </div>
+          {dupCheckQuery.length >= 3 && dupResults.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-[9px] text-amber-700 dark:text-amber-400 font-semibold">{dupResults.length} similar issue{dupResults.length !== 1 ? "s" : ""} already in the KB:</p>
+              {dupResults.slice(0, 3).map(r => (
+                <div key={r.id} className="p-2 rounded-lg bg-white dark:bg-slate-900 border text-[9px] space-y-0.5">
+                  <div className="flex items-center gap-1.5">
+                    <SkbSeverityBadge severity={r.severity} />
+                    <span className="font-semibold flex-1 truncate">{r.issue}</span>
+                  </div>
+                  {r.fixApplied && <p className="text-muted-foreground truncate"><span className="font-medium">Fix:</span> {r.fixApplied}</p>}
+                </div>
+              ))}
+              {dupResults.length > 3 && <p className="text-[9px] text-muted-foreground">+{dupResults.length - 3} more results — use the search bar above to see all.</p>}
+            </div>
+          )}
+          {dupCheckQuery.length >= 3 && dupResults.length === 0 && !dupQuery.isLoading && (
+            <p className="text-[9px] text-emerald-600 dark:text-emerald-400 font-medium">No similar issues found — safe to add a new entry.</p>
+          )}
+        </div>
+      )}
+
+      {showForm && <ManualKbFixForm onRecorded={handleRecorded} onClose={() => setShowForm(false)} />}
+
+      {/* KPI stats */}
+      {stats && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: "Total Fixes",    value: stats.total,            color: "text-primary" },
+            { label: "Critical",       value: stats.criticalCount,    color: "text-red-600 dark:text-red-400" },
+            { label: "High Severity",  value: stats.highCount,        color: "text-orange-600 dark:text-orange-400" },
+            { label: "Medium",         value: stats.mediumCount,      color: "text-amber-600 dark:text-amber-400" },
+            { label: "Low",            value: stats.lowCount,         color: "text-emerald-600 dark:text-emerald-400" },
+            { label: "This Week",      value: stats.last7DaysCount,   color: "text-blue-600 dark:text-blue-400" },
+            { label: "Auto-Captured",  value: stats.total - (stats.bySourceType["human_admin"] ?? 0), color: "text-violet-600 dark:text-violet-400" },
+            { label: "Manual Entries", value: stats.bySourceType["human_admin"] ?? 0, color: "text-slate-600 dark:text-slate-400" },
+          ].map(k => (
+            <div key={k.label} className="p-3 rounded-xl border bg-card text-center" data-testid={`skb-stat-${k.label.toLowerCase().replace(/\s+/g, "-")}`}>
+              <p className={`text-xl font-extrabold ${k.color}`}>{k.value}</p>
+              <p className="text-[9px] text-muted-foreground">{k.label}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Search */}
+      <div className="flex gap-2">
+        <div className="flex-1 relative">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            className="w-full pl-8 pr-3 py-2 text-xs rounded-lg border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+            placeholder="Search issues, root causes, files, fixes…"
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => e.key === "Enter" && handleSearch()}
+            data-testid="input-skb-search"
+          />
+        </div>
+        <Button size="sm" variant="outline" className="h-8 px-3" onClick={handleSearch} data-testid="button-search-kb">Search</Button>
+        {searchSubmitted && <Button size="sm" variant="ghost" className="h-8 px-2" onClick={handleClearSearch}><X className="h-3.5 w-3.5" /></Button>}
+      </div>
+
+      {/* Severity filter */}
+      {!searchSubmitted && (
+        <div className="flex gap-1 flex-wrap">
+          {["all", "critical", "high", "medium", "low"].map(s => {
+            const cfg = s === "all" ? null : SKB_SEVERITY_CONFIG[s];
+            const count = s === "all" ? stats?.total : stats?.bySeverity[s];
+            return (
+              <button key={s} onClick={() => setSeverityFilter(s)} data-testid={`skb-filter-${s}`}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-colors flex items-center gap-1 ${severityFilter === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
+                {cfg?.icon}
+                {s === "all" ? "All Severities" : cfg?.label}
+                {count != null && <span className="opacity-70">({count})</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Source type pills */}
+      {!searchSubmitted && activeSources.length > 0 && (
+        <div className="flex gap-1 flex-wrap">
+          <span className="text-[9px] text-muted-foreground self-center mr-1 uppercase tracking-wide">Sources:</span>
+          {activeSources.map(s => {
+            const cfg = SKB_SOURCE_CONFIG[s];
+            return (
+              <Badge key={s} variant="outline" className={`text-[8px] px-1.5 py-0 h-4 border ${cfg?.color ?? "bg-muted text-muted-foreground"}`}>
+                {cfg?.label ?? s.replace(/_/g, " ")} <span className="opacity-60 ml-0.5">{stats?.bySourceType[s]}</span>
+              </Badge>
+            );
+          })}
+        </div>
+      )}
+
+      {searchSubmitted && (
+        <div className="flex items-center gap-2 p-2.5 rounded-lg bg-muted/40 border">
+          <Search className="h-3.5 w-3.5 text-muted-foreground" />
+          <p className="text-[10px] text-muted-foreground flex-1">{searchQuery2.data?.total ?? 0} result{(searchQuery2.data?.total ?? 0) !== 1 ? "s" : ""} for <span className="font-semibold text-foreground">"{searchSubmitted}"</span></p>
+          <button onClick={handleClearSearch} className="text-[10px] text-primary hover:underline">Clear</button>
+        </div>
+      )}
+
+      {/* Cards */}
+      {isLoading ? (
+        <div className="space-y-3">{[1,2,3].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
+      ) : entries.length === 0 ? (
+        <div className="py-16 text-center space-y-3">
+          <Wrench className="h-8 w-8 text-muted-foreground mx-auto opacity-40" />
+          <p className="text-sm text-muted-foreground font-medium">{searchSubmitted ? "No fixes match your search" : "No fixes recorded yet"}</p>
+          <p className="text-[10px] text-muted-foreground max-w-xs mx-auto">
+            {searchSubmitted
+              ? "Try a different search term — fixes are searchable by issue, root cause, files modified, fix applied, and outcome."
+              : "Fixes are automatically captured when Software Improvement Agent tasks are created, error boundaries fire, and TypeScript/deployment issues are resolved."}
+          </p>
+          {!searchSubmitted && (
+            <Button size="sm" variant="outline" className="gap-1.5 mt-2" onClick={() => setShowForm(true)} data-testid="button-add-first-fix">
+              <PenLine className="h-3.5 w-3.5" />Record your first fix
+            </Button>
+          )}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {entries.map(e => <SoftwareKbCard key={e.id} entry={e} searchQuery={searchSubmitted} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Tab: Lessons Learned ─────────────────────────────────────────────────────
 
 function LessonsTab() {
@@ -1225,6 +1610,7 @@ export default function AdminOrgMemoryPage() {
         {activeTab === "hermes"     && <HermesLearningsTab />}
         {activeTab === "knowledge"  && <KnowledgeBaseTab />}
         {activeTab === "decisions"  && <DecisionsTab />}
+        {activeTab === "software-kb" && <SoftwareKbTab />}
         {activeTab === "lessons"    && <LessonsTab />}
         {activeTab === "playbooks"  && <PlaybooksTab />}
         {activeTab === "policies"   && <PlaybooksTab showPolicies />}
