@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/authToken";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,8 +23,8 @@ interface WorkflowTemplate {
 }
 
 interface WorkflowRun {
-  id: string; orgId: string; workflowTemplateKey: string; sourceType?: string;
-  sourceId?: string; status: string; currentStepKey?: string;
+  id: string; orgId: string; workflowTemplateKey: string | null; workflowType?: string | null;
+  sourceType?: string; sourceId?: string; status: string; currentStepKey?: string;
   startedAt?: string; completedAt?: string; failedAt?: string; cancelledAt?: string;
   failureReason?: string; createdBy?: string; metadata?: any;
   createdAt: string; updatedAt: string;
@@ -174,7 +175,7 @@ function RunDetail({ run, onClose, onUpdate }: { run: WorkflowRun; onClose: () =
             <div className="flex items-center gap-2 flex-wrap mb-1">
               <span className={`text-xs px-2 py-0.5 rounded font-medium ${STATUS_STYLE[current.status] || ""}`}>{current.status}</span>
             </div>
-            <h2 className="text-base font-semibold">{current.workflowTemplateKey.replace(/_/g, " ")}</h2>
+            <h2 className="text-base font-semibold">{(current.workflowTemplateKey || current.workflowType || "—").replace(/_/g, " ")}</h2>
             {meta.clientName && <p className="text-xs text-muted-foreground mt-0.5">Client: {meta.clientName}</p>}
             <p className="text-xs text-muted-foreground">Duration: {duration(current.startedAt, current.completedAt || current.failedAt || current.cancelledAt)}</p>
           </div>
@@ -300,7 +301,7 @@ function RunCard({ run, onSelect }: { run: WorkflowRun; onSelect: (r: WorkflowRu
       </div>
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 flex-wrap mb-0.5">
-          <span className="text-sm font-medium capitalize">{run.workflowTemplateKey.replace(/_/g, " ")}</span>
+          <span className="text-sm font-medium capitalize">{(run.workflowTemplateKey || run.workflowType || "—").replace(/_/g, " ")}</span>
           {meta.clientName && <span className="text-sm text-muted-foreground">· {meta.clientName}</span>}
           {isStale && <span className="text-xs bg-orange-100 text-orange-700 px-1.5 py-0.5 rounded">Stale</span>}
         </div>
@@ -360,13 +361,24 @@ export default function AdminWorkflowOrchestratorPage() {
     return p;
   };
 
-  const { data: runsRaw, isLoading, isError, refetch, isFetching } = useQuery({
+  const { data: runsRaw, isLoading, isError, error: runsError, refetch, isFetching } = useQuery({
     queryKey: ["/api/admin/workflow-runs", tab],
     queryFn: async () => {
-      const r = await fetch(`/api/admin/workflow-runs?${buildParams()}`, { credentials: "include" });
+      const r = await fetch(`/api/admin/workflow-runs?${buildParams()}`, {
+        credentials: "include",
+        headers: { ...getAuthHeaders(), "Cache-Control": "no-cache" },
+      });
       if (!r.ok) {
-        const text = await r.text();
-        throw new Error(`Failed to load workflow runs (${r.status}): ${text}`);
+        let errorMsg = `${r.status} ${r.statusText}`;
+        try {
+          const body = await r.json();
+          if (body?.error) errorMsg = body.error;
+          else if (body?.message) errorMsg = body.message;
+        } catch {
+          const text = await r.text().catch(() => "");
+          if (text) errorMsg = text;
+        }
+        throw new Error(errorMsg);
       }
       const raw = await r.json();
       if (!Array.isArray(raw)) {
@@ -472,7 +484,9 @@ export default function AdminWorkflowOrchestratorPage() {
           <div className="p-8 text-center" data-testid="state-error">
             <AlertTriangle className="w-8 h-8 text-red-400 mx-auto mb-2" />
             <p className="text-sm font-medium text-foreground mb-1">Failed to load workflow runs</p>
-            <p className="text-xs text-muted-foreground mb-3">There was a problem reaching the server. Try refreshing.</p>
+            <p className="text-xs text-red-600 font-mono bg-red-50 dark:bg-red-900/20 rounded px-3 py-2 mb-3 max-w-md mx-auto break-all" data-testid="error-message">
+              {runsError instanceof Error ? runsError.message : String(runsError ?? "Unknown error")}
+            </p>
             <Button size="sm" variant="outline" onClick={() => refetch()}>
               <RefreshCw className="w-3.5 h-3.5 mr-1.5" />Retry
             </Button>
