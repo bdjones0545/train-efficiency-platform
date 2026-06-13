@@ -5052,7 +5052,7 @@ export async function registerRoutes(
   // ── Revenue Summary V2 — collected / recognized / deferred / compensation ────
   app.get("/api/admin/revenue-summary-v2", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId);
       const orgId = profile?.organizationId || null;
       const sinceParam = req.query.since as string | undefined;
@@ -5111,6 +5111,11 @@ export async function registerRoutes(
         generatedAt: new Date().toISOString(),
         organizationId: orgId,
         since: since?.toISOString() ?? null,
+        // Top-level aliases so home page cards can read values directly
+        periodRevenueCents: recognizedRevenueCents,
+        thisMonth: recognizedRevenueCents,
+        total: collectedRevenueCents,
+        growthPct: 0,
         metrics: {
           collectedRevenueCents,
           recognizedRevenueCents,
@@ -9270,7 +9275,23 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const { computeCoachUtilizationDiagnostic } = await import("./scheduling-intelligence");
       const results = await computeCoachUtilizationDiagnostic(profile.organizationId);
-      res.json(results);
+      // Compute an overall utilization summary so home-page cards get a single number
+      const coachesWithSchedule = results.filter(c => c.availableMinutesThisWeek > 0);
+      const overallUtilization = coachesWithSchedule.length > 0
+        ? Math.round(coachesWithSchedule.reduce((s, c) => s + c.utilizationPct, 0) / coachesWithSchedule.length)
+        : null;
+      res.json({
+        overallUtilization,
+        utilizationPct: overallUtilization,
+        utilizationPercent: overallUtilization,
+        totalCoaches: results.length,
+        coachesWithSchedule: coachesWithSchedule.length,
+        source: "bookings + availability_blocks",
+        lastUpdated: new Date().toISOString(),
+        hasData: results.length > 0,
+        emptyReason: results.length === 0 ? "No coaches configured yet" : null,
+        coaches: results,
+      });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
@@ -17869,7 +17890,12 @@ Respond with this exact JSON structure:
   app.get("/api/recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const { generateRecommendations } = await import("./recommendation-engine");
-      const recs = await generateRecommendations(req.user.orgId, storage);
+      // Use profile lookup (same as all other routes) to get the correct orgId —
+      // req.user.orgId is unreliable for email/password coach auth sessions.
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId ?? req.user?.orgId;
+      const recs = await generateRecommendations(orgId, storage);
       res.json(recs);
     } catch (e: any) {
       console.error("[recommendations] error:", e);
@@ -18535,7 +18561,7 @@ Respond with this exact JSON structure:
 
   app.get("/api/admin/athlete-leads/stats", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
       const { db } = await import("./db");
