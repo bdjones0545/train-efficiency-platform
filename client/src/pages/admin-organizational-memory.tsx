@@ -11,20 +11,36 @@ import {
   ArrowLeft, Brain, ChevronRight, Layers, RefreshCw, Search,
   BookOpen, CheckSquare, Lightbulb, Shield, GitBranch, BarChart3,
   X, Plus, TrendingUp, Star, Activity, Users, AlertTriangle,
-  CheckCircle, ArrowRightLeft, ClipboardList,
+  CheckCircle, ArrowRightLeft, ClipboardList, Zap, Clock, Tag,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Memory = { id: string; title: string; memoryType: string; category: string; department: string; content: string; source: string; createdByAgent: string; confidenceScore: number; impactScore: number; usageCount: number; createdAt: string; updatedAt: string };
-type Overview = { total: number; byType: Record<string, number>; avgConfidenceScore: number; totalUsageEvents: number; knowledgeHealthScore: number; learningVelocity: number; institutionalIntelligenceScore: number; relationships: number; generatedAt: string };
+type Memory = { id: string; title: string; memoryType: string; category: string; department: string; content: string; source: string; createdByAgent: string; confidenceScore: number; impactScore: number; usageCount: number; createdAt: string; updatedAt: string; isAutoLearning?: boolean };
+type Overview = { total: number; autoLearnings?: number; byType: Record<string, number>; avgConfidenceScore: number; totalUsageEvents: number; knowledgeHealthScore: number; learningVelocity: number; institutionalIntelligenceScore: number; relationships: number; generatedAt: string };
 type SearchResult = { results: Memory[]; query: string; total: number; generatedAt: string };
 type PlaybooksData = { playbooks: Memory[]; policies: Memory[]; totalPlaybooks: number; totalPolicies: number; generatedAt: string };
 type GraphNode = { id: string; label: string; type: string; department: string; confidenceScore: number; usageCount: number };
 type GraphEdge = { id: string; sourceMemoryId: string; relatedMemoryId: string; relationshipType: string; sourceTitle: string; relatedTitle: string };
 type GraphData = { nodes: GraphNode[]; edges: GraphEdge[]; total: number; relationships: number; generatedAt: string };
-type AnalyticsData = { totalMemories: number; totalRelationships: number; avgConfidenceScore: number; avgImpactScore: number; totalUsageEvents: number; knowledgeHealthScore: number; learningVelocity: number; institutionalIntelligenceScore: number; byDepartment: Record<string, number>; byType: Record<string, number>; topReferencedMemories: { id: string; title: string; usageCount: number; memoryType: string }[]; highImpactMemories: { id: string; title: string; impactScore: number; memoryType: string }[]; generatedAt: string };
+type AnalyticsData = { totalMemories: number; autoLearnings?: number; totalRelationships: number; avgConfidenceScore: number; avgImpactScore: number; totalUsageEvents: number; knowledgeHealthScore: number; learningVelocity: number; institutionalIntelligenceScore: number; byDepartment: Record<string, number>; byType: Record<string, number>; topReferencedMemories: { id: string; title: string; usageCount: number; memoryType: string }[]; highImpactMemories: { id: string; title: string; impactScore: number; memoryType: string }[]; generatedAt: string };
+
+type HermesLearning = {
+  id: string; orgId: string; domain: string; metric: string | null; delta: string | null;
+  outcome: string; observation: string; learning: string; source: string;
+  memoryType: string; department: string; category: string;
+  confidenceScore: number; impactScore: number;
+  relatedEntityType: string | null; relatedEntityId: string | null;
+  createdAt: string; updatedAt: string;
+};
+type HermesLearningsData = {
+  learnings: HermesLearning[];
+  total: number;
+  bySource: Record<string, number>;
+  byDomain: Record<string, number>;
+  generatedAt: string;
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -108,6 +124,7 @@ function MemoryCard({ memory, expanded = false }: { memory: Memory; expanded?: b
 
 const TABS = [
   { id: "overview",   label: "Overview",        icon: Brain        },
+  { id: "hermes",     label: "Hermes Learnings",icon: Zap          },
   { id: "knowledge",  label: "Knowledge Base",  icon: BookOpen     },
   { id: "decisions",  label: "Decisions",       icon: CheckSquare  },
   { id: "lessons",    label: "Lessons Learned", icon: Lightbulb    },
@@ -197,11 +214,11 @@ function OverviewTab() {
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         {[
           { label: "Total Memories",          value: data?.total ?? "—",                                      color: "text-primary" },
+          { label: "Auto-Learnings",           value: data?.autoLearnings ?? 0,                                color: "text-amber-600 dark:text-amber-400" },
           { label: "Knowledge Health",         value: data ? `${data.knowledgeHealthScore}/100` : "—",         color: data && data.knowledgeHealthScore >= 70 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400" },
           { label: "Learning Velocity",        value: data ? `${data.learningVelocity}/wk` : "—",             color: "text-blue-600 dark:text-blue-400" },
           { label: "Intelligence Score",       value: data ? `${data.institutionalIntelligenceScore}/100` : "—", color: "text-primary" },
           { label: "Knowledge Relationships",  value: data?.relationships ?? "—",                              color: "text-violet-600 dark:text-violet-400" },
-          { label: "Total Usage Events",       value: data?.totalUsageEvents ?? "—",                           color: "text-muted-foreground" },
         ].map(k => (
           <div key={k.label} className="p-3.5 rounded-xl border bg-card" data-testid={`kpi-${k.label.toLowerCase().replace(/\s+/g, "-")}`}>
             <p className={`text-2xl font-extrabold ${k.color}`}>{k.value}</p>
@@ -251,6 +268,180 @@ function OverviewTab() {
             </div>
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+// ─── Tab: Hermes Auto-Learnings ───────────────────────────────────────────────
+
+const SOURCE_CONFIG: Record<string, { label: string; color: string }> = {
+  ceo_heartbeat:                    { label: "CEO Heartbeat",       color: "bg-primary/10 text-primary border-primary/20" },
+  workflow_execution:               { label: "Workflow",            color: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border-blue-200 dark:border-blue-800" },
+  agentmail_decision:               { label: "AgentMail",          color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800" },
+  agentmail_reply_classification:   { label: "Reply Intel",        color: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-800" },
+  human_admin:                      { label: "Human Admin",        color: "bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300 border-violet-200 dark:border-violet-800" },
+  software_improvement_task_created:{ label: "Software Fix",       color: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300 border-rose-200 dark:border-rose-800" },
+  communication_outcome_recorded:   { label: "Comms Outcome",      color: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300 border-teal-200 dark:border-teal-800" },
+};
+
+function SourceBadge({ source }: { source: string }) {
+  const cfg = SOURCE_CONFIG[source] ?? { label: source.replace(/_/g, " "), color: "bg-muted text-muted-foreground border-border" };
+  return (
+    <Badge variant="outline" className={`text-[8px] px-1.5 py-0 h-4 border ${cfg.color}`}>
+      {cfg.label}
+    </Badge>
+  );
+}
+
+function HermesLearningCard({ learning }: { learning: HermesLearning }) {
+  const [open, setOpen] = useState(false);
+  const conf = learning.confidenceScore;
+  const confColor = conf >= 90 ? "text-emerald-600 dark:text-emerald-400" : conf >= 75 ? "text-amber-600 dark:text-amber-400" : "text-rose-500";
+
+  return (
+    <div className="p-4 rounded-xl border bg-card" data-testid={`hermes-card-${learning.id}`}>
+      <div className="flex items-start gap-3">
+        <div className="p-2 rounded-lg bg-primary/5 border border-primary/10 shrink-0 mt-0.5">
+          <Zap className="h-3.5 w-3.5 text-primary" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+            <p className="text-xs font-semibold flex-1 truncate">{learning.domain}</p>
+            <SourceBadge source={learning.source} />
+            <Badge variant="outline" className="text-[8px] px-1.5 py-0 h-4">{learning.department}</Badge>
+          </div>
+          <div className="flex items-center gap-2.5 text-[9px] text-muted-foreground mb-2 flex-wrap">
+            <span className={`font-bold ${confColor}`}>{conf}% conf</span>
+            <span>·</span>
+            <span className="capitalize">{learning.memoryType}</span>
+            {learning.metric && (
+              <>
+                <span>·</span>
+                <span className="flex items-center gap-0.5"><Tag className="h-2.5 w-2.5" />{learning.metric}{learning.delta ? `: ${learning.delta}` : ""}</span>
+              </>
+            )}
+            <span>·</span>
+            <span className="flex items-center gap-0.5"><Clock className="h-2.5 w-2.5" />{formatDistanceToNow(new Date(learning.createdAt), { addSuffix: true })}</span>
+          </div>
+          <p className="text-[10px] font-semibold text-foreground mb-0.5">Outcome: <span className="font-normal text-muted-foreground">{learning.outcome}</span></p>
+          {open && (
+            <div className="mt-2 space-y-1.5">
+              <p className="text-[10px]"><span className="font-semibold">Observation:</span> <span className="text-muted-foreground">{learning.observation}</span></p>
+              <p className="text-[10px]"><span className="font-semibold">Learning:</span> <span className="text-muted-foreground">{learning.learning}</span></p>
+              {learning.relatedEntityType && (
+                <p className="text-[9px] text-muted-foreground">Related: {learning.relatedEntityType} {learning.relatedEntityId ? `· ${learning.relatedEntityId.slice(0, 12)}…` : ""}</p>
+              )}
+            </div>
+          )}
+          <button onClick={() => setOpen(!open)} className="mt-1.5 text-[9px] text-primary hover:underline" data-testid={`toggle-hermes-${learning.id}`}>
+            {open ? "Show less" : "Read full learning"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HermesLearningsTab() {
+  const [sourceFilter, setSourceFilter] = useState("all");
+  const { data, isLoading, refetch } = useQuery<HermesLearningsData>({
+    queryKey: ["/api/organizational-memory/hermes-learnings", sourceFilter],
+    queryFn: () => fetchJson(`/api/organizational-memory/hermes-learnings${sourceFilter !== "all" ? `?source=${encodeURIComponent(sourceFilter)}` : ""}`),
+    staleTime: 15_000,
+  });
+
+  const learnings = data?.learnings ?? [];
+  const bySource = data?.bySource ?? {};
+  const sources = Object.keys(bySource).sort((a, b) => bySource[b] - bySource[a]);
+
+  return (
+    <div className="space-y-4" data-testid="tab-hermes-learnings">
+      {/* Banner */}
+      <div className="flex items-start gap-3 p-4 rounded-xl bg-primary/5 border border-primary/20">
+        <Zap className="h-4 w-4 text-primary shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold mb-0.5">Hermes Automatic Learning Capture</p>
+          <p className="text-[10px] text-muted-foreground">
+            Hermes monitors real system events — heartbeats, workflow decisions, approval outcomes, reply intelligence — and automatically converts them into structured, searchable learnings stored permanently in the database.
+          </p>
+        </div>
+        <Button variant="ghost" size="sm" className="h-7 gap-1 text-muted-foreground shrink-0" onClick={() => refetch()} data-testid="button-refresh-hermes">
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {/* Stats row */}
+      {data && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="p-3 rounded-xl border bg-card text-center" data-testid="hermes-stat-total">
+            <p className="text-xl font-extrabold text-primary">{data.total}</p>
+            <p className="text-[9px] text-muted-foreground">Total Learnings</p>
+          </div>
+          <div className="p-3 rounded-xl border bg-card text-center">
+            <p className="text-xl font-extrabold text-blue-600 dark:text-blue-400">{sources.length}</p>
+            <p className="text-[9px] text-muted-foreground">Active Sources</p>
+          </div>
+          <div className="p-3 rounded-xl border bg-card text-center">
+            <p className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400">{Object.keys(data.byDomain).length}</p>
+            <p className="text-[9px] text-muted-foreground">Domains Covered</p>
+          </div>
+          <div className="p-3 rounded-xl border bg-card text-center">
+            <p className="text-xl font-extrabold text-amber-600 dark:text-amber-400">
+              {learnings.length > 0 ? Math.round(learnings.reduce((s, l) => s + l.confidenceScore, 0) / learnings.length) : "—"}%
+            </p>
+            <p className="text-[9px] text-muted-foreground">Avg Confidence</p>
+          </div>
+        </div>
+      )}
+
+      {/* Source distribution */}
+      {data && sources.length > 0 && (
+        <div className="p-4 rounded-xl border bg-card">
+          <p className="text-[9px] text-muted-foreground uppercase tracking-wide mb-3">Learnings by Source</p>
+          <div className="space-y-2">
+            {sources.map(s => {
+              const total = Object.values(bySource).reduce((sum, v) => sum + v, 0);
+              return (
+                <div key={s} className="flex items-center gap-2">
+                  <SourceBadge source={s} />
+                  <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${(bySource[s] / total) * 100}%` }} />
+                  </div>
+                  <span className="text-[9px] font-bold w-4 text-right shrink-0">{bySource[s]}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Source filter */}
+      <div className="flex gap-1 flex-wrap">
+        {["all", ...sources].map(s => (
+          <button key={s} onClick={() => setSourceFilter(s)} data-testid={`filter-source-${s}`}
+            className={`px-2.5 py-1 rounded-lg text-[10px] font-medium transition-colors ${sourceFilter === s ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"}`}>
+            {s === "all" ? "All Sources" : (SOURCE_CONFIG[s]?.label ?? s.replace(/_/g, " "))}
+            {s !== "all" && bySource[s] != null && <span className="ml-1 opacity-70">({bySource[s]})</span>}
+          </button>
+        ))}
+      </div>
+
+      {/* Learnings list */}
+      {isLoading ? <Skeleton className="h-64 rounded-xl" /> : (
+        <div className="space-y-3">
+          {learnings.length === 0 ? (
+            <div className="py-16 text-center space-y-3">
+              <Zap className="h-8 w-8 text-muted-foreground mx-auto opacity-40" />
+              <p className="text-sm text-muted-foreground font-medium">No learnings captured yet</p>
+              <p className="text-[10px] text-muted-foreground max-w-xs mx-auto">
+                Hermes will automatically capture learnings as the system processes approvals, heartbeats, workflow decisions, and reply classifications. Trigger a CEO Heartbeat run to see your first entry.
+              </p>
+            </div>
+          ) : (
+            learnings.map(l => <HermesLearningCard key={l.id} learning={l} />)
+          )}
+        </div>
       )}
     </div>
   );
@@ -748,6 +939,7 @@ export default function AdminOrgMemoryPage() {
       {/* Tab content */}
       <div className="min-h-96">
         {activeTab === "overview"   && <OverviewTab />}
+        {activeTab === "hermes"     && <HermesLearningsTab />}
         {activeTab === "knowledge"  && <KnowledgeBaseTab />}
         {activeTab === "decisions"  && <DecisionsTab />}
         {activeTab === "lessons"    && <LessonsTab />}

@@ -986,6 +986,18 @@ export async function runHeartbeatCycle(opts: {
     }).catch(() => {});
   }).catch(() => {});
 
+  // Fire-and-forget: capture structured learning for Organizational Memory
+  import("./hermes-learning-service").then(({ recordHeartbeatLearning }) => {
+    recordHeartbeatLearning({
+      orgId,
+      agentsCoordinated,
+      prioritiesGenerated,
+      errors: allErrors,
+      durationMs: Date.now() - startTime,
+      runId: heartbeatId,
+    }).catch(() => {});
+  }).catch(() => {});
+
   return { success: allErrors.length === 0, runId: heartbeatId, priorities, errors: allErrors };
 }
 

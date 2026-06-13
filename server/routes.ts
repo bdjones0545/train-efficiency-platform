@@ -11526,6 +11526,18 @@ Refine this email following the instruction above. Preserve the core message and
         }
       }
 
+      // Hermes auto-learning: capture reply classification
+      if (classification) {
+        try {
+          const { recordReplyClassificationLearning } = await import("./services/hermes-learning-service");
+          await recordReplyClassificationLearning({
+            orgId: profile.organizationId,
+            prospectId: req.params.id,
+            classification,
+          });
+        } catch (_) {}
+      }
+
       res.json({ ok: true, classification, dealCreated });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -13658,6 +13670,22 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
             });
           }
         } catch (_) {}
+        // Hermes auto-learning: capture workflow approval
+        try {
+          const { recordWorkflowLearning } = await import("./services/hermes-learning-service");
+          const { db: _db2 } = await import("./db");
+          const { workflowRuns: _wr2 } = await import("@shared/schema");
+          const { eq: _eq2 } = await import("drizzle-orm");
+          const [_run2] = await _db2.select().from(_wr2).where(_eq2(_wr2.id, req.params.id));
+          await recordWorkflowLearning({
+            orgId,
+            workflowId: req.params.id,
+            workflowType: _run2?.workflowType ?? "unknown",
+            displayName: _run2?.displayName ?? undefined,
+            status: "approved",
+            editedDraft: !!(editedSubject || editedBody),
+          });
+        } catch (_) {}
       }
 
       res.json(result);
@@ -13694,6 +13722,22 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
               neverDelete: true,
             });
           }
+        } catch (_) {}
+        // Hermes auto-learning: capture workflow rejection
+        try {
+          const { recordWorkflowLearning } = await import("./services/hermes-learning-service");
+          const { db: _db3 } = await import("./db");
+          const { workflowRuns: _wr3 } = await import("@shared/schema");
+          const { eq: _eq3 } = await import("drizzle-orm");
+          const [_run3] = await _db3.select().from(_wr3).where(_eq3(_wr3.id, req.params.id));
+          await recordWorkflowLearning({
+            orgId,
+            workflowId: req.params.id,
+            workflowType: _run3?.workflowType ?? "unknown",
+            displayName: _run3?.displayName ?? undefined,
+            status: "rejected",
+            feedback: feedback ?? undefined,
+          });
         } catch (_) {}
       }
 
@@ -19209,6 +19253,17 @@ Respond with this exact JSON structure:
         reviewedBy: userId,
         communicationDomain: updated.communicationDomain ?? "athlete_lead",
       }).catch(() => {});
+      // Hermes auto-learning: capture gmail approval
+      try {
+        const { recordGmailActionLearning } = await import("./services/hermes-learning-service");
+        await recordGmailActionLearning({
+          orgId,
+          actionId: updated.id,
+          actionType: updated.actionType ?? "outreach",
+          decision: "approved",
+          communicationDomain: updated.communicationDomain ?? undefined,
+        });
+      } catch (_) {}
       res.json({ success: true, action: updated });
     } catch (err: any) {
       console.error("[gmail/actions/approve] error:", err);
@@ -19246,6 +19301,18 @@ Respond with this exact JSON structure:
         reviewedBy: userId,
         communicationDomain: updated.communicationDomain ?? "athlete_lead",
       }).catch(() => {});
+      // Hermes auto-learning: capture gmail rejection
+      try {
+        const { recordGmailActionLearning } = await import("./services/hermes-learning-service");
+        await recordGmailActionLearning({
+          orgId,
+          actionId: updated.id,
+          actionType: updated.actionType ?? "outreach",
+          decision: "rejected",
+          communicationDomain: updated.communicationDomain ?? undefined,
+          reason: reason ?? undefined,
+        });
+      } catch (_) {}
       res.json({ success: true, action: updated });
     } catch (err: any) {
       console.error("[gmail/actions/reject] error:", err);
@@ -19294,6 +19361,17 @@ Respond with this exact JSON structure:
         reviewedBy: userId,
         communicationDomain: updated.communicationDomain ?? "athlete_lead",
       }).catch(() => {});
+      // Hermes auto-learning: capture edit-and-approve
+      try {
+        const { recordGmailActionLearning } = await import("./services/hermes-learning-service");
+        await recordGmailActionLearning({
+          orgId,
+          actionId: updated.id,
+          actionType: updated.actionType ?? "outreach",
+          decision: "edited_and_approved",
+          communicationDomain: updated.communicationDomain ?? undefined,
+        });
+      } catch (_) {}
       res.json({ success: true, action: updated });
     } catch (err: any) {
       console.error("[gmail/actions/edit-approve] error:", err);
@@ -29129,64 +29207,182 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     { id: "r-7", sourceMemoryId: "m-13", relatedMemoryId: "m-1",  relationshipType: "supports",     sourceTitle: "Q2 Competitor Research", relatedTitle: "Pricing Decision"           },
   ];
 
-  // GET /api/organizational-memory/overview
-  app.get("/api/organizational-memory/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+  // ── Hermes DB-learning helper (converts DB row to the same shape as ORG_MEMORIES)
+  async function dbLearningsAsMemories(orgId?: string, limit = 200) {
     try {
-      const byType = ORG_MEMORIES.reduce((acc, m) => { acc[m.memoryType] = (acc[m.memoryType] ?? 0) + 1; return acc; }, {} as Record<string, number>);
-      const avgConf = Math.round(ORG_MEMORIES.reduce((s, m) => s + m.confidenceScore, 0) / ORG_MEMORIES.length);
-      const totalUsage = ORG_MEMORIES.reduce((s, m) => s + m.usageCount, 0);
-      const knowledgeHealthScore = Math.min(100, Math.round((avgConf * 0.4) + ((ORG_MEMORIES.length / 20) * 100 * 0.3) + ((totalUsage / 500) * 100 * 0.3)));
-      res.json({ total: ORG_MEMORIES.length, byType, avgConfidenceScore: avgConf, totalUsageEvents: totalUsage, knowledgeHealthScore, learningVelocity: 2.4, institutionalIntelligenceScore: 83, relationships: MEMORY_RELATIONSHIPS.length, generatedAt: new Date().toISOString() });
+      const { getHermesLearnings } = await import("./services/hermes-learning-service");
+      const rows = await getHermesLearnings({ orgId, limit });
+      return rows.map(r => ({
+        id: r.id,
+        title: (() => {
+          const src = r.source.replace(/_/g, " ");
+          const d = r.domain.length > 40 ? r.domain.slice(0, 40) : r.domain;
+          return `[${src}] ${d}`;
+        })(),
+        memoryType: r.memoryType,
+        category: r.category,
+        department: r.department,
+        content: [r.outcome, r.observation, r.learning].filter(Boolean).join("  \n"),
+        source: r.source,
+        createdByAgent: "Hermes Learning Engine",
+        confidenceScore: r.confidenceScore,
+        impactScore: r.impactScore,
+        usageCount: 0,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+        isAutoLearning: true,
+      }));
+    } catch { return []; }
+  }
+
+  // GET /api/organizational-memory/overview
+  app.get("/api/organizational-memory/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const dbMems = await dbLearningsAsMemories(orgId);
+      const allMems = [...ORG_MEMORIES, ...dbMems];
+      const byType = allMems.reduce((acc, m) => { acc[m.memoryType] = (acc[m.memoryType] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const avgConf = allMems.length ? Math.round(allMems.reduce((s, m) => s + m.confidenceScore, 0) / allMems.length) : 80;
+      const totalUsage = allMems.reduce((s, m) => s + m.usageCount, 0);
+      const knowledgeHealthScore = Math.min(100, Math.round((avgConf * 0.4) + ((allMems.length / 20) * 100 * 0.3) + ((totalUsage / 500) * 100 * 0.3)));
+      const learningVelocity = parseFloat((dbMems.filter(m => Date.now() - new Date(m.createdAt).getTime() < 7 * 24 * 3600 * 1000).length / 7).toFixed(1)) || 2.4;
+      res.json({ total: allMems.length, autoLearnings: dbMems.length, byType, avgConfidenceScore: avgConf, totalUsageEvents: totalUsage, knowledgeHealthScore, learningVelocity, institutionalIntelligenceScore: Math.min(100, 83 + Math.floor(dbMems.length / 3)), relationships: MEMORY_RELATIONSHIPS.length, generatedAt: new Date().toISOString() });
     } catch (e: any) { res.status(500).json({ message: "Failed to load overview" }); }
   });
 
   // GET /api/organizational-memory/search
   app.get("/api/organizational-memory/search", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
       const q = ((req.query.q as string) ?? "").toLowerCase().trim();
       if (!q) return res.json({ results: [], query: q, total: 0 });
-      const results = ORG_MEMORIES.filter(m => m.title.toLowerCase().includes(q) || m.content.toLowerCase().includes(q) || m.category.toLowerCase().includes(q) || m.memoryType.toLowerCase().includes(q) || m.department.toLowerCase().includes(q)).slice(0, 10);
+      const seedResults = ORG_MEMORIES.filter(m => m.title.toLowerCase().includes(q) || m.content.toLowerCase().includes(q) || m.category.toLowerCase().includes(q) || m.memoryType.toLowerCase().includes(q) || m.department.toLowerCase().includes(q));
+      const { searchHermesLearnings } = await import("./services/hermes-learning-service");
+      const dbRows = await searchHermesLearnings(q, orgId, 20);
+      const dbResults = dbRows.map(r => ({
+        id: r.id, title: `[${r.source.replace(/_/g, " ")}] ${r.domain}`,
+        memoryType: r.memoryType, category: r.category, department: r.department,
+        content: [r.outcome, r.observation, r.learning].filter(Boolean).join("  \n"),
+        source: r.source, createdByAgent: "Hermes Learning Engine",
+        confidenceScore: r.confidenceScore, impactScore: r.impactScore, usageCount: 0,
+        createdAt: r.createdAt, updatedAt: r.updatedAt, isAutoLearning: true,
+      }));
+      const results = [...seedResults, ...dbResults].slice(0, 20);
       res.json({ results, query: q, total: results.length, generatedAt: new Date().toISOString() });
     } catch (e: any) { res.status(500).json({ message: "Failed to search memories" }); }
   });
 
   // GET /api/organizational-memory/memories
-  app.get("/api/organizational-memory/memories", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+  app.get("/api/organizational-memory/memories", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      res.json({ memories: ORG_MEMORIES, total: ORG_MEMORIES.length, generatedAt: new Date().toISOString() });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const dbMems = await dbLearningsAsMemories(orgId);
+      const memories = [...ORG_MEMORIES, ...dbMems];
+      res.json({ memories, total: memories.length, autoLearnings: dbMems.length, generatedAt: new Date().toISOString() });
     } catch (e: any) { res.status(500).json({ message: "Failed to load memories" }); }
   });
 
   // POST /api/organizational-memory/create
   app.post("/api/organizational-memory/create", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId ?? "default";
       const { title, memoryType, category, department, content, source, createdByAgent, confidenceScore } = req.body;
       if (!title || !content) return res.status(400).json({ message: "title and content required" });
-      res.json({ success: true, memory: { id: `m-${Date.now()}`, title, memoryType: memoryType ?? "insight", category: category ?? "General", department: department ?? "Operations", content, source: source ?? "Human Admin", createdByAgent: createdByAgent ?? "Human Admin", confidenceScore: confidenceScore ?? 80, impactScore: 75, usageCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() } });
+      const { recordHermesLearning } = await import("./services/hermes-learning-service");
+      const id = await recordHermesLearning({
+        orgId,
+        domain: title,
+        outcome: title,
+        observation: content,
+        learning: content,
+        source: "human_admin",
+        memoryType: (memoryType as any) ?? "insight",
+        department: department ?? "Operations",
+        category: category ?? "General",
+        confidenceScore: confidenceScore ?? 80,
+        impactScore: 75,
+      });
+      res.json({ success: true, memory: { id: id ?? `m-${Date.now()}`, title, memoryType: memoryType ?? "insight", category: category ?? "General", department: department ?? "Operations", content, source: source ?? "Human Admin", createdByAgent: createdByAgent ?? "Human Admin", confidenceScore: confidenceScore ?? 80, impactScore: 75, usageCount: 0, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), isAutoLearning: false } });
     } catch (e: any) { res.status(500).json({ message: "Failed to create memory" }); }
   });
 
   // POST /api/organizational-memory/convert
   app.post("/api/organizational-memory/convert", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId ?? "default";
       const { sourceType, sourceId, memoryType, title, content } = req.body;
       if (!title || !content) return res.status(400).json({ message: "title and content required" });
-      res.json({ success: true, converted: true, sourceType: sourceType ?? "task", sourceId: sourceId ?? "unknown", memory: { id: `m-conv-${Date.now()}`, title, memoryType: memoryType ?? "lesson", content, createdAt: new Date().toISOString() } });
+      const { recordHermesLearning } = await import("./services/hermes-learning-service");
+      const id = await recordHermesLearning({
+        orgId,
+        domain: title,
+        outcome: title,
+        observation: content,
+        learning: content,
+        source: `converted_from_${sourceType ?? "task"}`,
+        memoryType: (memoryType as any) ?? "lesson",
+        department: "Operations",
+        category: "Converted",
+        confidenceScore: 80,
+        impactScore: 70,
+        relatedEntityType: sourceType,
+        relatedEntityId: sourceId,
+      });
+      res.json({ success: true, converted: true, sourceType: sourceType ?? "task", sourceId: sourceId ?? "unknown", memory: { id: id ?? `m-conv-${Date.now()}`, title, memoryType: memoryType ?? "lesson", content, createdAt: new Date().toISOString() } });
     } catch (e: any) { res.status(500).json({ message: "Failed to convert to memory" }); }
   });
 
-  // GET /api/organizational-memory/decisions
-  app.get("/api/organizational-memory/decisions", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+  // GET /api/organizational-memory/hermes-learnings — auto-captured learnings only
+  app.get("/api/organizational-memory/hermes-learnings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const decisions = ORG_MEMORIES.filter(m => m.memoryType === "decision");
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const source = req.query.source as string | undefined;
+      const { getHermesLearnings, countHermesLearnings } = await import("./services/hermes-learning-service");
+      const learnings = await getHermesLearnings({ orgId, source, limit: 100 });
+      const total = await countHermesLearnings(orgId);
+      // Group by source for stats
+      const bySource = learnings.reduce((acc, l) => { acc[l.source] = (acc[l.source] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const byDomain = learnings.reduce((acc, l) => { acc[l.domain] = (acc[l.domain] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      res.json({ learnings, total, bySource, byDomain, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load Hermes learnings" }); }
+  });
+
+  // GET /api/organizational-memory/decisions
+  app.get("/api/organizational-memory/decisions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const { getHermesLearnings } = await import("./services/hermes-learning-service");
+      const dbDecisions = await getHermesLearnings({ orgId, memoryType: "decision", limit: 50 });
+      const dbMapped = dbDecisions.map(r => ({ id: r.id, title: `[Auto] ${r.domain}`, memoryType: r.memoryType, category: r.category, department: r.department, content: [r.outcome, r.observation, r.learning].filter(Boolean).join("  \n"), source: r.source, createdByAgent: "Hermes Learning Engine", confidenceScore: r.confidenceScore, impactScore: r.impactScore, usageCount: 0, createdAt: r.createdAt, updatedAt: r.updatedAt, isAutoLearning: true }));
+      const decisions = [...ORG_MEMORIES.filter(m => m.memoryType === "decision"), ...dbMapped];
       res.json({ decisions, total: decisions.length, generatedAt: new Date().toISOString() });
     } catch (e: any) { res.status(500).json({ message: "Failed to load decisions" }); }
   });
 
   // GET /api/organizational-memory/lessons
-  app.get("/api/organizational-memory/lessons", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+  app.get("/api/organizational-memory/lessons", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const lessons = ORG_MEMORIES.filter(m => m.memoryType === "lesson");
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const { getHermesLearnings } = await import("./services/hermes-learning-service");
+      const dbLessons = await getHermesLearnings({ orgId, memoryType: "lesson", limit: 50 });
+      const dbMapped = dbLessons.map(r => ({ id: r.id, title: `[Auto] ${r.domain}`, memoryType: r.memoryType, category: r.category, department: r.department, content: [r.outcome, r.observation, r.learning].filter(Boolean).join("  \n"), source: r.source, createdByAgent: "Hermes Learning Engine", confidenceScore: r.confidenceScore, impactScore: r.impactScore, usageCount: 0, createdAt: r.createdAt, updatedAt: r.updatedAt, isAutoLearning: true }));
+      const lessons = [...ORG_MEMORIES.filter(m => m.memoryType === "lesson"), ...dbMapped];
       res.json({ lessons, total: lessons.length, generatedAt: new Date().toISOString() });
     } catch (e: any) { res.status(500).json({ message: "Failed to load lessons" }); }
   });
@@ -29201,29 +29397,44 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   });
 
   // GET /api/organizational-memory/graph
-  app.get("/api/organizational-memory/graph", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+  app.get("/api/organizational-memory/graph", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const nodes = ORG_MEMORIES.map(m => ({ id: m.id, label: m.title.length > 40 ? m.title.slice(0, 40) + "…" : m.title, type: m.memoryType, department: m.department, confidenceScore: m.confidenceScore, usageCount: m.usageCount }));
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const dbMems = await dbLearningsAsMemories(orgId, 50);
+      const allMems = [...ORG_MEMORIES, ...dbMems];
+      const nodes = allMems.map(m => ({ id: m.id, label: m.title.length > 40 ? m.title.slice(0, 40) + "…" : m.title, type: m.memoryType, department: m.department, confidenceScore: m.confidenceScore, usageCount: m.usageCount }));
       res.json({ nodes, edges: MEMORY_RELATIONSHIPS, total: nodes.length, relationships: MEMORY_RELATIONSHIPS.length, generatedAt: new Date().toISOString() });
     } catch (e: any) { res.status(500).json({ message: "Failed to load graph" }); }
   });
 
   // GET /api/organizational-memory/analytics
-  app.get("/api/organizational-memory/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
+  app.get("/api/organizational-memory/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const byDept = ORG_MEMORIES.reduce((acc, m) => { acc[m.department] = (acc[m.department] ?? 0) + 1; return acc; }, {} as Record<string, number>);
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId).catch(() => null);
+      const orgId = profile?.organizationId;
+      const dbMems = await dbLearningsAsMemories(orgId);
+      const allMems = [...ORG_MEMORIES, ...dbMems];
+      const byDept = allMems.reduce((acc, m) => { acc[m.department] = (acc[m.department] ?? 0) + 1; return acc; }, {} as Record<string, number>);
       const topMemories = [...ORG_MEMORIES].sort((a, b) => b.usageCount - a.usageCount).slice(0, 5);
-      const highImpact  = [...ORG_MEMORIES].sort((a, b) => b.impactScore - a.impactScore).slice(0, 5);
+      const highImpact  = allMems.sort((a, b) => b.impactScore - a.impactScore).slice(0, 5);
+      const avgConf = allMems.length ? Math.round(allMems.reduce((s, m) => s + m.confidenceScore, 0) / allMems.length) : 80;
+      const avgImpact = allMems.length ? Math.round(allMems.reduce((s, m) => s + m.impactScore, 0) / allMems.length) : 75;
+      const learningVelocity = parseFloat((dbMems.filter(m => Date.now() - new Date(m.createdAt).getTime() < 7 * 24 * 3600 * 1000).length / 7).toFixed(1)) || 2.4;
       res.json({
-        totalMemories: ORG_MEMORIES.length, totalRelationships: MEMORY_RELATIONSHIPS.length,
-        avgConfidenceScore: Math.round(ORG_MEMORIES.reduce((s, m) => s + m.confidenceScore, 0) / ORG_MEMORIES.length),
-        avgImpactScore: Math.round(ORG_MEMORIES.reduce((s, m) => s + m.impactScore, 0) / ORG_MEMORIES.length),
+        totalMemories: allMems.length, autoLearnings: dbMems.length, totalRelationships: MEMORY_RELATIONSHIPS.length,
+        avgConfidenceScore: avgConf,
+        avgImpactScore: avgImpact,
         totalUsageEvents: ORG_MEMORIES.reduce((s, m) => s + m.usageCount, 0),
-        knowledgeHealthScore: 78, learningVelocity: 2.4, institutionalIntelligenceScore: 83,
+        knowledgeHealthScore: Math.min(100, Math.round((avgConf * 0.4) + ((allMems.length / 20) * 100 * 0.3) + 30)),
+        learningVelocity,
+        institutionalIntelligenceScore: Math.min(100, 83 + Math.floor(dbMems.length / 3)),
         byDepartment: byDept,
-        byType: ORG_MEMORIES.reduce((acc, m) => { acc[m.memoryType] = (acc[m.memoryType] ?? 0) + 1; return acc; }, {} as Record<string, number>),
+        byType: allMems.reduce((acc, m) => { acc[m.memoryType] = (acc[m.memoryType] ?? 0) + 1; return acc; }, {} as Record<string, number>),
         topReferencedMemories: topMemories.map(m => ({ id: m.id, title: m.title, usageCount: m.usageCount, memoryType: m.memoryType })),
-        highImpactMemories: highImpact.map(m => ({ id: m.id, title: m.title, impactScore: m.impactScore, memoryType: m.memoryType })),
+        highImpactMemories: highImpact.slice(0, 5).map(m => ({ id: m.id, title: m.title, impactScore: m.impactScore, memoryType: m.memoryType })),
         generatedAt: new Date().toISOString(),
       });
     } catch (e: any) { res.status(500).json({ message: "Failed to load analytics" }); }
