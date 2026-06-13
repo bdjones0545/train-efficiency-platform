@@ -1,0 +1,110 @@
+Run an Agent Operations Monitor Status Audit.
+
+Problems observed:
+1. System Health cards show yellow “Checking…” states but are not clickable and do not explain the warning.
+2. Gmail shows connected, but Stripe and Twilio show disconnected even though they are connected/configured for the TrainEfficiency org.
+3. SendGrid has successful recent execution logs but still appears as warning/checking.
+4. Hermes, Obsidian, and AgentMail are missing from the monitor even though they are core TrainEfficiency infrastructure.
+5. Infrastructure services and external integrations are being mixed together.
+
+Audit:
+- Agent Operations Monitor frontend component
+- API endpoint(s) feeding the System Health cards
+- API endpoint(s) feeding integration cards
+- Database/source used for Gmail, Stripe, Twilio, SendGrid
+- Runtime/env fallback from integration-status-service
+- Recent execution log source
+- Whether cards are using stale/mock/checking states
+- Whether yellow status has a real warning reason
+
+Required model:
+Separate services into two groups.
+
+Product Infrastructure — always provisioned:
+- Hermes
+- AgentMail
+- Obsidian / Organizational Memory
+- CEO Heartbeat
+- Workflow Runner
+- Execution Engine
+- Approval Center
+- Attention Inbox
+- Business Brain
+- Agent Registry
+- Database
+
+External Integrations — connected by account/credential:
+- Gmail
+- Google Calendar
+- Stripe
+- Twilio
+- SendGrid
+- Slack
+- OpenRouter
+- HubSpot
+- Meta Ads
+
+Required behavior:
+1. Product infrastructure should never show as “disconnected” just because no external credential exists.
+2. If infrastructure is healthy, show “Ready” or “Operational.”
+3. If infrastructure is degraded, show a specific reason.
+4. External integrations should use the unified integration-status-service.
+5. Stripe/Twilio/SendGrid should detect org-level configuration and env/runtime fallback correctly.
+6. SendGrid should not show disconnected/checking if recent successful send_email executions exist and credentials are available.
+7. Yellow/warning cards must be clickable or expandable to show:
+   - status
+   - reason
+   - source checked
+   - last checked
+   - recommended fix
+8. If a card is still checking, it should resolve to connected/disconnected/degraded, not remain stuck.
+9. Add Hermes, AgentMail, and Obsidian to the Infrastructure section.
+
+Suggested response shape:
+{
+  "success": true,
+  "data": {
+    "infrastructure": [
+      {
+        "id": "hermes",
+        "label": "Hermes",
+        "status": "operational",
+        "reason": "Provisioned and heartbeat available",
+        "lastChecked": "...",
+        "source": "org_ai_infrastructure"
+      }
+    ],
+    "externalIntegrations": [
+      {
+        "id": "twilio",
+        "label": "Twilio SMS",
+        "status": "connected",
+        "reason": "Org credential or runtime credential found",
+        "lastChecked": "...",
+        "source": "integration-status-service"
+      }
+    ],
+    "executionLog": [...]
+  }
+}
+
+Deliverables:
+1. Root cause.
+2. Current source matrix:
+   Card | Endpoint | Source | Current Status | Correct Status
+3. Infrastructure vs external integration classification.
+4. Files changed.
+5. Verification for Gmail, Stripe, Twilio, SendGrid.
+6. Verification that Hermes, AgentMail, and Obsidian appear.
+7. Yellow/warning cards now explain their reason.
+8. TypeScript result.
+9. Server startup result.
+
+Acceptance:
+- No permanent unexplained “Checking…” cards.
+- All warning states are actionable.
+- Gmail, Stripe, Twilio, and SendGrid reflect actual connected/configured state.
+- Hermes, AgentMail, and Obsidian appear as core infrastructure.
+- Product infrastructure is not treated like disconnected third-party integrations.
+- TypeScript passes.
+- Server starts cleanly.
