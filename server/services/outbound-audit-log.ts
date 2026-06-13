@@ -12,6 +12,7 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 
 let tableEnsured = false;
+let traceabilityEnsured = false;
 
 async function ensureTable(): Promise<void> {
   if (tableEnsured) return;
@@ -53,6 +54,19 @@ async function ensureTable(): Promise<void> {
   }
 }
 
+async function ensureTraceabilityColumns(): Promise<void> {
+  if (traceabilityEnsured) return;
+  try {
+    await db.execute(sql`ALTER TABLE outbound_email_audit_log ADD COLUMN IF NOT EXISTS action_queue_id TEXT`);
+    await db.execute(sql`ALTER TABLE outbound_email_audit_log ADD COLUMN IF NOT EXISTS gmail_thread_id TEXT`);
+    await db.execute(sql`ALTER TABLE outbound_email_audit_log ADD COLUMN IF NOT EXISTS source_conversation_id TEXT`);
+    await db.execute(sql`ALTER TABLE outbound_email_audit_log ADD COLUMN IF NOT EXISTS agent_mail_message_id TEXT`);
+    traceabilityEnsured = true;
+  } catch (e: any) {
+    console.warn("[AuditLog] Traceability column setup warning:", e?.message);
+  }
+}
+
 export interface AuditLogEntry {
   orgId: string;
   channel: "sendgrid" | "gmail" | "agentmail";
@@ -73,6 +87,10 @@ export interface AuditLogEntry {
   providerMessageId?: string;
   errorMessage?: string;
   sentAt?: Date;
+  actionQueueId?: string;
+  gmailThreadId?: string;
+  sourceConversationId?: string;
+  agentMailMessageId?: string;
 }
 
 /**
@@ -82,13 +100,15 @@ export interface AuditLogEntry {
 export async function writeOutboundAuditLog(entry: AuditLogEntry): Promise<string | undefined> {
   try {
     await ensureTable();
+    await ensureTraceabilityColumns();
     const rows = await db.execute(sql`
       INSERT INTO outbound_email_audit_log (
         id, organization_id, channel, source_system, source_record_id,
         recipient_email, recipient_name, from_email, subject, email_type,
         triggered_by, auto_sent, approval_required, approval_status,
         policy_decision, guard_result, status, provider_message_id,
-        error_message, sent_at, created_at, updated_at
+        error_message, sent_at, created_at, updated_at,
+        action_queue_id, gmail_thread_id, source_conversation_id, agent_mail_message_id
       ) VALUES (
         gen_random_uuid()::text,
         ${entry.orgId},
@@ -110,7 +130,11 @@ export async function writeOutboundAuditLog(entry: AuditLogEntry): Promise<strin
         ${entry.providerMessageId ?? null},
         ${entry.errorMessage ?? null},
         ${entry.sentAt ?? null},
-        NOW(), NOW()
+        NOW(), NOW(),
+        ${entry.actionQueueId ?? null},
+        ${entry.gmailThreadId ?? null},
+        ${entry.sourceConversationId ?? null},
+        ${entry.agentMailMessageId ?? null}
       )
       RETURNING id
     `);

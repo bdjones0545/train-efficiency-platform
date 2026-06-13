@@ -600,7 +600,7 @@ export async function registerAgentMailReplyRoutes(
       const bodyToSend: string = reply.edited_body?.trim() || reply.draft_body;
 
       // Send via AgentMail
-      let sendResult: { ok: boolean; messageId?: string; error?: string };
+      let sendResult: { ok: boolean; messageId?: string; error?: string; blocked?: boolean };
       if (reply.thread_id) {
         sendResult = await replyFromAgentInbox({
           organizationId: orgId,
@@ -610,6 +610,7 @@ export async function registerAgentMailReplyRoutes(
           to: reply.recipient_email,
           subject: reply.subject,
           body: bodyToSend,
+          humanApproved: true,
         });
       } else {
         sendResult = await sendAgentEmail({
@@ -619,6 +620,7 @@ export async function registerAgentMailReplyRoutes(
           to: reply.recipient_email,
           subject: reply.subject,
           body: bodyToSend,
+          humanApproved: true,
         });
       }
 

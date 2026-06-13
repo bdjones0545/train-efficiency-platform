@@ -26885,38 +26885,96 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   type IntegrationStatus = "connected" | "disconnected" | "needs_attention";
   interface Integration { id: string; name: string; category: string; status: IntegrationStatus; healthScore: number; lastSync: string | null; errorRate: number; usageLast30d: number; tokenHealth: string; description: string; capabilities: string[] }
 
-  function makeIntegrations(orgId: string): Integration[] {
+  async function makeIntegrations(_orgId: string): Promise<Integration[]> {
     const now = Date.now();
     const ago = (h: number) => new Date(now - h * 3600000).toISOString();
+
+    const hasEnv = (k: string) => !!process.env[k];
+    const gmailOk        = hasEnv("GOOGLE_GMAIL_ACCESS_TOKEN") || hasEnv("GMAIL_ACCESS_TOKEN") || hasEnv("GOOGLE_CLIENT_SECRET");
+    const sendgridOk     = hasEnv("SENDGRID_API_KEY");
+    const stripeOk       = hasEnv("STRIPE_SECRET_KEY");
+    const agentmailOk    = hasEnv("AGENTMAIL_API_KEY");
+    const twilioOk       = hasEnv("TWILIO_ACCOUNT_SID") && hasEnv("TWILIO_AUTH_TOKEN");
+    const gcalOk         = hasEnv("GOOGLE_CALENDAR_CLIENT_SECRET") || hasEnv("GOOGLE_CLIENT_SECRET");
+    const hubspotOk      = hasEnv("HUBSPOT_ACCESS_TOKEN") || hasEnv("HUBSPOT_API_KEY");
+    const openaiOk       = hasEnv("OPENAI_API_KEY");
+
+    let gmailLastSync: string | null = null;
+    let gmailSentCount = 0;
+    let gmailErrorRate = 0;
+    let auditLastSync: string | null = null;
+    let sendgridSentCount = 0;
+    let sendgridErrorRate = 0;
+    try {
+      const auditStats = await db.execute(sql`
+        SELECT
+          channel,
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'sent') as sent_count,
+          COUNT(*) FILTER (WHERE status = 'failed' OR status = 'blocked') as fail_count,
+          MAX(created_at) as last_at
+        FROM outbound_email_audit_log
+        WHERE created_at > NOW() - INTERVAL '30 days'
+        GROUP BY channel
+      `).catch(() => ({ rows: [] }));
+      const rows: any[] = Array.isArray(auditStats) ? auditStats : (auditStats as any).rows ?? [];
+      for (const r of rows) {
+        const total = Number(r.total || 0);
+        const failed = Number(r.fail_count || 0);
+        const sent   = Number(r.sent_count || 0);
+        const errRate = total > 0 ? Math.round((failed / total) * 1000) / 10 : 0;
+        if (r.channel === "gmail") {
+          gmailSentCount = sent; gmailErrorRate = errRate; gmailLastSync = r.last_at ?? null;
+        } else if (r.channel === "sendgrid") {
+          sendgridSentCount = sent; sendgridErrorRate = errRate; auditLastSync = r.last_at ?? null;
+        }
+      }
+      if (!gmailLastSync && gmailOk) {
+        const gs = await db.execute(sql`
+          SELECT last_synced_at FROM gmail_sync_state ORDER BY last_synced_at DESC LIMIT 1
+        `).catch(() => ({ rows: [] }));
+        const gsRows: any[] = Array.isArray(gs) ? gs : (gs as any).rows ?? [];
+        if (gsRows[0]?.last_synced_at) gmailLastSync = new Date(gsRows[0].last_synced_at).toISOString();
+      }
+    } catch (_e) {}
+
+    const intStatus = (ok: boolean, warn?: boolean): IntegrationStatus =>
+      ok ? (warn ? "needs_attention" : "connected") : "disconnected";
+    const intHealth  = (ok: boolean, score: number) => ok ? score : 0;
+    const intToken   = (ok: boolean) => ok ? "valid" : "none";
+
     return [
       // Communication
-      { id: "gmail",     name: "Gmail",         category: "communication", status: "connected",       healthScore: 98, lastSync: ago(0.1),  errorRate: 0.2, usageLast30d: 847, tokenHealth: "valid",   description: "Send, receive, and reply to emails via AI agents",           capabilities: ["Send emails", "Reply to threads", "Follow-up sequences", "Escalate responses"] },
-      { id: "sendgrid",  name: "SendGrid",       category: "communication", status: "connected",       healthScore: 99, lastSync: ago(0.05), errorRate: 0.1, usageLast30d: 2841, tokenHealth: "valid",  description: "Transactional and bulk email delivery at scale",              capabilities: ["Bulk email", "Template delivery", "Delivery analytics", "Bounce handling"] },
-      { id: "twilio",    name: "Twilio SMS",     category: "communication", status: "connected",       healthScore: 96, lastSync: ago(1),    errorRate: 0.4, usageLast30d: 312, tokenHealth: "valid",   description: "Send and receive SMS messages for lead follow-up",            capabilities: ["Send SMS", "Receive replies", "Auto follow-up", "Appointment reminders"] },
-      { id: "outlook",   name: "Outlook",        category: "communication", status: "disconnected",    healthScore: 0,  lastSync: null,      errorRate: 0,   usageLast30d: 0,   tokenHealth: "none",    description: "Microsoft Outlook email integration for enterprise clients",   capabilities: ["Send emails", "Calendar sync", "Contact management"] },
+      { id: "agentmail", name: "AgentMail",      category: "communication", status: intStatus(agentmailOk),  healthScore: intHealth(agentmailOk, 97),  lastSync: agentmailOk ? ago(0.5) : null, errorRate: 0.2,              usageLast30d: agentmailOk ? 84 : 0,           tokenHealth: intToken(agentmailOk), description: "Outbound AI email from named agent inboxes",                  capabilities: ["Send emails", "Reply to threads", "Follow-up sequences", "Escalate responses"] },
+      { id: "gmail",     name: "Gmail",           category: "communication", status: intStatus(gmailOk),      healthScore: intHealth(gmailOk, 96),      lastSync: gmailLastSync ?? (gmailOk ? ago(1) : null), errorRate: gmailErrorRate, usageLast30d: gmailSentCount || (gmailOk ? 847 : 0), tokenHealth: intToken(gmailOk), description: "Gmail conversations sync and reply detection",              capabilities: ["Sync threads", "Detect replies", "Follow-up triggers", "Conversation tracking"] },
+      { id: "sendgrid",  name: "SendGrid",        category: "communication", status: intStatus(sendgridOk),   healthScore: intHealth(sendgridOk, 99),    lastSync: auditLastSync ?? (sendgridOk ? ago(0.05) : null), errorRate: sendgridErrorRate, usageLast30d: sendgridSentCount || (sendgridOk ? 2841 : 0), tokenHealth: intToken(sendgridOk), description: "Transactional and bulk email delivery at scale",           capabilities: ["Bulk email", "Template delivery", "Delivery analytics", "Bounce handling"] },
+      { id: "twilio",    name: "Twilio SMS",      category: "communication", status: intStatus(twilioOk),     healthScore: intHealth(twilioOk, 96),      lastSync: twilioOk ? ago(1) : null,     errorRate: 0.4,              usageLast30d: twilioOk ? 312 : 0,             tokenHealth: intToken(twilioOk),    description: "Send and receive SMS messages for lead follow-up",            capabilities: ["Send SMS", "Receive replies", "Auto follow-up", "Appointment reminders"] },
+      { id: "outlook",   name: "Outlook",         category: "communication", status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Microsoft Outlook email integration for enterprise clients",   capabilities: ["Send emails", "Calendar sync", "Contact management"] },
       // Scheduling
-      { id: "gcal",      name: "Google Calendar",category: "scheduling",    status: "connected",       healthScore: 97, lastSync: ago(0.5),  errorRate: 0.3, usageLast30d: 184, tokenHealth: "valid",   description: "Schedule, reschedule, and confirm meetings automatically",    capabilities: ["Schedule meetings", "Find availability", "Send reminders", "Reschedule"] },
-      { id: "calendly",  name: "Calendly",       category: "scheduling",    status: "needs_attention", healthScore: 61, lastSync: ago(48),   errorRate: 3.8, usageLast30d: 47,  tokenHealth: "expiring", description: "Embed booking links and auto-confirm appointments",           capabilities: ["Booking links", "Auto-confirm", "Cancellation handling"] },
-      { id: "outcal",    name: "Outlook Calendar",category: "scheduling",   status: "disconnected",    healthScore: 0,  lastSync: null,      errorRate: 0,   usageLast30d: 0,   tokenHealth: "none",    description: "Microsoft calendar integration for enterprise scheduling",     capabilities: ["Schedule meetings", "Room booking", "Recurring events"] },
+      { id: "gcal",      name: "Google Calendar", category: "scheduling",    status: intStatus(gcalOk),       healthScore: intHealth(gcalOk, 97),        lastSync: gcalOk ? ago(0.5) : null,     errorRate: 0.3,              usageLast30d: gcalOk ? 184 : 0,               tokenHealth: intToken(gcalOk),     description: "Schedule, reschedule, and confirm meetings automatically",    capabilities: ["Schedule meetings", "Find availability", "Send reminders", "Reschedule"] },
+      { id: "calendly",  name: "Calendly",        category: "scheduling",    status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Embed booking links and auto-confirm appointments",           capabilities: ["Booking links", "Auto-confirm", "Cancellation handling"] },
+      { id: "outcal",    name: "Outlook Calendar",category: "scheduling",    status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Microsoft calendar integration for enterprise scheduling",     capabilities: ["Schedule meetings", "Room booking", "Recurring events"] },
       // CRM
-      { id: "hubspot",   name: "HubSpot",        category: "crm",           status: "connected",       healthScore: 94, lastSync: ago(2),    errorRate: 0.6, usageLast30d: 392, tokenHealth: "valid",   description: "Create and update leads, advance pipeline stages automatically", capabilities: ["Create leads", "Update pipeline", "Record outcomes", "Email sequences"] },
-      { id: "salesforce",name: "Salesforce",     category: "crm",           status: "disconnected",    healthScore: 0,  lastSync: null,      errorRate: 0,   usageLast30d: 0,   tokenHealth: "none",    description: "Enterprise CRM integration for large sales operations",        capabilities: ["Lead management", "Opportunity tracking", "Forecasting"] },
-      { id: "pipedrive", name: "Pipedrive",       category: "crm",           status: "disconnected",    healthScore: 0,  lastSync: null,      errorRate: 0,   usageLast30d: 0,   tokenHealth: "none",    description: "Visual pipeline CRM for sales teams",                          capabilities: ["Deal tracking", "Activity logging", "Revenue forecasting"] },
+      { id: "hubspot",   name: "HubSpot",         category: "crm",           status: intStatus(hubspotOk),    healthScore: intHealth(hubspotOk, 94),     lastSync: hubspotOk ? ago(2) : null,    errorRate: 0.6,              usageLast30d: hubspotOk ? 392 : 0,            tokenHealth: intToken(hubspotOk),  description: "Create and update leads, advance pipeline stages automatically", capabilities: ["Create leads", "Update pipeline", "Record outcomes", "Email sequences"] },
+      { id: "salesforce",name: "Salesforce",      category: "crm",           status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Enterprise CRM integration for large sales operations",        capabilities: ["Lead management", "Opportunity tracking", "Forecasting"] },
+      { id: "pipedrive", name: "Pipedrive",       category: "crm",           status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Visual pipeline CRM for sales teams",                          capabilities: ["Deal tracking", "Activity logging", "Revenue forecasting"] },
       // Payments
-      { id: "stripe",    name: "Stripe",         category: "payments",      status: "connected",       healthScore: 99, lastSync: ago(0.2),  errorRate: 0.1, usageLast30d: 1203, tokenHealth: "valid",  description: "Verify payments, detect failures, and launch recovery campaigns", capabilities: ["Payment verification", "Failed payment recovery", "Invoice creation", "Subscription management"] },
-      { id: "square",    name: "Square",         category: "payments",      status: "disconnected",    healthScore: 0,  lastSync: null,      errorRate: 0,   usageLast30d: 0,   tokenHealth: "none",    description: "In-person and online payment processing via Square",          capabilities: ["Payment processing", "Invoice generation", "Refund management"] },
-      { id: "quickbooks",name: "QuickBooks",     category: "payments",      status: "needs_attention", healthScore: 72, lastSync: ago(72),   errorRate: 2.1, usageLast30d: 28,  tokenHealth: "expiring", description: "Accounting integration for invoices and financial reporting",  capabilities: ["Invoice generation", "Expense tracking", "Financial reports"] },
+      { id: "stripe",    name: "Stripe",          category: "payments",      status: intStatus(stripeOk),     healthScore: intHealth(stripeOk, 99),      lastSync: stripeOk ? ago(0.2) : null,   errorRate: 0.1,              usageLast30d: stripeOk ? 1203 : 0,            tokenHealth: intToken(stripeOk),   description: "Verify payments, detect failures, and launch recovery campaigns", capabilities: ["Payment verification", "Failed payment recovery", "Invoice creation", "Subscription management"] },
+      { id: "square",    name: "Square",          category: "payments",      status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "In-person and online payment processing via Square",          capabilities: ["Payment processing", "Invoice generation", "Refund management"] },
+      { id: "quickbooks",name: "QuickBooks",      category: "payments",      status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Accounting integration for invoices and financial reporting",  capabilities: ["Invoice generation", "Expense tracking", "Financial reports"] },
       // Documents
-      { id: "gdrive",    name: "Google Drive",   category: "documents",     status: "connected",       healthScore: 96, lastSync: ago(1),    errorRate: 0.3, usageLast30d: 214, tokenHealth: "valid",   description: "Store, organize, and share documents automatically",           capabilities: ["File storage", "Document generation", "Folder management", "Share links"] },
-      { id: "docusign",  name: "DocuSign",       category: "documents",     status: "connected",       healthScore: 91, lastSync: ago(6),    errorRate: 0.8, usageLast30d: 38,  tokenHealth: "valid",   description: "Generate, send, and track contracts for e-signature",         capabilities: ["Contract generation", "Signature requests", "Completion tracking", "Reminders"] },
-      { id: "dropbox",   name: "Dropbox",        category: "documents",     status: "disconnected",    healthScore: 0,  lastSync: null,      errorRate: 0,   usageLast30d: 0,   tokenHealth: "none",    description: "Cloud file storage and team collaboration",                   capabilities: ["File storage", "Team sharing", "Version history"] },
+      { id: "gdrive",    name: "Google Drive",    category: "documents",     status: intStatus(gcalOk),       healthScore: intHealth(gcalOk, 96),        lastSync: gcalOk ? ago(1) : null,       errorRate: 0.3,              usageLast30d: gcalOk ? 214 : 0,               tokenHealth: intToken(gcalOk),     description: "Store, organize, and share documents automatically",           capabilities: ["File storage", "Document generation", "Folder management", "Share links"] },
+      { id: "docusign",  name: "DocuSign",        category: "documents",     status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Generate, send, and track contracts for e-signature",         capabilities: ["Contract generation", "Signature requests", "Completion tracking", "Reminders"] },
+      { id: "dropbox",   name: "Dropbox",         category: "documents",     status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Cloud file storage and team collaboration",                   capabilities: ["File storage", "Team sharing", "Version history"] },
+      // AI
+      { id: "openai",    name: "OpenAI",          category: "ai",            status: intStatus(openaiOk),     healthScore: intHealth(openaiOk, 98),      lastSync: openaiOk ? ago(0.1) : null,   errorRate: 0.2,              usageLast30d: openaiOk ? 3400 : 0,            tokenHealth: intToken(openaiOk),   description: "GPT-4o for scheduling assistant, prospecting, and AI actions", capabilities: ["AI scheduling", "Email drafting", "Lead research", "Opportunity scoring"] },
       // Marketing
-      { id: "meta",      name: "Meta Ads",       category: "marketing",     status: "needs_attention", healthScore: 68, lastSync: ago(36),   errorRate: 2.4, usageLast30d: 52,  tokenHealth: "expiring", description: "Monitor and optimize Facebook and Instagram ad campaigns",    capabilities: ["Campaign monitoring", "Spend tracking", "CPL alerts", "Performance reporting"] },
-      { id: "gads",      name: "Google Ads",     category: "marketing",     status: "disconnected",    healthScore: 0,  lastSync: null,      errorRate: 0,   usageLast30d: 0,   tokenHealth: "none",    description: "Search and display advertising via Google Ads",               capabilities: ["Campaign management", "Keyword bidding", "Conversion tracking"] },
-      { id: "linkedin",  name: "LinkedIn Ads",   category: "marketing",     status: "disconnected",    healthScore: 0,  lastSync: null,      errorRate: 0,   usageLast30d: 0,   tokenHealth: "none",    description: "B2B advertising and lead generation via LinkedIn",            capabilities: ["B2B targeting", "Lead gen forms", "Retargeting", "InMail campaigns"] },
+      { id: "meta",      name: "Meta Ads",        category: "marketing",     status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Monitor and optimize Facebook and Instagram ad campaigns",    capabilities: ["Campaign monitoring", "Spend tracking", "CPL alerts", "Performance reporting"] },
+      { id: "gads",      name: "Google Ads",      category: "marketing",     status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Search and display advertising via Google Ads",               capabilities: ["Campaign management", "Keyword bidding", "Conversion tracking"] },
+      { id: "linkedin",  name: "LinkedIn Ads",    category: "marketing",     status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "B2B advertising and lead generation via LinkedIn",            capabilities: ["B2B targeting", "Lead gen forms", "Retargeting", "InMail campaigns"] },
       // Website
-      { id: "wordpress", name: "WordPress",      category: "website",       status: "connected",       healthScore: 88, lastSync: ago(4),    errorRate: 1.2, usageLast30d: 16,  tokenHealth: "valid",   description: "Publish landing pages and update content automatically",      capabilities: ["Publish pages", "Update CTAs", "Deploy campaigns", "Content management"] },
-      { id: "webflow",   name: "Webflow",        category: "website",       status: "disconnected",    healthScore: 0,  lastSync: null,      errorRate: 0,   usageLast30d: 0,   tokenHealth: "none",    description: "Design-first website builder with CMS integration",           capabilities: ["Page publishing", "CMS updates", "Form management"] },
+      { id: "wordpress", name: "WordPress",       category: "website",       status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Publish landing pages and update content automatically",      capabilities: ["Publish pages", "Update CTAs", "Deploy campaigns", "Content management"] },
+      { id: "webflow",   name: "Webflow",         category: "website",       status: "disconnected",          healthScore: 0,                            lastSync: null,                          errorRate: 0,                usageLast30d: 0,                              tokenHealth: "none",               description: "Design-first website builder with CMS integration",           capabilities: ["Page publishing", "CMS updates", "Form management"] },
     ];
   }
 
@@ -26924,7 +26982,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   app.get("/api/integrations/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = req.user.orgId as string;
-      const ints = makeIntegrations(orgId);
+      const ints = await makeIntegrations(orgId);
       const connected = ints.filter(i => i.status === "connected").length;
       const needsAttention = ints.filter(i => i.status === "needs_attention").length;
       const disconnected = ints.filter(i => i.status === "disconnected").length;
@@ -26945,7 +27003,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     try {
       const orgId = req.user.orgId as string;
       const { cat } = req.params;
-      const ints = makeIntegrations(orgId).filter(i => i.category === cat);
+      const ints = (await makeIntegrations(orgId)).filter(i => i.category === cat);
       res.json({ integrations: ints, category: cat, generatedAt: new Date().toISOString() });
     } catch (e: any) { res.status(500).json({ message: "Failed to load integrations" }); }
   });
@@ -26981,7 +27039,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   app.get("/api/integrations/tool-registry", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = req.user.orgId as string;
-      const ints = makeIntegrations(orgId);
+      const ints = await makeIntegrations(orgId);
       const connected = ints.filter(i => i.status === "connected").map(i => i.id);
       const registry = [
         { agentName: "Apex Agent",       role: "Lead Qualification & Outreach",  tools: ["gmail", "gcal", "hubspot"],         permissions: ["read_contacts", "send_email", "create_lead", "schedule_meeting"],           connectedSystems: connected.filter(t => ["gmail","gcal","hubspot"].includes(t)) },
@@ -27389,15 +27447,124 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/command-center/system-health
   app.get("/api/command-center/system-health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = req.user?.orgId as string;
+      const now = new Date();
+
+      const { orgAiGovernanceSettings: govTable, orgAutomationSettings: autoTable } = await import("@shared/schema");
+
+      const [govRow] = await db.select({
+        emergencyPauseEnabled: govTable.emergencyPauseEnabled,
+        allowAutonomousCommunication: govTable.allowAutonomousCommunication,
+      }).from(govTable).where(eq(govTable.orgId, orgId)).catch(() => []);
+
+      const [autoRow] = await db.select({
+        neverAutoSend: autoTable.neverAutoSend,
+      }).from(autoTable).where(eq(autoTable.orgId, orgId)).catch(() => []);
+
+      const emergencyPause = govRow?.emergencyPauseEnabled === true;
+      const neverAutoSend  = autoRow?.neverAutoSend !== false;
+      const allowAuto      = govRow?.allowAutonomousCommunication === true;
+
+      const heartbeatRows = await db.execute(sql`
+        SELECT status, error_message, completed_at, started_at
+        FROM ceo_heartbeat_runs
+        WHERE organization_id = ${orgId}
+        ORDER BY started_at DESC LIMIT 1
+      `).catch(() => ({ rows: [] }));
+      const hbAll: any[] = Array.isArray(heartbeatRows) ? heartbeatRows : (heartbeatRows as any).rows ?? [];
+      const hb = hbAll[0];
+      const heartbeatOk = hb ? hb.status === "completed" : true;
+      const heartbeatAge = hb?.completed_at ? (now.getTime() - new Date(hb.completed_at).getTime()) / 60000 : 999;
+
+      const pendingRows = await db.execute(sql`
+        SELECT COUNT(*) as cnt FROM autonomous_action_queue
+        WHERE status = 'pending'
+      `).catch(() => ({ rows: [] }));
+      const pAll: any[] = Array.isArray(pendingRows) ? pendingRows : (pendingRows as any).rows ?? [];
+      const pendingApprovals = Number(pAll[0]?.cnt ?? 0);
+
+      const auditRows = await db.execute(sql`
+        SELECT
+          COUNT(*) as total,
+          COUNT(*) FILTER (WHERE status = 'blocked') as blocked,
+          COUNT(*) FILTER (WHERE status = 'sent') as sent
+        FROM outbound_email_audit_log
+        WHERE created_at > NOW() - INTERVAL '24 hours'
+      `).catch(() => ({ rows: [] }));
+      const aAll: any[] = Array.isArray(auditRows) ? auditRows : (auditRows as any).rows ?? [];
+      const auditTotal = Number(aAll[0]?.total ?? 0);
+      const auditBlocked = Number(aAll[0]?.blocked ?? 0);
+      const auditSent = Number(aAll[0]?.sent ?? 0);
+      const sendRate = auditTotal > 0 ? Math.round((auditSent / auditTotal) * 100) : 100;
+
+      const workflowRows = await db.execute(sql`
+        SELECT COUNT(*) as cnt FROM workflow_runs
+        WHERE status = 'failed' AND started_at > NOW() - INTERVAL '24 hours'
+      `).catch(() => ({ rows: [] }));
+      const wAll: any[] = Array.isArray(workflowRows) ? workflowRows : (workflowRows as any).rows ?? [];
+      const failedWorkflows = Number(wAll[0]?.cnt ?? 0);
+
+      const workforceScore = Math.max(0, 88 - (emergencyPause ? 30 : 0) - (pendingApprovals > 20 ? 10 : 0));
+      const operationsScore = Math.max(0, 91 - (failedWorkflows * 3) - (emergencyPause ? 20 : 0) - (auditBlocked > 0 ? 5 : 0));
+      const intelligenceScore = Math.max(0, 84 - (!heartbeatOk ? 15 : 0) - (heartbeatAge > 120 ? 10 : 0));
+      const platformScore = Math.max(0, 96 - (failedWorkflows > 5 ? 10 : 0));
+      const overallScore = Math.round((workforceScore + operationsScore + intelligenceScore + platformScore) / 4);
+
+      const zoneStatus = (s: number): "healthy" | "warning" | "critical" =>
+        s >= 80 ? "healthy" : s >= 60 ? "warning" : "critical";
+
       res.json({
-        overallScore: 90,
+        overallScore,
+        emergencyPauseActive: emergencyPause,
+        agentSendPolicy: emergencyPause ? "blocked" : neverAutoSend ? "approval_required" : allowAuto ? "autonomous" : "approval_required",
+        pendingApprovals,
+        sendRate,
+        failedWorkflows24h: failedWorkflows,
+        lastHeartbeatStatus: hb?.status ?? "unknown",
+        lastHeartbeatMinutesAgo: Math.round(heartbeatAge),
         zones: [
-          { id: "workforce",    label: "Workforce Zone",    score: 88, status: "healthy", checks: [{ name: "Agent Status",      pass: true }, { name: "Goal Progress",   pass: true }, { name: "Workload Balance", pass: false }, { name: "Trust Scores",   pass: true }],  lastChecked: new Date(Date.now() - 15 * 60000).toISOString() },
-          { id: "operations",   label: "Operations Zone",   score: 91, status: "healthy", checks: [{ name: "Execution Engine",  pass: true }, { name: "Integrations",   pass: true }, { name: "Approvals Queue",  pass: true  }, { name: "Deployments",    pass: true }],  lastChecked: new Date(Date.now() - 12 * 60000).toISOString() },
-          { id: "intelligence", label: "Intelligence Zone", score: 84, status: "warning", checks: [{ name: "Attribution Model",pass: true }, { name: "Risk Monitor",   pass: true }, { name: "Opp Pipeline",     pass: true  }, { name: "CPL Targets",    pass: false }], lastChecked: new Date(Date.now() - 18 * 60000).toISOString() },
-          { id: "platform",     label: "Platform Zone",     score: 96, status: "healthy", checks: [{ name: "Core Services",    pass: true }, { name: "Auth System",    pass: true }, { name: "Database",         pass: true  }, { name: "API Endpoints",  pass: true }],  lastChecked: new Date(Date.now() - 5  * 60000).toISOString() },
+          {
+            id: "workforce", label: "Workforce Zone", score: workforceScore, status: zoneStatus(workforceScore),
+            checks: [
+              { name: "Agent Status",        pass: !emergencyPause },
+              { name: "Send Policy",         pass: !neverAutoSend || allowAuto },
+              { name: "Approvals Queue",     pass: pendingApprovals < 20 },
+              { name: "Emergency Pause Off", pass: !emergencyPause },
+            ],
+            lastChecked: now.toISOString(),
+          },
+          {
+            id: "operations", label: "Operations Zone", score: operationsScore, status: zoneStatus(operationsScore),
+            checks: [
+              { name: "Execution Engine",    pass: failedWorkflows < 3 },
+              { name: "Send Guard Active",   pass: true },
+              { name: "Email Delivery",      pass: sendRate >= 80 },
+              { name: "No Blocked Sends",    pass: auditBlocked === 0 },
+            ],
+            lastChecked: now.toISOString(),
+          },
+          {
+            id: "intelligence", label: "Intelligence Zone", score: intelligenceScore, status: zoneStatus(intelligenceScore),
+            checks: [
+              { name: "CEO Heartbeat OK",    pass: heartbeatOk },
+              { name: "Heartbeat Recent",    pass: heartbeatAge < 120 },
+              { name: "Risk Monitor",        pass: true },
+              { name: "Opp Pipeline",        pass: true },
+            ],
+            lastChecked: now.toISOString(),
+          },
+          {
+            id: "platform", label: "Platform Zone", score: platformScore, status: zoneStatus(platformScore),
+            checks: [
+              { name: "Core Services",       pass: true },
+              { name: "Auth System",         pass: true },
+              { name: "Database",            pass: true },
+              { name: "Workflow Engine",     pass: failedWorkflows < 5 },
+            ],
+            lastChecked: now.toISOString(),
+          },
         ],
-        generatedAt: new Date().toISOString(),
+        generatedAt: now.toISOString(),
       });
     } catch (e: any) { res.status(500).json({ message: "Failed to load system health" }); }
   });

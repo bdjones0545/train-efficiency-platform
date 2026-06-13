@@ -7,6 +7,8 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { checkAgentMailSendPolicy } from "./agentmail-send-guard";
+import { writeOutboundAuditLog } from "./outbound-audit-log";
 
 // ─── Config ────────────────────────────────────────────────────────────────
 
@@ -207,6 +209,8 @@ export async function getInboxMessages(inboxAddress: string, limit = 20): Promis
 
 /**
  * Send an email from a specific agent inbox.
+ * humanApproved=true skips the autonomous-send policy check (use when a human
+ * has already approved the draft). Emergency pause always blocks regardless.
  */
 export async function sendAgentEmail(params: {
   organizationId: string;
@@ -216,11 +220,35 @@ export async function sendAgentEmail(params: {
   subject: string;
   body: string;
   replyTo?: string;
+  humanApproved?: boolean;
+  actionQueueId?: string;
+  gmailThreadId?: string;
 }): Promise<{
   ok: boolean;
   messageId?: string;
   error?: string;
+  blocked?: boolean;
 }> {
+  const guardResult = await checkAgentMailSendPolicy({
+    orgId: params.organizationId,
+    agentName: params.agentName,
+    fromInbox: params.fromInbox,
+    toEmail: params.to,
+    subject: params.subject,
+    bodyPreview: params.body.slice(0, 200),
+    humanApproved: params.humanApproved,
+    sourceSystem: params.agentName,
+    actionQueueId: params.actionQueueId,
+    gmailThreadId: params.gmailThreadId,
+  });
+
+  if (!guardResult.allowed) {
+    console.warn(
+      `[AgentMail] Send blocked by policy (${guardResult.policyDecision}) for org=${params.organizationId} to=${params.to}: ${guardResult.reason}`,
+    );
+    return { ok: false, error: guardResult.reason, blocked: true };
+  }
+
   const c = getConfig();
   const domain = c.orgDomain || "agentmail.to";
   const fromEmail = `${params.fromInbox}@${domain}`;
@@ -250,12 +278,35 @@ export async function sendAgentEmail(params: {
     errorMessage: res.ok ? undefined : (res.error ?? `HTTP ${res.status}`),
   });
 
+  if (res.ok) {
+    await writeOutboundAuditLog({
+      orgId: params.organizationId,
+      channel: "agentmail",
+      sourceSystem: params.agentName,
+      recipientEmail: params.to,
+      subject: params.subject,
+      emailType: "agentmail_outbound",
+      triggeredBy: params.agentName,
+      autoSent: !params.humanApproved,
+      approvalRequired: !params.humanApproved,
+      approvalStatus: params.humanApproved ? "approved" : "n/a",
+      policyDecision: "allow",
+      status: "sent",
+      providerMessageId: messageId,
+      sentAt: new Date(),
+      actionQueueId: params.actionQueueId,
+      gmailThreadId: params.gmailThreadId,
+    }).catch(() => {});
+  }
+
   if (!res.ok) return { ok: false, error: res.error ?? `HTTP ${res.status}` };
   return { ok: true, messageId };
 }
 
 /**
  * Reply from an agent inbox to an existing email thread.
+ * humanApproved=true skips the autonomous-send policy check (use when a human
+ * has already approved the draft). Emergency pause always blocks regardless.
  */
 export async function replyFromAgentInbox(params: {
   organizationId: string;
@@ -265,11 +316,35 @@ export async function replyFromAgentInbox(params: {
   to: string;
   subject: string;
   body: string;
+  humanApproved?: boolean;
+  actionQueueId?: string;
+  gmailThreadId?: string;
 }): Promise<{
   ok: boolean;
   messageId?: string;
   error?: string;
+  blocked?: boolean;
 }> {
+  const guardResult = await checkAgentMailSendPolicy({
+    orgId: params.organizationId,
+    agentName: params.agentName,
+    fromInbox: params.fromInbox,
+    toEmail: params.to,
+    subject: params.subject,
+    bodyPreview: params.body.slice(0, 200),
+    humanApproved: params.humanApproved,
+    sourceSystem: params.agentName,
+    actionQueueId: params.actionQueueId,
+    gmailThreadId: params.gmailThreadId ?? params.threadId,
+  });
+
+  if (!guardResult.allowed) {
+    console.warn(
+      `[AgentMail] Reply blocked by policy (${guardResult.policyDecision}) for org=${params.organizationId} to=${params.to}: ${guardResult.reason}`,
+    );
+    return { ok: false, error: guardResult.reason, blocked: true };
+  }
+
   const c = getConfig();
   const domain = c.orgDomain || "agentmail.to";
   const fromEmail = `${params.fromInbox}@${domain}`;
@@ -298,6 +373,27 @@ export async function replyFromAgentInbox(params: {
     status: res.ok ? "sent" : "failed",
     errorMessage: res.ok ? undefined : (res.error ?? `HTTP ${res.status}`),
   });
+
+  if (res.ok) {
+    await writeOutboundAuditLog({
+      orgId: params.organizationId,
+      channel: "agentmail",
+      sourceSystem: params.agentName,
+      recipientEmail: params.to,
+      subject: params.subject,
+      emailType: "agentmail_reply",
+      triggeredBy: params.agentName,
+      autoSent: !params.humanApproved,
+      approvalRequired: !params.humanApproved,
+      approvalStatus: params.humanApproved ? "approved" : "n/a",
+      policyDecision: "allow",
+      status: "sent",
+      providerMessageId: messageId,
+      sentAt: new Date(),
+      actionQueueId: params.actionQueueId,
+      gmailThreadId: params.gmailThreadId ?? params.threadId,
+    }).catch(() => {});
+  }
 
   if (!res.ok) return { ok: false, error: res.error ?? `HTTP ${res.status}` };
   return { ok: true, messageId };

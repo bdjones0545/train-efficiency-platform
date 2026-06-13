@@ -213,6 +213,7 @@ export async function registerAgentMailRoutes(
         subject,
         body,
         replyTo,
+        humanApproved: true,
       });
 
       res.json(result);
@@ -360,6 +361,7 @@ export async function registerAgentMailRoutes(
         to,
         subject,
         body,
+        humanApproved: true,
       });
 
       res.json(result);
@@ -492,6 +494,7 @@ export async function registerAgentMailRoutes(
         to,
         subject: "AgentMail Test Email — TrainEfficiency",
         body: "This is a test email sent from the AgentMail integration in TrainEfficiency. If you received this, the connection is working correctly.",
+        humanApproved: true,
       });
 
       res.json(result);

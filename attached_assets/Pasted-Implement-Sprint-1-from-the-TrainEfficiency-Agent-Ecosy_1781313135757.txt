@@ -1,0 +1,150 @@
+Implement Sprint 1 from the TrainEfficiency Agent Ecosystem Integration Audit: Safety, Real Health, and Traceability.
+
+Do not add new UI-only features. Replace fake/static systems with real data and enforce safe outbound communication.
+
+Scope:
+
+1. Replace fake System Health endpoint
+File: server/routes.ts around /api/command-center/system-health
+
+Current problem:
+Endpoint returns hardcoded static JSON with fake health scores.
+
+Required:
+Replace with real backend checks:
+- Last CEO Heartbeat run from ceo_heartbeat_runs
+- Last successful Gmail sync from gmail_sync_state
+- Pending Gmail approvals from gmail_agent_actions where status='awaiting_approval'
+- Pending autonomous approvals from autonomous_action_queue where approval/status indicates pending approval
+- Recent AgentMail failures from agent_mail_messages where status='failed'
+- Recent outbound email audit failures/blocked events from outbound_email_audit_log
+- Recent workflow failures from workflow_runs where status='failed'
+- Recent agent tool failures from agent_tool_calls where status='failed' or error exists
+- Ledger drift failures from financial_event_failures where status='pending'
+
+Return:
+- overallStatus: healthy | degraded | critical
+- score: computed from real failures/staleness
+- checks[]
+- lastUpdated
+- staleSystems[]
+- failureCounts
+- recommendedActions[]
+
+No generated fake timestamps.
+
+2. Replace fake Integration Status endpoint
+File: server/routes.ts around makeIntegrations() and /api/integrations/overview
+
+Current problem:
+makeIntegrations() returns hardcoded fake integrations and fake lastSync values.
+
+Required:
+Replace with real integration health checks for:
+- Gmail
+- AgentMail
+- CEO Heartbeat
+- Workflow Queue
+- Agent Tools
+- Hermes
+- Obsidian
+- Stripe
+- SendGrid
+
+Each integration should include:
+- name
+- status: connected | degraded | disconnected | not_configured
+- lastSuccessfulRunAt
+- lastFailureAt
+- failureCount24h
+- sourceTable/sourceEndpoint used to determine status
+- notes
+
+Use real DB tables and env/config checks where applicable.
+If a service cannot be verified, return "not_configured" or "unknown", not fake healthy data.
+
+3. Enforce AgentMail safety gate
+Files:
+- server/services/agentmail-service.ts
+- server/services/agentmail-followup-service.ts
+- server/services/opportunity-outreach-execution-agent.ts
+- any route/service that calls sendAgentEmail() or replyFromAgentInbox()
+
+Current problem:
+Gmail send path is draft-only / approval-gated, but AgentMail can send directly.
+
+Required:
+Create a single centralized guard before any AgentMail outbound send:
+- check org AI governance / automation settings
+- check draft-only mode
+- check approvalRequired
+- check risk level
+- block direct send unless explicitly allowed by policy
+- default behavior must be draft/approval only
+
+If blocked:
+- create or keep pending approval item
+- write outbound_email_audit_log with status='blocked' or 'requires_approval'
+- do not send
+
+If allowed:
+- send only after policy passes
+- write outbound_email_audit_log
+- write agent_operating_timeline
+
+4. Add traceability fields
+Migration + schema updates:
+
+Add to autonomous_action_queue:
+- gmail_thread_id nullable
+- source_conversation_id nullable
+- source_action_id nullable
+- source_system text nullable
+
+Add to outbound_email_audit_log:
+- action_queue_id nullable
+- gmail_thread_id nullable
+- source_conversation_id nullable
+- agent_mail_message_id nullable
+
+Then update writers so:
+- Gmail-originated actions populate gmail_thread_id
+- Approval execution writes action_queue_id into outbound_email_audit_log
+- AgentMail sends write agent_mail_message_id
+- Audit logs can trace back to original Gmail conversation/action
+
+5. Add Hermes fallback logging
+Files:
+- server/services/hermes-service.ts
+- server/services/obsidian-service.ts
+- server/services/opportunity-learning-agent.ts
+
+Current problem:
+Hermes writes learning to Obsidian, but not reliably to agent_operating_timeline.
+
+Required:
+Any Hermes insight/event should also write to agent_operating_timeline.
+If Obsidian write fails, timeline logging must still succeed.
+Hermes should appear in real System Health with:
+- lastRunAt
+- lastInsightAt
+- lastFailureAt
+- failureCount24h
+
+6. Verification
+
+Run tests or add test scripts proving:
+- System Health no longer returns hardcoded fake scores
+- Integration Status no longer uses makeIntegrations() fake data
+- AgentMail cannot directly send when draft-only/approval mode is enabled
+- AgentMail blocked sends are logged
+- Outbound email audit rows link back to action queue/source conversation where available
+- Gmail-originated actions carry thread/conversation IDs
+- Hermes events appear in agent_operating_timeline
+- Mobile UI still loads without hard reset
+
+Deliver:
+- exact files changed
+- database migration summary
+- before/after endpoint example responses
+- known remaining gaps for Sprint 2
