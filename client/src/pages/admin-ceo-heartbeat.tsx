@@ -76,8 +76,8 @@ export default function AdminCeoHeartbeatPage() {
   const [timelineFilters, setTimelineFilters] = useState({
     agent: "",
     domain: "",
-    actionType: "",
-    actionStatus: "",
+    actionType: "all",
+    actionStatus: "all",
     since: "24h",
   });
 
@@ -122,8 +122,8 @@ export default function AdminCeoHeartbeatPage() {
       const params = new URLSearchParams({ orgId, since: sinceDate(timelineFilters.since), limit: "100" });
       if (timelineFilters.agent) params.set("agent", timelineFilters.agent);
       if (timelineFilters.domain) params.set("domain", timelineFilters.domain);
-      if (timelineFilters.actionType) params.set("actionType", timelineFilters.actionType);
-      if (timelineFilters.actionStatus) params.set("actionStatus", timelineFilters.actionStatus);
+      if (timelineFilters.actionType && timelineFilters.actionType !== "all") params.set("actionType", timelineFilters.actionType);
+      if (timelineFilters.actionStatus && timelineFilters.actionStatus !== "all") params.set("actionStatus", timelineFilters.actionStatus);
       return fetchJson(`/api/admin/ceo-heartbeat/timeline?${params}`);
     },
     enabled: !!orgId,
@@ -921,7 +921,7 @@ export default function AdminCeoHeartbeatPage() {
               </SelectContent>
             </Select>
 
-            <Select value={timelineFilters.actionType} onValueChange={v => setTimelineFilters(f => ({ ...f, actionType: v === "all" ? "" : v }))}>
+            <Select value={timelineFilters.actionType} onValueChange={v => setTimelineFilters(f => ({ ...f, actionType: v }))}>
               <SelectTrigger className="h-7 w-36 text-xs" data-testid="select-timeline-action-type">
                 <SelectValue placeholder="Action type" />
               </SelectTrigger>
@@ -939,7 +939,7 @@ export default function AdminCeoHeartbeatPage() {
               </SelectContent>
             </Select>
 
-            <Select value={timelineFilters.actionStatus} onValueChange={v => setTimelineFilters(f => ({ ...f, actionStatus: v === "all" ? "" : v }))}>
+            <Select value={timelineFilters.actionStatus} onValueChange={v => setTimelineFilters(f => ({ ...f, actionStatus: v }))}>
               <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-timeline-status">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
