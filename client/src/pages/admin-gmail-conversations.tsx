@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -688,19 +688,43 @@ export default function AdminGmailConversationsPage() {
 
   const syncStatusQuery = useQuery<GmailSyncStatus>({
     queryKey: ["/api/org/gmail/sync-status"],
-    refetchInterval: 60_000,
+    // Poll every 3s while running so the UI updates quickly after a sync finishes;
+    // fall back to 60s during idle/success/failed states.
+    refetchInterval: (query) => {
+      const status = (query.state.data as GmailSyncStatus | undefined)?.lastGmailSyncStatus;
+      return status === "running" ? 3_000 : 60_000;
+    },
   });
 
+  // Detect sync completion and show a toast + invalidate data queries.
+  const prevSyncStatus = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const current = syncStatusQuery.data?.lastGmailSyncStatus;
+    if (prevSyncStatus.current === "running" && current === "success") {
+      toast({ title: "Sync complete", description: "Conversations and actions have been refreshed." });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/actions"] });
+    } else if (prevSyncStatus.current === "running" && current === "failed") {
+      const errMsg = syncStatusQuery.data?.lastGmailSyncError;
+      toast({
+        title: "Sync failed",
+        description: errMsg ?? "Gmail sync encountered an error.",
+        variant: "destructive",
+      });
+    }
+    prevSyncStatus.current = current;
+  }, [syncStatusQuery.data?.lastGmailSyncStatus]);
+
   const syncMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/org/gmail/sync-replies"),
+    mutationFn: () => apiRequest("POST", "/api/org/gmail/sync-replies").then(r => r.json()),
     onSuccess: (data: any) => {
       if (data?.message === "Sync already in progress") {
         toast({ title: "Sync already in progress", description: "An hourly sync is running — try again shortly.", variant: "destructive" });
         return;
       }
-      toast({ title: "Sync complete", description: `${data.synced ?? 0} replies synced, ${data.classified ?? 0} classified, ${data.actionsQueued ?? 0} actions queued` });
-      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/conversations"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/actions"] });
+      // Sync is now non-blocking — it fires in the background.
+      // The completion toast is shown by the prevSyncStatus effect above.
+      toast({ title: "Sync started", description: "Gmail is syncing replies — status updates automatically." });
       queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/sync-status"] });
     },
     onError: (err: any) => {
@@ -708,20 +732,31 @@ export default function AdminGmailConversationsPage() {
         toast({ title: "Sync already in progress", description: "An hourly sync is running — try again shortly." });
         return;
       }
-      toast({ title: "Sync failed", description: err.message, variant: "destructive" });
+      // Parse structured backend error when available
+      let description = err.message ?? "Sync failed";
+      try {
+        const parsed = JSON.parse(description.replace(/^\d+:\s*/, ""));
+        description = parsed.error ?? parsed.message ?? description;
+      } catch { /* use raw message */ }
+      toast({ title: "Sync failed", description, variant: "destructive" });
     },
   });
 
   const testSyncMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/org/gmail/test-sync"),
+    mutationFn: () => apiRequest("POST", "/api/org/gmail/test-sync").then(r => r.json()),
     onSuccess: (data: any) => {
       setSyncLog(data.logs ?? []);
-      toast({ title: "Test sync complete", description: data.message });
+      toast({ title: "Test sync complete", description: data.message ?? "Test payloads injected." });
       queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/conversations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/actions"] });
     },
     onError: (err: any) => {
-      toast({ title: "Test sync failed", description: err.message, variant: "destructive" });
+      let description = err.message ?? "Test sync failed";
+      try {
+        const parsed = JSON.parse(description.replace(/^\d+:\s*/, ""));
+        description = parsed.error ?? parsed.message ?? description;
+      } catch { /* use raw message */ }
+      toast({ title: "Test sync failed", description, variant: "destructive" });
     },
   });
 

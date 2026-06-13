@@ -650,12 +650,14 @@ export async function runLeadReplyRecovery(orgId: string): Promise<{
           const { db: _db } = await import("../db");
           const { leadIntelligenceProfiles: _lip } = await import("@shared/schema");
           const { sql: _sql } = await import("drizzle-orm");
-          const [intelProfile] = await _db.execute(
+          const _rawResult = await _db.execute(
             _sql`SELECT id, submission_id FROM lead_intelligence_profiles
                  WHERE org_id = ${orgId}
                    AND normalized_profile_json->>'email' = ${senderEmail}
                  ORDER BY created_at DESC LIMIT 1`
           ) as any;
+          const _intelRows = Array.isArray(_rawResult) ? _rawResult : (_rawResult?.rows ?? []);
+          const intelProfile = _intelRows[0];
 
           if (intelProfile?.submission_id) {
             const { handleSchedulingIntent } = await import("./internal-scheduling-agent-service");

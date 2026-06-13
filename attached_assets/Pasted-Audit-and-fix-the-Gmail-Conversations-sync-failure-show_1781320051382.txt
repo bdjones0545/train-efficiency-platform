@@ -1,0 +1,76 @@
+Audit and fix the Gmail Conversations sync failure shown by the UI toast: “Sync failed — Load failed.”
+
+Context:
+The Gmail Conversations page loads existing stats successfully, but pressing “Test Sync” or “Sync Replies” fails. Auto-sync shows Running, but Last synced remains blank.
+
+Goals:
+1. Identify the exact frontend request fired by Test Sync and Sync Replies.
+2. Verify the backend route exists and is registered.
+3. Improve error visibility so the UI shows the real server error, not just “Load failed.”
+4. Fix the root cause of the sync failure.
+
+Check these areas:
+- Gmail/AgentMail routes registration in server/routes.ts
+- Any route files related to Gmail conversations, AgentMail, email sync, or inbound replies
+- Frontend API calls on the Gmail Conversations page
+- OAuth/env requirements:
+  - GOOGLE_CLIENT_ID
+  - GOOGLE_CLIENT_SECRET
+  - GOOGLE_REDIRECT_URI
+  - Gmail refresh/access token storage
+- Server logs from the failing sync request
+- Database reads/writes for gmail_conversations, email audit logs, pending actions, processed replies, or sync metadata
+
+Required fixes:
+1. Wrap the sync endpoint in try/catch and return structured errors:
+   {
+     success: false,
+     error: "human readable message",
+     details: "specific internal cause in development only"
+   }
+
+2. Update the frontend mutation/query error handler to display the backend error message:
+   - Prefer response.error
+   - fallback to response.message
+   - fallback to “Sync failed”
+
+3. Add server-side logging around the sync flow:
+   - sync started
+   - authenticated org/user resolved
+   - Gmail credentials/token found or missing
+   - Gmail API call started
+   - Gmail API call completed
+   - conversations processed count
+   - pending actions created count
+   - sync completed
+   - sync failed with stack trace
+
+4. Make the sync route resilient:
+   - One malformed email/conversation should not crash the entire sync
+   - Catch per-message errors
+   - Log failed message IDs
+   - Continue processing remaining messages
+   - Return partial success if applicable
+
+5. Validate route status:
+   - If route missing, register it.
+   - If auth middleware blocks it incorrectly, fix org/user resolution.
+   - If token missing/expired, return a clear “Reconnect Gmail” error.
+   - If database table/column missing, add migration/startup ensure logic.
+
+6. After fixing, test:
+   - Click Test Sync
+   - Click Sync Replies
+   - Confirm toast shows success or a specific actionable error
+   - Confirm Last synced updates
+   - Confirm stats refresh
+   - Confirm no uncaught server errors
+
+Acceptance criteria:
+- No generic “Load failed” toast unless the server is unreachable.
+- Failed Gmail credentials return “Gmail connection expired. Reconnect Gmail.”
+- Missing env vars return a clear configuration error.
+- Backend returns JSON for all expected failure paths.
+- Sync does not crash because of one bad email.
+- TypeScript passes with zero errors.
+- App starts cleanly.

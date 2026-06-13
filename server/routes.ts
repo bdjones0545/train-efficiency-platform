@@ -18721,23 +18721,41 @@ Respond with this exact JSON structure:
     }
   });
 
-  // POST /api/org/gmail/sync-replies — run the Lead Reply Recovery workflow
+  // POST /api/org/gmail/sync-replies — fire the Lead Reply Recovery workflow in the background
+  // Returns immediately so the browser does not time out on long syncs (can take 60-120s).
+  // The client polls GET /api/org/gmail/sync-status to track progress.
   app.post("/api/org/gmail/sync-replies", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId);
-      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      if (!profile?.organizationId) {
+        return res.status(400).json({ success: false, error: "No organization", message: "No organization" });
+      }
       const orgId = profile.organizationId;
-      const { runGmailSyncForOrg } = await import("./services/gmail-sync-state");
-      const result = await runGmailSyncForOrg(orgId, "manual");
-      if (result.alreadyRunning) {
+      console.log(`[gmail/sync-replies] sync requested — orgId=${orgId}`);
+
+      const { getGmailSyncStatus, runGmailSyncForOrg } = await import("./services/gmail-sync-state");
+
+      // Guard: already running (in-memory state check before acquiring the lock)
+      const currentStatus = getGmailSyncStatus(orgId);
+      if (currentStatus.lastGmailSyncStatus === "running") {
         return res.status(409).json({ message: "Sync already in progress" });
       }
-      console.log(`[gmail/sync-replies] orgId=${orgId}`, result);
-      res.json({ success: result.success, ...result });
+
+      // Fire sync in background — respond immediately so the browser doesn't time out
+      runGmailSyncForOrg(orgId, "manual")
+        .then(result => console.log(`[gmail/sync-replies] background sync done — orgId=${orgId}`, result))
+        .catch(err => console.error(`[gmail/sync-replies] background sync error — orgId=${orgId}:`, err.message));
+
+      console.log(`[gmail/sync-replies] background sync started — orgId=${orgId}`);
+      res.json({ success: true, started: true, message: "Sync started — status updates automatically" });
     } catch (err: any) {
       console.error("[gmail/sync-replies] error:", err);
-      res.status(500).json({ message: err.message ?? "Failed to sync replies" });
+      res.status(500).json({
+        success: false,
+        error: err.message ?? "Failed to start sync",
+        message: err.message ?? "Failed to start sync",
+      });
     }
   });
 
