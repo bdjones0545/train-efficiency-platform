@@ -22839,7 +22839,16 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
           .set({ executedAt: new Date() })
           .where(and(eq(gmailAgentActions.id, p.id), isNull(gmailAgentActions.executedAt)))
           .returning({ id: gmailAgentActions.id });
-        if (!_claimed) throw new Error("Already executed — concurrent request won the race");
+        if (!_claimed) {
+          // Surface the duplicate-approval race as an operational signal before throwing
+          (async () => {
+            try {
+              const { writeTimeline: _wt } = await import("./services/ceo-heartbeat-service");
+              await _wt({ orgId, agentName: "gmail_agent", actionType: "approval_race_detected", actionStatus: "blocked", priority: 90, summary: `Approval race blocked: action ${p.id} already claimed by a concurrent request`, metadata: { actionId: p.id, recipientEmail: p.recipientEmail ?? null } });
+            } catch {}
+          })();
+          throw new Error("Already executed — concurrent request won the race");
+        }
         const { messageId, threadId } = await sendEmail({ orgId, to: p.recipientEmail, subject: p.subject ?? "(no subject)", body: p.bodyPreview ?? "", leadId: p.leadId ?? undefined, dealId: p.dealId ?? undefined });
         await Promise.all([
           db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, p.id)),

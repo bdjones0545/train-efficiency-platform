@@ -147,6 +147,30 @@ export default function AdminCeoHeartbeatPage() {
     refetchOnMount: "always",
   });
 
+  const { data: dlqSummary } = useQuery<any>({
+    queryKey: ["/api/admin/ceo-heartbeat/dead-letter-summary", orgId],
+    enabled: !!orgId,
+    refetchInterval: 60_000,
+  });
+
+  const { data: ledgerHealth } = useQuery<any>({
+    queryKey: ["/api/admin/ceo-heartbeat/ledger-health", orgId],
+    enabled: !!orgId,
+    refetchInterval: 120_000,
+  });
+
+  const { data: lockContention } = useQuery<any>({
+    queryKey: ["/api/admin/ceo-heartbeat/lock-contention", orgId],
+    enabled: !!orgId,
+    refetchInterval: 60_000,
+  });
+
+  const { data: approvalRaceMetrics } = useQuery<any>({
+    queryKey: ["/api/admin/ceo-heartbeat/approval-race-metrics", orgId],
+    enabled: !!orgId,
+    refetchInterval: 60_000,
+  });
+
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
   const orgQs = orgId ? `?orgId=${orgId}` : "";
@@ -372,6 +396,102 @@ export default function AdminCeoHeartbeatPage() {
                 <a href="/admin/reliability" data-testid="link-reliability-dashboard">View Dashboard</a>
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Execution Safeguard Signals ── */}
+      {(dlqSummary || ledgerHealth || lockContention || approvalRaceMetrics) && (
+        <Card className={`border-l-4 w-full overflow-hidden ${
+          (dlqSummary?.severity === "critical" || ledgerHealth?.severity === "critical" || lockContention?.severity === "critical" || approvalRaceMetrics?.severity === "critical")
+            ? "border-l-red-500 bg-red-500/5"
+            : (dlqSummary?.severity === "warning" || ledgerHealth?.severity === "warning" || lockContention?.severity === "warning" || approvalRaceMetrics?.severity === "warning")
+            ? "border-l-yellow-500 bg-yellow-500/5"
+            : "border-l-emerald-500 bg-emerald-500/5"
+        }`} data-testid="card-safeguard-signals">
+          <CardContent className="pt-4 pb-3">
+            <div className="flex items-center gap-2 mb-3">
+              <ShieldAlert className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+              <span className="text-sm font-semibold">Execution Safeguard Signals</span>
+              <span className="text-xs text-muted-foreground">— live idempotency &amp; concurrency health</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {/* DLQ */}
+              <div className={`p-2 rounded border text-center ${
+                dlqSummary?.severity === "critical" ? "border-red-300 bg-red-50 dark:bg-red-950/30" :
+                dlqSummary?.severity === "warning"  ? "border-yellow-300 bg-yellow-50 dark:bg-yellow-950/30" :
+                "border-border bg-card/50"
+              }`} data-testid="signal-dlq">
+                <div className={`text-lg font-bold tabular-nums ${
+                  (dlqSummary?.total ?? 0) > 0 ? "text-red-500" : "text-emerald-500"
+                }`}>{dlqSummary?.total ?? "—"}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Dead-Letter Queue</div>
+                {(dlqSummary?.finalFailed ?? 0) > 0 && (
+                  <div className="text-[9px] text-red-500 mt-0.5">{dlqSummary.finalFailed} final-failed</div>
+                )}
+              </div>
+              {/* Ledger drift */}
+              <div className={`p-2 rounded border text-center ${
+                ledgerHealth?.severity === "critical" ? "border-red-300 bg-red-50 dark:bg-red-950/30" :
+                ledgerHealth?.severity === "warning"  ? "border-yellow-300 bg-yellow-50 dark:bg-yellow-950/30" :
+                "border-border bg-card/50"
+              }`} data-testid="signal-ledger-drift">
+                <div className={`text-lg font-bold tabular-nums ${
+                  (ledgerHealth?.drifters ?? 0) > 0 ? "text-red-500" : "text-emerald-500"
+                }`}>{ledgerHealth?.drifters ?? "—"}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Ledger Drifters</div>
+                {(ledgerHealth?.maxDriftCents ?? 0) > 0 && (
+                  <div className="text-[9px] text-red-500 mt-0.5">max {ledgerHealth.maxDriftCents}¢ off</div>
+                )}
+              </div>
+              {/* Lock contention */}
+              <div className={`p-2 rounded border text-center ${
+                lockContention?.severity === "critical" ? "border-red-300 bg-red-50 dark:bg-red-950/30" :
+                lockContention?.severity === "warning"  ? "border-yellow-300 bg-yellow-50 dark:bg-yellow-950/30" :
+                "border-border bg-card/50"
+              }`} data-testid="signal-lock-contention">
+                <div className={`text-lg font-bold tabular-nums ${
+                  (lockContention?.count ?? 0) >= 3 ? "text-yellow-500" :
+                  (lockContention?.count ?? 0) > 0  ? "text-muted-foreground" : "text-emerald-500"
+                }`}>{lockContention?.count ?? "—"}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Lock Blocks (24h)</div>
+                {(lockContention?.count ?? 0) >= 10 && (
+                  <div className="text-[9px] text-red-500 mt-0.5">high contention</div>
+                )}
+              </div>
+              {/* Approval races */}
+              <div className={`p-2 rounded border text-center ${
+                approvalRaceMetrics?.severity === "critical" ? "border-red-300 bg-red-50 dark:bg-red-950/30" :
+                approvalRaceMetrics?.severity === "warning"  ? "border-yellow-300 bg-yellow-50 dark:bg-yellow-950/30" :
+                "border-border bg-card/50"
+              }`} data-testid="signal-approval-races">
+                <div className={`text-lg font-bold tabular-nums ${
+                  (approvalRaceMetrics?.count ?? 0) >= 2 ? "text-yellow-500" :
+                  (approvalRaceMetrics?.count ?? 0) > 0  ? "text-muted-foreground" : "text-emerald-500"
+                }`}>{approvalRaceMetrics?.count ?? "—"}</div>
+                <div className="text-[10px] text-muted-foreground leading-tight">Approval Races (24h)</div>
+                {(approvalRaceMetrics?.count ?? 0) >= 5 && (
+                  <div className="text-[9px] text-red-500 mt-0.5">UI debounce needed</div>
+                )}
+              </div>
+            </div>
+            {/* Inline alerts for non-zero signals */}
+            {((dlqSummary?.finalFailed ?? 0) > 0 || (ledgerHealth?.drifters ?? 0) > 0) && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {(dlqSummary?.finalFailed ?? 0) > 0 && (
+                  <div className="flex items-center gap-1 text-[11px] text-red-600 bg-red-50 dark:bg-red-950/30 border border-red-200 rounded px-2 py-0.5" data-testid="alert-dlq-final-failed">
+                    <AlertTriangle className="h-3 w-3" />
+                    {dlqSummary.finalFailed} job(s) permanently failed — review Dead-Letter Queue
+                  </div>
+                )}
+                {(ledgerHealth?.drifters ?? 0) > 0 && (
+                  <div className="flex items-center gap-1 text-[11px] text-red-600 bg-red-50 dark:bg-red-950/30 border border-red-200 rounded px-2 py-0.5" data-testid="alert-ledger-drift">
+                    <AlertTriangle className="h-3 w-3" />
+                    {ledgerHealth.drifters} wallet(s) have balance drift — run repair via Billing dashboard
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

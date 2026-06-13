@@ -76,6 +76,19 @@ async function ensureReplyTables(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_approval    ON agent_mail_reply_queue (approval_status)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_inbox       ON agent_mail_reply_queue (inbox)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_inbound     ON agent_mail_reply_queue (inbound_message_id)`);
+    // Dedup migration: remove duplicate rows before creating the unique index.
+    // Keeps the oldest record per (organization_id, inbound_message_id) pair so
+    // the UNIQUE INDEX creation never fails on deployments with pre-existing dups.
+    await db.execute(sql`
+      DELETE FROM agent_mail_reply_queue
+      WHERE id NOT IN (
+        SELECT id FROM (
+          SELECT DISTINCT ON (organization_id, inbound_message_id) id
+          FROM agent_mail_reply_queue
+          ORDER BY organization_id, inbound_message_id, created_at ASC
+        ) dedup_set
+      )
+    `).catch(() => {});
     // Unique constraint: one reply draft per inbound message per org.
     // Prevents the same inbound email from spawning multiple simultaneous drafts
     // on webhook replay or concurrent worker pickup.

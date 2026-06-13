@@ -4,7 +4,7 @@ import { toZonedTime } from 'date-fns-tz';
 import { storage } from './storage';
 import crypto from 'crypto';
 import { db } from './db';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { orgAiGovernanceSettings, integrationExecutionLog } from '@shared/schema';
 import { logUnifiedAction } from './unified-action-logger';
 
@@ -62,6 +62,46 @@ function _markDeduped(to: string, type: string): void {
   for (const [k, ts] of _dedupCache.entries()) {
     if (ts < cutoff) _dedupCache.delete(k);
   }
+}
+
+// ── Persistent send fingerprint ───────────────────────────────────────────────
+// DB-backed dedup survives server restarts. Uses the same DEDUP_TTL_MS bucket
+// as the in-memory cache. Acts as a secondary defence: in-memory fires first,
+// DB fires if the process was restarted between two sends in the same window.
+
+let _fingerprintTableReady = false;
+
+async function _ensureFingerprintTable(): Promise<void> {
+  if (_fingerprintTableReady) return;
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS outbound_send_fingerprints (
+      fingerprint TEXT PRIMARY KEY,
+      email_type  TEXT NOT NULL,
+      to_email    TEXT NOT NULL,
+      org_id      TEXT,
+      sent_at     TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  // Purge stale entries (older than 2× the dedup window) to keep the table tiny
+  await db.execute(sql`
+    DELETE FROM outbound_send_fingerprints
+    WHERE sent_at < NOW() - INTERVAL '30 minutes'
+  `).catch(() => {});
+  _fingerprintTableReady = true;
+}
+
+async function _checkAndMarkFingerprint(to: string, emailType: string, orgId?: string): Promise<boolean> {
+  const bucket = Math.floor(Date.now() / DEDUP_TTL_MS);
+  const fp = crypto.createHash('sha256').update(`${to}::${emailType}::${bucket}`).digest('hex');
+  await _ensureFingerprintTable();
+  const result = await db.execute(sql`
+    INSERT INTO outbound_send_fingerprints (fingerprint, email_type, to_email, org_id)
+    VALUES (${fp}, ${emailType}, ${to}, ${orgId ?? null})
+    ON CONFLICT (fingerprint) DO NOTHING
+    RETURNING fingerprint
+  `);
+  const rows: any[] = Array.isArray(result) ? result : (result as any).rows ?? [];
+  return rows.length > 0; // true = first send (proceed), false = duplicate (block)
 }
 
 /**
@@ -394,6 +434,18 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
       try { await storage.createCommunicationLog({ orgId: logCtx.orgId, userId: logCtx.userId, coachId: logCtx.coachId, bookingId: logCtx.bookingId, agentActionId: logCtx.agentActionId, type: logCtx.type, channel: 'email', recipientEmail: to, subject, status: 'failed', provider: 'sendgrid', errorMessage: PAUSE_MSG }); } catch {}
       return;
     }
+  }
+
+  // ── DB-backed persistent fingerprint (survives restart, cross-process safe) ──
+  try {
+    const _fpOk = await _checkAndMarkFingerprint(to, emailType, logCtx?.orgId);
+    if (!_fpOk) {
+      console.log(`[Email] DB fingerprint dedup — blocking restart-survivor duplicate (type=${emailType}, to=${to})`);
+      return;
+    }
+  } catch (_fpErr: any) {
+    // Non-fatal: fingerprint table may not be ready; in-memory dedup already ran
+    console.warn('[Email] Fingerprint check skipped (non-fatal):', _fpErr?.message);
   }
 
   // ── Send ──────────────────────────────────────────────────────────────────

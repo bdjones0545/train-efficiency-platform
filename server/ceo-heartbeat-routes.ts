@@ -19,6 +19,7 @@ import {
   getHeartbeatStatus,
   getExecutionHealth,
   writeTimeline,
+  runLedgerDriftCheck,
 } from "./services/ceo-heartbeat-service";
 import { resolveOrgSession } from "./org-auth";
 
@@ -567,6 +568,197 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
           if (totalFeedback === 0) score -= 10;
           return Math.max(score, 0);
         })(),
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── Sprint 4: Signal Intelligence endpoints ────────────────────────────────
+
+  // Dead-letter queue depth summary
+  app.get("/api/admin/ceo-heartbeat/dead-letter-summary", async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+
+      const agentDlqResult = await db.execute(sql`
+        SELECT status, job_name, COUNT(*)::int AS count
+        FROM agent_dead_letter_queue
+        WHERE org_id = ${orgId}
+        GROUP BY status, job_name
+        ORDER BY count DESC
+      `).catch(() => []);
+      const agentRows: any[] = Array.isArray(agentDlqResult) ? agentDlqResult : (agentDlqResult as any).rows ?? [];
+
+      const wfDlqResult = await db.execute(sql`
+        SELECT job_name, COUNT(*)::int AS count
+        FROM workflow_jobs
+        WHERE organization_id = ${orgId} AND status = 'dead_letter'
+        GROUP BY job_name
+        ORDER BY count DESC
+      `).catch(() => []);
+      const wfRows: any[] = Array.isArray(wfDlqResult) ? wfDlqResult : (wfDlqResult as any).rows ?? [];
+
+      const byStatus: Record<string, number> = {};
+      const byJob: Record<string, number> = {};
+      for (const r of agentRows) {
+        byStatus[r.status] = (byStatus[r.status] ?? 0) + Number(r.count);
+        byJob[r.job_name] = (byJob[r.job_name] ?? 0) + Number(r.count);
+      }
+      for (const r of wfRows) {
+        byStatus['workflow_dead_letter'] = (byStatus['workflow_dead_letter'] ?? 0) + Number(r.count);
+        byJob[`workflow:${r.job_name}`] = Number(r.count);
+      }
+
+      const pending = (byStatus.pending ?? 0) + (byStatus.retrying ?? 0);
+      const finalFailed = byStatus.final_failed ?? 0;
+      const workflowDlq = byStatus.workflow_dead_letter ?? 0;
+      const total = pending + finalFailed + workflowDlq;
+
+      res.json({
+        total,
+        pending,
+        finalFailed,
+        workflowDlq,
+        byStatus,
+        byJob,
+        requiresAttention: finalFailed > 0 || pending >= 3,
+        severity: finalFailed > 0 ? "critical" : pending >= 3 ? "warning" : total > 0 ? "info" : "ok",
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Wallet ledger drift health
+  app.get("/api/admin/ceo-heartbeat/ledger-health", async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+
+      const driftResult = await runLedgerDriftCheck(orgId);
+
+      // Last drift event from financial_event_failures
+      const lastEventResult = await db.execute(sql`
+        SELECT created_at, failure_message
+        FROM financial_event_failures
+        WHERE source_type = 'ledger_drift'
+          AND (payload->>'userId') IN (
+            SELECT id FROM users WHERE organization_id = ${orgId}
+          )
+        ORDER BY created_at DESC
+        LIMIT 1
+      `).catch(() => []);
+      const lastEventRows: any[] = Array.isArray(lastEventResult) ? lastEventResult : (lastEventResult as any).rows ?? [];
+      const lastDriftEvent = lastEventRows[0] ?? null;
+
+      // Count of open (pending) drift records
+      const openDriftResult = await db.execute(sql`
+        SELECT COUNT(*)::int AS count
+        FROM financial_event_failures
+        WHERE source_type = 'ledger_drift' AND status = 'pending'
+      `).catch(() => []);
+      const openDriftRows: any[] = Array.isArray(openDriftResult) ? openDriftResult : (openDriftResult as any).rows ?? [];
+      const openDriftCount = Number(openDriftRows[0]?.count ?? 0);
+
+      res.json({
+        checked: driftResult.checked,
+        drifters: driftResult.drifters,
+        maxDriftCents: driftResult.maxDriftCents,
+        openDriftRecords: openDriftCount,
+        lastDriftEvent: lastDriftEvent ? { at: lastDriftEvent.created_at, message: lastDriftEvent.failure_message } : null,
+        status: driftResult.drifters === 0 ? "ok" : "drift_detected",
+        severity: driftResult.drifters === 0 ? "ok" : driftResult.maxDriftCents > 1000 ? "critical" : "warning",
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Lock contention events (last 24 h)
+  app.get("/api/admin/ceo-heartbeat/lock-contention", async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+
+      const result = await db.execute(sql`
+        SELECT id, summary, created_at, metadata
+        FROM agent_operating_timeline
+        WHERE org_id = ${orgId}
+          AND action_type = 'lock_contention'
+          AND created_at > NOW() - INTERVAL '24 hours'
+        ORDER BY created_at DESC
+        LIMIT 50
+      `).catch(() => []);
+      const rows: any[] = Array.isArray(result) ? result : (result as any).rows ?? [];
+
+      res.json({
+        count: rows.length,
+        events: rows.map(r => ({
+          id: r.id,
+          summary: r.summary,
+          at: r.created_at,
+          triggeredBy: r.metadata?.triggeredBy ?? null,
+          lockKey: r.metadata?.lockKey ?? null,
+        })),
+        requiresAttention: rows.length >= 5,
+        severity: rows.length >= 10 ? "critical" : rows.length >= 3 ? "warning" : rows.length > 0 ? "info" : "ok",
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Duplicate-approval race metrics (last 24 h)
+  app.get("/api/admin/ceo-heartbeat/approval-race-metrics", async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+
+      const result = await db.execute(sql`
+        SELECT id, summary, created_at, metadata
+        FROM agent_operating_timeline
+        WHERE org_id = ${orgId}
+          AND action_type = 'approval_race_detected'
+          AND created_at > NOW() - INTERVAL '24 hours'
+        ORDER BY created_at DESC
+        LIMIT 50
+      `).catch(() => []);
+      const rows: any[] = Array.isArray(result) ? result : (result as any).rows ?? [];
+
+      res.json({
+        count: rows.length,
+        events: rows.map(r => ({
+          id: r.id,
+          summary: r.summary,
+          at: r.created_at,
+          actionId: r.metadata?.actionId ?? null,
+          recipientEmail: r.metadata?.recipientEmail ?? null,
+        })),
+        requiresAttention: rows.length >= 3,
+        severity: rows.length >= 5 ? "critical" : rows.length >= 2 ? "warning" : rows.length > 0 ? "info" : "ok",
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // Outbound send fingerprint dedup log (last 24 h)
+  app.get("/api/admin/ceo-heartbeat/send-fingerprint-stats", async (req: any, res) => {
+    try {
+      const result = await db.execute(sql`
+        SELECT email_type, COUNT(*)::int AS count
+        FROM outbound_send_fingerprints
+        WHERE sent_at > NOW() - INTERVAL '24 hours'
+        GROUP BY email_type
+        ORDER BY count DESC
+      `).catch(() => []);
+      const rows: any[] = Array.isArray(result) ? result : (result as any).rows ?? [];
+      const total = rows.reduce((s: number, r: any) => s + Number(r.count), 0);
+      res.json({
+        totalDeduped: total,
+        byType: Object.fromEntries(rows.map((r: any) => [r.email_type, Number(r.count)])),
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });

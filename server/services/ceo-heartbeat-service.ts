@@ -18,6 +18,8 @@ import {
   athleteMemoryProfiles,
   athleteRiskFlags,
   workoutCompletionLogs,
+  walletTransactions,
+  users,
 } from "@shared/schema";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -687,7 +689,76 @@ async function coordinateAgents(orgId: string, heartbeatId: string): Promise<{
     errors.push(`software_improvement_agent: ${err.message}`);
   }
 
+  // 8. Ledger Drift Check — validate wallet balance integrity every cycle
+  try {
+    const driftResult = await runLedgerDriftCheck(orgId);
+    agentsCoordinated++;
+    const driftOk = driftResult.drifters === 0;
+    await writeTimeline({
+      orgId, heartbeatId, agentName: "ledger_integrity_agent",
+      systemName: "CEO Heartbeat", actionType: "ledger_drift_check",
+      actionStatus: driftOk ? "completed" : "failed",
+      priority: driftOk ? 20 : 95,
+      summary: driftOk
+        ? `Ledger integrity OK — ${driftResult.checked} wallet(s) checked, no drift`
+        : `LEDGER DRIFT DETECTED: ${driftResult.drifters}/${driftResult.checked} wallet(s) mismatched (max drift ${driftResult.maxDriftCents}¢)`,
+      metadata: { drifters: driftResult.drifters, checked: driftResult.checked, maxDriftCents: driftResult.maxDriftCents },
+    });
+    if (!driftOk) {
+      errors.push(`ledger_drift: ${driftResult.drifters} user(s) have balance mismatch`);
+    }
+  } catch (err: any) {
+    errors.push(`ledger_drift: ${err.message}`);
+  }
+
   return { agentsCoordinated, actionsEvaluated, errors };
+}
+
+// ─── Ledger drift check ───────────────────────────────────────────────────────
+
+export async function runLedgerDriftCheck(orgId: string): Promise<{
+  drifters: number;
+  checked: number;
+  maxDriftCents: number;
+  drifterDetails: { userId: string; storedCents: number; computedCents: number; driftCents: number }[];
+}> {
+  const result = await db.execute(sql`
+    SELECT u.id, u.balance_cents, COALESCE(SUM(wt.amount_cents), 0)::bigint AS computed
+    FROM users u
+    LEFT JOIN wallet_transactions wt ON wt.user_id = u.id
+    WHERE u.organization_id = ${orgId}
+    GROUP BY u.id, u.balance_cents
+  `);
+  const rows: any[] = Array.isArray(result) ? result : (result as any).rows ?? [];
+  const drifterDetails = rows
+    .filter(r => Number(r.balance_cents ?? 0) !== Number(r.computed ?? 0))
+    .map(r => ({
+      userId: r.id,
+      storedCents: Number(r.balance_cents ?? 0),
+      computedCents: Number(r.computed ?? 0),
+      driftCents: Number(r.balance_cents ?? 0) - Number(r.computed ?? 0),
+    }));
+  const maxDriftCents = drifterDetails.reduce((max, d) => Math.max(max, Math.abs(d.driftCents)), 0);
+
+  // Write each new drifter to financial_event_failures (skip if already pending for this user)
+  for (const d of drifterDetails) {
+    await db.execute(sql`
+      INSERT INTO financial_event_failures (source_type, payload, status, failure_message)
+      SELECT
+        'ledger_drift',
+        ${JSON.stringify({ userId: d.userId, storedCents: d.storedCents, computedCents: d.computedCents, driftCents: d.driftCents })}::jsonb,
+        'pending',
+        ${'Ledger drift: stored=' + d.storedCents + '¢ computed=' + d.computedCents + '¢ delta=' + d.driftCents + '¢'}
+      WHERE NOT EXISTS (
+        SELECT 1 FROM financial_event_failures
+        WHERE source_type = 'ledger_drift'
+          AND (payload->>'userId') = ${d.userId}
+          AND status = 'pending'
+      )
+    `).catch(() => {});
+  }
+
+  return { drifters: drifterDetails.length, checked: rows.length, maxDriftCents, drifterDetails };
 }
 
 // ─── Main heartbeat cycle ─────────────────────────────────────────────────────
@@ -705,6 +776,17 @@ export async function runHeartbeatCycle(opts: {
     // Block ALL concurrent runs — cron, manual, and startup — to prevent duplicate AI actions,
     // priority spam, and recommendation duplication.
     const trigger = triggeredBy ?? "cron";
+    // Surface lock contention as an operational signal in the timeline
+    writeTimeline({
+      orgId,
+      agentName: "ceo_heartbeat",
+      systemName: "CEO Heartbeat",
+      actionType: "lock_contention",
+      actionStatus: "blocked",
+      priority: 75,
+      summary: `Heartbeat blocked — lock already held (trigger: ${trigger})`,
+      metadata: { triggeredBy: trigger, lockKey },
+    }).catch(() => {});
     return { success: false, runId: "", priorities: [], errors: [`Lock already held — skipping duplicate ${trigger} run`] };
   }
 
