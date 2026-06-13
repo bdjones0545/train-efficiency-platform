@@ -106,11 +106,30 @@ export const queryClient = new QueryClient({
         keepalive: true,
       }).catch(() => {});
 
-      // 401: redirect unauthenticated users home
+      // 401: redirect unauthenticated users home — but ONLY when the auth cache
+      // confirms the user is truly logged out.  Firing window.location.href on
+      // every 401 (including permission-level errors on protected pages) causes
+      // authenticated users to be booted, especially on mobile Safari where the
+      // session cookie may not arrive until after the first page-data query fires.
+      //
+      //   undefined → auth query hasn't settled yet — let it resolve, do nothing
+      //   null      → user is confirmed not authenticated — redirect is correct
+      //   object    → user IS authenticated; this 401 is a permission/scope error,
+      //               not a missing session — suppress the redirect
       if (statusCode === 401) {
         if (!isPublicRoute(path)) {
-          console.warn("[QueryCache] 401 Unauthorized — redirecting to home from:", path);
-          window.location.href = "/";
+          const cachedUser = queryClient.getQueryData(["/api/auth/user"]);
+          if (cachedUser === null) {
+            console.warn("[QueryCache] 401 + auth cache is null — redirecting to home from:", path);
+            window.location.href = "/";
+          } else {
+            console.warn(
+              "[QueryCache] 401 on data query (auth cache:",
+              cachedUser === undefined ? "pending" : "authenticated",
+              ") — suppressing home redirect for:",
+              queryKey,
+            );
+          }
         }
       }
     },

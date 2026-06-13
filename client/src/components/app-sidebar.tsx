@@ -812,7 +812,7 @@ export function AppSidebar() {
       },
       {
         title: "AI Permissions",
-        url: "/admin/autonomy-trust",
+        url: "/admin/autonomy",
         icon: Shield,
         testId: "nav-ai-permissions",
       },
