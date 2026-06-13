@@ -488,8 +488,8 @@ function ExerciseLibraryPanel({
   onClose: () => void;
 }) {
   const [q, setQ] = useState("");
-  const [category, setCategory] = useState("");
-  const [difficulty, setDifficulty] = useState("");
+  const [category, setCategory] = useState("all");
+  const [difficulty, setDifficulty] = useState("all");
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
   const [newCat, setNewCat] = useState("strength");
@@ -498,8 +498,8 @@ function ExerciseLibraryPanel({
 
   const params = new URLSearchParams();
   if (q) params.set("q", q);
-  if (category) params.set("category", category);
-  if (difficulty) params.set("difficulty", difficulty);
+  if (category !== "all") params.set("category", category);
+  if (difficulty !== "all") params.set("difficulty", difficulty);
 
   const { data, isLoading, refetch } = useQuery<{ exercises: LibraryExercise[] }>({
     queryKey: ["/api/org/exercises", q, category, difficulty],
@@ -551,7 +551,7 @@ function ExerciseLibraryPanel({
               <SelectValue placeholder="All categories" />
             </SelectTrigger>
             <SelectContent className="bg-neutral-900 border-neutral-700">
-              <SelectItem value="" className="text-neutral-300 text-xs">All categories</SelectItem>
+              <SelectItem value="all" className="text-neutral-300 text-xs">All categories</SelectItem>
               {["strength", "power", "speed", "plyometric", "core", "conditioning", "mobility", "recovery"].map((c) => (
                 <SelectItem key={c} value={c} className="text-neutral-300 text-xs capitalize">{c}</SelectItem>
               ))}
@@ -562,7 +562,7 @@ function ExerciseLibraryPanel({
               <SelectValue placeholder="All levels" />
             </SelectTrigger>
             <SelectContent className="bg-neutral-900 border-neutral-700">
-              <SelectItem value="" className="text-neutral-300 text-xs">All levels</SelectItem>
+              <SelectItem value="all" className="text-neutral-300 text-xs">All levels</SelectItem>
               {["beginner", "intermediate", "advanced"].map((d) => (
                 <SelectItem key={d} value={d} className="text-neutral-300 text-xs capitalize">{d}</SelectItem>
               ))}

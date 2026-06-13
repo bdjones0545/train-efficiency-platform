@@ -220,10 +220,10 @@ export default function CoachEducationRulesPage() {
               </div>
             )}
             {form.triggerType === "pathway_completed" && (
-              <Select value={form._triggerPathwayId ?? ""} onValueChange={(v) => setForm((p: any) => ({ ...p, _triggerPathwayId: v }))}>
+              <Select value={form._triggerPathwayId ?? "any"} onValueChange={(v) => setForm((p: any) => ({ ...p, _triggerPathwayId: v === "any" ? null : v }))}>
                 <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Any pathway (optional)" /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Any pathway</SelectItem>
+                  <SelectItem value="any">Any pathway</SelectItem>
                   {publishedPathways.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>)}
                 </SelectContent>
               </Select>
