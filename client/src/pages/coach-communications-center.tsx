@@ -229,7 +229,7 @@ function ComposeDialog({
                 <SelectValue placeholder="Select athlete…" />
               </SelectTrigger>
               <SelectContent>
-                {athletes.map((a) => (
+                {(athletes as any[]).filter((a) => !!a.userId && a.userId.trim() !== "").map((a) => (
                   <SelectItem key={a.userId} value={a.userId}>{a.name}</SelectItem>
                 ))}
               </SelectContent>
@@ -274,7 +274,7 @@ function ComposeDialog({
                 <SelectValue placeholder="Choose a template…" />
               </SelectTrigger>
               <SelectContent>
-                {templates.map((t) => (
+                {(templates as any[]).filter((t) => !!t.id && t.id.trim() !== "").map((t) => (
                   <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>
                 ))}
               </SelectContent>
@@ -384,7 +384,7 @@ function AIQuickGenerate({ orgToken, athletes }: { orgToken: string | null; athl
               <SelectValue placeholder="Select athlete…" />
             </SelectTrigger>
             <SelectContent>
-              {athletes.map((a) => (
+              {(athletes as any[]).filter((a) => !!a.userId && a.userId.trim() !== "").map((a) => (
                 <SelectItem key={a.userId} value={a.userId}>{a.name}</SelectItem>
               ))}
             </SelectContent>

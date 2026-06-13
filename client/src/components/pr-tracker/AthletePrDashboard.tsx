@@ -260,7 +260,7 @@ export function AthletePrDashboard({
                   <SelectValue placeholder="Choose exercise" />
                 </SelectTrigger>
                 <SelectContent>
-                  {liftTypes.map((lt) => (
+                  {liftTypes.filter((lt) => !!lt.id && lt.id.trim() !== "").map((lt) => (
                     <SelectItem key={lt.id} value={lt.id}>
                       {lt.name} ({lt.unit})
                     </SelectItem>

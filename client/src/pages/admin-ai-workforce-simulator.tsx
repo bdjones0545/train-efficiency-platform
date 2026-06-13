@@ -161,7 +161,7 @@ export default function AdminAiWorkforceSimulator() {
                     <SelectValue placeholder="Choose a recommendation..." />
                   </SelectTrigger>
                   <SelectContent className="bg-gray-800 border-gray-700 max-h-60">
-                    {(recs ?? []).map((rec: any) => (
+                    {(recs ?? []).filter((rec: any) => !!rec.id && rec.id.trim() !== "").map((rec: any) => (
                       <SelectItem key={rec.id} value={rec.id} className="text-sm">
                         <span className="font-medium">{rec.agentName}</span> · {rec.title.substring(0, 50)}
                       </SelectItem>

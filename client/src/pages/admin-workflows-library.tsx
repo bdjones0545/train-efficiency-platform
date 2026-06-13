@@ -208,7 +208,7 @@ export default function AdminWorkflowsLibraryPage() {
     return matchesSearch && matchesCat && matchesRisk;
   });
 
-  const categories = [...new Set(graphs.map(g => g.category))];
+  const categories = [...new Set(graphs.map(g => g.category))].filter((c): c is string => !!c && c.trim() !== "");
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-6" data-testid="page-workflows-library">

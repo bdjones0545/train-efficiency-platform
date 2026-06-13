@@ -811,10 +811,11 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">No contract (manual)</SelectItem>
-                      {teamContracts.map((contract) => {
+                      {teamContracts.filter((contract) => !!(contract.programId || contract.id)).map((contract) => {
+                        const contractKey = contract.programId || contract.id;
                         const monthlyCost = (contract.totalCents / 100).toFixed(2);
                         return (
-                          <SelectItem key={contract.programId || contract.id} value={contract.programId || contract.id} data-testid={`option-contract-${contract.programId || contract.id}`}>
+                          <SelectItem key={contractKey} value={contractKey} data-testid={`option-contract-${contractKey}`}>
                             {contract.teamName} — ${monthlyCost}/mo ({contract.numberOfAthletes} athletes, {contract.frequency})
                           </SelectItem>
                         );

@@ -198,7 +198,7 @@ export default function CoachEducationPlansPage() {
                     <SelectValue placeholder="Choose pathway..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {pathways.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>)}
+                    {(pathways as any[]).filter((p) => !!p.id && p.id.trim() !== "").map((p: any) => <SelectItem key={p.id} value={p.id}>{p.title}</SelectItem>)}
                   </SelectContent>
                 </Select>
                 <Input placeholder="Notes" value={w.notes}

@@ -145,7 +145,7 @@ export function OrgMessageComposer({
                       <SelectValue placeholder="Select athlete…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {athletes.map((a: any) => (
+                      {(athletes as any[]).filter((a) => !!a.userId && a.userId.trim() !== "").map((a: any) => (
                         <SelectItem key={a.userId} value={a.userId}>
                           {a.firstName ?? ""} {a.lastName ?? ""}
                         </SelectItem>
@@ -167,7 +167,7 @@ export function OrgMessageComposer({
                       <SelectValue placeholder="Select team…" />
                     </SelectTrigger>
                     <SelectContent>
-                      {teams.map((t: any) => (
+                      {(teams as any[]).filter((t) => !!t.id && t.id.trim() !== "").map((t: any) => (
                         <SelectItem key={t.id} value={t.id}>{t.name ?? t.teamName ?? t.id}</SelectItem>
                       ))}
                     </SelectContent>

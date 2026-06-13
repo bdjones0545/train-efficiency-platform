@@ -469,7 +469,7 @@ export default function CoachAthleteDetailPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="__all__">All lifts</SelectItem>
-                    {Object.entries(profile.prHistory).map(([liftTypeId, entries]) => (
+                    {Object.entries(profile.prHistory).filter(([liftTypeId]) => !!liftTypeId && liftTypeId.trim() !== "").map(([liftTypeId, entries]) => (
                       <SelectItem key={liftTypeId} value={liftTypeId}>{entries[0]?.liftName || liftTypeId}</SelectItem>
                     ))}
                   </SelectContent>
