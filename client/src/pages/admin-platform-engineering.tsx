@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, type ReactNode } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -273,8 +274,8 @@ function SpecsTab() {
   const { toast } = useToast();
 
   const specMutation = useMutation({
-    mutationFn: (featureIdea: string) => apiRequest("POST", "/api/platform-engineering/specification", { featureIdea }).then(r => r.json()),
-    onSuccess: (data: any) => setSpec(data),
+    mutationFn: (featureIdea: string) => apiRequest("POST", "/api/platform-engineering/specification", { featureIdea }).then(parseApiResponse),
+    onSuccess: (data: any) => { if (data && Object.keys(data).length) setSpec(data); },
     onError: () => toast({ title: "Failed to generate specification", variant: "destructive" }),
   });
 
@@ -408,8 +409,8 @@ function SimulateTab() {
   const { toast } = useToast();
 
   const simMutation = useMutation({
-    mutationFn: (f: string) => apiRequest("POST", "/api/platform-engineering/simulate", { feature: f }).then(r => r.json()),
-    onSuccess: (data: any) => setResult(data),
+    mutationFn: (f: string) => apiRequest("POST", "/api/platform-engineering/simulate", { feature: f }).then(parseApiResponse),
+    onSuccess: (data: any) => { if (data && Object.keys(data).length) setResult(data); },
     onError: () => toast({ title: "Simulation failed", variant: "destructive" }),
   });
 
@@ -824,8 +825,8 @@ function AdvisorTab() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const advisorMutation = useMutation({
-    mutationFn: (q: string) => apiRequest("POST", "/api/platform-engineering/advisor", { question: q }).then(r => r.json()),
-    onSuccess: (data: any) => setConvo(prev => [...prev, { role: "advisor", text: data.answer }]),
+    mutationFn: (q: string) => apiRequest("POST", "/api/platform-engineering/advisor", { question: q }).then(parseApiResponse),
+    onSuccess: (data: any) => setConvo(prev => [...prev, { role: "advisor", text: data?.answer ?? "" }]),
   });
 
   const send = () => {

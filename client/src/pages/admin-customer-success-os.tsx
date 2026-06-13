@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -456,9 +457,9 @@ function AiCsmTab() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const csmMutation = useMutation({
-    mutationFn: (q: string) => apiRequest("POST", "/api/customer-success/ai-csm", { question: q }).then(r => r.json()),
+    mutationFn: (q: string) => apiRequest("POST", "/api/customer-success/ai-csm", { question: q }).then(parseApiResponse),
     onSuccess: (data: any) => {
-      setConversation(prev => [...prev, { role: "csm", text: data.answer, ts: new Date() }]);
+      setConversation(prev => [...prev, { role: "csm", text: data?.answer ?? "", ts: new Date() }]);
     },
   });
 

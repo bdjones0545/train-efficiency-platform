@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -576,14 +577,14 @@ export default function AdminHermesPage() {
   });
 
   const runMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/hermes/run", {}).then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/hermes/run", {}).then(parseApiResponse),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/hermes/stats"] });
       queryClient.invalidateQueries({ queryKey: ["/api/hermes/recommendations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/hermes/health"] });
       toast({
         title: "Hermes cycle complete",
-        description: `${data.signalsProcessed ?? 0} signals → ${data.recommendationsGenerated ?? 0} recommendations`,
+        description: `${data?.signalsProcessed ?? 0} signals → ${data?.recommendationsGenerated ?? 0} recommendations`,
       });
     },
     onError: (e: any) => {

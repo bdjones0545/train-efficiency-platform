@@ -12,6 +12,7 @@ import {
   BarChart3, Award, Shield,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -89,10 +90,10 @@ export default function AdminAiWorkforceOutcomes() {
   });
 
   const refreshMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/workforce/opportunities/refresh").then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/workforce/opportunities/refresh").then(parseApiResponse),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/workforce/opportunities"] });
-      toast({ title: `${data.inserted ?? 0} new opportunities found` });
+      toast({ title: `${data?.inserted ?? 0} new opportunities found` });
     },
   });
 

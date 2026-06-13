@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -327,9 +328,9 @@ function BulkGenerateDialog({
   const mutation = useMutation({
     mutationFn: () => apiRequest("POST", "/api/ai-outreach/bulk-generate", {
       domain, messageType, prospectIds: selected,
-    }).then(r => r.json()),
+    }).then(parseApiResponse),
     onSuccess: (data: any) => {
-      toast({ title: `${data.succeeded} drafts queued in AI Comms Center` });
+      toast({ title: `${data?.succeeded ?? 0} drafts queued in AI Comms Center` });
       setSelected([]); setMessageType(""); onDone(); onClose();
     },
     onError: (e: any) => toast({ title: "Bulk generate failed", description: e.message, variant: "destructive" }),

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -215,11 +216,11 @@ export default function AdminAutonomyControlsPage() {
   });
 
   const executorMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/admin/autonomy/executor/run", {}).then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/admin/autonomy/executor/run", {}).then(parseApiResponse),
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ["/api/admin/autonomy/decisions"] });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/autonomy/stats"] });
-      toast({ title: "Executor cycle complete", description: `${data.stats?.evaluated ?? 0} actions evaluated.` });
+      toast({ title: "Executor cycle complete", description: `${data?.stats?.evaluated ?? 0} actions evaluated.` });
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
   });

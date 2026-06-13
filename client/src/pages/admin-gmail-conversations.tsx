@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -716,7 +717,7 @@ export default function AdminGmailConversationsPage() {
   }, [syncStatusQuery.data?.lastGmailSyncStatus]);
 
   const syncMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/org/gmail/sync-replies").then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/org/gmail/sync-replies").then(parseApiResponse),
     onSuccess: (data: any) => {
       if (data?.message === "Sync already in progress") {
         toast({ title: "Sync already in progress", description: "An hourly sync is running — try again shortly.", variant: "destructive" });
@@ -743,10 +744,10 @@ export default function AdminGmailConversationsPage() {
   });
 
   const testSyncMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/org/gmail/test-sync").then(r => r.json()),
+    mutationFn: () => apiRequest("POST", "/api/org/gmail/test-sync").then(parseApiResponse),
     onSuccess: (data: any) => {
-      setSyncLog(data.logs ?? []);
-      toast({ title: "Test sync complete", description: data.message ?? "Test payloads injected." });
+      setSyncLog(data?.logs ?? []);
+      toast({ title: "Test sync complete", description: data?.message ?? "Test payloads injected." });
       queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/conversations"] });
       queryClient.invalidateQueries({ queryKey: ["/api/org/gmail/actions"] });
     },

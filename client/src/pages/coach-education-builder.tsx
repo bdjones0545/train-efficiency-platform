@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { usePermissions } from "@/hooks/use-permissions";
 import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
@@ -156,11 +157,11 @@ export default function CoachEducationBuilderPage() {
   });
 
   const copyPathwayMut = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/org/education/pathways/${id}/copy`, {}, buildHeaders()).then(r => r.json()),
+    mutationFn: (id: string) => apiRequest("POST", `/api/org/education/pathways/${id}/copy`, {}, buildHeaders()).then(parseApiResponse),
     onSuccess: (data: any) => {
       refetchPathways();
       toast({ title: "Pathway copied to your library", description: "You can now customize it for your organization." });
-      setSelectedPathway(data.pathway);
+      if (data?.pathway) setSelectedPathway(data.pathway);
       setActiveTab("builder");
     },
     onError: () => toast({ title: "Error copying pathway", variant: "destructive" }),
@@ -186,15 +187,15 @@ export default function CoachEducationBuilderPage() {
   }
 
   const acceptFullProgramMut = useMutation({
-    mutationFn: (draft: any) => apiRequest("POST", "/api/org/education/ai/accept-full-pathway", { draft }, buildHeaders()).then(r => r.json()),
+    mutationFn: (draft: any) => apiRequest("POST", "/api/org/education/ai/accept-full-pathway", { draft }, buildHeaders()).then(parseApiResponse),
     onSuccess: (data: any) => {
       refetchPathways();
       setFullProgramDraft(null);
       setFullProgramMode(false);
       setFullProgramForm({ prompt: "", ageGroup: "", sport: "", numModules: 6, difficulty: "beginner", coachPhilosophy: "", teachingStyle: "", bannedTerms: "", emphasisAreas: "" });
       setShowPhilosophySettings(false);
-      toast({ title: "Program created!", description: `${data.modulesCount} modules ready. Add YouTube links then publish.` });
-      const pathway = data.pathway;
+      toast({ title: "Program created!", description: `${data?.modulesCount ?? 0} modules ready. Add YouTube links then publish.` });
+      const pathway = data?.pathway;
       if (pathway) { setSelectedPathway(pathway); setActiveTab("builder"); }
     },
     onError: () => toast({ title: "Error creating program", variant: "destructive" }),

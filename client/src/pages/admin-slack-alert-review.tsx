@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -300,12 +301,12 @@ export default function AdminSlackAlertReviewPage() {
 
   const approveMutation = useMutation({
     mutationFn: (id: string) =>
-      apiRequest("POST", `/api/composio/slack-alert/${id}/approve`).then(r => r.json()),
+      apiRequest("POST", `/api/composio/slack-alert/${id}/approve`).then(parseApiResponse),
     onMutate: (id) => { setActioningId(id); setActionType("approve"); },
     onSuccess: (data: any) => {
       toast({
         title: "Slack Alert Posted",
-        description: data.message ?? "Alert successfully posted to Slack.",
+        description: data?.message ?? "Alert successfully posted to Slack.",
       });
       invalidate();
     },

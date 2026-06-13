@@ -2,6 +2,7 @@ import { useState, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -254,8 +255,8 @@ function CampaignBuilderTab() {
   const { toast } = useToast();
 
   const buildMutation = useMutation({
-    mutationFn: (g: string) => apiRequest("POST", "/api/execution/campaign-builder", { goal: g }).then(r => r.json()),
-    onSuccess: (data: any) => setCampaign(data.campaign),
+    mutationFn: (g: string) => apiRequest("POST", "/api/execution/campaign-builder", { goal: g }).then(parseApiResponse),
+    onSuccess: (data: any) => setCampaign(data?.campaign ?? null),
     onError: () => toast({ title: "Campaign generation failed", variant: "destructive" }),
   });
 
@@ -599,8 +600,8 @@ function AiCooTab() {
   const { toast } = useToast();
 
   const cooMutation = useMutation({
-    mutationFn: (q: string) => apiRequest("POST", "/api/execution/coo", { question: q }).then(r => r.json()),
-    onSuccess: (data: any) => setAnswer(data.answer),
+    mutationFn: (q: string) => apiRequest("POST", "/api/execution/coo", { question: q }).then(parseApiResponse),
+    onSuccess: (data: any) => setAnswer(data?.answer ?? null),
     onError: () => toast({ title: "AI COO unavailable", variant: "destructive" }),
   });
 

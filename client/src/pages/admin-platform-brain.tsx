@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { parseApiResponse } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -728,9 +729,9 @@ function AdvisorTab() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const advisorMutation = useMutation({
-    mutationFn: (q: string) => apiRequest("POST", "/api/platform-brain/advisor", { question: q }).then(r => r.json()),
+    mutationFn: (q: string) => apiRequest("POST", "/api/platform-brain/advisor", { question: q }).then(parseApiResponse),
     onSuccess: (data: any) => {
-      setConversation(prev => [...prev, { role: "advisor", text: data.answer, ts: new Date() }]);
+      setConversation(prev => [...prev, { role: "advisor", text: data?.answer ?? "", ts: new Date() }]);
     },
   });
 
