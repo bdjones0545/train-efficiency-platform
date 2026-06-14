@@ -410,7 +410,7 @@ export default function AdminWorkflowOrchestratorPage() {
     if (!search.trim()) return true;
     const q = search.toLowerCase();
     const meta = r.metadata || {};
-    return r.workflowTemplateKey.includes(q) ||
+    return (r.workflowTemplateKey ?? "").includes(q) ||
       (meta.clientName || "").toLowerCase().includes(q) ||
       r.status.includes(q);
   });
