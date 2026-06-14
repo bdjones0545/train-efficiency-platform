@@ -87,7 +87,43 @@ class BrainPortalErrorBoundary extends Component<
   }
 }
 
-// ─── Obsidian Status Card ─────────────────────────────────────────────────────
+// ─── Product Memory Card (DB-backed, always available) ───────────────────────
+
+function ProductMemoryCard() {
+  const { data } = useQuery<any>({
+    queryKey: ["/api/organizational-memory/auto-capture-stats"],
+    queryFn: () => fetchJson("/api/organizational-memory/auto-capture-stats"),
+    staleTime: 60_000,
+    retry: false,
+  });
+
+  const sources: any[] = Array.isArray(data?.sources) ? data.sources : [];
+  const totalEntries = sources.reduce((sum: number, s: any) => sum + (s.count ?? 0), 0);
+  const activeSourceCount = sources.filter((s: any) => (s.count ?? 0) > 0).length;
+
+  return (
+    <div className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3">
+      <p className="text-[10px] font-semibold text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+        <BookOpen className="h-3 w-3" /> Product Memory
+      </p>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+        {[
+          { label: "Status",        value: "Operational",                               color: "text-green-400" },
+          { label: "Total Entries",  value: totalEntries,                                color: "text-emerald-400" },
+          { label: "Active Sources", value: `${activeSourceCount} / ${sources.length}`, color: "text-zinc-300" },
+          { label: "Type",           value: "DB-backed",                                color: "text-zinc-400" },
+        ].map(row => (
+          <div key={row.label} className="flex items-baseline gap-1.5 text-xs min-w-0">
+            <span className="text-zinc-500 shrink-0">{row.label}:</span>
+            <span className={`${row.color} truncate font-medium`}>{row.value}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── External Obsidian Sync Card (optional, only shown when configured) ───────
 
 function ObsidianStatusCard() {
   const { data } = useQuery<any>({
@@ -107,14 +143,14 @@ function ObsidianStatusCard() {
   return (
     <div className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3">
       <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-        <BookOpen className="h-3 w-3" /> Obsidian Memory
+        <BookOpen className="h-3 w-3" /> External Obsidian Sync
       </p>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1">
         {[
-          { label: "Status",       value: connected ? "Connected" : "Offline",          color: connected ? "text-green-400" : "text-red-400" },
-          { label: "Last Sync",    value: lastSync,                                      color: "text-zinc-300" },
-          { label: "Notes Today",  value: data?.notesCreatedToday ?? 0,                 color: "text-purple-400" },
-          { label: "Searches",     value: data?.searchesPerformed ?? 0,                 color: "text-blue-400" },
+          { label: "Sync",       value: connected ? "Connected" : "Not connected (optional)", color: connected ? "text-green-400" : "text-zinc-500" },
+          { label: "Last Sync",  value: connected ? lastSync : "—",                            color: "text-zinc-300" },
+          { label: "Notes",      value: connected ? (data?.notesCreatedToday ?? 0) : "—",      color: "text-purple-400" },
+          { label: "Searches",   value: connected ? (data?.searchesPerformed ?? 0) : "—",      color: "text-blue-400" },
         ].map(row => (
           <div key={row.label} className="flex items-baseline gap-1.5 text-xs min-w-0">
             <span className="text-zinc-500 shrink-0">{row.label}:</span>
@@ -138,22 +174,33 @@ function CeoHomeTab({ onSwitchTab }: { onSwitchTab: (t: Tab) => void }) {
     queryKey: ["/api/admin/ceo-heartbeat/priorities"],
     queryFn: () => fetchJson("/api/admin/ceo-heartbeat/priorities"),
   });
-  const { data: agents } = useQuery<any>({
-    queryKey: ["/api/workforce/agents"],
-    queryFn: () => fetchJson("/api/workforce/agents"),
+  // Use /api/workforce/health for reliable agent counts (computes active/disabled directly)
+  const { data: workforceHealth } = useQuery<any>({
+    queryKey: ["/api/workforce/health"],
+    queryFn: () => fetchJson("/api/workforce/health"),
+    staleTime: 30_000,
+    retry: false,
   });
   const { data: approvalMetrics } = useQuery<any>({
     queryKey: ["/api/ai-approvals/metrics"],
     queryFn: () => fetchJson("/api/ai-approvals/metrics"),
   });
 
-  const agentsList: any[] = Array.isArray(agents) ? agents : [];
-  const activeAgents = agentsList.filter(a => a.enabled).length;
-  const totalAgents = agentsList.length;
-  const pendingApprovals = approvalMetrics?.pending ?? 0;
-  const lastRun = heartbeat?.lastRun;
-  const nextRun = heartbeat?.nextRun;
-  const successRate = heartbeat?.successRate ?? null;
+  // Agent counts from workforce health (computes activeAgents/disabledAgents server-side)
+  const activeAgents: number = workforceHealth?.activeAgents ?? 0;
+  const totalAgents: number = (workforceHealth?.activeAgents ?? 0) + (workforceHealth?.disabledAgents ?? 0);
+  const pendingApprovals = approvalMetrics?.pending ?? workforceHealth?.approvalsPending ?? 0;
+
+  // Heartbeat: lastRun is a full DB row — use startedAt for the timestamp.
+  // nextHeartbeatAt is the correct field name (not nextRun).
+  // successRate must be computed from recentRuns since it is not stored directly.
+  const lastRunTimestamp: string | null =
+    heartbeat?.lastRun?.startedAt ?? heartbeat?.lastHeartbeatAt ?? null;
+  const nextRunTimestamp: string | null = heartbeat?.nextHeartbeatAt ?? null;
+  const recentRuns: any[] = Array.isArray(heartbeat?.recentRuns) ? heartbeat.recentRuns : [];
+  const successRate: number | null = recentRuns.length > 0
+    ? Math.round((recentRuns.filter((r: any) => r.status === "completed").length / recentRuns.length) * 100)
+    : null;
 
   const rawPriorities: any[] = Array.isArray(prioritiesData?.priorities)
     ? prioritiesData.priorities
@@ -263,8 +310,8 @@ function CeoHomeTab({ onSwitchTab }: { onSwitchTab: (t: Tab) => void }) {
           <Activity className="h-3 w-3" /> Heartbeat
         </p>
         {[
-          { label: "Last run", value: lastRun ? new Date(lastRun).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—" },
-          { label: "Next run", value: nextRun ? new Date(nextRun).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Automatic" },
+          { label: "Last run", value: lastRunTimestamp ? new Date(lastRunTimestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—" },
+          { label: "Next run", value: nextRunTimestamp ? new Date(nextRunTimestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Automatic" },
           { label: "Success rate", value: successRate != null ? `${successRate}%` : "—" },
         ].map(row => (
           <div key={row.label} className="flex items-baseline gap-1.5 text-xs min-w-0">
@@ -274,7 +321,10 @@ function CeoHomeTab({ onSwitchTab }: { onSwitchTab: (t: Tab) => void }) {
         ))}
       </div>
 
-      {/* Obsidian Memory Status */}
+      {/* Product Memory (DB-backed, always available) */}
+      <ProductMemoryCard />
+
+      {/* External Obsidian Sync (optional, only shown when configured) */}
       <ObsidianStatusCard />
 
       {/* Executive summary */}
