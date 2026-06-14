@@ -31,7 +31,14 @@ export function registerObsidianRoutes(
       const status = getObsidianStatus();
       if (status.configured) {
         const conn = await checkConnection();
-        res.json({ ...status, connected: conn.connected, vaultName: conn.vaultName, version: conn.version });
+        res.json({
+          ...status,
+          connected: conn.connected,
+          vaultName: conn.vaultName,
+          version: conn.version,
+          // Pass specific error message so the frontend can display why it failed
+          connectionError: conn.connected ? undefined : conn.error,
+        });
       } else {
         res.json(status);
       }

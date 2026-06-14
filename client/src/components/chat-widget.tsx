@@ -129,16 +129,17 @@ function ObsidianStatusCard() {
   const { data } = useQuery<any>({
     queryKey: ["/api/obsidian/status"],
     queryFn: () => fetchJson("/api/obsidian/status"),
-    staleTime: 60_000,
+    staleTime: 30_000,
     retry: false,
   });
 
   if (!data?.configured) return null;
 
-  const connected = data?.connected ?? false;
+  const connected: boolean = data?.connected ?? false;
   const lastSync = data?.lastSyncAt
     ? new Date(data.lastSyncAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
     : "—";
+  const connectionError: string | undefined = data?.connectionError;
 
   return (
     <div className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3">
@@ -147,10 +148,10 @@ function ObsidianStatusCard() {
       </p>
       <div className="grid grid-cols-2 gap-x-3 gap-y-1">
         {[
-          { label: "Sync",       value: connected ? "Connected" : "Not connected (optional)", color: connected ? "text-green-400" : "text-zinc-500" },
-          { label: "Last Sync",  value: connected ? lastSync : "—",                            color: "text-zinc-300" },
-          { label: "Notes",      value: connected ? (data?.notesCreatedToday ?? 0) : "—",      color: "text-purple-400" },
-          { label: "Searches",   value: connected ? (data?.searchesPerformed ?? 0) : "—",      color: "text-blue-400" },
+          { label: "Sync",      value: connected ? "Connected" : "Unreachable", color: connected ? "text-green-400" : "text-amber-400" },
+          { label: "Last Sync", value: connected ? lastSync : "—",               color: "text-zinc-300" },
+          { label: "Notes",     value: connected ? (data?.notesCreatedToday ?? 0) : "—", color: "text-purple-400" },
+          { label: "Searches",  value: connected ? (data?.searchesPerformed ?? 0) : "—", color: "text-blue-400" },
         ].map(row => (
           <div key={row.label} className="flex items-baseline gap-1.5 text-xs min-w-0">
             <span className="text-zinc-500 shrink-0">{row.label}:</span>
@@ -158,6 +159,9 @@ function ObsidianStatusCard() {
           </div>
         ))}
       </div>
+      {!connected && connectionError && (
+        <p className="mt-2 text-[10px] text-amber-400/80 leading-snug">{connectionError}</p>
+      )}
     </div>
   );
 }

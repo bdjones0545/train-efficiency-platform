@@ -27,6 +27,8 @@ interface ObsidianStatus {
   searchesPerformed: number;
   vaultName?: string;
   version?: string;
+  /** Specific reason why the connection failed, only present when configured but not connected */
+  connectionError?: string;
 }
 
 interface VaultStats {
@@ -199,19 +201,27 @@ function DashboardTab() {
       <div className="flex items-center gap-2 p-3 rounded-lg border bg-card">
         {status.connected
           ? <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-          : <XCircle className="h-4 w-4 text-red-500 shrink-0" />}
+          : <XCircle className="h-4 w-4 text-amber-500 shrink-0" />}
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium">{status.connected ? "Memory layer connected" : "Offline"}</p>
+          <p className="text-sm font-medium">
+            {status.connected ? "Memory layer connected" : "Configured but unreachable"}
+          </p>
           <p className="text-xs text-muted-foreground truncate">
-            {status.vaultName && `${status.vaultName} · `}
-            {status.version && `Obsidian ${status.version} · `}
-            {status.lastSyncAt
-              ? `Last sync ${new Date(status.lastSyncAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
-              : "No syncs yet"}
+            {status.connected ? (
+              <>
+                {status.vaultName && `${status.vaultName} · `}
+                {status.version && `Obsidian ${status.version} · `}
+                {status.lastSyncAt
+                  ? `Last sync ${new Date(status.lastSyncAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
+                  : "No syncs yet"}
+              </>
+            ) : (
+              status.connectionError ?? "Cannot reach Obsidian REST API — check OBSIDIAN_BASE_URL"
+            )}
           </p>
         </div>
-        <Badge variant={status.connected ? "default" : "destructive"} className="text-xs shrink-0">
-          {status.connected ? "Live" : "Offline"}
+        <Badge variant={status.connected ? "default" : "outline"} className={`text-xs shrink-0 ${!status.connected ? "border-amber-500 text-amber-500" : ""}`}>
+          {status.connected ? "Live" : "Unreachable"}
         </Badge>
       </div>
 

@@ -141,12 +141,23 @@ async function obsidianRequest(
   const fetchFn = typeof fetch !== "undefined" ? fetch : undefined;
   if (!fetchFn) throw new Error("fetch not available in this runtime");
 
+  const headers: Record<string, string> = {
+    Authorization: `Bearer ${apiKey}`,
+    // Bypass ngrok browser-warning interstitial for server-side (non-browser) requests.
+    // Without this, ngrok free-tier returns an HTML page instead of forwarding the
+    // request, making res.json() throw and falsely reporting "not connected".
+    "ngrok-skip-browser-warning": "true",
+    "User-Agent": "TrainEfficiency-Agent/1.0",
+  };
+  // Only attach Content-Type when there is an actual body to send.
+  // Sending Content-Type on GET requests can confuse some servers/proxies.
+  if (body !== undefined) {
+    headers["Content-Type"] = contentType;
+  }
+
   return fetchFn(`${baseUrl.replace(/\/$/, "")}${path}`, {
     method,
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": contentType,
-    },
+    headers,
     body,
   });
 }
@@ -321,18 +332,52 @@ export async function listVaultFiles(): Promise<string[]> {
   }
 }
 
-export async function checkConnection(): Promise<{ connected: boolean; vaultName?: string; version?: string }> {
-  if (!isObsidianConfigured()) return { connected: false };
+export async function checkConnection(): Promise<{
+  connected: boolean;
+  vaultName?: string;
+  version?: string;
+  error?: string;
+}> {
+  if (!isObsidianConfigured()) return { connected: false, error: "Not configured" };
   try {
     const res = await obsidianRequest("/", "GET");
-    if (!res.ok) { _metrics.connected = false; return { connected: false }; }
-    const data = await res.json();
-    _metrics.connected = true;
     _metrics.lastConnectionCheck = new Date();
-    return { connected: true, vaultName: data.vaultName, version: data.versions?.obsidian };
-  } catch {
+
+    if (res.status === 401 || res.status === 403) {
+      _metrics.connected = false;
+      return { connected: false, error: "Authentication failed — check OBSIDIAN_API_KEY" };
+    }
+    if (!res.ok) {
+      _metrics.connected = false;
+      return { connected: false, error: `API responded with ${res.status} ${res.statusText}` };
+    }
+
+    // Parse JSON for vault metadata, but a non-JSON 200 still means "connected" —
+    // some Obsidian REST API versions or ngrok setups may return plain text.
+    let vaultName: string | undefined;
+    let version: string | undefined;
+    try {
+      const data = await res.json();
+      vaultName = data.vaultName;
+      version = data.versions?.obsidian ?? data.versions?.self;
+    } catch { /* non-JSON 200 is still a live connection */ }
+
+    _metrics.connected = true;
+    return { connected: true, vaultName, version };
+  } catch (e: any) {
     _metrics.connected = false;
-    return { connected: false };
+    _metrics.lastConnectionCheck = new Date();
+    const raw: string = e?.message ?? "Network error";
+    // Surface a human-readable reason for the most common failure modes
+    const error =
+      raw.includes("ECONNREFUSED") || raw.includes("fetch failed") || raw.includes("ENOTFOUND")
+        ? "Cannot reach Obsidian — verify OBSIDIAN_BASE_URL and that Obsidian is running"
+        : raw.includes("certificate") || raw.includes("SSL") || raw.includes("self-signed")
+          ? "TLS/certificate error — check your OBSIDIAN_BASE_URL"
+          : raw.includes("timeout") || raw.includes("ETIMEDOUT")
+            ? "Connection timed out — Obsidian may be sleeping or the URL is slow"
+            : raw;
+    return { connected: false, error };
   }
 }
 
@@ -515,6 +560,8 @@ export interface ObsidianStatus {
   lastConnectionCheck: string | null;
   vaultName?: string;
   version?: string;
+  /** Specific reason why connected=false, only present when configured but not connected */
+  connectionError?: string;
 }
 
 export function getObsidianStatus(): ObsidianStatus {
