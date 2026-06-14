@@ -339,45 +339,87 @@ export async function checkConnection(): Promise<{
   error?: string;
 }> {
   if (!isObsidianConfigured()) return { connected: false, error: "Not configured" };
+
+  const { baseUrl } = getConfig();
+  const normalizedBase = baseUrl.replace(/\/$/, "");
+
+  function humanizeNetworkError(raw: string): string {
+    if (raw.includes("ECONNREFUSED") || raw.includes("fetch failed") || raw.includes("ENOTFOUND"))
+      return "Cannot reach Obsidian — verify OBSIDIAN_BASE_URL and that Obsidian is running";
+    if (raw.includes("certificate") || raw.includes("SSL") || raw.includes("self-signed"))
+      return "TLS/certificate error — check your OBSIDIAN_BASE_URL";
+    if (raw.includes("timeout") || raw.includes("ETIMEDOUT"))
+      return "Connection timed out — Obsidian may be sleeping or the URL is slow";
+    return raw;
+  }
+
   try {
-    const res = await obsidianRequest("/", "GET");
+    // ── Step 1: try GET / (Local REST API root info endpoint) ──────────────
+    console.log(`[Obsidian] checkConnection → GET ${normalizedBase}/`);
+    const rootRes = await obsidianRequest("/", "GET");
     _metrics.lastConnectionCheck = new Date();
 
-    if (res.status === 401 || res.status === 403) {
+    if (rootRes.status === 401 || rootRes.status === 403) {
       _metrics.connected = false;
-      return { connected: false, error: "Authentication failed — check OBSIDIAN_API_KEY" };
-    }
-    if (!res.ok) {
-      _metrics.connected = false;
-      return { connected: false, error: `API responded with ${res.status} ${res.statusText}` };
+      return { connected: false, error: "Authentication failed (GET /) — check OBSIDIAN_API_KEY" };
     }
 
-    // Parse JSON for vault metadata, but a non-JSON 200 still means "connected" —
-    // some Obsidian REST API versions or ngrok setups may return plain text.
+    if (rootRes.status === 404) {
+      // Root endpoint not present in this plugin version or base URL already includes a
+      // path prefix — fall back to GET /vault/ which is always present.
+      console.log(`[Obsidian] GET ${normalizedBase}/ returned 404 — falling back to GET ${normalizedBase}/vault/`);
+
+      let vaultRes: Response;
+      try {
+        vaultRes = await obsidianRequest("/vault/", "GET");
+      } catch (fallbackErr: any) {
+        _metrics.connected = false;
+        return { connected: false, error: humanizeNetworkError(fallbackErr?.message ?? "Network error on /vault/ fallback") };
+      }
+
+      _metrics.lastConnectionCheck = new Date();
+
+      if (vaultRes.status === 401 || vaultRes.status === 403) {
+        _metrics.connected = false;
+        return { connected: false, error: "Authentication failed (GET /vault/) — check OBSIDIAN_API_KEY" };
+      }
+      if (!vaultRes.ok) {
+        _metrics.connected = false;
+        return {
+          connected: false,
+          error: `Vault listing endpoint GET /vault/ responded with ${vaultRes.status} ${vaultRes.statusText}`,
+        };
+      }
+
+      // /vault/ is reachable — we're connected (no root info available)
+      _metrics.connected = true;
+      return { connected: true };
+    }
+
+    if (!rootRes.ok) {
+      _metrics.connected = false;
+      return {
+        connected: false,
+        error: `Root endpoint GET / responded with ${rootRes.status} ${rootRes.statusText}`,
+      };
+    }
+
+    // ── Step 2: 200 OK on / — parse vault metadata (non-JSON 200 is still connected) ──
     let vaultName: string | undefined;
     let version: string | undefined;
     try {
-      const data = await res.json();
+      const data = await rootRes.json();
       vaultName = data.vaultName;
       version = data.versions?.obsidian ?? data.versions?.self;
     } catch { /* non-JSON 200 is still a live connection */ }
 
     _metrics.connected = true;
     return { connected: true, vaultName, version };
+
   } catch (e: any) {
     _metrics.connected = false;
     _metrics.lastConnectionCheck = new Date();
-    const raw: string = e?.message ?? "Network error";
-    // Surface a human-readable reason for the most common failure modes
-    const error =
-      raw.includes("ECONNREFUSED") || raw.includes("fetch failed") || raw.includes("ENOTFOUND")
-        ? "Cannot reach Obsidian — verify OBSIDIAN_BASE_URL and that Obsidian is running"
-        : raw.includes("certificate") || raw.includes("SSL") || raw.includes("self-signed")
-          ? "TLS/certificate error — check your OBSIDIAN_BASE_URL"
-          : raw.includes("timeout") || raw.includes("ETIMEDOUT")
-            ? "Connection timed out — Obsidian may be sleeping or the URL is slow"
-            : raw;
-    return { connected: false, error };
+    return { connected: false, error: humanizeNetworkError(e?.message ?? "Network error") };
   }
 }
 
