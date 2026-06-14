@@ -358,6 +358,8 @@ export interface EndpointProbeResult {
   bodyPreview: string;
   isJson: boolean;
   ok: boolean;
+  /** True when ngrok's own error page was detected — tunnel up but local service unreachable */
+  ngrokErrorPage?: boolean;
   error?: string;
 }
 
@@ -372,6 +374,11 @@ export interface ProbeReport {
   firstJsonPath: string | null;
   /** Path selected for use as health-check endpoint */
   selectedHealthPath: string | null;
+  /** True when every probed path returned ngrok's own error HTML —
+   *  tunnel URL is valid but local Obsidian/plugin is not running */
+  ngrokTunnelUnreachable: boolean;
+  /** Human-readable root-cause summary */
+  diagnosis: string;
 }
 
 /**
@@ -425,9 +432,13 @@ export async function probeEndpoints(): Promise<ProbeReport> {
       const bodyPreview = rawBody.slice(0, 200).replace(/\s+/g, " ").trim();
       const isJson = ct.includes("application/json") || (rawBody.trimStart().startsWith("{") || rawBody.trimStart().startsWith("["));
 
-      result = { path, fullUrl, status: res.status, contentType: ct, bodyPreview, isJson, ok: res.ok };
+      // Detect ngrok's own 404 page — indicates the tunnel is up but the local
+      // Obsidian/plugin process is not running on the forwarded port.
+      const isNgrokErrorPage = rawBody.includes("assets.ngrok.com");
 
-      console.log(`[Obsidian][Probe] ← ${res.status} ${res.statusText} | ct=${ct} | body="${bodyPreview}"`);
+      result = { path, fullUrl, status: res.status, contentType: ct, bodyPreview, isJson, ok: res.ok, ngrokErrorPage: isNgrokErrorPage || undefined };
+
+      console.log(`[Obsidian][Probe] ← ${res.status} ${res.statusText} | ct=${ct} | ngrokError=${isNgrokErrorPage} | body="${bodyPreview}"`);
 
       if (res.ok && firstOkPath === null)   firstOkPath   = path;
       if (res.ok && isJson && firstJsonPath === null) firstJsonPath = path;
@@ -446,11 +457,35 @@ export async function probeEndpoints(): Promise<ProbeReport> {
   // Prefer JSON response; fall back to any 200.
   const selectedHealthPath = firstJsonPath ?? firstOkPath;
 
+  // Detect ngrok "tunnel up but local service down" pattern:
+  // every probed result came back as an ngrok HTML error page.
+  const probedCount = results.filter(r => r.status !== "error").length;
+  const ngrokErrorCount = results.filter(r => r.ngrokErrorPage).length;
+  const ngrokTunnelUnreachable = probedCount > 0 && ngrokErrorCount === probedCount;
+
+  // Build a concise root-cause diagnosis
+  let diagnosis: string;
+  if (selectedHealthPath) {
+    diagnosis = `Connected via ${selectedHealthPath}`;
+  } else if (ngrokTunnelUnreachable) {
+    diagnosis =
+      "ngrok tunnel is reachable but the local Obsidian service is not running on the forwarded port. " +
+      "Ensure Obsidian is open and the Local REST API plugin is enabled, then confirm ngrok is forwarding to the correct port (default: 27123).";
+  } else if (results.every(r => r.status === "error")) {
+    diagnosis = "Cannot reach the server at OBSIDIAN_BASE_URL — check the URL and network connectivity.";
+  } else if (results.some(r => r.status === 401 || r.status === 403)) {
+    diagnosis = "Server reachable but authentication failed — check OBSIDIAN_API_KEY.";
+  } else {
+    const statuses = results.map(r => `${r.path}:${r.status}`).join(", ");
+    diagnosis = `No working endpoint found. Results: ${statuses}`;
+  }
+
   if (selectedHealthPath) {
     console.log(`[Obsidian][Probe] ✓ Selected health endpoint: ${selectedHealthPath}`);
     _verifiedHealthPath = selectedHealthPath;
   } else {
-    console.log(`[Obsidian][Probe] ✗ No reachable endpoint found across ${results.length} candidates`);
+    console.log(`[Obsidian][Probe] ✗ No reachable endpoint found. ngrokTunnelUnreachable=${ngrokTunnelUnreachable}`);
+    console.log(`[Obsidian][Probe] Diagnosis: ${diagnosis}`);
     _verifiedHealthPath = null;
   }
 
@@ -462,6 +497,8 @@ export async function probeEndpoints(): Promise<ProbeReport> {
     firstOkPath,
     firstJsonPath,
     selectedHealthPath,
+    ngrokTunnelUnreachable,
+    diagnosis,
   };
 }
 
@@ -533,13 +570,7 @@ export async function checkConnection(): Promise<{
 
     if (!report.selectedHealthPath) {
       _metrics.connected = false;
-      const allStatuses = report.results
-        .map(r => `${r.path}:${r.status}`)
-        .join(", ");
-      return {
-        connected: false,
-        error: `No reachable Obsidian endpoint found. Probed: ${allStatuses}`,
-      };
+      return { connected: false, error: report.diagnosis };
     }
 
     // Use the verified path result to extract vault metadata if available
