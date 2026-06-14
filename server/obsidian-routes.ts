@@ -1,6 +1,7 @@
 import type { Express, RequestHandler } from "express";
 import {
   checkConnection,
+  probeEndpoints,
   createNote,
   appendToNote,
   readNote,
@@ -136,6 +137,22 @@ export function registerObsidianRoutes(
     try {
       const result = await checkConnection();
       res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ─── GET /api/obsidian/probe ──────────────────────────────────────────────
+  // Diagnostic: probe all known Obsidian REST API endpoint candidates and
+  // return full results (status, content-type, body preview for each).
+  // Logs findings to the server console. Also updates the cached health path.
+  app.get("/api/obsidian/probe", async (_req: any, res) => {
+    if (!isObsidianConfigured()) {
+      return res.status(400).json({ message: "Obsidian not configured — set OBSIDIAN_BASE_URL and OBSIDIAN_API_KEY" });
+    }
+    try {
+      const report = await probeEndpoints();
+      res.json(report);
     } catch (e: any) {
       res.status(500).json({ message: e.message });
     }

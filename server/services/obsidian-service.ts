@@ -101,6 +101,9 @@ let _metrics: ObsidianMetrics = {
   totalNotesByType: {},
 };
 
+// Verified health endpoint discovered via probeEndpoints(); null = not yet discovered.
+let _verifiedHealthPath: string | null = null;
+
 function today(): string {
   return new Date().toISOString().split("T")[0];
 }
@@ -332,6 +335,138 @@ export async function listVaultFiles(): Promise<string[]> {
   }
 }
 
+// ─── Endpoint Discovery / Diagnostics ────────────────────────────────────────
+
+/** Candidate health-check paths to probe, in priority order. */
+const PROBE_PATHS = [
+  "/",
+  "/vault/",
+  "/vault",
+  "/vault/list",
+  "/search",
+  "/search/simple",
+  "/openapi.json",
+  "/swagger",
+  "/api",
+] as const;
+
+export interface EndpointProbeResult {
+  path: string;
+  fullUrl: string;
+  status: number | "error";
+  contentType: string;
+  bodyPreview: string;
+  isJson: boolean;
+  ok: boolean;
+  error?: string;
+}
+
+export interface ProbeReport {
+  baseUrl: string;
+  normalizedBase: string;
+  probedAt: string;
+  results: EndpointProbeResult[];
+  /** First path that returned HTTP 200 */
+  firstOkPath: string | null;
+  /** First path that returned HTTP 200 + JSON */
+  firstJsonPath: string | null;
+  /** Path selected for use as health-check endpoint */
+  selectedHealthPath: string | null;
+}
+
+/**
+ * Probe every candidate Obsidian REST API endpoint and return a full
+ * diagnostic report. Logs findings to console. Does NOT throw.
+ *
+ * Call GET /api/obsidian/probe to trigger this from the admin UI.
+ */
+export async function probeEndpoints(): Promise<ProbeReport> {
+  const { baseUrl, apiKey } = getConfig();
+  const normalizedBase = baseUrl.replace(/\/$/, "");
+
+  console.log(`[Obsidian][Probe] ── Starting endpoint discovery ──`);
+  console.log(`[Obsidian][Probe] OBSIDIAN_BASE_URL: ${normalizedBase} (key configured: ${!!apiKey})`);
+
+  const results: EndpointProbeResult[] = [];
+  let firstOkPath: string | null = null;
+  let firstJsonPath: string | null = null;
+
+  const fetchFn = typeof fetch !== "undefined" ? fetch : null;
+
+  for (const path of PROBE_PATHS) {
+    const fullUrl = `${normalizedBase}${path}`;
+    console.log(`[Obsidian][Probe] → GET ${fullUrl}`);
+
+    let result: EndpointProbeResult = {
+      path,
+      fullUrl,
+      status: "error",
+      contentType: "",
+      bodyPreview: "",
+      isJson: false,
+      ok: false,
+    };
+
+    try {
+      if (!fetchFn) throw new Error("fetch not available");
+
+      const res = await fetchFn(fullUrl, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "ngrok-skip-browser-warning": "true",
+          "User-Agent": "TrainEfficiency-Agent/1.0",
+        },
+        signal: AbortSignal.timeout(8000),
+      });
+
+      const ct = res.headers.get("content-type") ?? "";
+      const rawBody = await res.text();
+      const bodyPreview = rawBody.slice(0, 200).replace(/\s+/g, " ").trim();
+      const isJson = ct.includes("application/json") || (rawBody.trimStart().startsWith("{") || rawBody.trimStart().startsWith("["));
+
+      result = { path, fullUrl, status: res.status, contentType: ct, bodyPreview, isJson, ok: res.ok };
+
+      console.log(`[Obsidian][Probe] ← ${res.status} ${res.statusText} | ct=${ct} | body="${bodyPreview}"`);
+
+      if (res.ok && firstOkPath === null)   firstOkPath   = path;
+      if (res.ok && isJson && firstJsonPath === null) firstJsonPath = path;
+
+    } catch (e: any) {
+      result.error = e?.message ?? "unknown error";
+      console.log(`[Obsidian][Probe] ✗ Error: ${result.error}`);
+    }
+
+    results.push(result);
+
+    // Stop early once we've found a confirmed JSON endpoint — no need to probe further.
+    if (firstJsonPath !== null) break;
+  }
+
+  // Prefer JSON response; fall back to any 200.
+  const selectedHealthPath = firstJsonPath ?? firstOkPath;
+
+  if (selectedHealthPath) {
+    console.log(`[Obsidian][Probe] ✓ Selected health endpoint: ${selectedHealthPath}`);
+    _verifiedHealthPath = selectedHealthPath;
+  } else {
+    console.log(`[Obsidian][Probe] ✗ No reachable endpoint found across ${results.length} candidates`);
+    _verifiedHealthPath = null;
+  }
+
+  return {
+    baseUrl,
+    normalizedBase,
+    probedAt: new Date().toISOString(),
+    results,
+    firstOkPath,
+    firstJsonPath,
+    selectedHealthPath,
+  };
+}
+
+// ─── Connection Health Check ──────────────────────────────────────────────────
+
 export async function checkConnection(): Promise<{
   connected: boolean;
   vaultName?: string;
@@ -353,73 +488,80 @@ export async function checkConnection(): Promise<{
     return raw;
   }
 
-  try {
-    // ── Step 1: try GET / (Local REST API root info endpoint) ──────────────
-    console.log(`[Obsidian] checkConnection → GET ${normalizedBase}/`);
-    const rootRes = await obsidianRequest("/", "GET");
-    _metrics.lastConnectionCheck = new Date();
-
-    if (rootRes.status === 401 || rootRes.status === 403) {
-      _metrics.connected = false;
-      return { connected: false, error: "Authentication failed (GET /) — check OBSIDIAN_API_KEY" };
-    }
-
-    if (rootRes.status === 404) {
-      // Root endpoint not present in this plugin version or base URL already includes a
-      // path prefix — fall back to GET /vault/ which is always present.
-      console.log(`[Obsidian] GET ${normalizedBase}/ returned 404 — falling back to GET ${normalizedBase}/vault/`);
-
-      let vaultRes: Response;
-      try {
-        vaultRes = await obsidianRequest("/vault/", "GET");
-      } catch (fallbackErr: any) {
-        _metrics.connected = false;
-        return { connected: false, error: humanizeNetworkError(fallbackErr?.message ?? "Network error on /vault/ fallback") };
-      }
-
+  // ── If we already discovered a working endpoint, use it directly ───────────
+  if (_verifiedHealthPath) {
+    const fullUrl = `${normalizedBase}${_verifiedHealthPath}`;
+    console.log(`[Obsidian] checkConnection → GET ${fullUrl} (verified path: ${_verifiedHealthPath})`);
+    try {
+      const res = await obsidianRequest(_verifiedHealthPath, "GET");
       _metrics.lastConnectionCheck = new Date();
 
-      if (vaultRes.status === 401 || vaultRes.status === 403) {
+      if (res.status === 401 || res.status === 403) {
         _metrics.connected = false;
-        return { connected: false, error: "Authentication failed (GET /vault/) — check OBSIDIAN_API_KEY" };
+        _verifiedHealthPath = null; // reset so probe re-runs next time
+        return { connected: false, error: `Authentication failed (${_verifiedHealthPath}) — check OBSIDIAN_API_KEY` };
       }
-      if (!vaultRes.ok) {
-        _metrics.connected = false;
-        return {
-          connected: false,
-          error: `Vault listing endpoint GET /vault/ responded with ${vaultRes.status} ${vaultRes.statusText}`,
-        };
+      if (!res.ok) {
+        // Endpoint may have changed; reset so probe re-runs
+        console.log(`[Obsidian] Verified path ${_verifiedHealthPath} now returns ${res.status} — will re-probe`);
+        _verifiedHealthPath = null;
+        // Fall through to probe below
+      } else {
+        let vaultName: string | undefined;
+        let version: string | undefined;
+        try {
+          const data = await res.json();
+          vaultName = data.vaultName;
+          version = data.versions?.obsidian ?? data.versions?.self;
+        } catch { /* non-JSON 200 still means connected */ }
+
+        _metrics.connected = true;
+        return { connected: true, vaultName, version };
       }
-
-      // /vault/ is reachable — we're connected (no root info available)
-      _metrics.connected = true;
-      return { connected: true };
-    }
-
-    if (!rootRes.ok) {
+    } catch (e: any) {
       _metrics.connected = false;
+      _metrics.lastConnectionCheck = new Date();
+      return { connected: false, error: humanizeNetworkError(e?.message ?? "Network error") };
+    }
+  }
+
+  // ── No verified path yet (or it expired) — run probe to discover one ───────
+  console.log(`[Obsidian] checkConnection — no verified path, running endpoint probe`);
+  try {
+    const report = await probeEndpoints();
+    _metrics.lastConnectionCheck = new Date();
+
+    if (!report.selectedHealthPath) {
+      _metrics.connected = false;
+      const allStatuses = report.results
+        .map(r => `${r.path}:${r.status}`)
+        .join(", ");
       return {
         connected: false,
-        error: `Root endpoint GET / responded with ${rootRes.status} ${rootRes.statusText}`,
+        error: `No reachable Obsidian endpoint found. Probed: ${allStatuses}`,
       };
     }
 
-    // ── Step 2: 200 OK on / — parse vault metadata (non-JSON 200 is still connected) ──
+    // Use the verified path result to extract vault metadata if available
+    const best = report.results.find(r => r.path === report.selectedHealthPath);
     let vaultName: string | undefined;
     let version: string | undefined;
-    try {
-      const data = await rootRes.json();
-      vaultName = data.vaultName;
-      version = data.versions?.obsidian ?? data.versions?.self;
-    } catch { /* non-JSON 200 is still a live connection */ }
+    if (best?.isJson) {
+      try {
+        const parsed = JSON.parse(best.bodyPreview);
+        vaultName = parsed.vaultName;
+        version = parsed.versions?.obsidian ?? parsed.versions?.self;
+      } catch { /* partial preview, skip */ }
+    }
 
     _metrics.connected = true;
+    console.log(`[Obsidian] checkConnection ✓ connected via ${report.selectedHealthPath}`);
     return { connected: true, vaultName, version };
 
   } catch (e: any) {
     _metrics.connected = false;
     _metrics.lastConnectionCheck = new Date();
-    return { connected: false, error: humanizeNetworkError(e?.message ?? "Network error") };
+    return { connected: false, error: humanizeNetworkError(e?.message ?? "Network error during probe") };
   }
 }
 
