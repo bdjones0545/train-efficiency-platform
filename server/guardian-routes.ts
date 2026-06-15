@@ -9,6 +9,9 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, asc, inArray, gte, sql as drizzleSql } from "drizzle-orm";
 import crypto from "crypto";
+import { sendClientInviteEmail } from "./email";
+import { storage } from "./storage";
+import { buildPublicAppUrl } from "./utils/url";
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -308,6 +311,34 @@ export function registerGuardianRoutes(app: Express) {
           },
           activatedAt: guardianUserId ? new Date() : null,
         });
+      }
+
+      // Send invite email if guardian doesn't already have an account
+      if (!guardianUserId) {
+        const baseUrl = buildPublicAppUrl();
+        const acceptLink = `${baseUrl}/guardian-accept?token=${inviteToken}`;
+        const emailResult: { ok: boolean; error?: string } = await sendClientInviteEmail(
+          inviteEmail,
+          inviteEmail.split("@")[0],
+          acceptLink,
+          undefined,
+        ).then(() => ({ ok: true }))
+          .catch((err: any) => ({ ok: false, error: err?.message ?? String(err) }));
+
+        storage.createCommunicationLog({
+          orgId,
+          type: "invite",
+          channel: "email",
+          recipientEmail: inviteEmail,
+          subject: "You've been invited as a guardian",
+          status: emailResult.ok ? "sent" : "failed",
+          provider: "sendgrid",
+          errorMessage: emailResult.ok ? undefined : emailResult.error,
+        } as any).catch(() => {});
+
+        if (!emailResult.ok) {
+          console.error("[guardian-invite] email failed:", emailResult.error);
+        }
       }
 
       res.json({

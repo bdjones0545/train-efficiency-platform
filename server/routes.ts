@@ -386,7 +386,7 @@ export async function registerRoutes(
 
       const rawToken = crypto.randomBytes(32).toString("hex");
       const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
-      const expiresAt = new Date(Date.now() + 60 * 60 * 1000);
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
       await storage.createPasswordResetToken({
         email: normalizedEmail,
@@ -498,6 +498,16 @@ export async function registerRoutes(
         deleteAllUserAuthTokens(record.userId).catch(() => {});
       }
 
+      storage.createCommunicationLog({
+        userId: record.userId ?? undefined,
+        type: "password_reset_complete",
+        channel: "system",
+        recipientEmail: record.email,
+        subject: "Password reset completed",
+        status: "sent",
+        provider: "system",
+      } as any).catch(() => {});
+
       return res.json({ success: true, message: "Your password has been reset successfully. Please sign in." });
     } catch (error) {
       console.error("Reset password error:", error);
@@ -605,9 +615,35 @@ export async function registerRoutes(
 
       const token = await createAuthToken(user.id);
 
-      getOrgBranding(organizationId).then(orgB => {
-        sendWelcomeEmail(email.toLowerCase().trim(), firstName.trim(), orgB).catch(() => {});
-      });
+      getOrgBranding(organizationId).then(async orgB => {
+        const recipientEmail = email.toLowerCase().trim();
+        try {
+          await sendWelcomeEmail(recipientEmail, firstName.trim(), orgB);
+          storage.createCommunicationLog({
+            orgId: organizationId || undefined,
+            userId: user.id,
+            type: "welcome",
+            channel: "email",
+            recipientEmail,
+            subject: "Welcome!",
+            status: "sent",
+            provider: "sendgrid",
+          } as any).catch(() => {});
+        } catch (err: any) {
+          console.error("[client-register] welcome email failed:", err);
+          storage.createCommunicationLog({
+            orgId: organizationId || undefined,
+            userId: user.id,
+            type: "welcome",
+            channel: "email",
+            recipientEmail,
+            subject: "Welcome!",
+            status: "failed",
+            provider: "sendgrid",
+            errorMessage: err?.message ?? String(err),
+          } as any).catch(() => {});
+        }
+      }).catch(() => {});
 
       res.json({ success: true, redirect: "/", token });
     } catch (error) {
@@ -1182,8 +1218,15 @@ export async function registerRoutes(
       if (!token || !password) {
         return res.status(400).json({ message: "Token and password are required" });
       }
-      if (password.length < 6) {
-        return res.status(400).json({ message: "Password must be at least 6 characters" });
+      const pwSchema = z.string()
+        .min(8, "Password must be at least 8 characters")
+        .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
+        .regex(/[a-z]/, "Password must contain at least one lowercase letter")
+        .regex(/[0-9]/, "Password must contain at least one number")
+        .max(128, "Password must not exceed 128 characters");
+      const pwResult = pwSchema.safeParse(password);
+      if (!pwResult.success) {
+        return res.status(400).json({ message: pwResult.error.errors[0].message });
       }
 
       const { db: dbRef } = await import("./db");
@@ -1209,6 +1252,16 @@ export async function registerRoutes(
       }).where(eq(usersTable.id, user.id));
 
       const authToken = await createAuthToken(user.id);
+
+      storage.createCommunicationLog({
+        userId: user.id,
+        type: "account_activated",
+        channel: "system",
+        recipientEmail: user.email ?? "",
+        subject: "Account password created",
+        status: "sent",
+        provider: "system",
+      } as any).catch(() => {});
 
       res.json({ success: true, token: authToken });
     } catch (error: any) {
@@ -1772,9 +1825,35 @@ export async function registerRoutes(
       });
 
       const token = await createAuthToken(created.id);
-      getOrgBranding(plan.organizationId).then(orgB => {
-        sendWelcomeEmail(email.toLowerCase().trim(), firstName.trim(), orgB).catch(() => {});
-      });
+      getOrgBranding(plan.organizationId).then(async orgB => {
+        const recipientEmail = email.toLowerCase().trim();
+        try {
+          await sendWelcomeEmail(recipientEmail, firstName.trim(), orgB);
+          storage.createCommunicationLog({
+            orgId: plan.organizationId,
+            userId: created.id,
+            type: "welcome",
+            channel: "email",
+            recipientEmail,
+            subject: "Welcome!",
+            status: "sent",
+            provider: "sendgrid",
+          } as any).catch(() => {});
+        } catch (err: any) {
+          console.error("[register-and-claim] welcome email failed:", err);
+          storage.createCommunicationLog({
+            orgId: plan.organizationId,
+            userId: created.id,
+            type: "welcome",
+            channel: "email",
+            recipientEmail,
+            subject: "Welcome!",
+            status: "failed",
+            provider: "sendgrid",
+            errorMessage: err?.message ?? String(err),
+          } as any).catch(() => {});
+        }
+      }).catch(() => {});
 
       res.json({ success: true, token });
     } catch (error) {
@@ -1948,7 +2027,34 @@ export async function registerRoutes(
       const token = await createAuthToken(user.id);
 
       const orgBranding: OrgBranding = { name: org.name, ownerName: firstName.trim(), ownerEmail: email.toLowerCase().trim() };
-      sendCoachWelcomeEmail(email.toLowerCase().trim(), firstName.trim(), undefined, orgBranding).catch(() => {});
+      const coachWelcomeEmail = email.toLowerCase().trim();
+      sendCoachWelcomeEmail(coachWelcomeEmail, firstName.trim(), undefined, orgBranding)
+        .then(() => {
+          storage.createCommunicationLog({
+            orgId: org.id,
+            userId: user.id,
+            type: "welcome",
+            channel: "email",
+            recipientEmail: coachWelcomeEmail,
+            subject: "Welcome to your coaching platform",
+            status: "sent",
+            provider: "sendgrid",
+          } as any).catch(() => {});
+        })
+        .catch((err: any) => {
+          console.error("[org-register] coach welcome email failed:", err);
+          storage.createCommunicationLog({
+            orgId: org.id,
+            userId: user.id,
+            type: "welcome",
+            channel: "email",
+            recipientEmail: coachWelcomeEmail,
+            subject: "Welcome to your coaching platform",
+            status: "failed",
+            provider: "sendgrid",
+            errorMessage: err?.message ?? String(err),
+          } as any).catch(() => {});
+        });
 
       // Provision AI infrastructure for the new org (fire-and-forget, non-blocking)
       import("./services/org-ai-infrastructure").then(({ ensureOrgAiInfrastructure }) =>
@@ -4343,25 +4449,64 @@ export async function registerRoutes(
         return res.status(403).json({ message: "User does not belong to your organization" });
       }
 
-      const { db: dbRef } = await import("./db");
-      const { users: usersTable } = await import("@shared/models/auth");
-      const { eq } = await import("drizzle-orm");
-
-      const token = crypto.randomBytes(32).toString("hex");
-      const tokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-      await dbRef.update(usersTable)
-        .set({ passwordResetToken: token, passwordResetTokenExpires: tokenExpires })
-        .where(eq(usersTable.id, userId));
-
       const baseUrl = buildPublicAppUrl();
-      const hasPassword = !!targetUser.passwordHash;
-      const setupLink = hasPassword
-        ? `${baseUrl}/reset-password?token=${token}`
-        : `${baseUrl}/create-password?token=${token}`;
-      const subject = hasPassword ? "Reset your password" : "Set up your account";
-
       const orgBranding = await getOrgBranding(adminOrgId);
+
+      // Check if this is a coach (password lives on coachProfile, not users)
+      const coachProfile = await storage.getCoachProfileByUserId(userId);
+      const isCoach = !!coachProfile;
+      const hasPassword = !!targetUser.passwordHash || isCoach;
+
+      let setupLink: string;
+
+      if (isCoach) {
+        // Coaches use the password_reset_tokens table → /reset-password page
+        const { db: dbRef } = await import("./db");
+        const { passwordResetTokens: prtTable } = await import("@shared/models/auth");
+        const rawToken = crypto.randomBytes(32).toString("hex");
+        const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+        const tokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        await storage.invalidatePriorResetTokens(targetUser.email!);
+        await dbRef.insert(prtTable).values({
+          email: targetUser.email!,
+          tokenHash,
+          userId,
+          coachProfileId: coachProfile.id,
+          expiresAt: tokenExpires,
+        });
+        setupLink = `${baseUrl}/reset-password?token=${rawToken}`;
+      } else if (hasPassword) {
+        // Non-coach WITH existing password: use password_reset_tokens table → /reset-password
+        // (same table that /reset-password endpoint reads from — avoids token-not-found mismatch)
+        const { db: dbRef } = await import("./db");
+        const { passwordResetTokens: prtTable } = await import("@shared/models/auth");
+        const rawToken = crypto.randomBytes(32).toString("hex");
+        const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+        const tokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        await storage.invalidatePriorResetTokens(targetUser.email!);
+        await dbRef.insert(prtTable).values({
+          email: targetUser.email!,
+          tokenHash,
+          userId,
+          coachProfileId: null,
+          expiresAt: tokenExpires,
+        });
+        setupLink = `${baseUrl}/reset-password?token=${rawToken}`;
+      } else {
+        // New user WITHOUT password: use users.passwordResetToken → /create-password
+        const { db: dbRef } = await import("./db");
+        const { users: usersTable } = await import("@shared/models/auth");
+        const { eq } = await import("drizzle-orm");
+        const token = crypto.randomBytes(32).toString("hex");
+        const tokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+        await dbRef.update(usersTable)
+          .set({ passwordResetToken: token, passwordResetTokenExpires: tokenExpires })
+          .where(eq(usersTable.id, userId));
+        setupLink = `${baseUrl}/create-password?token=${token}`;
+      }
+
+      const subject = hasPassword ? "Reset your password" : "Set up your account";
+      const emailType = hasPassword ? "password_reset" : "invite";
 
       try {
         if (hasPassword) {
@@ -4372,19 +4517,19 @@ export async function registerRoutes(
         await storage.createCommunicationLog({
           orgId: adminOrgId ?? undefined,
           userId,
-          type: hasPassword ? "password_reset" : "invite",
+          type: emailType,
           channel: "email",
           recipientEmail: targetUser.email!,
           subject,
           status: "sent",
           provider: "sendgrid",
         } as any);
-        res.json({ success: true, message: `Setup link sent to ${targetUser.email}`, linkType: hasPassword ? "reset" : "invite" });
+        res.json({ success: true, message: `Setup link sent to ${targetUser.email}`, linkType: hasPassword ? "reset" : "invite", role: isCoach ? "coach" : "client" });
       } catch (emailErr: any) {
         await storage.createCommunicationLog({
           orgId: adminOrgId ?? undefined,
           userId,
-          type: hasPassword ? "password_reset" : "invite",
+          type: emailType,
           channel: "email",
           recipientEmail: targetUser.email!,
           subject,
@@ -4493,11 +4638,34 @@ export async function registerRoutes(
         organizationId: adminOrgId,
       });
 
-      getOrgBranding(adminOrgId).then(orgB => {
-        sendCoachWelcomeEmail(normalizedEmail, firstName.trim(), password, orgB).catch((err: any) => {
+      getOrgBranding(adminOrgId).then(async orgB => {
+        try {
+          await sendCoachWelcomeEmail(normalizedEmail, firstName.trim(), password, orgB);
+          storage.createCommunicationLog({
+            orgId: adminOrgId || undefined,
+            userId,
+            type: "welcome",
+            channel: "email",
+            recipientEmail: normalizedEmail,
+            subject: "Welcome to your coaching platform",
+            status: "sent",
+            provider: "sendgrid",
+          } as any).catch(() => {});
+        } catch (err: any) {
           console.error("Failed to send coach welcome email:", err);
-        });
-      });
+          storage.createCommunicationLog({
+            orgId: adminOrgId || undefined,
+            userId,
+            type: "welcome",
+            channel: "email",
+            recipientEmail: normalizedEmail,
+            subject: "Welcome to your coaching platform",
+            status: "failed",
+            provider: "sendgrid",
+            errorMessage: err?.message ?? String(err),
+          } as any).catch(() => {});
+        }
+      }).catch(() => {});
 
       res.json({ success: true, coachProfile });
     } catch (error: any) {
