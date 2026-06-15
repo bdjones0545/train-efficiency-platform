@@ -1,0 +1,87 @@
+Audit deleted/semi-private session visibility and edit errors.
+
+Problem:
+Users are seeing deleted or unavailable semi-private sessions in the Available sessions list. When they tap Join/Edit, the app shows:
+
+404: {"message":"Session not found"}
+
+Observed UI:
+- Page shows Available sessions
+- Session cards are still visible
+- Join/Edit action fails with Session not found
+- Likely stale/deleted semi-private sessions are being returned to the frontend
+
+Audit scope:
+1. Identify the page/component showing Available semi-private/group sessions.
+2. Identify the API endpoint powering:
+   - Upcoming
+   - Past
+   - Available
+   - By Date
+   - By Coach
+   - Join button
+   - Edit/details action if present
+3. Identify backend tables involved:
+   - sessions
+   - group_sessions
+   - semi_private_sessions
+   - session_slots
+   - bookings
+   - redemptions
+   - attendance/check-ins
+   - cancellations/deletions
+4. Determine how deleted sessions are represented:
+   - deletedAt
+   - cancelledAt
+   - status = deleted/cancelled
+   - soft delete flag
+   - hard delete
+   - orphaned booking/session slot records
+
+Likely causes to check:
+- Available list endpoint does not filter deleted/cancelled sessions
+- Join endpoint correctly rejects deleted sessions, causing 404
+- frontend cached old session list after deletion
+- session list query not invalidated after delete/cancel
+- semi-private sessions are deleted from one table but still exist in another linked table
+- frontend is using stale sessionId from session_slots while backend expects groupSessionId
+- date/coach filters use different endpoint than join/edit endpoint
+- old rows missing status fields are treated as available
+
+Fix requirements:
+1. Backend list endpoints must exclude deleted/cancelled/unavailable sessions.
+2. Join/edit endpoints should return a specific error:
+   "This session is no longer available."
+   not generic "Session not found."
+3. Frontend should remove unavailable session from the list after a 404/410 response.
+4. Use HTTP 410 Gone for deleted sessions if possible.
+5. Add defensive UI:
+   - if join/edit fails because session is gone, toast:
+     "This session was removed or is no longer available."
+   - invalidate/refetch available sessions.
+6. Ensure deletion/cancellation invalidates or updates all related records.
+7. Add a cleanup query/report for orphaned semi-private session records.
+
+Deliverables:
+- Root cause
+- Endpoint mismatch table
+- Tables involved
+- Why deleted sessions appeared available
+- Files changed
+- Cleanup/migration if needed
+- Manual test:
+  1. Create semi-private session
+  2. Confirm appears in Available
+  3. Delete/cancel it
+  4. Confirm it disappears immediately
+  5. Confirm Join/Edit no longer throws generic 404
+  6. Refresh page and confirm it stays gone
+
+Acceptance:
+- Deleted sessions never appear in Available.
+- Cancelled sessions only appear under Cancelled if intended.
+- Join/Edit on removed sessions shows a friendly unavailable message.
+- Query invalidation works after deletion.
+- No stale deleted session cards remain after refresh.
+- TypeScript passes.
+- Server starts cleanly.
