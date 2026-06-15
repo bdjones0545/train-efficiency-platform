@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
-import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin, UserCog, Upload, FileSpreadsheet, CheckCircle, AlertCircle, SkipForward, RefreshCw, MessageSquare, Lock, Phone, Mail, User as UserIcon, CreditCard, MessageCircle, StickyNote } from "lucide-react";
+import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin, UserCog, Upload, FileSpreadsheet, CheckCircle, AlertCircle, SkipForward, RefreshCw, MessageSquare, Lock, Phone, Mail, User as UserIcon, CreditCard, MessageCircle, StickyNote, Send } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import type { UserProfile, Booking, Service, Redemption } from "@shared/schema";
 import type { User } from "@shared/models/auth";
@@ -326,6 +326,19 @@ export default function UserManagementPage() {
       notes: newClientNotes || undefined,
     });
   };
+
+  const resendSetupLinkMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const res = await apiRequest("POST", `/api/admin/users/${userId}/resend-setup-link`);
+      return res.json();
+    },
+    onSuccess: (data) => {
+      toast({ title: "Setup link sent", description: data.message });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Email delivery failed", description: error.message, variant: "destructive" });
+    },
+  });
 
   const importCsvMutation = useMutation({
     mutationFn: async (rows: Record<string, string>[]) => {
@@ -963,6 +976,16 @@ export default function UserManagementPage() {
                   <Button
                     size="icon"
                     variant="ghost"
+                    onClick={(e) => { e.stopPropagation(); resendSetupLinkMutation.mutate(user.id); }}
+                    title="Resend setup / reset link"
+                    disabled={resendSetupLinkMutation.isPending}
+                    data-testid={`button-resend-setup-${user.id}`}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    size="icon"
+                    variant="ghost"
                     onClick={(e) => { e.stopPropagation(); openEditUser(user); }}
                     title="Edit user"
                     data-testid={`button-edit-user-${user.id}`}
@@ -982,6 +1005,17 @@ export default function UserManagementPage() {
               </div>
               {/* Mobile-only action row */}
               <div className="flex sm:hidden items-center gap-2 mt-2 pt-2 border-t border-border/40">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="flex-1 h-8 text-xs"
+                  onClick={(e) => { e.stopPropagation(); resendSetupLinkMutation.mutate(user.id); }}
+                  disabled={resendSetupLinkMutation.isPending}
+                  data-testid={`button-resend-setup-mobile-${user.id}`}
+                >
+                  <Send className="h-3.5 w-3.5 mr-1" />
+                  Send Link
+                </Button>
                 <Button
                   size="sm"
                   variant="outline"

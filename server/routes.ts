@@ -398,9 +398,35 @@ export async function registerRoutes(
 
       const resetUrl = buildPublicAppUrl(`/reset-password?token=${rawToken}`);
 
-      sendPasswordResetEmail(normalizedEmail, resetUrl).catch((err) => {
-        console.error("Password reset email send failure:", err);
-      });
+      const _resetUserId = coachProfile ? coachProfile.userId : user?.id;
+      const _resetOrgId  = coachProfile ? coachProfile.organizationId : null;
+      sendPasswordResetEmail(normalizedEmail, resetUrl)
+        .then(() => {
+          storage.createCommunicationLog({
+            orgId: _resetOrgId ?? undefined,
+            userId: _resetUserId ?? undefined,
+            type: "password_reset",
+            channel: "email",
+            recipientEmail: normalizedEmail,
+            subject: "Reset your TrainEfficiency password",
+            status: "sent",
+            provider: "sendgrid",
+          } as any).catch(() => {});
+        })
+        .catch((err) => {
+          console.error("Password reset email send failure:", err);
+          storage.createCommunicationLog({
+            orgId: _resetOrgId ?? undefined,
+            userId: _resetUserId ?? undefined,
+            type: "password_reset",
+            channel: "email",
+            recipientEmail: normalizedEmail,
+            subject: "Reset your TrainEfficiency password",
+            status: "failed",
+            provider: "sendgrid",
+            errorMessage: err?.message ?? String(err),
+          } as any).catch(() => {});
+        });
 
       return res.json(NEUTRAL);
     } catch (error) {
@@ -1100,9 +1126,33 @@ export async function registerRoutes(
           });
 
           const resetLink = `${baseUrl}/create-password?token=${token}`;
-          sendClientInviteEmail(email, firstName, resetLink, orgBranding).catch((err: any) => {
-            console.error(`Failed to send invite email to ${email}:`, err);
-          });
+          sendClientInviteEmail(email, firstName, resetLink, orgBranding)
+            .then(() => {
+              storage.createCommunicationLog({
+                orgId: adminOrgId ?? undefined,
+                userId: newUser.id,
+                type: "invite",
+                channel: "email",
+                recipientEmail: email,
+                subject: "You're invited to schedule online",
+                status: "sent",
+                provider: "sendgrid",
+              } as any).catch(() => {});
+            })
+            .catch((err: any) => {
+              console.error(`Failed to send invite email to ${email}:`, err);
+              storage.createCommunicationLog({
+                orgId: adminOrgId ?? undefined,
+                userId: newUser.id,
+                type: "invite",
+                channel: "email",
+                recipientEmail: email,
+                subject: "You're invited to schedule online",
+                status: "failed",
+                provider: "sendgrid",
+                errorMessage: err?.message ?? String(err),
+              } as any).catch(() => {});
+            });
 
           results.push({ email, status: "created", name: `${firstName} ${lastName}` });
         } catch (err: any) {
@@ -4273,6 +4323,81 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error fetching users:", error);
       res.status(500).json({ message: "Failed to fetch users" });
+    }
+  });
+
+  // Admin: resend setup / password-reset link to any user
+  app.post("/api/admin/users/:userId/resend-setup-link", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const adminId = req.user.claims.sub ?? req.user.id;
+      const adminProfile = await storage.getUserProfile(adminId);
+      const adminOrgId = adminProfile?.organizationId ?? null;
+
+      const { userId } = req.params;
+      const targetUser = await storage.getUser(userId);
+      if (!targetUser) return res.status(404).json({ message: "User not found" });
+
+      // Confirm user belongs to same org
+      const targetProfile = await storage.getUserProfile(userId);
+      if (targetProfile?.organizationId && adminOrgId && targetProfile.organizationId !== adminOrgId) {
+        return res.status(403).json({ message: "User does not belong to your organization" });
+      }
+
+      const { db: dbRef } = await import("./db");
+      const { users: usersTable } = await import("@shared/models/auth");
+      const { eq } = await import("drizzle-orm");
+
+      const token = crypto.randomBytes(32).toString("hex");
+      const tokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+      await dbRef.update(usersTable)
+        .set({ passwordResetToken: token, passwordResetTokenExpires: tokenExpires })
+        .where(eq(usersTable.id, userId));
+
+      const baseUrl = buildPublicAppUrl();
+      const hasPassword = !!targetUser.passwordHash;
+      const setupLink = hasPassword
+        ? `${baseUrl}/reset-password?token=${token}`
+        : `${baseUrl}/create-password?token=${token}`;
+      const subject = hasPassword ? "Reset your password" : "Set up your account";
+
+      const orgBranding = await getOrgBranding(adminOrgId);
+
+      try {
+        if (hasPassword) {
+          await sendPasswordResetEmail(targetUser.email!, setupLink);
+        } else {
+          await sendClientInviteEmail(targetUser.email!, targetUser.firstName || "there", setupLink, orgBranding);
+        }
+        await storage.createCommunicationLog({
+          orgId: adminOrgId ?? undefined,
+          userId,
+          type: hasPassword ? "password_reset" : "invite",
+          channel: "email",
+          recipientEmail: targetUser.email!,
+          subject,
+          status: "sent",
+          provider: "sendgrid",
+        } as any);
+        res.json({ success: true, message: `Setup link sent to ${targetUser.email}`, linkType: hasPassword ? "reset" : "invite" });
+      } catch (emailErr: any) {
+        await storage.createCommunicationLog({
+          orgId: adminOrgId ?? undefined,
+          userId,
+          type: hasPassword ? "password_reset" : "invite",
+          channel: "email",
+          recipientEmail: targetUser.email!,
+          subject,
+          status: "failed",
+          provider: "sendgrid",
+          errorMessage: emailErr?.message ?? String(emailErr),
+        } as any);
+        console.error("[resend-setup-link] email send failed:", emailErr);
+        res.status(500).json({ success: false, message: "Account token refreshed but email delivery failed. Check communication logs.", error: emailErr?.message });
+      }
+    } catch (error: any) {
+      console.error("Error resending setup link:", error);
+      res.status(500).json({ message: "Failed to resend setup link", error: error?.message });
     }
   });
 
