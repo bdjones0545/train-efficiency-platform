@@ -98,7 +98,7 @@ export default function CoachTransactionsPage() {
   const [showSubscriptions, setShowSubscriptions] = useState(false);
   const [subSearch, setSubSearch] = useState("");
 
-  const { data: adminProfile } = useQuery<{ organizationId?: string | null }>({
+  const { data: adminProfile, isLoading: adminProfileLoading } = useQuery<{ organizationId?: string | null }>({
     queryKey: ["/api/profile"],
   });
   const orgId = adminProfile?.organizationId;
@@ -435,7 +435,7 @@ export default function CoachTransactionsPage() {
           <span className="text-sm font-semibold">Revenue Recognition Ledger</span>
           <Badge variant="outline" className="text-xs">All-Time</Badge>
         </div>
-        {revSummaryLoading ? (
+        {(adminProfileLoading || revSummaryLoading) ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-16" />)}
           </div>
