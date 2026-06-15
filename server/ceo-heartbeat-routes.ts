@@ -22,8 +22,28 @@ import {
   runLedgerDriftCheck,
 } from "./services/ceo-heartbeat-service";
 import { resolveOrgSession } from "./org-auth";
+import { isAuthenticated } from "./replit_integrations/auth";
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
+
+// Role gate: only ADMIN and COACH may access CEO heartbeat endpoints.
+async function requireAdminOrCoach(req: any, res: any, next: any) {
+  const userId = req.user?.claims?.sub ?? req.user?.id;
+  if (!userId) return res.status(401).json({ message: "Unauthorized" });
+  try {
+    const [profile] = await db.select({ role: userProfiles.role })
+      .from(userProfiles)
+      .where(eq(userProfiles.userId, userId))
+      .limit(1);
+    const role = profile?.role ?? "CLIENT";
+    if (role !== "ADMIN" && role !== "COACH") {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+    next();
+  } catch {
+    return res.status(403).json({ message: "Forbidden" });
+  }
+}
 
 async function getOrgId(req: any): Promise<string | null> {
   // 1. Explicit query param (takes priority — allows org-switching in debug)
@@ -79,7 +99,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
 
   // ─── GET /api/admin/ceo-heartbeat/status ───────────────────────────────────
   // Returns current heartbeat state, last run info, and next scheduled run.
-  app.get("/api/admin/ceo-heartbeat/status", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/status", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -116,7 +136,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
 
   // ─── POST /api/admin/ceo-heartbeat/run ─────────────────────────────────────
   // Manually trigger a heartbeat cycle for this org.
-  app.post("/api/admin/ceo-heartbeat/run", async (req: any, res) => {
+  app.post("/api/admin/ceo-heartbeat/run", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -152,7 +172,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
 
   // ─── GET /api/admin/ceo-heartbeat/timeline ─────────────────────────────────
   // Unified operating timeline with rich filters.
-  app.get("/api/admin/ceo-heartbeat/timeline", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/timeline", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -213,7 +233,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
 
   // ─── GET /api/admin/ceo-heartbeat/priorities ───────────────────────────────
   // Returns the latest CEO priority ranking for this org.
-  app.get("/api/admin/ceo-heartbeat/priorities", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/priorities", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -238,7 +258,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
 
   // ─── GET /api/admin/ceo-heartbeat/health ───────────────────────────────────
   // Returns execution health stats for the last 24 hours.
-  app.get("/api/admin/ceo-heartbeat/health", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/health", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -251,7 +271,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   });
 
   // ─── POST /api/admin/ceo-heartbeat/pause ───────────────────────────────────
-  app.post("/api/admin/ceo-heartbeat/pause", async (req: any, res) => {
+  app.post("/api/admin/ceo-heartbeat/pause", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -279,7 +299,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   });
 
   // ─── POST /api/admin/ceo-heartbeat/resume ──────────────────────────────────
-  app.post("/api/admin/ceo-heartbeat/resume", async (req: any, res) => {
+  app.post("/api/admin/ceo-heartbeat/resume", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -307,7 +327,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
 
   // ─── POST /api/admin/ceo-heartbeat/retry-failed ────────────────────────────
   // Retries all failed timeline entries from the last 6 hours.
-  app.post("/api/admin/ceo-heartbeat/retry-failed", async (req: any, res) => {
+  app.post("/api/admin/ceo-heartbeat/retry-failed", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -345,7 +365,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   });
 
   // ─── POST /api/admin/ceo-heartbeat/recalculate-priorities ─────────────────
-  app.post("/api/admin/ceo-heartbeat/recalculate-priorities", async (req: any, res) => {
+  app.post("/api/admin/ceo-heartbeat/recalculate-priorities", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -366,7 +386,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
 
   // ─── GET /api/admin/ceo-heartbeat/audit-log ────────────────────────────────
   // Admin action audit log with filters.
-  app.get("/api/admin/ceo-heartbeat/audit-log", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/audit-log", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -398,7 +418,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   });
 
   // ─── GET /api/admin/ceo-heartbeat/locks ────────────────────────────────────
-  app.get("/api/admin/ceo-heartbeat/locks", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/locks", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -417,7 +437,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   });
 
   // ─── GET /api/admin/ceo-heartbeat/runs ─────────────────────────────────────
-  app.get("/api/admin/ceo-heartbeat/runs", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/runs", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -440,7 +460,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // ─── GET /api/admin/ceo-heartbeat/session-context ─────────────────────────
   // Returns the orgId for the currently authenticated admin/coach session.
   // Used by the frontend to bootstrap queries without requiring window.__orgId.
-  app.get("/api/admin/ceo-heartbeat/session-context", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/session-context", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(200).json({ orgId: null });
@@ -459,7 +479,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
 
   // ─── GET /api/admin/ceo-heartbeat/learning-health ─────────────────────────
   // Returns learning system health: rules count, domain coverage, feedback stats.
-  app.get("/api/admin/ceo-heartbeat/learning-health", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/learning-health", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -581,7 +601,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   // ── Sprint 4: Signal Intelligence endpoints ────────────────────────────────
 
   // Dead-letter queue depth summary
-  app.get("/api/admin/ceo-heartbeat/dead-letter-summary", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/dead-letter-summary", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -636,7 +656,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   });
 
   // Wallet ledger drift health
-  app.get("/api/admin/ceo-heartbeat/ledger-health", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/ledger-health", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -681,7 +701,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   });
 
   // Lock contention events (last 24 h)
-  app.get("/api/admin/ceo-heartbeat/lock-contention", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/lock-contention", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -715,7 +735,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   });
 
   // Duplicate-approval race metrics (last 24 h)
-  app.get("/api/admin/ceo-heartbeat/approval-race-metrics", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/approval-race-metrics", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -749,7 +769,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
   });
 
   // Outbound send fingerprint dedup log (last 24 h)
-  app.get("/api/admin/ceo-heartbeat/send-fingerprint-stats", async (req: any, res) => {
+  app.get("/api/admin/ceo-heartbeat/send-fingerprint-stats", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
     try {
       const result = await db.execute(sql`
         SELECT email_type, COUNT(*)::int AS count

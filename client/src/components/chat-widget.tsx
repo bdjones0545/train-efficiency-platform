@@ -959,11 +959,19 @@ export function ChatWidget() {
   // Navigation from within the portal causes page-level side-effects.
   const [pathname] = useLocation();
 
+  // Role gate — CEO/Brain agent is only for ADMIN and COACH roles.
+  const { data: profile, isLoading: profileLoading } = useQuery<{ role?: string }>({
+    queryKey: ["/api/profile"],
+    staleTime: 5 * 60_000,
+  });
+  const userRole = profile?.role ?? null;
+  const isAllowed = userRole === "ADMIN" || userRole === "COACH";
+
   const { data: approvalMetrics } = useQuery<any>({
     queryKey: ["/api/ai-approvals/metrics"],
     queryFn: () => fetchJson("/api/ai-approvals/metrics"),
     refetchInterval: 30000,
-    enabled: isMounted && !isClosing,
+    enabled: isAllowed && isMounted && !isClosing,
   });
 
   const pendingCount = approvalMetrics?.pending ?? 0;
@@ -995,6 +1003,10 @@ export function ChatWidget() {
     setIsMounted(false);
     setIsClosing(false);
   };
+
+  // Hide entirely for non-admin/coach roles. Wait for profile to load first
+  // so there is no flash for regular users. Return null after all hooks.
+  if (profileLoading || !isAllowed) return null;
 
   return createPortal(
     <BrainPortalErrorBoundary>
