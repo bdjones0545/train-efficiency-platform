@@ -1,0 +1,74 @@
+Tighten deleted session filtering at the source.
+
+Problem:
+The previous fix handles stale deleted sessions after Join fails, but the desired behavior is stronger:
+
+If a coach deletes/cancels a semi-private or group training session, it should not be visible in Available at all.
+
+Audit and fix all list endpoints that feed available/open session cards.
+
+Focus endpoints:
+- GET /api/sessions/open
+- any semi-private sessions endpoint
+- any group sessions endpoint
+- any bookings availability endpoint
+- coach/client calendar endpoints that surface joinable sessions
+
+Required backend behavior:
+1. Available/open lists must exclude:
+   - deleted sessions
+   - cancelled sessions
+   - soft-deleted sessions
+   - archived sessions
+   - bookings with status cancelled/deleted
+   - orphaned session slots tied to deleted parent sessions
+
+2. A session should only appear in Available if:
+   - parent session exists
+   - parent session is active
+   - booking/session status is open/confirmed/pending as appropriate
+   - starts in the future or matches intended availability rules
+   - capacity is not fully closed unless waitlist is intentionally enabled
+
+3. Add explicit filters for:
+   - deletedAt IS NULL
+   - cancelledAt IS NULL
+   - archivedAt IS NULL if present
+   - status NOT IN ('deleted', 'cancelled', 'archived')
+   - parent session status active/open
+
+4. If semi-private/group sessions have related records:
+   - ensure deleting parent session also updates child booking/session slot visibility
+   - ensure list query joins parent and child correctly
+   - prevent orphaned visible records
+
+5. Frontend:
+   - keep staleTime 60s
+   - keep refetchOnWindowFocus
+   - keep 410 cleanup behavior
+   - after coach delete/cancel mutation, invalidate:
+     /api/sessions/open
+     bookings/session calendar queries
+     client visible availability queries
+
+Deliverables:
+- Exact endpoint feeding Available list
+- Exact DB tables queried
+- Current filters
+- Missing filters found
+- Files changed
+- Manual test:
+  1. Create semi-private/group session
+  2. Confirm visible in Available
+  3. Coach deletes it
+  4. Confirm it disappears immediately
+  5. Refresh client page
+  6. Confirm it does not return
+  7. Confirm direct Join returns 410 friendly message
+
+Acceptance:
+- Deleted/cancelled semi-private/group sessions never appear in Available.
+- Backend excludes them before frontend sees them.
+- Frontend stale cleanup remains as fallback only.
+- TypeScript passes.
+- Server starts cleanly.

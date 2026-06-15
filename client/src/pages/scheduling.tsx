@@ -1040,6 +1040,8 @@ export default function SchedulingPage() {
       apiRequest("PATCH", `/api/scheduling/bookings/${id}/status`, { status }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       toast({ title: "Booking updated" });
     },
     onError: (e: Error) => toast({ title: "Error", description: e.message, variant: "destructive" }),
@@ -1050,6 +1052,8 @@ export default function SchedulingPage() {
       apiRequest("PATCH", `/api/scheduling/bookings/${id}`, { startAt, endAt }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       setRescheduleBooking(null);
       setRescheduleDate(undefined);
       setRescheduleStartTime("09:00");
@@ -1062,6 +1066,8 @@ export default function SchedulingPage() {
     mutationFn: (data: any) => apiRequest("POST", "/api/scheduling/bookings", data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/scheduling/bookings"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/bookings"] });
       setCreateOpen(false);
       setCreateFormKey(k => k + 1);
       toast({ title: "Session scheduled", description: "The session has been added to the schedule." });

@@ -1782,6 +1782,8 @@ export default function OpenSessionsPage() {
 
   const { data: sessions = [], isLoading, isError, refetch } = useQuery<OpenSession[]>({
     queryKey: ["/api/sessions/open"],
+    staleTime: 60_000,
+    refetchOnWindowFocus: true,
   });
 
   const filteredSessions = useMemo(() => {
