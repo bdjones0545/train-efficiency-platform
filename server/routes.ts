@@ -3780,10 +3780,10 @@ export async function registerRoutes(
       const bookingId = req.params.id;
 
       const booking = await storage.getBooking(bookingId);
-      if (!booking) return res.status(404).json({ message: "Session not found" });
+      if (!booking) return res.status(410).json({ message: "This session is no longer available." });
       if (!booking.maxParticipants) return res.status(400).json({ message: "This is not a group session" });
       if (!["CONFIRMED", "PENDING"].includes(booking.status)) {
-        return res.status(400).json({ message: "This session is no longer available" });
+        return res.status(410).json({ message: "This session is no longer available." });
       }
 
       const participants = await storage.getBookingParticipants(bookingId);
@@ -3969,9 +3969,9 @@ export async function registerRoutes(
       const { participantName } = req.body;
 
       const booking = await storage.getBooking(bookingId);
-      if (!booking) return res.status(404).json({ message: "Session not found" });
+      if (!booking) return res.status(410).json({ message: "This session is no longer available." });
       if (!["CONFIRMED", "PENDING"].includes(booking.status)) {
-        return res.status(400).json({ message: "This session is no longer available" });
+        return res.status(410).json({ message: "This session is no longer available." });
       }
 
       const { db: dbRef } = await import("./db");

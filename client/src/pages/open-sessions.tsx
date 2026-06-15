@@ -720,6 +720,13 @@ function SessionDetailModal({
         setTimeout(() => { window.location.href = "/"; }, 500);
         return;
       }
+      const statusMatch = error.message.match(/^(\d{3}):/);
+      const httpStatus = statusMatch ? parseInt(statusMatch[1], 10) : null;
+      if (httpStatus === 404 || httpStatus === 410) {
+        toast({ title: "Session Unavailable", description: "This session was removed or is no longer available.", variant: "destructive" });
+        queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
+        return;
+      }
       toast({ title: "Error", description: error.message, variant: "destructive" });
     },
   });
@@ -753,6 +760,13 @@ function SessionDetailModal({
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
         toast({ title: "Please log in", variant: "destructive" });
+        return;
+      }
+      const statusMatch = error.message.match(/^(\d{3}):/);
+      const httpStatus = statusMatch ? parseInt(statusMatch[1], 10) : null;
+      if (httpStatus === 404 || httpStatus === 410) {
+        toast({ title: "Session Unavailable", description: "This session was removed or is no longer available.", variant: "destructive" });
+        queryClient.invalidateQueries({ queryKey: ["/api/sessions/open"] });
         return;
       }
       toast({ title: "Error", description: error.message, variant: "destructive" });
