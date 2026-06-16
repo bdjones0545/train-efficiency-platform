@@ -29,6 +29,7 @@ interface AgentInboxDef { agent: string; inbox: string; description: string; }
 interface StatusData {
   configured: boolean; connected: boolean; message: string;
   agentInboxes?: AgentInboxDef[];
+  orgDomain?: string;
   inbound?: { byRoutedStatus: Record<string, number>; byClassification: Record<string, number>; urgentEscalations: number };
 }
 interface AgentMailMessage {
@@ -189,12 +190,13 @@ function ErrorState({ error }: { error: Error | null }) {
 // ─── Follow-Up Detail Dialog ─────────────────────────────────────────────────
 
 function FollowupDetailDialog({
-  followup, onClose, onApprove, onReject, onSend, onSaveEdit, onCancel, isPending,
+  followup, onClose, onApprove, onReject, onSend, onSaveEdit, onCancel, isPending, orgDomain,
 }: {
   followup: FollowupItem | null; onClose: () => void;
   onApprove: (id: string) => void; onReject: (id: string, reason: string) => void;
   onSend: (id: string) => void; onSaveEdit: (id: string, body: string) => void;
   onCancel: (id: string, reason: string, all: boolean) => void; isPending: boolean;
+  orgDomain: string;
 }) {
   const [editMode, setEditMode] = useState(false);
   const [editBody, setEditBody] = useState("");
@@ -265,7 +267,7 @@ function FollowupDetailDialog({
               </p>
               <div className="flex items-center gap-1.5">
                 <ClsBadge cls={followup.classification} />
-                <Badge variant="outline" className="text-xs font-mono">{followup.inbox}@</Badge>
+                <Badge variant="outline" className="text-xs font-mono">{followup.inbox}@{orgDomain}</Badge>
               </div>
             </div>
             <div className="bg-muted/40 rounded-lg p-3 space-y-1.5 text-xs">
@@ -516,6 +518,7 @@ export default function AdminAgentMailPage() {
   const followups = followupsRaw ?? [];
   const messages = messagesRaw ?? [];
 
+  const orgDomain = statusData?.orgDomain ?? "trainefficiency.com";
   const needsResponseInbound = inbound.filter(m => ["received", "pending", "routed"].includes(m.routed_status) && !m.action_payload?.suggestedReply);
   const pendingReplies = replies.filter(r => r.approval_status === "pending_review" || r.approval_status === "drafted");
   const pendingGmailApprovals = gmailApprovals.filter(a => ["proposed", "pending_approval", "awaiting_approval"].includes(a.status));
@@ -593,6 +596,17 @@ export default function AdminAgentMailPage() {
     mutationFn: (inbox: string) => apiRequest("POST", "/api/agentmail/inboxes/verify", { inbox }),
     onSuccess: (d: any) => { toast({ title: d.created ? "Inbox created" : "Inbox verified" }); queryClient.invalidateQueries({ queryKey: ["/api/agentmail/inboxes"] }); },
     onError: (e: any) => toast({ title: "Verify failed", description: e.message, variant: "destructive" }),
+  });
+
+  const verifyAllMutation = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/agentmail/inboxes/verify-all"),
+    onSuccess: (d: any) => {
+      const ok = (d.results ?? []).filter((r: any) => r.ok).length;
+      const fail = (d.results ?? []).length - ok;
+      toast({ title: `Verified ${ok}/${(d.results ?? []).length} inboxes${fail ? ` (${fail} failed)` : ""}` });
+      queryClient.invalidateQueries({ queryKey: ["/api/agentmail/inboxes"] });
+    },
+    onError: (e: any) => toast({ title: "Verify all failed", description: e.message, variant: "destructive" }),
   });
 
   const processFollowupsMutation = useMutation({
@@ -805,7 +819,7 @@ export default function AdminAgentMailPage() {
                       {inbound.slice(0, 50).map((m) => (
                         <TableRow key={m.id} data-testid={`row-inbound-${m.id}`} className="hover:bg-muted/40">
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(m.received_at).toLocaleString()}</TableCell>
-                          <TableCell><Badge variant="outline" className="font-mono text-xs">{m.inbox}@</Badge></TableCell>
+                          <TableCell><Badge variant="outline" className="font-mono text-xs">{m.inbox}@{orgDomain}</Badge></TableCell>
                           <TableCell className="text-sm max-w-[140px]">
                             <div className="truncate font-medium">{m.from_name ?? m.from_email}</div>
                             <div className="truncate text-xs text-muted-foreground">{m.from_email}</div>
@@ -862,7 +876,7 @@ export default function AdminAgentMailPage() {
                       {needsResponseInbound.map((m) => (
                         <TableRow key={m.id} data-testid={`row-needs-response-${m.id}`} className="hover:bg-muted/40">
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(m.received_at).toLocaleString()}</TableCell>
-                          <TableCell><Badge variant="outline" className="font-mono text-xs">{m.inbox}@</Badge></TableCell>
+                          <TableCell><Badge variant="outline" className="font-mono text-xs">{m.inbox}@{orgDomain}</Badge></TableCell>
                           <TableCell className="text-sm max-w-[160px]">
                             <div className="truncate font-medium">{m.from_name ?? m.from_email}</div>
                             <div className="truncate text-xs text-muted-foreground">{m.from_email}</div>
@@ -980,7 +994,7 @@ export default function AdminAgentMailPage() {
                       {replies.map((r) => (
                         <TableRow key={r.id} data-testid={`row-reply-${r.id}`} className="hover:bg-muted/40">
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(r.created_at).toLocaleString()}</TableCell>
-                          <TableCell><Badge variant="outline" className="font-mono text-xs">{r.inbox}@</Badge></TableCell>
+                          <TableCell><Badge variant="outline" className="font-mono text-xs">{r.inbox}@{orgDomain}</Badge></TableCell>
                           <TableCell className="text-sm max-w-[140px] truncate">{r.recipient_email}</TableCell>
                           <TableCell className="text-sm max-w-[160px] truncate">{r.subject}</TableCell>
                           <TableCell><ClsBadge cls={r.classification} /></TableCell>
@@ -1274,7 +1288,7 @@ export default function AdminAgentMailPage() {
                           <span className="font-medium">{a.agent}</span>
                           <span className="text-muted-foreground ml-2">{a.description}</span>
                         </div>
-                        <Badge variant="outline" className="font-mono text-xs">{a.inbox}@</Badge>
+                        <Badge variant="outline" className="font-mono text-xs">{a.inbox}@{orgDomain}</Badge>
                       </div>
                     ))
                   )}
@@ -1288,12 +1302,16 @@ export default function AdminAgentMailPage() {
                   <div className="flex gap-2 items-center">
                     <Select value={verifyInbox} onValueChange={setVerifyInbox}>
                       <SelectTrigger className="flex-1 h-8 text-xs" data-testid="select-verify-inbox"><SelectValue /></SelectTrigger>
-                      <SelectContent>{INBOX_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}@</SelectItem>)}</SelectContent>
+                      <SelectContent>{INBOX_OPTIONS.map((o) => <SelectItem key={o} value={o}>{o}@{orgDomain}</SelectItem>)}</SelectContent>
                     </Select>
                     <Button size="sm" onClick={() => verifyMutation.mutate(verifyInbox)} disabled={verifyMutation.isPending || !statusData?.configured} data-testid="button-verify-inbox">
                       {verifyMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
                     </Button>
                   </div>
+                  <Button size="sm" variant="outline" className="w-full text-xs" onClick={() => verifyAllMutation.mutate()} disabled={verifyAllMutation.isPending || !statusData?.configured} data-testid="button-verify-all-inboxes">
+                    {verifyAllMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <CheckCheck className="h-3 w-3 mr-1" />}
+                    Verify All 6 Inboxes
+                  </Button>
                 </div>
 
                 <details className="text-xs text-muted-foreground">
@@ -1301,9 +1319,9 @@ export default function AdminAgentMailPage() {
                   <div className="mt-2 space-y-1.5 bg-muted/40 rounded-lg p-3">
                     {[
                       { key: "AGENTMAIL_API_KEY", req: true },
-                      { key: "AGENTMAIL_BASE_URL", req: false },
+                      { key: "AGENTMAIL_ORG_DOMAIN", req: true },
                       { key: "AGENTMAIL_WEBHOOK_SECRET", req: false },
-                      { key: "AGENTMAIL_ORG_DOMAIN", req: false },
+                      { key: "AGENTMAIL_BASE_URL", req: false },
                     ].map(({ key, req }) => (
                       <div key={key} className="flex items-center gap-2">
                         <code className="font-bold">{key}</code>
@@ -1395,7 +1413,7 @@ export default function AdminAgentMailPage() {
                         <TableRow key={m.id} data-testid={`row-activity-${m.id}`} className="hover:bg-muted/40">
                           <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(m.created_at).toLocaleString()}</TableCell>
                           <TableCell className="text-sm">{m.agent_name}</TableCell>
-                          <TableCell><Badge variant="outline" className="text-xs font-mono">{m.inbox}@</Badge></TableCell>
+                          <TableCell><Badge variant="outline" className="text-xs font-mono">{m.inbox}@{orgDomain}</Badge></TableCell>
                           <TableCell className="text-sm max-w-[140px] truncate">{m.to_email}</TableCell>
                           <TableCell className="text-sm max-w-[180px] truncate">{m.subject}</TableCell>
                           <TableCell>
@@ -1456,7 +1474,7 @@ export default function AdminAgentMailPage() {
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div><span className="text-muted-foreground">From: </span><span className="font-medium">{selectedInbound.from_name ?? selectedInbound.from_email}</span></div>
                 <div><span className="text-muted-foreground">Email: </span>{selectedInbound.from_email}</div>
-                <div><span className="text-muted-foreground">Inbox: </span><Badge variant="outline" className="font-mono text-xs">{selectedInbound.inbox}@</Badge></div>
+                <div><span className="text-muted-foreground">Inbox: </span><Badge variant="outline" className="font-mono text-xs">{selectedInbound.inbox}@{orgDomain}</Badge></div>
                 <div><span className="text-muted-foreground">Received: </span>{new Date(selectedInbound.received_at).toLocaleString()}</div>
                 <div><span className="text-muted-foreground">Classification: </span><ClsBadge cls={selectedInbound.classification} /></div>
                 <div><span className="text-muted-foreground">Confidence: </span><ConfBadge conf={selectedInbound.confidence} /></div>
@@ -1504,6 +1522,7 @@ export default function AdminAgentMailPage() {
         onSaveEdit={(id, body) => editFollowupMutation.mutate({ id, body })}
         onCancel={(id, reason, all) => cancelFollowupMutation.mutate({ id, reason, cancelAll: all })}
         isPending={approveFollowupMutation.isPending || sendFollowupMutation.isPending || rejectFollowupMutation.isPending || cancelFollowupMutation.isPending}
+        orgDomain={orgDomain}
       />
     </div>
   );

@@ -162,6 +162,7 @@ export async function registerAgentMailRoutes(
       return res.json({
         ...status,
         agentInboxes: AGENT_INBOXES,
+        orgDomain: process.env.AGENTMAIL_ORG_DOMAIN || "trainefficiency.com",
         inbound: { byRoutedStatus, byClassification, urgentEscalations: urgentCount },
       });
     } catch (e: any) {
@@ -176,11 +177,11 @@ export async function registerAgentMailRoutes(
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       if (!isAgentMailConfigured()) {
-        return res.json({ configured: false, inboxes: [], agentInboxes: AGENT_INBOXES });
+        return res.json({ configured: false, inboxes: [], agentInboxes: AGENT_INBOXES, orgDomain: process.env.AGENTMAIL_ORG_DOMAIN || "trainefficiency.com" });
       }
 
       const result = await listInboxes();
-      res.json({ configured: true, inboxes: result.inboxes, agentInboxes: AGENT_INBOXES, error: result.error });
+      res.json({ configured: true, inboxes: result.inboxes, agentInboxes: AGENT_INBOXES, orgDomain: process.env.AGENTMAIL_ORG_DOMAIN || "trainefficiency.com", error: result.error });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to list inboxes" });
     }
@@ -200,6 +201,28 @@ export async function registerAgentMailRoutes(
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to verify inbox" });
+    }
+  });
+
+  // ─── POST /api/agentmail/inboxes/verify-all ───────────────────────────────
+  // Bulk verify / create all configured agent inboxes in a single call.
+  app.post("/api/agentmail/inboxes/verify-all", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      if (!isAgentMailConfigured()) return res.status(503).json({ message: "AgentMail not configured." });
+
+      const domain = process.env.AGENTMAIL_ORG_DOMAIN || "trainefficiency.com";
+      const results = await Promise.all(
+        AGENT_INBOXES.map(async (def) => {
+          const r = await createOrVerifyInbox(def.inbox);
+          return { inbox: def.inbox, email: `${def.inbox}@${domain}`, agent: def.agent, ...r };
+        }),
+      );
+      const allOk = results.every((r) => r.ok);
+      res.json({ allOk, domain, results });
+    } catch (e: any) {
+      res.status(500).json({ message: e?.message ?? "Failed to verify all inboxes" });
     }
   });
 

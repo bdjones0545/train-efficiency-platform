@@ -261,7 +261,15 @@ export async function sendAgentEmail(params: {
     reply_to: params.replyTo,
   };
 
+  // NOTE: AgentMail v0 REST API is inbound-only. POST /inboxes/{email}/emails returns 404.
+  // All confirmed endpoints: GET /inboxes, GET /inboxes/{email}, GET /inboxes/{email}/threads.
+  // Outbound send requires SMTP credentials or a future API version.
   const res = await agentMailRequest("POST", `/inboxes/${fromEmail}/emails`, payload);
+
+  if (!res.ok && (res.data as any)?.message === "Route not found") {
+    console.warn(`[AgentMail] sendAgentEmail: outbound send not available in AgentMail v0 REST API. ` +
+      `from=${fromEmail} to=${params.to} — AgentMail is inbound-only; use Gmail agent for outbound.`);
+  }
 
   const messageId = res.ok ? ((res.data as any)?.id ?? (res.data as any)?.messageId ?? undefined) : undefined;
 
@@ -275,7 +283,7 @@ export async function sendAgentEmail(params: {
     bodyPreview: params.body.slice(0, 300),
     providerMessageId: messageId,
     status: res.ok ? "sent" : "failed",
-    errorMessage: res.ok ? undefined : (res.error ?? `HTTP ${res.status}`),
+    errorMessage: res.ok ? undefined : (res.error ?? `AgentMail outbound not available (HTTP ${res.status})`),
   });
 
   if (res.ok) {
@@ -357,7 +365,14 @@ export async function replyFromAgentInbox(params: {
     thread_id: params.threadId,
   };
 
+  // NOTE: AgentMail v0 REST API is inbound-only. POST /inboxes/{email}/emails returns 404.
+  // Outbound replies require SMTP credentials or a future API version.
   const res = await agentMailRequest("POST", `/inboxes/${fromEmail}/emails`, payload);
+
+  if (!res.ok && (res.data as any)?.message === "Route not found") {
+    console.warn(`[AgentMail] replyFromAgentInbox: outbound send not available in AgentMail v0 REST API. ` +
+      `from=${fromEmail} to=${params.to} thread=${params.threadId} — use Gmail agent for outbound.`);
+  }
 
   const messageId = res.ok ? ((res.data as any)?.id ?? (res.data as any)?.messageId ?? undefined) : undefined;
 
@@ -371,7 +386,7 @@ export async function replyFromAgentInbox(params: {
     bodyPreview: params.body.slice(0, 300),
     providerMessageId: messageId,
     status: res.ok ? "sent" : "failed",
-    errorMessage: res.ok ? undefined : (res.error ?? `HTTP ${res.status}`),
+    errorMessage: res.ok ? undefined : (res.error ?? `AgentMail outbound not available (HTTP ${res.status})`),
   });
 
   if (res.ok) {

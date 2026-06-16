@@ -1,0 +1,132 @@
+Re-audit the AgentMail connection from TrainEfficiency/Replit to AgentMail.
+
+Context:
+AgentMail console now shows these organizational inboxes provisioned:
+
+* hiring@trainefficiency.com
+* operations@trainefficiency.com
+* scheduling@trainefficiency.com
+* ceo@trainefficiency.com
+* revenue@trainefficiency.com
+
+Previous status:
+AgentMail was marked Partially Functional because inbox provisioning and live provider send were not fully confirmed. Inbox provisioning now appears confirmed in the AgentMail console.
+
+Goal:
+Determine whether the Replit-hosted TrainEfficiency application is correctly connected to the live AgentMail provider and whether the platform can verify, send, receive, classify, route, and log AgentMail traffic end-to-end.
+
+Audit Steps
+
+1. Environment Check
+
+Verify in Replit:
+
+* AGENTMAIL_API_KEY exists
+* AGENTMAIL_WEBHOOK_SECRET exists
+* AGENTMAIL_BASE_URL value or default
+* AGENTMAIL_ORG_DOMAIN is set correctly
+* Application is connected to the same AgentMail organization shown in the AgentMail console
+
+2. Inbox Verification Endpoint
+
+Run:
+
+POST /api/agentmail/inboxes/verify
+
+Confirm the response includes:
+
+* hiring@trainefficiency.com
+* operations@trainefficiency.com
+* scheduling@trainefficiency.com
+* ceo@trainefficiency.com
+* revenue@trainefficiency.com
+
+If any inbox is missing, determine why and fix the provisioning logic.
+
+3. Domain Mapping Validation
+
+Compare AgentMail console inboxes against TrainEfficiency inbox definitions.
+
+Expected mappings:
+
+* Revenue Agent → revenue@trainefficiency.com
+* Hiring Agent → hiring@trainefficiency.com
+* Scheduling Agent → scheduling@trainefficiency.com
+* Operations Agent → operations@trainefficiency.com
+* CEO Agent → ceo@trainefficiency.com
+
+Confirm no code paths still default to @agentmail.to addresses.
+
+4. Live Outbound Validation
+
+Create a controlled test draft from:
+
+ceo@trainefficiency.com
+
+Approve the draft through the normal workflow.
+
+Verify:
+
+* sendAgentEmail() executes
+* AgentMail provider accepts the message
+* provider_message_id is returned
+* agent_mail_messages row created
+* outbound_email_audit_log row created
+* message status updated correctly
+* recipient receives the email
+
+5. Live Inbound Validation
+
+Reply to the test email.
+
+Verify:
+
+* AgentMail webhook reaches Replit
+* HMAC signature validation succeeds
+* inbound message stored in agent_mail_inbound_messages
+* classification executes
+* routed_status updates correctly
+* reply queue entry created
+* CEO timeline event created
+
+6. Failure Handling Validation
+
+Verify:
+
+* Missing signature returns HTTP 401
+* Invalid signature returns HTTP 401
+* Invalid recipient handled safely
+* Duplicate send prevented
+* Emergency pause blocks outbound send
+* Governance controls remain intact
+
+7. UI Validation
+
+Audit /admin/agentmail and confirm:
+
+* Inboxes display correctly
+* Inbound messages display correctly
+* Reply queue displays correctly
+* Sent messages display correctly
+* Follow-ups display correctly
+* Dashboard counts match database values
+
+8. Final Classification
+
+Return:
+
+* Environment status
+* Inbox verification results
+* Domain mapping results
+* Outbound delivery results
+* Inbound webhook results
+* Database validation
+* Security validation
+* Bugs discovered
+* Files changed
+* Final verdict:
+
+Fully Functional — Human-Approved Production Mode
+Partially Functional
+Draft-Only
+Broken
