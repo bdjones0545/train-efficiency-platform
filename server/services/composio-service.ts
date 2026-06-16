@@ -1,12 +1,17 @@
 /**
  * Composio Service
  * ─────────────────────────────────────────────────────────────────────────────
- * Centralized wrapper around the Composio SDK.
+ * Centralized wrapper around the Composio v3.1 REST API.
  * ALL agent-to-Composio calls must go through this service — never directly.
  *
+ * Uses the Composio v3.1 API (https://backend.composio.dev/api/v3.1/*)
+ * via native fetch — the old composio-core SDK (v0.5.39) is deprecated
+ * and its underlying v1 API is permanently gone (HTTP 410).
+ *
  * Responsibilities:
- *  - SDK initialisation and health checking
- *  - Tool/action discovery
+ *  - API health checking
+ *  - Tool/toolkit discovery
+ *  - Connected account management
  *  - Action execution with structured error handling
  *  - Audit logging of every call into composio_action_log
  *
@@ -19,17 +24,49 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 
-// ─── Composio SDK ─────────────────────────────────────────────────────────────
+// ─── Composio API config ──────────────────────────────────────────────────────
 
-let composioClient: any = null;
+const COMPOSIO_BASE_URL = "https://backend.composio.dev";
+const COMPOSIO_API_VERSION = "v3.1";
 
-function getClient(): any {
-  if (composioClient) return composioClient;
-  const apiKey = process.env.COMPOSIO_API_KEY;
-  if (!apiKey) throw new Error("COMPOSIO_API_KEY environment variable is not set");
-  const { Composio } = require("composio-core");
-  composioClient = new Composio({ apiKey, allowTracing: false });
-  return composioClient;
+function getApiKey(): string {
+  const key = process.env.COMPOSIO_API_KEY;
+  if (!key) throw new Error("COMPOSIO_API_KEY environment variable is not set");
+  return key;
+}
+
+async function composioFetch(
+  path: string,
+  options: RequestInit = {},
+): Promise<any> {
+  const url = `${COMPOSIO_BASE_URL}/api/${COMPOSIO_API_VERSION}${path}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "x-api-key": getApiKey(),
+      "content-type": "application/json",
+      ...(options.headers ?? {}),
+    },
+  });
+
+  const text = await res.text();
+  let body: any;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    body = { raw: text };
+  }
+
+  if (!res.ok) {
+    const msg =
+      body?.error?.message ??
+      body?.message ??
+      body?.error ??
+      `HTTP ${res.status}`;
+    throw new Error(`Composio API error (${res.status}): ${msg}`);
+  }
+
+  return body;
 }
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -75,6 +112,14 @@ export interface ComposioHealthStatus {
   version: string;
   checkedAt: Date;
   error?: string;
+}
+
+export interface ComposioConnectedAccount {
+  id: string;
+  toolkit_slug: string;
+  entity: string;
+  status: string;
+  created_at?: string;
 }
 
 // ─── Ensure table exists ──────────────────────────────────────────────────────
@@ -158,7 +203,7 @@ export async function checkComposioHealth(): Promise<ComposioHealthStatus> {
   const base: ComposioHealthStatus = {
     connected: false,
     apiKeyPresent,
-    version: "0.5.39",
+    version: COMPOSIO_API_VERSION,
     checkedAt: new Date(),
   };
 
@@ -167,11 +212,34 @@ export async function checkComposioHealth(): Promise<ComposioHealthStatus> {
   }
 
   try {
-    const client = getClient();
-    await client.apps.list({ limit: 1 });
+    await composioFetch("/toolkits?limit=1");
     return { ...base, connected: true };
   } catch (err: any) {
     return { ...base, error: err.message };
+  }
+}
+
+// ─── Connected accounts ───────────────────────────────────────────────────────
+
+export async function listConnectedAccounts(
+  entityId?: string,
+): Promise<ComposioConnectedAccount[]> {
+  try {
+    const qs = entityId ? `?entity_id=${encodeURIComponent(entityId)}&limit=50` : "?limit=50";
+    const result = await composioFetch(`/connected_accounts${qs}`);
+    const items: any[] = Array.isArray(result)
+      ? result
+      : result?.items ?? result?.data ?? [];
+    return items.map((a: any) => ({
+      id: a.id ?? a.connectedAccountId ?? "",
+      toolkit_slug: a.toolkit_slug ?? a.appName ?? a.appId ?? "",
+      entity: a.entity ?? a.entity_id ?? entityId ?? "default",
+      status: a.status ?? "unknown",
+      created_at: a.created_at,
+    }));
+  } catch (err: any) {
+    console.error("[ComposioService] listConnectedAccounts failed:", err.message);
+    return [];
   }
 }
 
@@ -179,18 +247,23 @@ export async function checkComposioHealth(): Promise<ComposioHealthStatus> {
 
 export async function discoverComposioTools(appIds?: string[]): Promise<ComposioToolInfo[]> {
   try {
-    const client = getClient();
-    const result = await client.apps.list();
-    const apps: any[] = Array.isArray(result) ? result : (result?.items ?? result?.data ?? []);
+    const result = await composioFetch("/toolkits?limit=100");
+    const apps: any[] = Array.isArray(result)
+      ? result
+      : result?.items ?? result?.data ?? [];
 
     return apps
-      .filter((a: any) => !appIds || appIds.includes(a.key?.toUpperCase() ?? a.appId?.toUpperCase()))
+      .filter((a: any) =>
+        !appIds ||
+        appIds.includes((a.slug ?? a.key ?? "").toUpperCase()) ||
+        appIds.includes((a.name ?? "").toUpperCase()),
+      )
       .map((a: any) => ({
-        appId: a.key?.toUpperCase() ?? a.appId ?? "UNKNOWN",
-        name: a.name ?? a.displayName ?? a.key ?? "Unknown",
-        description: a.description ?? "",
-        logo: a.logo,
-        categories: a.categories ?? [],
+        appId: (a.slug ?? a.key ?? "UNKNOWN").toUpperCase(),
+        name: a.name ?? a.slug ?? "Unknown",
+        description: a.meta?.description ?? a.description ?? "",
+        logo: a.meta?.logo ?? a.logo,
+        categories: a.meta?.categories?.map((c: any) => c.id ?? c) ?? [],
       }));
   } catch (err: any) {
     console.error("[ComposioService] discoverComposioTools failed:", err.message);
@@ -200,15 +273,19 @@ export async function discoverComposioTools(appIds?: string[]): Promise<Composio
 
 export async function discoverComposioActions(appId: string, limit = 20): Promise<ComposioActionInfo[]> {
   try {
-    const client = getClient();
-    const result = await client.actions.list({ apps: appId.toLowerCase(), limit });
-    const items: any[] = Array.isArray(result) ? result : (result?.items ?? result?.data ?? []);
+    const slug = appId.toLowerCase();
+    const result = await composioFetch(
+      `/tools?toolkit_slug=${encodeURIComponent(slug)}&limit=${limit}`,
+    );
+    const items: any[] = Array.isArray(result)
+      ? result
+      : result?.items ?? result?.data ?? [];
 
     return items.map((a: any) => ({
-      actionName: a.name ?? a.actionName ?? "",
+      actionName: a.slug ?? a.name ?? a.actionName ?? "",
       appId: appId.toUpperCase(),
       description: a.description ?? "",
-      parameters: a.parameters ?? {},
+      parameters: a.input_parameters ?? a.parameters ?? {},
     }));
   } catch (err: any) {
     console.error(`[ComposioService] discoverComposioActions(${appId}) failed:`, err.message);
@@ -222,22 +299,20 @@ export async function executeComposioAction(
   params: ComposioExecuteParams,
 ): Promise<ComposioExecuteResult> {
   const startMs = Date.now();
-  const { orgId, agentId, tool, action, inputParams, entityId, logId } = params;
-
+  const { orgId, agentId, tool, action, inputParams, entityId, connectedAccountId, logId } = params;
   const resolvedLogId = logId ?? crypto.randomUUID();
 
   try {
-    const client = getClient();
-    const { ComposioToolSet } = require("composio-core");
-    const toolset = new ComposioToolSet({
-      apiKey: process.env.COMPOSIO_API_KEY,
-      entityId: entityId ?? "default",
-    });
+    const body: Record<string, unknown> = {
+      arguments: inputParams,
+    };
 
-    const result = await toolset.executeAction({
-      action,
-      params: inputParams,
-      entityId: entityId ?? "default",
+    if (entityId) body.entity_id = entityId;
+    if (connectedAccountId) body.connected_account_id = connectedAccountId;
+
+    const result = await composioFetch(`/tools/execute/${encodeURIComponent(action)}`, {
+      method: "POST",
+      body: JSON.stringify(body),
     });
 
     const durationMs = Date.now() - startMs;
@@ -250,7 +325,7 @@ export async function executeComposioAction(
       entityId,
       inputSummary: sanitisePayloadForLog(inputParams),
       success: true,
-      resultSummary: sanitisePayloadForLog(result),
+      resultSummary: sanitisePayloadForLog(result as Record<string, unknown>),
       durationMs,
     });
 
@@ -314,15 +389,17 @@ export async function getComposioActionLog(
 ): Promise<any[]> {
   try {
     const limit = filters?.limit ?? 50;
-    let q = `
-      SELECT * FROM composio_action_log
-      WHERE org_id = '${orgId}'
-    `;
-    if (filters?.agentId) q += ` AND agent_id = '${filters.agentId}'`;
-    if (filters?.tool) q += ` AND tool = '${filters.tool}'`;
-    q += ` ORDER BY created_at DESC LIMIT ${limit}`;
+    const agentId = filters?.agentId ?? null;
+    const tool = filters?.tool ?? null;
 
-    const raw = await db.execute(sql.raw(q));
+    const raw = await db.execute(sql`
+      SELECT * FROM composio_action_log
+      WHERE org_id = ${orgId}
+        AND (${agentId}::text IS NULL OR agent_id = ${agentId})
+        AND (${tool}::text IS NULL OR tool = ${tool})
+      ORDER BY created_at DESC
+      LIMIT ${limit}
+    `);
     const rows = Array.isArray(raw) ? raw : (raw as any).rows ?? [];
     return rows;
   } catch {

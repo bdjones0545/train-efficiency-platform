@@ -80,7 +80,7 @@ const requestDraftSchema = z.object({
 // ─── Org extraction helper ────────────────────────────────────────────────────
 
 function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? req.query.orgId ?? null;
+  return req.user?.orgId ?? null;
 }
 
 // ─── Draft ID extraction helper ───────────────────────────────────────────────

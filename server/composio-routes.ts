@@ -21,6 +21,7 @@ import {
   discoverComposioTools,
   discoverComposioActions,
   getComposioActionLog,
+  listConnectedAccounts,
   ensureComposioLogTable,
 } from "./services/composio-service";
 import {
@@ -76,14 +77,21 @@ export async function registerComposioRoutes(
     requireRole("COACH", "ADMIN"),
     async (req: any, res) => {
       try {
-        const health = await checkComposioHealth();
+        const [health, connectedAccounts] = await Promise.all([
+          checkComposioHealth(),
+          listConnectedAccounts().catch(() => []),
+        ]);
         const registry = getRegistrySnapshot();
         res.json({
           ...health,
           toolCount: registry.totalTools,
           agentCount: registry.totalAgents,
-          phase: 1,
-          description: "Composio External Tool Layer — Phase 1",
+          connectedAccounts,
+          connectedAccountCount: connectedAccounts.length,
+          hasConnectedAccounts: connectedAccounts.length > 0,
+          phase: 2,
+          apiVersion: "v3.1",
+          description: "Composio External Tool Layer — v3.1 API",
         });
       } catch (err: any) {
         res.status(500).json({ message: err.message });
@@ -267,9 +275,10 @@ export async function registerComposioRoutes(
     "/api/composio/hermes-events/unprocessed",
     isAuthenticated,
     requireRole("ADMIN"),
-    async (_req, res) => {
+    async (req: any, res) => {
       try {
-        const events = await getUnprocessedHermesEvents();
+        const orgId = req.user?.orgId as string | undefined;
+        const events = await getUnprocessedHermesEvents(orgId);
         res.json({ events, total: events.length });
       } catch (err: any) {
         res.status(500).json({ message: err.message });

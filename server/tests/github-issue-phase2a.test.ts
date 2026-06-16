@@ -126,8 +126,9 @@ test("software_improvement_agent is NOT permitted to use STRIPE", () => {
   expect(isAgentAllowedTool("software_improvement_agent", "STRIPE")).toBeFalse();
 });
 
-test("software_improvement_agent is NOT permitted to use SLACK", () => {
-  expect(isAgentAllowedTool("software_improvement_agent", "SLACK")).toBeFalse();
+// Phase 2C: SLACK was added to software_improvement_agent for critical engineering alerts
+test("software_improvement_agent IS permitted to use SLACK (Phase 2C)", () => {
+  expect(isAgentAllowedTool("software_improvement_agent", "SLACK")).toBeTrue();
 });
 
 test("getPermissionDeniedReason returns null for software_improvement_agent + GITHUB_CREATE_AN_ISSUE", () => {

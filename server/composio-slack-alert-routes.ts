@@ -121,7 +121,7 @@ const requestAlertSchema = z.object({
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? req.query.orgId ?? null;
+  return req.user?.orgId ?? null;
 }
 
 function extractSlackMessageId(data: unknown): { messageId: string | null; channelId: string | null } {
