@@ -15256,21 +15256,64 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
+  // GET /api/integrations/google_calendar/oauth/start-url — generate OAuth URL from stored credentials
+  app.get("/api/integrations/google_calendar/oauth/start-url", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization found" });
+      const integration = await storage.getExternalIntegration(orgId, "google_calendar");
+      const { decryptCredentials } = await import("./credentials-vault");
+      const creds = decryptCredentials(integration?.encryptedCredentials as any);
+      if (!creds?.clientId || !creds?.clientSecret) {
+        return res.status(400).json({ message: "Google Calendar credentials not found. Please re-enter your OAuth credentials." });
+      }
+      const { getGoogleAuthUrlFromCredentials } = await import("./connectors/google-calendar");
+      const url = getGoogleAuthUrlFromCredentials(creds.clientId, creds.clientSecret, orgId);
+      res.json({ url });
+    } catch (err: any) {
+      res.status(500).json({ message: err.message });
+    }
+  });
+
   // GET /api/connectors/google-calendar/callback — OAuth callback (public, Google redirects here)
+  // State is either plain orgId (connector flow) or "orgId|fromIntegration" (org-integration flow).
   app.get("/api/connectors/google-calendar/callback", async (req: any, res) => {
-    const { code, state: orgId, error } = req.query;
+    const { code, state: rawState, error } = req.query;
+    const fromIntegration = typeof rawState === "string" && rawState.includes("|fromIntegration");
+    const orgId = typeof rawState === "string" ? rawState.replace("|fromIntegration", "") : (rawState as string);
+    const successBase = fromIntegration ? "/admin/configuration?tab=advanced" : "/admin/agent-ops?tab=connectors";
+    const errorBase  = fromIntegration ? "/admin/configuration?tab=advanced" : "/admin/agent-ops?tab=connectors";
+
     if (error) {
-      return res.redirect(`/admin/agent-ops?tab=connectors&gcal_error=${encodeURIComponent(error)}`);
+      return res.redirect(`${errorBase}&gcal_error=${encodeURIComponent(error as string)}`);
     }
     if (!code || !orgId) {
-      return res.redirect("/admin/agent-ops?tab=connectors&gcal_error=missing_params");
+      return res.redirect(`${errorBase}&gcal_error=missing_params`);
     }
     try {
-      const { exchangeCodeAndStoreTokens } = await import("./connectors/google-calendar");
-      const { email } = await exchangeCodeAndStoreTokens(code as string, orgId as string);
-      res.redirect(`/admin/agent-ops?tab=connectors&gcal_connected=1&gcal_email=${encodeURIComponent(email ?? "")}`);
+      let email: string | null = null;
+      if (fromIntegration) {
+        // Use the credentials stored in external_integrations for this org
+        const integration = await storage.getExternalIntegration(orgId, "google_calendar");
+        const { decryptCredentials } = await import("./credentials-vault");
+        const creds = decryptCredentials(integration?.encryptedCredentials as any);
+        if (!creds?.clientId || !creds?.clientSecret) {
+          return res.redirect(`${errorBase}&gcal_error=${encodeURIComponent("Stored credentials missing — please re-enter them")}`);
+        }
+        const { exchangeCodeAndStoreTokensWithCredentials } = await import("./connectors/google-calendar");
+        const result = await exchangeCodeAndStoreTokensWithCredentials(code as string, orgId, creds.clientId, creds.clientSecret);
+        email = result.email;
+        // Mark external_integrations row as connected now that OAuth is complete
+        await storage.upsertExternalIntegration(orgId, "google_calendar", { status: "connected" } as any);
+        return res.redirect(`${successBase}&gcal=connected&gcal_email=${encodeURIComponent(email ?? "")}`);
+      } else {
+        const { exchangeCodeAndStoreTokens } = await import("./connectors/google-calendar");
+        const result = await exchangeCodeAndStoreTokens(code as string, orgId);
+        email = result.email;
+        return res.redirect(`${successBase}&gcal_connected=1&gcal_email=${encodeURIComponent(email ?? "")}`);
+      }
     } catch (err: any) {
-      res.redirect(`/admin/agent-ops?tab=connectors&gcal_error=${encodeURIComponent(err.message)}`);
+      res.redirect(`${errorBase}&gcal_error=${encodeURIComponent(err.message)}`);
     }
   });
 
@@ -18132,9 +18175,10 @@ Respond with this exact JSON structure:
       const existing = await storage.getExternalIntegration(orgId, integrationType);
       const existingStats = (existing?.usageStats as Record<string, unknown>) ?? {};
 
-      // Gmail uses OAuth — saving credentials marks as "pending_oauth", not "connected"
+      // Gmail and Google Calendar use OAuth — saving credentials marks as "disconnected"
       // Status becomes "connected" only after the OAuth callback stores tokens
-      const status = integrationType === "gmail" ? "disconnected" : "connected";
+      const needsOAuth = integrationType === "gmail" || integrationType === "google_calendar";
+      const status = needsOAuth ? "disconnected" : "connected";
 
       const updated = await storage.upsertExternalIntegration(orgId, integrationType, {
         encryptedCredentials: encrypted as any,
@@ -18142,7 +18186,7 @@ Respond with this exact JSON structure:
         usageStats: { ...existingStats, credentialHints: hints } as any,
       } as any);
       // Never return credentials or hints from this endpoint
-      res.json({ ok: true, integrationId: updated.id, requiresOAuth: integrationType === "gmail" });
+      res.json({ ok: true, integrationId: updated.id, requiresOAuth: needsOAuth });
     } catch (e: any) {
       console.error("[integrations/credentials] error:", e.message, e.stack);
       res.status(500).json({ message: "Failed to store credentials: " + e.message });

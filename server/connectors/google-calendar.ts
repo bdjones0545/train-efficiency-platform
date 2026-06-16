@@ -51,17 +51,32 @@ export function getGoogleAuthUrl(orgId: string): string {
   });
 }
 
+/**
+ * Builds an OAuth URL using caller-supplied credentials (from external_integrations).
+ * State is encoded as `orgId|fromIntegration` so the callback knows to update
+ * external_integrations and redirect back to the configuration page.
+ */
+export function getGoogleAuthUrlFromCredentials(
+  clientId: string,
+  clientSecret: string,
+  orgId: string
+): string {
+  const client = new OAuth2Client(clientId, clientSecret, getRedirectUri());
+  return client.generateAuthUrl({
+    access_type: "offline",
+    prompt: "consent",
+    scope: SCOPES,
+    state: `${orgId}|fromIntegration`,
+  });
+}
+
 // ─── Token exchange + storage ─────────────────────────────────────────────────
 
-export async function exchangeCodeAndStoreTokens(
-  code: string,
-  orgId: string
-): Promise<{ email: string | null }> {
-  const client = buildOAuth2Client();
-  const { tokens } = await client.getToken(code);
-
-  const email = await resolveConnectedEmail(tokens.access_token ?? null);
-
+async function storeTokens(
+  orgId: string,
+  tokens: { access_token?: string | null; refresh_token?: string | null; expiry_date?: number | null },
+  email: string | null
+): Promise<void> {
   await db.execute(sql`
     INSERT INTO connector_tokens (id, org_id, connector, access_token, refresh_token, token_expiry, scope, email, created_at, updated_at)
     VALUES (gen_random_uuid(), ${orgId}, 'google_calendar',
@@ -80,7 +95,34 @@ export async function exchangeCodeAndStoreTokens(
       email = EXCLUDED.email,
       updated_at = NOW()
   `);
+}
 
+export async function exchangeCodeAndStoreTokens(
+  code: string,
+  orgId: string
+): Promise<{ email: string | null }> {
+  const client = buildOAuth2Client();
+  const { tokens } = await client.getToken(code);
+  const email = await resolveConnectedEmail(tokens.access_token ?? null);
+  await storeTokens(orgId, tokens, email);
+  return { email };
+}
+
+/**
+ * Same as exchangeCodeAndStoreTokens but uses caller-supplied credentials
+ * (from external_integrations) instead of env vars. Used by the org
+ * integration OAuth flow triggered from Options → Advanced.
+ */
+export async function exchangeCodeAndStoreTokensWithCredentials(
+  code: string,
+  orgId: string,
+  clientId: string,
+  clientSecret: string
+): Promise<{ email: string | null }> {
+  const client = new OAuth2Client(clientId, clientSecret, getRedirectUri());
+  const { tokens } = await client.getToken(code);
+  const email = await resolveConnectedEmail(tokens.access_token ?? null);
+  await storeTokens(orgId, tokens, email);
   return { email };
 }
 

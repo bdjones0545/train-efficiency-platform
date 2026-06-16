@@ -572,15 +572,17 @@ function OrgIntegrationConnectModal({
   const { toast } = useToast();
   const isReauth = record?.status === "connected";
   const [fields, setFields] = useState<Record<string, string>>({});
-  // Gmail OAuth: after credentials are saved, show "Authorize with Google" button
-  const [gmailCredentialsSaved, setGmailCredentialsSaved] = useState(false);
+  // Gmail / Google Calendar OAuth: after credentials are saved, show "Authorize with Google" button
+  const [oauthCredentialsSaved, setOauthCredentialsSaved] = useState(false);
   const isGmailOAuth = def.id === "gmail" && def.authType === "oauth";
+  const isGCalOAuth  = def.id === "google_calendar" && def.authType === "oauth";
+  const isGoogleOAuth = isGmailOAuth || isGCalOAuth;
 
   const saveMutation = useMutation({
     mutationFn: async () => {
       const displayName = fields.accountEmail || fields.calendarId || fields.channel || fields.webhookUrl || def.title;
       await apiRequest("PUT", `/api/integrations/${def.id}`, {
-        status: isGmailOAuth ? "disconnected" : "connected",
+        status: isGoogleOAuth ? "disconnected" : "connected",
         displayName,
         authType: def.authType,
       });
@@ -593,7 +595,7 @@ function OrgIntegrationConnectModal({
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
       if (result?.requiresOAuth) {
-        setGmailCredentialsSaved(true);
+        setOauthCredentialsSaved(true);
         toast({ title: "Credentials saved", description: "Now authorize access with Google to complete the connection." });
       } else {
         toast({ title: `${def.title} connected`, description: "Integration is now active." });
@@ -608,7 +610,7 @@ function OrgIntegrationConnectModal({
   });
 
   function handleClose() {
-    setGmailCredentialsSaved(false);
+    setOauthCredentialsSaved(false);
     setFields({});
     setClientIdError(null);
     setClientSecretWarning(null);
@@ -641,7 +643,7 @@ function OrgIntegrationConnectModal({
   }
 
   function validateGmailAndSave() {
-    if (!isGmailOAuth) { saveMutation.mutate(); return; }
+    if (!isGoogleOAuth) { saveMutation.mutate(); return; }
     const cid = fields.clientId?.trim() ?? "";
     const csec = fields.clientSecret?.trim() ?? "";
     let error: string | null = null;
@@ -662,7 +664,7 @@ function OrgIntegrationConnectModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
-      setGmailCredentialsSaved(false);
+      setOauthCredentialsSaved(false);
       setFields({});
       setClientIdError(null);
       setClientSecretWarning(null);
@@ -699,13 +701,17 @@ function OrgIntegrationConnectModal({
     }
   }
 
-  async function startGmailOAuth() {
+  async function startGoogleOAuth() {
     setOauthStarting(true);
     try {
-      // Pass the current page path+search as returnTo so the callback redirects
-      // back here (e.g. /admin/configuration?tab=advanced) instead of a hardcoded URL.
-      const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
-      const res = await apiRequest("GET", `/api/integrations/gmail/oauth/start-url?returnTo=${returnTo}`);
+      const startUrlEndpoint = isGCalOAuth
+        ? "/api/integrations/google_calendar/oauth/start-url"
+        : (() => {
+            const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+            return `/api/integrations/gmail/oauth/start-url?returnTo=${returnTo}`;
+          })();
+
+      const res = await apiRequest("GET", startUrlEndpoint);
 
       let data: unknown;
       try {
@@ -715,7 +721,10 @@ function OrgIntegrationConnectModal({
       }
 
       const { url, clientIdPreview: cidPreview, redirectUri: dbgRedirectUri } = data as any;
-      console.log(`[gmail/oauth] start-url check — clientIdPreview=${cidPreview} redirectUri=${dbgRedirectUri} returnTo=${decodeURIComponent(returnTo)}`);
+      if (isGmailOAuth) {
+        const returnTo = encodeURIComponent(window.location.pathname + window.location.search);
+        console.log(`[gmail/oauth] start-url check — clientIdPreview=${cidPreview} redirectUri=${dbgRedirectUri} returnTo=${decodeURIComponent(returnTo)}`);
+      }
 
       if (!url || typeof url !== "string") {
         throw new Error(`OAuth URL missing from response. Got: ${JSON.stringify(data)}`);
@@ -724,10 +733,10 @@ function OrgIntegrationConnectModal({
         throw new Error(`Unexpected OAuth URL (not Google): ${url.slice(0, 100)}`);
       }
 
-      console.log("[gmail/oauth] redirecting to Google:", url.slice(0, 100) + "…");
+      console.log(`[${def.id}/oauth] redirecting to Google:`, url.slice(0, 100) + "…");
       window.location.href = url;
     } catch (e: any) {
-      console.error("[gmail/oauth] startGmailOAuth error:", e);
+      console.error(`[${def.id}/oauth] startGoogleOAuth error:`, e);
       toast({ title: "Could not start OAuth", description: e.message, variant: "destructive" });
       setOauthStarting(false);
     }
@@ -743,8 +752,8 @@ function OrgIntegrationConnectModal({
           </DialogTitle>
         </DialogHeader>
         <div className="space-y-4 pt-2">
-          {/* Gmail OAuth — step 2: redirect to Google */}
-          {isGmailOAuth && gmailCredentialsSaved ? (
+          {/* Google OAuth step 2 (Gmail or Google Calendar) — redirect to Google */}
+          {isGoogleOAuth && oauthCredentialsSaved ? (
             <>
               <div className="rounded-lg bg-green-500/10 border border-green-500/20 p-3">
                 <p className="text-xs text-green-700 dark:text-green-400 leading-relaxed">
@@ -818,9 +827,9 @@ function OrgIntegrationConnectModal({
                 </Button>
                 <Button
                   className="flex-1"
-                  onClick={startGmailOAuth}
+                  onClick={startGoogleOAuth}
                   disabled={oauthStarting}
-                  data-testid="button-org-integration-gmail-authorize"
+                  data-testid={`button-org-integration-${def.id}-authorize`}
                 >
                   {oauthStarting ? (
                     <><Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />Opening Google…</>
@@ -1154,16 +1163,33 @@ function OrgIntegrationsSection() {
     enabled: isAdmin,
   });
 
-  // Phase 1: detect ?gmail=connected in URL, invalidate cache immediately, store result for Phase 2
+  // Phase 1: detect ?gmail=connected or ?gcal=connected in URL, invalidate cache, store result for Phase 2
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const gmailStatus = params.get("gmail");
-    if (!gmailStatus) return;
-    // Clean param so it doesn't re-fire on refresh
+    const gcalStatus  = params.get("gcal");
+    const gcalError   = params.get("gcal_error");
+
+    // Clean params so they don't re-fire on refresh
     const clean = new URL(window.location.href);
     clean.searchParams.delete("gmail");
-    window.history.replaceState({}, "", clean.toString());
+    clean.searchParams.delete("gcal");
+    clean.searchParams.delete("gcal_email");
+    clean.searchParams.delete("gcal_error");
+    if (gmailStatus || gcalStatus || gcalError) {
+      window.history.replaceState({}, "", clean.toString());
+    }
 
+    // ── Google Calendar ───────────────────────────────────────────────────
+    if (gcalError) {
+      toast({ title: "Google Calendar authorization failed", description: decodeURIComponent(gcalError), variant: "destructive" });
+    } else if (gcalStatus === "connected") {
+      queryClient.invalidateQueries({ queryKey: ["/api/integrations"] });
+      setPendingOAuthResult({ provider: "google_calendar", status: "connected" });
+    }
+
+    // ── Gmail ─────────────────────────────────────────────────────────────
+    if (!gmailStatus) return;
     if (gmailStatus === "denied") {
       toast({ title: "Gmail authorization denied", description: "You declined the Google permission request.", variant: "destructive" });
       return;
