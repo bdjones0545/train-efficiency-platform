@@ -82,7 +82,7 @@ export const COMPOSIO_TOOLS: Record<ComposioToolId, ComposioToolDefinition> = {
     readOnly: false,
     requiresApproval: true,
     allowedActions: [
-      "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
+      "SLACK_SEND_MESSAGE",
       "SLACK_LIST_CHANNELS",
       "SLACK_LIST_MEMBERS_IN_CHANNEL",
       "SLACK_GET_CHANNEL_INFO",

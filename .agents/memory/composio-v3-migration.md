@@ -1,6 +1,6 @@
 ---
 name: Composio SDK v3.1 Migration
-description: composio-core@0.5.39 is permanently dead (v1 API 410 Gone); service rewritten to use direct HTTP against v3.1 API.
+description: composio-core@0.5.39 is permanently dead (v1 API 410 Gone); service rewritten to use direct HTTP against v3.1 API. E2E validated live 2026-06-16.
 ---
 
 # Composio SDK v3.1 Migration
@@ -25,30 +25,63 @@ Auth header: `x-api-key: {COMPOSIO_API_KEY}`
 | List connected accounts | GET | `/api/v3.1/connected_accounts?limit=50` |
 | Execute tool | POST | `/api/v3.1/tools/execute/{TOOL_SLUG}` |
 
-## Execute Endpoint Body Shape
+## Execute Endpoint Body Shape (CRITICAL)
 
 ```json
 {
   "arguments": { ...tool-specific params },
-  "entity_id": "org-scoped-identifier",
-  "connected_account_id": "optional-if-entity_id-given"
+  "entity_id": "pg-test-d5dbc07d-...",
+  "connected_account_id": "ca_eJZ6fmx6OSTa"
 }
 ```
 
-Note: field is `arguments` not `input` or `inputParams`. Using `input` causes a 400 with message about `text.arguments` conflict.
+**Both `entity_id` AND `connected_account_id` are REQUIRED together.** Omitting either causes a 400: "User ID is required with connected account."
 
-## Tool Slugs
+- `entity_id` is the Composio-internal `user_id` stored on each connected account (NOT "default").
+- `connected_account_id` is the `ca_*` ID for the specific app (gmail, slack, etc).
+- `composio-service.ts` auto-resolves both via `getConnectedAccountByToolkit(toolkitSlug)` which calls `listConnectedAccounts()` and returns `{ id, entity }`.
 
-Tool slugs in v3.1 match the old v1 names exactly:
-- `GMAIL_CREATE_EMAIL_DRAFT`
-- `SLACK_SEND_MESSAGE`
-- `GITHUB_CREATE_ISSUE`
-etc.
+Note: body field is `arguments` not `input` or `inputParams`.
 
-## Connected Accounts
+## v3.1 Connected Account Response Shape
 
-As of 2026-06-16: 0 connected accounts in the Composio dashboard. Execution will return a 400 until the user connects Gmail/Slack/GitHub accounts at https://app.composio.dev/
+The v3.1 API nests toolkit info under `toolkit.slug` (not a flat `toolkit_slug` field):
 
-## entityId Multi-Tenancy
+```json
+{
+  "id": "ca_eJZ6fmx6OSTa",
+  "toolkit": { "slug": "gmail" },
+  "user_id": "pg-test-d5dbc07d-e4b9-40d4-a024-8f1ddf8c1edf",
+  "status": "ACTIVE"
+}
+```
 
-For org-scoped execution, pass `entity_id: orgId` in the execute body. This maps to the Composio entity that holds connected accounts for that org. Currently all orgs share "default" entity — a per-org entity strategy is a future enhancement.
+`listConnectedAccounts()` maps this correctly:
+- `toolkit_slug`: `a.toolkit?.slug ?? a.toolkit_slug ?? ...`
+- `entity`: `a.user_id ?? a.entity ?? ...`
+
+## Tool Slugs (confirmed via /api/v3.1/tools?search=...)
+
+- Gmail: `GMAIL_CREATE_EMAIL_DRAFT`
+- Slack: `SLACK_SEND_MESSAGE` (NOT `SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL` — old slug returns 404)
+- GitHub: `GITHUB_CREATE_ISSUE`
+
+Slack action params: `{ channel: "#channel-name", markdown_text: "message" }` (NOT `text`).
+
+## Connected Accounts (as of 2026-06-16)
+
+| ID | Toolkit | Status | Entity |
+|----|---------|--------|--------|
+| ca_YdIaydtQqpvt | github | ACTIVE | pg-test-d5dbc07d-e4b9-40d4-a024-8f1ddf8c1edf |
+| ca_eJZ6fmx6OSTa | gmail | ACTIVE | pg-test-d5dbc07d-e4b9-40d4-a024-8f1ddf8c1edf |
+| ca_RZO_DbzEN-Lf | googlecalendar | ACTIVE | pg-test-d5dbc07d-e4b9-40d4-a024-8f1ddf8c1edf |
+| ca_3ZmeRUnJiJXi | slack | ACTIVE | pg-test-d5dbc07d-e4b9-40d4-a024-8f1ddf8c1edf |
+
+## Auth Bug Fixed (2026-06-16)
+
+All Composio routes used `req.user?.orgId` which returns null for Bearer token auth. Fixed to use `resolveOrgIdOrThrow(req)` from `server/lib/resolve-org-id.ts` in all three route files: `composio-routes.ts`, `composio-gmail-draft-routes.ts`, `composio-slack-alert-routes.ts`.
+
+## E2E Validation Results (2026-06-16)
+
+- Gmail draft flow: ✅ LIVE — `GMAIL_CREATE_EMAIL_DRAFT` → Draft ID `r-6954490872583253049` created in connected Gmail account
+- Slack alert flow: ✅ LIVE — `SLACK_SEND_MESSAGE` → Message posted to `#general`

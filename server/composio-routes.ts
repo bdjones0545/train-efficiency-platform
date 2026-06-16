@@ -24,6 +24,7 @@ import {
   listConnectedAccounts,
   ensureComposioLogTable,
 } from "./services/composio-service";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import {
   getRegistrySnapshot,
   getAllAgentPermissions,
@@ -210,8 +211,7 @@ export async function registerComposioRoutes(
           });
         }
 
-        const orgId = req.user?.orgId as string;
-        if (!orgId) return res.status(401).json({ message: "No org context" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const result = await requestComposioAction({
           orgId,
@@ -239,7 +239,7 @@ export async function registerComposioRoutes(
     requireRole("COACH", "ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = req.user?.orgId as string;
+        const orgId = await resolveOrgIdOrThrow(req);
         const { agentId, tool, limit } = req.query;
         const logs = await getComposioActionLog(orgId, {
           agentId: agentId as string | undefined,
@@ -260,7 +260,7 @@ export async function registerComposioRoutes(
     requireRole("COACH", "ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = req.user?.orgId as string;
+        const orgId = await resolveOrgIdOrThrow(req);
         const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
         const events = await getRecentHermesEvents(orgId, limit);
         res.json({ events, total: events.length });
@@ -277,7 +277,8 @@ export async function registerComposioRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = req.user?.orgId as string | undefined;
+        let orgId: string | undefined;
+        try { orgId = await resolveOrgIdOrThrow(req); } catch { orgId = undefined; }
         const events = await getUnprocessedHermesEvents(orgId);
         res.json({ events, total: events.length });
       } catch (err: any) {

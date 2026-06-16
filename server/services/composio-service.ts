@@ -232,8 +232,9 @@ export async function listConnectedAccounts(
       : result?.items ?? result?.data ?? [];
     return items.map((a: any) => ({
       id: a.id ?? a.connectedAccountId ?? "",
-      toolkit_slug: a.toolkit_slug ?? a.appName ?? a.appId ?? "",
-      entity: a.entity ?? a.entity_id ?? entityId ?? "default",
+      // v3.1 nests the slug under toolkit.slug; fall back to flat fields for older shapes
+      toolkit_slug: a.toolkit?.slug ?? a.toolkit_slug ?? a.appName ?? a.appId ?? "",
+      entity: a.user_id ?? a.entity ?? a.entity_id ?? entityId ?? "default",
       status: a.status ?? "unknown",
       created_at: a.created_at,
     }));
@@ -293,6 +294,22 @@ export async function discoverComposioActions(appId: string, limit = 20): Promis
   }
 }
 
+// ─── Connected account lookup by toolkit ─────────────────────────────────────
+
+/**
+ * Returns the first ACTIVE connected account for the given toolkit slug (lowercase).
+ * Returns both the connected_account_id and entity (user_id) — v3.1 requires both.
+ */
+export async function getConnectedAccountByToolkit(
+  toolkitSlug: string,
+): Promise<{ id: string; entity: string } | null> {
+  const accounts = await listConnectedAccounts();
+  const slug = toolkitSlug.toLowerCase();
+  const match = accounts.find(a => a.toolkit_slug.toLowerCase() === slug && a.status === "ACTIVE");
+  if (!match) return null;
+  return { id: match.id, entity: match.entity };
+}
+
 // ─── Core execution ───────────────────────────────────────────────────────────
 
 export async function executeComposioAction(
@@ -303,12 +320,28 @@ export async function executeComposioAction(
   const resolvedLogId = logId ?? crypto.randomUUID();
 
   try {
+    // Composio v3.1 requires BOTH connected_account_id AND entity_id (user_id) on every execute.
+    // All connected accounts live under a custom entity (Composio user_id), not "default".
+    // We auto-discover both from the connected accounts list keyed by toolkit slug.
+    let resolvedAccountId = connectedAccountId;
+    let resolvedEntityId = entityId;
+    if (!resolvedAccountId) {
+      const acct = await getConnectedAccountByToolkit(tool.toLowerCase());
+      if (acct) {
+        resolvedAccountId = acct.id;
+        resolvedEntityId = resolvedEntityId ?? acct.entity;
+        console.log(
+          `[ComposioService] auto-resolved connected_account_id=${resolvedAccountId} entity_id=${resolvedEntityId} for toolkit=${tool}`,
+        );
+      }
+    }
+
     const body: Record<string, unknown> = {
       arguments: inputParams,
     };
 
-    if (entityId) body.entity_id = entityId;
-    if (connectedAccountId) body.connected_account_id = connectedAccountId;
+    if (resolvedEntityId) body.entity_id = resolvedEntityId;
+    if (resolvedAccountId) body.connected_account_id = resolvedAccountId;
 
     const result = await composioFetch(`/tools/execute/${encodeURIComponent(action)}`, {
       method: "POST",

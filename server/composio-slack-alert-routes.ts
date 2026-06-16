@@ -18,7 +18,7 @@
  * On Composio failure, status stays alert_queued (retryable via approve again).
  * Slack DMs are not implemented. Only channel posts through the approval gate.
  *
- * Composio action used: SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL
+ * Composio action used: SLACK_SEND_MESSAGE
  */
 
 import type { Express } from "express";
@@ -28,6 +28,7 @@ import { agentOperatingTimeline, communicationLogs } from "@shared/schema";
 import { requestComposioAction } from "./composio-action-adapter";
 import { executeComposioAction } from "./services/composio-service";
 import { emitComposioHermesEvent } from "./composio-hermes-emitter";
+import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 import { z } from "zod";
 
 // ─── Phase 2C permitted agents ────────────────────────────────────────────────
@@ -120,10 +121,6 @@ const requestAlertSchema = z.object({
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? null;
-}
-
 function extractSlackMessageId(data: unknown): { messageId: string | null; channelId: string | null } {
   if (!data || typeof data !== "object") return { messageId: null, channelId: null };
   const d = data as any;
@@ -163,8 +160,7 @@ export async function registerComposioSlackAlertRoutes(
     requireRole("COACH", "ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const parsed = requestAlertSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -191,8 +187,8 @@ export async function registerComposioSlackAlertRoutes(
           orgId,
           agentId,
           tool: "SLACK",
-          action: "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
-          inputParams: { channel, text: message },
+          action: "SLACK_SEND_MESSAGE",
+          inputParams: { channel, markdown_text: message },
           confidence: 0.85,
           riskLevel,
           notes: `[${severity.toUpperCase()}] ${alertType} — ${purpose} (${agentId})`,
@@ -287,7 +283,7 @@ export async function registerComposioSlackAlertRoutes(
           orgId,
           agent: agentId,
           tool: "SLACK",
-          action: "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
+          action: "SLACK_SEND_MESSAGE",
           result: "queued_for_approval",
           outcome: "pending_approval",
           metadata: {
@@ -323,8 +319,7 @@ export async function registerComposioSlackAlertRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const rows = await db.execute(sql`
           SELECT * FROM composio_slack_alert_requests
@@ -348,8 +343,7 @@ export async function registerComposioSlackAlertRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const limit = Math.min(parseInt(String(req.query.limit ?? "50"), 10), 200);
         const offset = parseInt(String(req.query.offset ?? "0"), 10);
@@ -385,8 +379,7 @@ export async function registerComposioSlackAlertRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const rows = await db.execute(sql`
           SELECT * FROM composio_slack_alert_requests
@@ -410,10 +403,10 @@ export async function registerComposioSlackAlertRoutes(
           orgId,
           agentId: request.agent_id,
           tool: "SLACK",
-          action: "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
+          action: "SLACK_SEND_MESSAGE",
           inputParams: {
             channel: request.channel,
-            text: request.message,
+            markdown_text: request.message,
           },
         });
 
@@ -458,7 +451,7 @@ export async function registerComposioSlackAlertRoutes(
             orgId,
             agent: request.agent_id,
             tool: "SLACK",
-            action: "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
+            action: "SLACK_SEND_MESSAGE",
             result: "failure",
             outcome: "failed_execution",
             metadata: {
@@ -521,7 +514,7 @@ export async function registerComposioSlackAlertRoutes(
           orgId,
           agent: request.agent_id,
           tool: "SLACK",
-          action: "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
+          action: "SLACK_SEND_MESSAGE",
           result: "success",
           outcome: "slack_alert_posted",
           metadata: {
@@ -557,8 +550,7 @@ export async function registerComposioSlackAlertRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const rows = await db.execute(sql`
           SELECT id, status FROM composio_slack_alert_requests
@@ -602,7 +594,7 @@ export async function registerComposioSlackAlertRoutes(
           orgId,
           agent: "admin",
           tool: "SLACK",
-          action: "SLACK_SENDS_A_MESSAGE_TO_A_SLACK_CHANNEL",
+          action: "SLACK_SEND_MESSAGE",
           result: "blocked",
           outcome: "cancelled",
           metadata: { requestId: request.id },

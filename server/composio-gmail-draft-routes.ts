@@ -25,6 +25,7 @@ import { agentOperatingTimeline, communicationLogs } from "@shared/schema";
 import { requestComposioAction } from "./composio-action-adapter";
 import { executeComposioAction } from "./services/composio-service";
 import { emitComposioHermesEvent } from "./composio-hermes-emitter";
+import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 import { z } from "zod";
 
 // ─── Permitted agents for Phase 2B Gmail draft creation ──────────────────────
@@ -77,11 +78,6 @@ const requestDraftSchema = z.object({
   riskLevel: z.enum(["low", "medium", "high"]).default("medium"),
 });
 
-// ─── Org extraction helper ────────────────────────────────────────────────────
-
-function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? null;
-}
 
 // ─── Draft ID extraction helper ───────────────────────────────────────────────
 
@@ -120,8 +116,7 @@ export async function registerComposioGmailDraftRoutes(
     requireRole("COACH", "ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const parsed = requestDraftSchema.safeParse(req.body);
         if (!parsed.success) {
@@ -282,8 +277,7 @@ export async function registerComposioGmailDraftRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const rows = await db.execute(sql`
           SELECT * FROM composio_gmail_draft_requests
@@ -307,8 +301,7 @@ export async function registerComposioGmailDraftRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const limit = Math.min(parseInt(String(req.query.limit ?? "50"), 10), 200);
         const offset = parseInt(String(req.query.offset ?? "0"), 10);
@@ -347,8 +340,7 @@ export async function registerComposioGmailDraftRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const rows = await db.execute(sql`
           SELECT * FROM composio_gmail_draft_requests
@@ -514,8 +506,7 @@ export async function registerComposioGmailDraftRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
-        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const orgId = await resolveOrgIdOrThrow(req);
 
         const rows = await db.execute(sql`
           SELECT id, status FROM composio_gmail_draft_requests
