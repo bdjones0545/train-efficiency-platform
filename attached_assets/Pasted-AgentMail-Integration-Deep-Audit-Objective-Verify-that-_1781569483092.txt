@@ -1,0 +1,240 @@
+AgentMail Integration Deep Audit
+
+Objective
+
+Verify that AgentMail is fully operational end-to-end across message generation, approval workflows, delivery, follow-ups, learning loops, and observability.
+
+Current Assumptions
+
+AgentMail is intended to:
+
+* Generate outbound communications
+* Queue drafts for approval
+* Send approved communications
+* Track delivery state
+* Schedule follow-ups
+* Learn from approvals/rejections
+* Coordinate with CEO Heartbeat and organizational agents
+
+Audit Scope
+
+Phase 1 — Architecture Audit
+
+Identify:
+
+1. AgentMail service entrypoint
+2. Database tables used
+3. Approval workflow
+4. Send pipeline
+5. Follow-up scheduler
+6. Learning feedback system
+7. CEO Heartbeat integration
+8. Agent integrations that create messages
+
+Return:
+
+* Architecture diagram
+* Services involved
+* Tables involved
+* Queue flow
+
+Phase 2 — Configuration Audit
+
+Verify:
+
+* AgentMail enabled
+* Organization provisioning complete
+* Default inboxes created
+* Agent inboxes present
+* Environment variables configured
+
+Inspect:
+
+* SMTP
+* SendGrid
+* Gmail OAuth
+* Draft generation settings
+
+Return exact configuration status.
+
+Phase 3 — Inbox Audit
+
+Identify all AgentMail inboxes.
+
+Expected examples:
+
+* CEO
+* Revenue
+* Growth
+* Scheduling
+* Retention
+* Client Success
+
+For each inbox return:
+
+* Exists?
+* Active?
+* Message count?
+* Last activity?
+* Owner agent?
+
+Phase 4 — Message Generation Audit
+
+Trigger a controlled test.
+
+Example prompt:
+
+“Generate outreach to a lead that abandoned scheduling.”
+
+Verify:
+
+* Draft created
+* Stored in database
+* Linked to correct inbox
+* Agent attribution recorded
+* Message content generated
+
+Return generated draft.
+
+Phase 5 — Approval Workflow Audit
+
+Create a draft requiring approval.
+
+Verify:
+
+* Appears in Approvals
+* Appears in AgentMail queue
+* Approval metadata recorded
+* Correct organization attached
+
+Test:
+
+1. Approve
+2. Reject
+3. Edit + Approve
+
+For each path verify:
+
+* Database updates
+* Learning signal recorded
+* Audit log written
+
+Phase 6 — Delivery Audit
+
+Approve and send a test message.
+
+Verify:
+
+* Send attempted
+* Provider response received
+* Message status updated
+* Delivery record written
+
+Return:
+
+* Provider used
+* Provider response
+* Final status
+
+Phase 7 — Follow-Up Engine Audit
+
+Create a message requiring follow-up.
+
+Verify:
+
+* Follow-up scheduled
+* Follow-up appears in queue
+* Cron detects it
+* Follow-up draft generated
+
+Confirm:
+
+* Duplicate protection
+* Cooldown enforcement
+
+Phase 8 — CEO Heartbeat Integration
+
+Verify CEO Heartbeat can:
+
+* See pending drafts
+* See unsent messages
+* See failed sends
+* Generate communication priorities
+
+Return example heartbeat output.
+
+Phase 9 — Learning Loop Audit
+
+Approve one draft.
+Reject one draft.
+Edit and approve one draft.
+
+Verify:
+
+* Feedback stored
+* Trust score updated
+* Agent learning records written
+
+Return:
+
+* Learning tables updated
+* Example learning entries
+
+Phase 10 — Failure Handling
+
+Simulate:
+
+1. Missing recipient
+2. Invalid email
+3. Provider failure
+4. Duplicate send attempt
+
+Verify:
+
+* Error handling
+* Retry logic
+* Dead-letter behavior
+* Audit logging
+
+Phase 11 — Observability Audit
+
+Verify dashboards accurately reflect:
+
+* Pending drafts
+* Sent messages
+* Failed messages
+* Follow-ups
+* Inbox activity
+
+Compare UI values against database values.
+
+Phase 12 — Security Audit
+
+Verify:
+
+* Client users cannot access AgentMail
+* Inbox access properly role gated
+* Draft approval requires authorization
+* Direct API calls enforce permissions
+
+Deliverables
+
+1. Architecture overview
+2. Inbox inventory
+3. Configuration status
+4. Message generation results
+5. Approval workflow results
+6. Delivery validation
+7. Follow-up validation
+8. CEO integration validation
+9. Learning loop validation
+10. Failure handling results
+11. Security validation
+12. Bugs discovered
+13. Files changed
+14. Final verdict:
+
+* Fully Functional
+* Partially Functional
+* Draft Generation Only
+* Not Operational
