@@ -31,6 +31,16 @@ function rows(r: unknown): any[] {
 }
 
 async function ensureAgentMailTables(): Promise<void> {
+  // Schema migration: add never_auto_send column if missing (schema drift guard)
+  try {
+    await db.execute(sql`
+      ALTER TABLE org_automation_settings
+      ADD COLUMN IF NOT EXISTS never_auto_send BOOLEAN NOT NULL DEFAULT TRUE
+    `);
+  } catch (e: any) {
+    console.error("[AgentMail] never_auto_send migration error:", e?.message);
+  }
+
   // Outbound audit log
   try {
     await db.execute(sql`

@@ -557,6 +557,7 @@ export async function sendApprovedFollowup(params: {
     to: f.recipient_email,
     subject: f.subject,
     body: bodyToSend,
+    humanApproved: true,
   });
 
   if (sendResult.ok) {

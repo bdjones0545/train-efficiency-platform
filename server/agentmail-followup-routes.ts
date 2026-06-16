@@ -346,7 +346,7 @@ export async function registerAgentMailFollowupRoutes(
             proposalId: id,
             agentName: f.agent_name ?? null,
             messageType: "agentmail_followup",
-            originalBody: f.draft_body ?? null,
+            originalBody: f.followup_body ?? null,
             decision: "rejected",
             rejectionReason: reason,
             reviewedBy: actor,
