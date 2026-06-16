@@ -61,7 +61,6 @@ integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_database:1.0.
 
 [userenv.shared]
 ADMIN_REPAIR_KEY = "a02e9df687ecaec69a5de09bd63309ffe50093148009b6a75eeb9e32d3561656"
-AGENTMAIL_WEBHOOK_SECRET = "aa3fd43962e12db1adaa748ab399841da97e6a90956c08b9965845562fb394b0"
 AGENTMAIL_ORG_DOMAIN = "trainefficiency.com"
 
 [userenv.production]
