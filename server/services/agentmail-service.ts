@@ -409,7 +409,14 @@ export async function handleAgentMailWebhook(
 ): Promise<{ ok: boolean; event?: unknown; error?: string }> {
   const c = getConfig();
 
-  if (c.webhookSecret && signatureHeader) {
+  if (c.webhookSecret) {
+    // Secret is configured — every request MUST carry a valid signature.
+    // Unsigned requests are rejected to prevent spoofed inbound email injection.
+    if (!signatureHeader) {
+      console.warn("[AgentMail] Webhook rejected: signature header missing (AGENTMAIL_WEBHOOK_SECRET is set)");
+      return { ok: false, error: "Webhook signature required but not provided" };
+    }
+
     const crypto = await import("crypto");
     const expected = crypto
       .createHmac("sha256", c.webhookSecret)
@@ -417,6 +424,7 @@ export async function handleAgentMailWebhook(
       .digest("hex");
     const provided = signatureHeader.replace(/^sha256=/, "");
     if (expected !== provided) {
+      console.warn("[AgentMail] Webhook rejected: signature mismatch");
       return { ok: false, error: "Webhook signature mismatch" };
     }
   }

@@ -1,0 +1,119 @@
+Fix and production-validate AgentMail.
+
+Current audit result:
+AgentMail architecture is implemented, approval-safe, and mostly complete, but live provider traffic and webhook security are not fully production-validated.
+
+Primary fixes required:
+
+1. Configure webhook security
+- Add AGENTMAIL_WEBHOOK_SECRET to environment
+- Enforce HMAC/signature verification on inbound AgentMail webhooks
+- Reject unsigned or invalid webhook requests with 401/403
+- Log rejected webhook attempts safely without exposing secrets
+
+2. Verify/provision inboxes
+Run or expose admin action for:
+POST /api/agentmail/inboxes/verify
+
+Confirm these inboxes are created or verified:
+- revenue@agentmail.to
+- hiring@agentmail.to
+- scheduling@agentmail.to
+- support@agentmail.to
+- operations@agentmail.to
+- ceo@agentmail.to
+
+3. Run controlled inbound test
+Use:
+POST /api/agentmail/simulate-inbound
+
+Test at least:
+- new_lead
+- booking_request
+- support_issue
+
+Verify:
+- inbound message stored in agent_mail_inbound_messages
+- intent classification recorded
+- attention item created when appropriate
+- reply queue item created in agent_mail_reply_queue
+- CEO timeline event created
+
+4. Validate approval workflow
+For a test reply:
+- approve
+- reject
+- edit + approve
+
+Verify:
+- approval_status updates correctly
+- approved_by / approved_at saved
+- rejection reason saved
+- edited content saved
+- agent_message_feedback records created
+- agent_mail_reply_outcomes records created
+- agent_operating_timeline audit event written
+
+5. Validate live send path
+Approve one safe test draft with a real controlled recipient.
+
+Verify:
+- sendAgentEmail() calls agentmail.to successfully
+- provider response is captured
+- agent_mail_messages row created
+- outbound_email_audit_log row created
+- final status is sent / delivered / provider_accepted
+- no duplicate send occurs on retry or refresh
+
+6. Validate follow-up engine
+Create one message requiring follow-up.
+
+Verify:
+- agent_mail_followups row created
+- due time is correct
+- 20-minute cron detects due follow-up
+- follow-up draft enters approval queue
+- duplicate/cooldown guard prevents repeated follow-ups
+
+7. Validate governance guardrails
+Confirm:
+- allowAutonomousCommunication=false prevents auto-send
+- neverAutoSend=true blocks send unless humanApproved=true
+- emergency pause blocks all sends
+- duplicate recipient/message guard works
+- opt-out/suppression guard works if implemented
+
+8. Validate security by role
+Confirm:
+- CLIENT / ATHLETE cannot access AgentMail routes
+- COACH can access only allowed org-scoped AgentMail views/actions
+- ADMIN can access all org-scoped AgentMail actions
+- Direct API calls enforce permissions, not just UI hiding
+
+9. Validate observability
+Confirm UI counts match database:
+- pending drafts
+- approved drafts
+- rejected drafts
+- sent messages
+- failed messages
+- scheduled follow-ups
+- inbound messages
+- dead-letter failures
+
+10. Add fixes if needed
+Make only targeted changes. Do not redesign the system.
+
+Expected deliverables:
+- Files changed
+- Environment variables added/confirmed
+- Inbox verification results
+- Inbound simulation results
+- Approval workflow results
+- Live send result
+- Follow-up engine result
+- Security validation
+- Bugs found
+- Bugs fixed
+- Final verdict:
+  Fully Functional / Partially Functional / Draft-Only / Broken
