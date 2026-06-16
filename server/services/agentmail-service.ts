@@ -433,8 +433,16 @@ export async function handleAgentMailWebhook(
     }
 
     const crypto = await import("crypto");
+
+    // AgentMail uses Stripe-style whsec_ prefix: strip it and base64-decode to get the raw HMAC key.
+    // Fall back to using the raw string if the prefix is absent (legacy format).
+    let hmacKey: string | Buffer = c.webhookSecret;
+    if (c.webhookSecret.startsWith("whsec_")) {
+      hmacKey = Buffer.from(c.webhookSecret.slice(6), "base64");
+    }
+
     const expected = crypto
-      .createHmac("sha256", c.webhookSecret)
+      .createHmac("sha256", hmacKey)
       .update(rawBody)
       .digest("hex");
     const provided = signatureHeader.replace(/^sha256=/, "");
