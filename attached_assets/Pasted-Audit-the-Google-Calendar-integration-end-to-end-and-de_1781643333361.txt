@@ -1,0 +1,162 @@
+Audit the Google Calendar integration end-to-end and determine why the Options → Advanced section displays **"Calendar Sync Inactive"** even though Google Calendar has already been connected for the Efficiency Strength Training organization.
+
+Objectives:
+
+1. Identify the exact source of truth used by the UI to determine calendar sync status.
+2. Determine whether the issue is:
+
+   * Frontend display bug
+   * Backend status bug
+   * Missing sync activation flag
+   * OAuth connection issue
+   * Org-scoping issue
+   * Sync worker issue
+   * Data migration issue
+
+Audit Requirements:
+
+### Step 1 — Frontend Investigation
+
+Find the component that renders:
+
+```text
+Calendar Sync Inactive
+```
+
+Document:
+
+* File path
+* Component name
+* Status calculation logic
+* API endpoint used
+* Fields expected from the backend
+
+Answer:
+
+* What exact condition causes "Inactive" to appear?
+* What alternative statuses exist?
+
+### Step 2 — API Contract Audit
+
+Identify every endpoint involved in calendar integration status.
+
+Document:
+
+* Endpoint
+* Response payload
+* Status fields
+* Connected account fields
+* Sync-related fields
+
+Examples:
+
+```json
+{
+  "googleConnected": true,
+  "calendarConnected": true,
+  "calendarSyncEnabled": false,
+  "lastSyncAt": null
+}
+```
+
+Determine:
+
+* Which field drives the UI
+* Whether the backend is returning incorrect data
+* Whether the frontend is reading the wrong field
+
+### Step 3 — Database Audit
+
+Inspect all calendar-related tables.
+
+Look for:
+
+* Google OAuth credentials
+* Calendar integration records
+* Organization integration records
+* Sync settings
+* Last sync timestamps
+
+Document:
+
+* Table names
+* Relevant rows for Efficiency Strength Training
+* Current values
+
+Answer:
+
+* Is Google Calendar actually connected?
+* Is sync enabled?
+* Has a sync ever run?
+* What timestamp exists for last successful sync?
+
+### Step 4 — Org Scope Audit
+
+Verify:
+
+* Current org ID
+* Efficiency Strength Training org ID
+* Org referenced by the Options page
+
+Determine whether:
+
+* Calendar is connected for one org
+* UI is checking another org
+
+### Step 5 — Sync Worker Audit
+
+Locate:
+
+* Calendar sync services
+* Cron jobs
+* Background workers
+* Sync schedulers
+
+Verify:
+
+* Registered
+* Running
+* Last execution
+* Success/failure state
+
+Determine whether:
+
+* Sync service exists
+* Sync service is enabled
+* Sync service has ever run
+
+### Step 6 — Functional Validation
+
+Perform live validation.
+
+Test:
+
+1. Read calendar connection state.
+2. Pull Google calendar list.
+3. Create test calendar event.
+4. Read event back.
+5. Verify event appears in Google Calendar.
+6. Verify sync status updates.
+
+Document all results.
+
+### Deliverables
+
+Provide:
+
+1. Root cause.
+2. Exact file(s) requiring modification.
+3. Exact field mismatch (if applicable).
+4. Database state.
+5. Recommended fix.
+6. Confidence level.
+7. Classification:
+
+* UI Bug
+* Backend Bug
+* Configuration Issue
+* OAuth Failure
+* Sync Service Failure
+* Data Integrity Issue
+
+Do not stop at identifying symptoms. Trace the entire path from UI → API → Database → Google Calendar integration and identify the single authoritative root cause.
