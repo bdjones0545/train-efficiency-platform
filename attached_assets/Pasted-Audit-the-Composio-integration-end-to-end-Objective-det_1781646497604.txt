@@ -1,0 +1,103 @@
+Audit the Composio integration end-to-end.
+
+Objective: determine whether Composio is correctly connected, configured, scoped per organization, and usable by TrainEfficiency agents without misleading status indicators.
+
+Audit Requirements:
+
+1. **Find all Composio code paths**
+
+   * Search for `Composio`, `composio`, `COMPOSIO_API_KEY`, `COMPOSIO_ENTITY_ID`, `connectedAccounts`, `tools`, and `toolkits`.
+   * Document every file, service, route, UI component, cron job, and agent workflow that references Composio.
+
+2. **Environment / secrets audit**
+
+   * Identify which env vars are required.
+   * Confirm whether the app checks:
+
+     * `COMPOSIO_API_KEY`
+     * entity/user/org identifiers
+     * toolkit-specific credentials
+   * Determine whether the status badge is checking env vars only, DB records only, or both.
+
+3. **Database audit**
+
+   * Identify all tables storing Composio state.
+   * Check whether credentials/connections are stored globally or per org.
+   * Inspect records for Efficiency Strength Training.
+   * Document:
+
+     * org ID
+     * provider/toolkit name
+     * connection status
+     * connected account ID
+     * last sync/run timestamp
+     * error fields
+
+4. **Frontend status audit**
+
+   * Find the UI that displays Composio status.
+   * Document:
+
+     * file path
+     * component name
+     * endpoint called
+     * fields expected
+     * exact condition for Active/Inactive/Error
+   * Determine whether the badge reflects platform readiness, org connection status, or runtime usability.
+
+5. **Backend route audit**
+
+   * Identify all Composio endpoints.
+   * Document request/response shape.
+   * Confirm authentication and org scoping.
+   * Check whether one org can accidentally read or use another org’s Composio connection.
+
+6. **Agent runtime audit**
+
+   * Identify which agents can call Composio tools.
+   * Confirm whether tool calls use:
+
+     * platform API key
+     * org-specific connected account
+     * user-specific connected account
+   * Verify that tool execution is approval-gated where appropriate.
+
+7. **Live functional validation**
+   Test:
+
+   * List available Composio tools/toolkits.
+   * Read connected accounts.
+   * Execute one safe read-only tool.
+   * Attempt one org-scoped action.
+   * Confirm logs are written.
+   * Confirm failures surface clearly in the UI.
+
+8. **Failure mode audit**
+   Test or simulate:
+
+   * Missing `COMPOSIO_API_KEY`
+   * Missing connected account
+   * Expired/revoked connection
+   * Wrong org ID
+   * Tool execution failure
+   * Rate limit/API failure
+
+9. **Deliverables**
+   Provide:
+
+   * Root cause of any issue found
+   * Whether Composio is actually operational
+   * Whether status badges are accurate
+   * Whether integration is global, org-scoped, or user-scoped
+   * Files requiring modification
+   * Exact recommended fix
+   * Classification:
+
+     * UI status bug
+     * Env configuration issue
+     * DB/org-scoping issue
+     * Runtime execution issue
+     * Security/tenant isolation issue
+     * Fully operational
+
+Do not stop at “API key exists.” Trace the complete path from UI → backend route → database → Composio API → agent execution → logs.
