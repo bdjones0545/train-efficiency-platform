@@ -59,19 +59,28 @@ export const COMPOSIO_TOOLS: Record<ComposioToolId, ComposioToolDefinition> = {
     id: "GOOGLECALENDAR",
     displayName: "Google Calendar",
     category: "calendar",
-    description: "Read and create calendar events",
+    description: "Read and write calendar events through human-approved workflows",
     readOnly: false,
     requiresApproval: true,
     allowedActions: [
-      "GOOGLECALENDAR_LIST_EVENTS",
-      "GOOGLECALENDAR_GET_EVENT",
+      // Read actions — executed directly (no approval gate in read endpoints)
+      "GOOGLECALENDAR_LIST_CALENDARS",
+      "GOOGLECALENDAR_EVENTS_LIST",        // correct v3.1 slug (GOOGLECALENDAR_LIST_EVENTS does not exist)
+      "GOOGLECALENDAR_EVENTS_GET",         // correct v3.1 slug (GOOGLECALENDAR_GET_EVENT does not exist)
       "GOOGLECALENDAR_FIND_FREE_SLOTS",
+      "GOOGLECALENDAR_FIND_EVENT",
+      // Write actions — routed through approval queue only; requiresApproval: true guarantees
+      // these can never auto-execute from the adapter.
       "GOOGLECALENDAR_CREATE_EVENT",
       "GOOGLECALENDAR_UPDATE_EVENT",
       "GOOGLECALENDAR_DELETE_EVENT",
-      "GOOGLECALENDAR_LIST_CALENDARS",
     ],
-    blockedActions: [],
+    blockedActions: [
+      // Destructive bulk operations — permanently blocked
+      "GOOGLECALENDAR_CLEAR_CALENDAR",
+      "GOOGLECALENDAR_CALENDARS_DELETE",
+      "GOOGLECALENDAR_BATCH_EVENTS",
+    ],
   },
 
   SLACK: {

@@ -1,0 +1,284 @@
+Build Phase 1 of the Composio Google Calendar Integration using the exact approval-gated architecture already proven by Gmail Drafts and Slack Alerts.
+
+Objective:
+Enable TrainEfficiency agents to safely interact with Google Calendar through a human approval workflow.
+
+Use the Gmail Draft and Slack Alert implementations as the architectural template.
+
+---
+
+# Feature Set
+
+## Read Operations (No Approval Required)
+
+### 1. List Calendars
+
+Endpoint:
+
+```text
+GET /api/composio/calendar/calendars
+```
+
+Returns:
+
+* calendar id
+* name
+* primary flag
+* timezone
+
+Use connected Google Calendar account through Composio.
+
+---
+
+### 2. List Upcoming Events
+
+Endpoint:
+
+```text
+GET /api/composio/calendar/events
+```
+
+Parameters:
+
+* calendarId
+* startDate
+* endDate
+
+Returns:
+
+* event id
+* title
+* start
+* end
+* attendees
+* location
+
+---
+
+### 3. Find Availability
+
+Endpoint:
+
+```text
+POST /api/composio/calendar/availability
+```
+
+Input:
+
+```json
+{
+  "startDate": "",
+  "endDate": "",
+  "durationMinutes": 60
+}
+```
+
+Returns:
+
+Available time blocks.
+
+This will later power the Scheduling Agent and booking assistant.
+
+---
+
+# Write Operations (Approval Required)
+
+Follow the exact pattern used by Gmail Drafts and Slack Alerts:
+
+Agent Request
+→ Pending Queue
+→ Human Approval
+→ Composio Execution
+→ Outcome Logging
+
+---
+
+### 4. Create Calendar Event
+
+Request Endpoint:
+
+```text
+POST /api/composio/calendar/create
+```
+
+Creates pending approval item only.
+
+Input:
+
+```json
+{
+  "title": "",
+  "start": "",
+  "end": "",
+  "attendees": [],
+  "location": "",
+  "description": ""
+}
+```
+
+Response:
+
+```json
+{
+  "status": "event_queued",
+  "requestId": ""
+}
+```
+
+---
+
+Pending Queue Endpoint
+
+```text
+GET /api/composio/calendar/pending
+```
+
+Returns all pending calendar actions.
+
+---
+
+Approve Endpoint
+
+```text
+POST /api/composio/calendar/approve/:requestId
+```
+
+When approved:
+
+* Creates Google Calendar event
+* Records outcome
+* Writes Hermes event
+* Updates request status
+
+---
+
+Reject Endpoint
+
+```text
+POST /api/composio/calendar/reject/:requestId
+```
+
+Stores rejection reason and learning signal.
+
+---
+
+### 5. Update Calendar Event
+
+Same approval flow.
+
+Request:
+
+```text
+POST /api/composio/calendar/update
+```
+
+Queue → Approve → Execute → Log
+
+---
+
+### 6. Delete Calendar Event
+
+Same approval flow.
+
+Request:
+
+```text
+POST /api/composio/calendar/delete
+```
+
+Queue → Approve → Execute → Log
+
+---
+
+# Database Requirements
+
+Reuse existing approval architecture.
+
+Add records to the same approval queue system already used by Gmail and Slack.
+
+Track:
+
+* orgId
+* requestId
+* actionType
+* status
+* payload
+* approvedBy
+* approvedAt
+* executedAt
+* outcome
+
+---
+
+# Agent Integration
+
+Register the following tools:
+
+calendar_list_events
+calendar_find_availability
+calendar_create_event
+calendar_update_event
+calendar_delete_event
+
+All write tools must require approval.
+
+Read tools execute immediately.
+
+---
+
+# Logging Requirements
+
+Every action must create:
+
+Hermes event
+
+Examples:
+
+```text
+calendar_event_created
+calendar_event_updated
+calendar_event_deleted
+calendar_availability_checked
+```
+
+Outcome records
+
+Success:
+
+```text
+calendar_success=true
+```
+
+Failure:
+
+```text
+calendar_success=false
+```
+
+Store:
+
+* Composio action used
+* Google event id
+* execution time
+* error message
+
+---
+
+# Validation Checklist
+
+All of the following must pass:
+
+1. List calendars.
+2. List events.
+3. Find availability.
+4. Queue event creation.
+5. Approval item appears.
+6. Approve event.
+7. Event appears in Google Calendar.
+8. Reject event.
+9. Outcome recorded.
+10. Hermes event recorded.
+11. Multi-org isolation verified.
+12. No direct write action bypasses approval flow.
+
+Deliver a complete validation report including routes, files modified, test results, and any bugs discovered/fixed during implementation.
