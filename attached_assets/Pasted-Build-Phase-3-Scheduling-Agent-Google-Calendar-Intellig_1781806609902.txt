@@ -1,0 +1,321 @@
+Build Phase 3 — Scheduling Agent + Google Calendar Intelligence
+
+Objective:
+
+Now that Composio Google Calendar is fully operational and validated, integrate it directly into the Scheduling Agent so calendar intelligence becomes part of the booking workflow.
+
+The goal is for the Scheduling Agent to move beyond static availability and become capable of reasoning from real Google Calendar data while still preserving approval gates for write actions.
+
+---
+
+# Current State
+
+Already Live:
+
+✅ Gmail approval workflow
+
+✅ Slack approval workflow
+
+✅ Google Calendar approval workflow
+
+Calendar capabilities already available:
+
+* List calendars
+* List events
+* Find availability
+* Create events (approval required)
+* Update events (approval required)
+* Delete events (approval required)
+
+Do not rebuild any of these.
+
+Consume existing routes.
+
+---
+
+# Feature 1 — Availability Intelligence
+
+Scheduling Agent should use:
+
+```text
+POST /api/composio/calendar/availability
+```
+
+before suggesting times.
+
+Workflow:
+
+User requests appointment.
+
+Agent:
+
+1. Checks Google Calendar availability.
+2. Finds open blocks.
+3. Applies business rules.
+4. Returns best options.
+
+Example:
+
+```text
+Available:
+
+Tuesday 10:00 AM
+Tuesday 11:00 AM
+Wednesday 2:00 PM
+
+Recommended:
+Tuesday 10:00 AM
+```
+
+---
+
+# Feature 2 — Conflict Detection
+
+Before creating any booking:
+
+Agent must check:
+
+```text
+GET /api/composio/calendar/events
+```
+
+Determine:
+
+* overlaps
+* double bookings
+* insufficient buffer time
+
+Return:
+
+```text
+Conflict detected
+```
+
+instead of creating request.
+
+---
+
+# Feature 3 — Intelligent Time Ranking
+
+Ranking factors:
+
+1. Existing schedule density
+2. Gap minimization
+3. Coach preference windows
+4. Travel considerations
+5. Existing athlete schedule
+
+Return:
+
+```text
+Best
+Good
+Available
+```
+
+time slot classifications.
+
+---
+
+# Feature 4 — Event Creation Workflow
+
+When a booking is accepted:
+
+Agent does NOT create event directly.
+
+Instead:
+
+```text
+calendar_create_event
+```
+
+creates approval request.
+
+Flow:
+
+Agent
+→ Queue
+→ Human Approval
+→ Google Calendar Event
+→ Outcome Log
+
+Reuse existing approval architecture.
+
+---
+
+# Feature 5 — Reschedule Workflow
+
+Agent can:
+
+1. Locate event.
+2. Suggest alternatives.
+3. Queue update request.
+
+Flow:
+
+```text
+calendar_update_event
+```
+
+Approval required.
+
+---
+
+# Feature 6 — Cancellation Workflow
+
+Agent can:
+
+1. Locate event.
+2. Confirm cancellation.
+3. Queue delete request.
+
+Flow:
+
+```text
+calendar_delete_event
+```
+
+Approval required.
+
+---
+
+# Feature 7 — Scheduling Dashboard Intelligence
+
+Enhance dashboard with:
+
+## Upcoming Events
+
+Pulled from Google Calendar.
+
+Show:
+
+* title
+* date
+* attendees
+* location
+
+---
+
+## Availability Summary
+
+Display:
+
+```text
+Today:
+3 open slots
+
+Tomorrow:
+5 open slots
+
+This Week:
+17 open slots
+```
+
+---
+
+## Scheduling Alerts
+
+Generate:
+
+```text
+Back-to-back sessions
+Long gap detected
+Double-booking risk
+High-utilization day
+```
+
+---
+
+# Feature 8 — Scheduling Agent Tools
+
+Register:
+
+```text
+schedule_find_availability
+schedule_suggest_times
+schedule_detect_conflicts
+schedule_create_booking
+schedule_reschedule_booking
+schedule_cancel_booking
+```
+
+Rules:
+
+Read tools:
+
+* immediate execution
+
+Write tools:
+
+* approval required
+
+---
+
+# Feature 9 — Multi-Org Isolation
+
+Verify:
+
+Organization A cannot:
+
+* read Organization B calendar
+* create events in Organization B
+* view Organization B availability
+
+Audit all routes.
+
+---
+
+# Hermes Integration
+
+Emit events:
+
+```text
+availability_checked
+booking_requested
+booking_created
+booking_updated
+booking_cancelled
+conflict_detected
+```
+
+Track:
+
+* orgId
+* eventId
+* execution time
+* outcome
+
+---
+
+# Validation Checklist
+
+Must pass:
+
+1. Agent checks availability.
+2. Agent suggests times.
+3. Agent detects conflict.
+4. Agent ranks slots.
+5. Agent queues booking.
+6. Approval appears.
+7. Approval creates event.
+8. Agent queues reschedule.
+9. Approval updates event.
+10. Agent queues cancellation.
+11. Approval deletes event.
+12. Dashboard displays live calendar data.
+13. Hermes events written.
+14. Multi-org isolation verified.
+15. No write action bypasses approval flow.
+
+Deliver:
+
+* Files created
+* Files modified
+* Routes used
+* Test results
+* Bugs fixed
+* Final readiness assessment
+
+Goal:
+
+Transform the Scheduling Agent from a static scheduling utility into a Google Calendar-aware scheduling intelligence system powered by Composio and governed by TrainEfficiency’s approval architecture.

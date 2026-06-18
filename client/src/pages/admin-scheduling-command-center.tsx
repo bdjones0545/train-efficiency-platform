@@ -10,7 +10,7 @@ import {
   Calendar, Clock, Users, DollarSign, TrendingUp, AlertCircle,
   CheckCircle2, Clock3, BarChart3, ArrowUpRight, Activity, Flame,
   Sparkles, Target, RefreshCw, ChevronRight, Zap, ChevronDown, Lightbulb,
-  LayoutDashboard
+  LayoutDashboard, CalendarCheck, CalendarX, ShieldAlert, Wifi
 } from "lucide-react";
 import { format, parseISO } from "date-fns";
 import { Link } from "wouter";
@@ -451,6 +451,193 @@ function RevenueRecoveryPanel() {
   );
 }
 
+// ─── Calendar Intelligence Panel ─────────────────────────────────────────────
+
+interface CalDashData {
+  events: any[];
+  eventCount: number;
+  alerts: any[];
+  alertCount: number;
+  criticalAlerts: number;
+  availabilitySummary: {
+    today: { openSlots: number; busySlots: number };
+    tomorrow: { openSlots: number; busySlots: number };
+    thisWeek: { openSlots: number; busySlots: number };
+  } | null;
+}
+
+function CalendarIntelligencePanel() {
+  const { data, isLoading, isError } = useQuery<CalDashData>({
+    queryKey: ["/api/scheduling-intelligence/calendar/dashboard"],
+    queryFn: async () => {
+      const res = await fetch("/api/scheduling-intelligence/calendar/dashboard?days=7&durationMinutes=60", {
+        credentials: "include",
+      });
+      if (!res.ok) throw new Error("Failed");
+      return res.json();
+    },
+    refetchInterval: 120_000,
+    retry: 1,
+  });
+
+  if (isLoading) return (
+    <Card className="p-4 space-y-3" data-testid="panel-calendar-intelligence-loading">
+      <div className="flex items-center gap-2">
+        <CalendarCheck className="h-4 w-4 text-primary" />
+        <p className="font-semibold text-sm">Google Calendar Intelligence</p>
+      </div>
+      <div className="grid grid-cols-3 gap-2">
+        {[1, 2, 3].map(i => <Skeleton key={i} className="h-14" />)}
+      </div>
+      <Skeleton className="h-32" />
+    </Card>
+  );
+
+  if (isError || !data) return (
+    <Card className="p-4 space-y-2" data-testid="panel-calendar-intelligence-disconnected">
+      <div className="flex items-center gap-2">
+        <CalendarX className="h-4 w-4 text-muted-foreground" />
+        <p className="font-semibold text-sm">Google Calendar Intelligence</p>
+        <Badge variant="secondary" className="text-[10px] ml-auto">Not Connected</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">
+        Connect Google Calendar via Composio to enable live event sync, conflict detection, and intelligent scheduling.
+      </p>
+      <Link href="/admin/composio-calendar">
+        <Button variant="outline" size="sm" className="w-full h-8 text-xs gap-1.5 mt-1" data-testid="button-connect-calendar">
+          <Wifi className="h-3.5 w-3.5" />
+          Connect Google Calendar
+        </Button>
+      </Link>
+    </Card>
+  );
+
+  const avail = data.availabilitySummary;
+
+  const alertSeverityClass = (severity: string) =>
+    severity === "high"   ? "bg-red-500/10 border-red-500/20 text-red-700 dark:text-red-400" :
+    severity === "medium" ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-700 dark:text-yellow-400" :
+                            "bg-blue-500/10 border-blue-500/20 text-blue-700 dark:text-blue-400";
+
+  const alertTypeIcon = (type: string) => {
+    if (type === "back_to_back")       return "⚡";
+    if (type === "double_booking_risk") return "⚠️";
+    if (type === "high_utilization_day") return "🔥";
+    if (type === "long_gap")           return "⏳";
+    return "📌";
+  };
+
+  return (
+    <Card className="p-4 space-y-4" data-testid="panel-calendar-intelligence">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <CalendarCheck className="h-4 w-4 text-primary" />
+          <p className="font-semibold text-sm">Google Calendar Intelligence</p>
+          {data.criticalAlerts > 0 && (
+            <Badge className="text-[10px] bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20 h-4 px-1.5">
+              {data.criticalAlerts} alert{data.criticalAlerts !== 1 ? "s" : ""}
+            </Badge>
+          )}
+        </div>
+        <Badge variant="outline" className="text-[10px] text-green-700 dark:text-green-400 border-green-500/30 bg-green-500/10">
+          Live
+        </Badge>
+      </div>
+
+      {/* Availability Summary KPIs */}
+      {avail && (
+        <div className="grid grid-cols-3 gap-2" data-testid="cal-availability-summary">
+          {[
+            { label: "Today",     open: avail.today?.openSlots ?? 0,    busy: avail.today?.busySlots ?? 0 },
+            { label: "Tomorrow",  open: avail.tomorrow?.openSlots ?? 0,  busy: avail.tomorrow?.busySlots ?? 0 },
+            { label: "This Week", open: avail.thisWeek?.openSlots ?? 0,  busy: avail.thisWeek?.busySlots ?? 0 },
+          ].map(({ label, open, busy }) => (
+            <div key={label} className="bg-muted/40 rounded-lg p-2.5 text-center space-y-0.5">
+              <p className="text-[10px] text-muted-foreground">{label}</p>
+              <p className="text-base font-bold text-green-600 dark:text-green-400">{open}</p>
+              <p className="text-[10px] text-muted-foreground">open · {busy} busy</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Scheduling Alerts */}
+      {data.alerts.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+            <ShieldAlert className="h-3 w-3" />Scheduling Alerts
+          </p>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+            {data.alerts.slice(0, 6).map((alert: any, i: number) => (
+              <div
+                key={i}
+                className={`flex items-start gap-2 p-2 rounded border text-xs ${alertSeverityClass(alert.severity)}`}
+                data-testid={`cal-alert-${i}`}
+              >
+                <span className="text-sm leading-none mt-0.5">{alertTypeIcon(alert.type)}</span>
+                <div className="flex-1 min-w-0">
+                  <p className="font-medium leading-snug">{alert.title}</p>
+                  <p className="text-[11px] opacity-80 mt-0.5 leading-snug line-clamp-2">{alert.description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Upcoming Events */}
+      <div className="space-y-1.5">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
+            <Calendar className="h-3 w-3" />Upcoming Events
+            <Badge variant="secondary" className="text-[10px] ml-1">{data.eventCount}</Badge>
+          </p>
+        </div>
+        {data.events.length === 0 ? (
+          <p className="text-xs text-muted-foreground text-center py-3">No upcoming Google Calendar events found.</p>
+        ) : (
+          <div className="space-y-1 max-h-40 overflow-y-auto pr-1">
+            {data.events.slice(0, 8).map((ev: any, i: number) => {
+              const start = ev.start ? new Date(ev.start) : null;
+              const durMin = ev.durationMinutes ?? 0;
+              return (
+                <div key={ev.id ?? i} className="flex items-start gap-2 py-1.5 border-b last:border-b-0" data-testid={`cal-event-${i}`}>
+                  <div className="bg-primary/10 rounded p-1 shrink-0 mt-0.5">
+                    <Calendar className="h-2.5 w-2.5 text-primary" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-medium truncate">{ev.title || "(no title)"}</p>
+                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground mt-0.5">
+                      {start && <span>{format(start, "EEE MMM d · h:mm a")}</span>}
+                      {durMin > 0 && <span>· {durMin}m</span>}
+                      {ev.location && <span className="truncate max-w-[80px]">· {ev.location}</span>}
+                    </div>
+                  </div>
+                  {ev.attendees?.length > 0 && (
+                    <div className="flex items-center gap-1 text-[10px] text-muted-foreground shrink-0">
+                      <Users className="h-2.5 w-2.5" />
+                      <span>{ev.attendees.length}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {data.alerts.length === 0 && data.events.length === 0 && (
+        <p className="text-xs text-muted-foreground text-center py-2">Calendar is clear for the next 7 days.</p>
+      )}
+
+      <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+        <Wifi className="h-2.5 w-2.5" />Live via Google Calendar · refreshes every 2 min
+      </p>
+    </Card>
+  );
+}
+
 export default function AdminSchedulingCommandCenterPage() {
   const { data, isLoading, isError, refetch } = useQuery<CommandCenterData>({
     queryKey: ["/api/scheduling/command-center"],
@@ -603,6 +790,11 @@ export default function AdminSchedulingCommandCenterPage() {
           <RevenueRecoveryPanel />
         </PanelErrorBoundary>
       </div>
+
+      {/* Google Calendar Intelligence */}
+      <PanelErrorBoundary label="CalendarIntelligence">
+        <CalendarIntelligencePanel />
+      </PanelErrorBoundary>
 
       {/* Main Content Grid */}
       <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">

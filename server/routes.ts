@@ -30867,6 +30867,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerComposioCalendarRoutes } = await import("./composio-calendar-routes");
   await registerComposioCalendarRoutes(app, isAuthenticated, requireRole);
 
+  const { registerSchedulingCalendarRoutes } = await import("./scheduling-calendar-routes");
+  await registerSchedulingCalendarRoutes(app, isAuthenticated, requireRole);
+
   const { registerOpportunityAcquisitionRoutes } = await import("./opportunity-acquisition-routes");
   await registerOpportunityAcquisitionRoutes(app, isAuthenticated, requireRole);
 

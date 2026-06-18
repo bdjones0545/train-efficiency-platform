@@ -1185,6 +1185,120 @@ const tools: OpenAI.Chat.Completions.ChatCompletionTool[] = [
       parameters: { type: "object", properties: {} },
     },
   },
+
+  // ── Phase 3: Google Calendar Intelligence Tools ──────────────────────────
+  {
+    type: "function",
+    function: {
+      name: "schedule_find_availability",
+      description: "Find open time blocks in the connected Google Calendar for a given date range. Returns free slots long enough to fit a session. Use when the user asks 'When am I free?', 'Find open slots', 'What availability do I have next week?', or before suggesting booking times.",
+      parameters: {
+        type: "object",
+        properties: {
+          startDate:       { type: "string",  description: "Start of the search window in ISO 8601 format (e.g. 2026-06-20T00:00:00Z)" },
+          endDate:         { type: "string",  description: "End of the search window in ISO 8601 format (e.g. 2026-06-27T23:59:59Z)" },
+          durationMinutes: { type: "number",  description: "Minimum slot length in minutes (default: 60). Use the session's actual duration." },
+          timezone:        { type: "string",  description: "IANA timezone string (e.g. America/New_York). Defaults to org timezone." },
+        },
+        required: ["startDate", "endDate"],
+      },
+    },
+  },
+
+  {
+    type: "function",
+    function: {
+      name: "schedule_suggest_times",
+      description: "Return ranked time suggestions (Best / Good / Available) for a proposed session. Factors in existing events, preferred hours, and buffer time. Use when the user asks 'What are the best times?', 'Suggest times for a 1-hour session', or 'When should I schedule this?'.",
+      parameters: {
+        type: "object",
+        properties: {
+          startDate:             { type: "string",  description: "Start of candidate window in ISO 8601 format" },
+          endDate:               { type: "string",  description: "End of candidate window in ISO 8601 format" },
+          durationMinutes:       { type: "number",  description: "Session length in minutes (default: 60)" },
+          preferenceWindowStart: { type: "number",  description: "Preferred start hour in 24h format (default: 9)" },
+          preferenceWindowEnd:   { type: "number",  description: "Preferred end hour in 24h format (default: 17)" },
+          timezone:              { type: "string",  description: "IANA timezone string (optional)" },
+        },
+        required: ["startDate", "endDate"],
+      },
+    },
+  },
+
+  {
+    type: "function",
+    function: {
+      name: "schedule_detect_conflicts",
+      description: "Check whether a proposed time slot conflicts with existing Google Calendar events. Also detects buffer-window violations. ALWAYS call this before schedule_create_booking to verify the time is clear.",
+      parameters: {
+        type: "object",
+        properties: {
+          proposedStart:  { type: "string",  description: "Proposed session start in ISO 8601 format" },
+          proposedEnd:    { type: "string",  description: "Proposed session end in ISO 8601 format" },
+          bufferMinutes:  { type: "number",  description: "Minutes of buffer to check around the slot (default: 15)" },
+        },
+        required: ["proposedStart", "proposedEnd"],
+      },
+    },
+  },
+
+  {
+    type: "function",
+    function: {
+      name: "schedule_create_booking",
+      description: "Queue a new Google Calendar event for admin approval. This does NOT immediately create the event — it enters an approval workflow. Use when the user explicitly asks to 'book', 'schedule', or 'add an event to the calendar'. Always call schedule_detect_conflicts first. The event will be created on Google Calendar only after an admin approves it.",
+      parameters: {
+        type: "object",
+        properties: {
+          title:           { type: "string",  description: "Event title / session name" },
+          start:           { type: "string",  description: "Start datetime in ISO 8601 format" },
+          end:             { type: "string",  description: "End datetime in ISO 8601 format (optional if durationMinutes provided)" },
+          durationMinutes: { type: "number",  description: "Duration in minutes if end is not provided" },
+          attendees:       { type: "array",   items: { type: "string" }, description: "List of attendee email addresses" },
+          location:        { type: "string",  description: "Event location or video link" },
+          description:     { type: "string",  description: "Event description / notes" },
+          purpose:         { type: "string",  description: "Brief rationale for why this event is being created — shown in the approval queue" },
+        },
+        required: ["title", "start", "purpose"],
+      },
+    },
+  },
+
+  {
+    type: "function",
+    function: {
+      name: "schedule_reschedule_booking",
+      description: "Queue an update to an existing Google Calendar event for admin approval. Use when the user asks to 'move', 'reschedule', or 'change the time' of a calendar event. Requires the eventId from a prior schedule_find_availability or schedule_suggest_times call. Admin approval required before the change takes effect on Google Calendar.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId:         { type: "string",  description: "Google Calendar event ID to update" },
+          start:           { type: "string",  description: "New start datetime in ISO 8601 format" },
+          end:             { type: "string",  description: "New end datetime in ISO 8601 format" },
+          durationMinutes: { type: "number",  description: "New duration in minutes if end is not provided" },
+          title:           { type: "string",  description: "Updated event title (optional — omit to keep original)" },
+          purpose:         { type: "string",  description: "Reason for rescheduling — shown in the approval queue" },
+        },
+        required: ["eventId", "start", "purpose"],
+      },
+    },
+  },
+
+  {
+    type: "function",
+    function: {
+      name: "schedule_cancel_booking",
+      description: "Queue a Google Calendar event deletion for admin approval. Use when the user asks to 'cancel', 'delete', or 'remove' a calendar event. Admin approval required before the event is removed from Google Calendar. This is irreversible once approved.",
+      parameters: {
+        type: "object",
+        properties: {
+          eventId:  { type: "string",  description: "Google Calendar event ID to delete" },
+          purpose:  { type: "string",  description: "Reason for cancellation — shown in the approval queue" },
+        },
+        required: ["eventId", "purpose"],
+      },
+    },
+  },
 ];
 
 async function executeTool(
@@ -4204,6 +4318,194 @@ Return a JSON object with exactly these keys:
             doNotContact: allProspects.filter(p => p.outreachStatus === "Do Not Contact").length,
           },
         });
+      }
+
+      // ── Phase 3: Google Calendar Intelligence Tools ────────────────────────
+
+      case "schedule_find_availability": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { findCalendarAvailability } = await import("./services/scheduling-calendar-service");
+        const now = new Date();
+        const start = args.startDate ?? now.toISOString();
+        const end   = args.endDate   ?? new Date(now.getTime() + 7 * 86400000).toISOString();
+        const dur   = typeof args.durationMinutes === "number" ? args.durationMinutes : 60;
+        try {
+          const result = await findCalendarAvailability(organizationId, {
+            startDate: start, endDate: end,
+            durationMinutes: dur,
+            timezone: args.timezone,
+          });
+          if (result.freeBlocks.length === 0) {
+            return JSON.stringify({ available: false, message: `No free blocks ≥${dur} minutes found between ${start} and ${end}. Calendar appears fully booked for that window.`, busyCount: result.busyCount });
+          }
+          return JSON.stringify({
+            available: true,
+            openBlocks: result.freeBlocks.length,
+            busyCount: result.busyCount,
+            durationMinutes: dur,
+            topBlocks: result.freeBlocks.slice(0, 5),
+            message: `Found ${result.freeBlocks.length} open time block(s) ≥${dur} minutes. Showing top 5.`,
+          });
+        } catch (e: any) {
+          return JSON.stringify({ error: `Calendar availability check failed: ${e.message}. Google Calendar may not be connected for this organization.` });
+        }
+      }
+
+      case "schedule_suggest_times": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { findCalendarAvailability, fetchCalendarEvents, rankTimeSlots } = await import("./services/scheduling-calendar-service");
+        const now = new Date();
+        const start = args.startDate ?? now.toISOString();
+        const end   = args.endDate   ?? new Date(now.getTime() + 7 * 86400000).toISOString();
+        const dur   = typeof args.durationMinutes === "number" ? args.durationMinutes : 60;
+        const prefStart = typeof args.preferenceWindowStart === "number" ? args.preferenceWindowStart : 9;
+        const prefEnd   = typeof args.preferenceWindowEnd   === "number" ? args.preferenceWindowEnd   : 17;
+        try {
+          const [avail, events] = await Promise.all([
+            findCalendarAvailability(organizationId, { startDate: start, endDate: end, durationMinutes: dur, timezone: args.timezone }),
+            fetchCalendarEvents(organizationId, { startDate: start, endDate: end, maxResults: 30 }),
+          ]);
+          if (avail.freeBlocks.length === 0) {
+            return JSON.stringify({ suggestions: [], message: `No openings ≥${dur} minutes in that window. Try a wider date range.` });
+          }
+          const ranked = await rankTimeSlots(organizationId, {
+            freeBlocks: avail.freeBlocks, durationMinutes: dur,
+            existingEvents: events, preferenceWindowHours: [prefStart, prefEnd],
+          });
+          const best = ranked.filter(s => s.rank === "best").slice(0, 3);
+          const good = ranked.filter(s => s.rank === "good").slice(0, 3);
+          return JSON.stringify({
+            best, good,
+            totalSuggestions: ranked.length,
+            message: `Found ${ranked.length} suggestion(s): ${best.length} "Best" and ${good.length} "Good". Top picks are based on your calendar density and preferred hours (${prefStart}:00–${prefEnd}:00).`,
+          });
+        } catch (e: any) {
+          return JSON.stringify({ error: `Time suggestion failed: ${e.message}. Google Calendar may not be connected.` });
+        }
+      }
+
+      case "schedule_detect_conflicts": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const { detectSchedulingConflicts } = await import("./services/scheduling-calendar-service");
+        if (!args.proposedStart || !args.proposedEnd) {
+          return JSON.stringify({ error: "proposedStart and proposedEnd are required." });
+        }
+        try {
+          const result = await detectSchedulingConflicts(organizationId, {
+            proposedStart: args.proposedStart,
+            proposedEnd:   args.proposedEnd,
+            bufferMinutes: typeof args.bufferMinutes === "number" ? args.bufferMinutes : 15,
+          });
+          return JSON.stringify({
+            safe: !result.hasConflict && result.bufferViolations.length === 0,
+            hasConflict: result.hasConflict,
+            conflicts: result.conflicts.map(c => ({ id: c.id, title: c.title, start: c.start, end: c.end })),
+            bufferWarnings: result.bufferViolations.map(c => ({ id: c.id, title: c.title, start: c.start, end: c.end })),
+            message: result.message,
+          });
+        } catch (e: any) {
+          return JSON.stringify({ error: `Conflict check failed: ${e.message}. Google Calendar may not be connected.` });
+        }
+      }
+
+      case "schedule_create_booking": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        if (!args.title || !args.start || !args.purpose) {
+          return JSON.stringify({ error: "title, start, and purpose are all required." });
+        }
+        const { queueEventCreation } = await import("./services/scheduling-calendar-service");
+        try {
+          const result = await queueEventCreation(organizationId, "scheduling_agent", {
+            title:           String(args.title),
+            start:           String(args.start),
+            end:             args.end       ? String(args.end)       : undefined,
+            durationHours:   args.durationHours   ? Number(args.durationHours)   : undefined,
+            durationMinutes: args.durationMinutes ? Number(args.durationMinutes) : undefined,
+            attendees:       Array.isArray(args.attendees) ? args.attendees : [],
+            location:        args.location    ? String(args.location)    : undefined,
+            description:     args.description ? String(args.description) : undefined,
+            timezone:        args.timezone    ? String(args.timezone)    : undefined,
+            purpose:         String(args.purpose),
+            riskLevel:       "medium",
+          });
+          if (!result.success) {
+            return JSON.stringify({ queued: false, message: result.message });
+          }
+          return JSON.stringify({
+            queued: true,
+            requestId: result.requestId,
+            approvalQueueId: result.approvalQueueId,
+            message: `✅ "${args.title}" has been queued for admin approval. It will appear on Google Calendar once approved. Request ID: ${result.requestId}.`,
+            approvalRequired: true,
+            note: "An admin must approve this before the calendar event is created.",
+          });
+        } catch (e: any) {
+          return JSON.stringify({ error: `Failed to queue booking: ${e.message}` });
+        }
+      }
+
+      case "schedule_reschedule_booking": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        if (!args.eventId || !args.start || !args.purpose) {
+          return JSON.stringify({ error: "eventId, start, and purpose are all required." });
+        }
+        const { queueEventUpdate } = await import("./services/scheduling-calendar-service");
+        try {
+          const result = await queueEventUpdate(organizationId, "scheduling_agent", {
+            eventId:         String(args.eventId),
+            start:           String(args.start),
+            end:             args.end         ? String(args.end)         : undefined,
+            durationHours:   args.durationHours   ? Number(args.durationHours)   : undefined,
+            durationMinutes: args.durationMinutes ? Number(args.durationMinutes) : undefined,
+            title:           args.title       ? String(args.title)       : undefined,
+            attendees:       Array.isArray(args.attendees) ? args.attendees : undefined,
+            location:        args.location    ? String(args.location)    : undefined,
+            description:     args.description ? String(args.description) : undefined,
+            timezone:        args.timezone    ? String(args.timezone)    : undefined,
+            purpose:         String(args.purpose),
+            riskLevel:       "medium",
+          });
+          if (!result.success) {
+            return JSON.stringify({ queued: false, message: result.message });
+          }
+          return JSON.stringify({
+            queued: true,
+            requestId: result.requestId,
+            approvalQueueId: result.approvalQueueId,
+            message: `✅ Reschedule of event ${args.eventId} queued for admin approval. New time: ${args.start}. Request ID: ${result.requestId}.`,
+            approvalRequired: true,
+          });
+        } catch (e: any) {
+          return JSON.stringify({ error: `Failed to queue reschedule: ${e.message}` });
+        }
+      }
+
+      case "schedule_cancel_booking": {
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        if (!args.eventId || !args.purpose) {
+          return JSON.stringify({ error: "eventId and purpose are both required." });
+        }
+        const { queueEventDeletion } = await import("./services/scheduling-calendar-service");
+        try {
+          const result = await queueEventDeletion(organizationId, "scheduling_agent", {
+            eventId: String(args.eventId),
+            purpose: String(args.purpose),
+            riskLevel: "high",
+          });
+          if (!result.success) {
+            return JSON.stringify({ queued: false, message: result.message });
+          }
+          return JSON.stringify({
+            queued: true,
+            requestId: result.requestId,
+            approvalQueueId: result.approvalQueueId,
+            message: `✅ Cancellation of event ${args.eventId} queued for admin approval. Request ID: ${result.requestId}. The event will only be removed from Google Calendar after an admin approves.`,
+            approvalRequired: true,
+            warning: "This action is irreversible once approved.",
+          });
+        } catch (e: any) {
+          return JSON.stringify({ error: `Failed to queue cancellation: ${e.message}` });
+        }
       }
 
       default:
