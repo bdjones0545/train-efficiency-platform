@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -53,7 +54,7 @@ interface PriorityQueueData {
 
 interface Props {
   orgId: string;
-  headers: Record<string, string>;
+  headers?: Record<string, string>;
 }
 
 const LEVEL_CONFIG = {
@@ -343,9 +344,7 @@ export function InterventionPriorityQueue({ orgId, headers }: Props) {
   const { data, isLoading } = useQuery<PriorityQueueData>({
     queryKey,
     queryFn: async () => {
-      const res = await fetch("/api/org/intelligence/priority-queue", { headers, credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load priority queue");
-      return res.json();
+      return authenticatedFetch("/api/org/intelligence/priority-queue", { headers: headers });
     },
     staleTime: 2 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
@@ -353,21 +352,19 @@ export function InterventionPriorityQueue({ orgId, headers }: Props) {
 
   const approveMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
-      const res = await fetch(`/api/org/workout-builder/adaptation-drafts/${id}/approve`, {
-        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "include", body: JSON.stringify({ coachNotes: notes }),
+      const result = await authenticatedFetch(`/api/org/workout-builder/adaptation-drafts/${id}/approve`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ coachNotes: notes }),
       });
-      if (!res.ok) throw new Error("Failed");
       // Also create outcome tracking record
       const draft = data?.prioritizedQueue.find((d) => d.id === id);
       if (draft) {
-        await fetch("/api/org/intelligence/outcomes", {
-          method: "POST", headers: { ...headers, "Content-Type": "application/json" },
-          credentials: "include",
+        await authenticatedFetch("/api/org/intelligence/outcomes", {
+          method: "POST", headers: { "Content-Type": "application/json", ...headers },
           body: JSON.stringify({ adaptationDraftId: id, athleteUserId: draft.athleteUserId, interventionType: draft.interventionType }),
-        });
+        }).catch(() => {});
       }
-      return res.json();
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -379,12 +376,10 @@ export function InterventionPriorityQueue({ orgId, headers }: Props) {
 
   const dismissMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
-      const res = await fetch(`/api/org/workout-builder/adaptation-drafts/${id}/dismiss`, {
-        method: "POST", headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "include", body: JSON.stringify({ coachNotes: notes }),
+      return authenticatedFetch(`/api/org/workout-builder/adaptation-drafts/${id}/dismiss`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify({ coachNotes: notes }),
       });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });

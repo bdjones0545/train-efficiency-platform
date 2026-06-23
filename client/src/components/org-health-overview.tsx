@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, Heart, Zap, Users, TrendingUp, TrendingDown, Minus, ShieldCheck, Shield, ShieldAlert, Activity } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -36,7 +37,7 @@ interface OrgIntelligenceState {
 
 interface Props {
   orgId: string;
-  headers: Record<string, string>;
+  headers?: Record<string, string>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -129,16 +130,14 @@ export function OrgHealthOverview({ orgId, headers }: Props) {
   const { data: state, isLoading } = useQuery({
     queryKey: ["/api/org/intelligence/state", orgId],
     queryFn: async () => {
-      const res = await fetch("/api/org/intelligence/state", { headers });
-      if (!res.ok) throw new Error("Failed to load org state");
-      return res.json() as Promise<OrgIntelligenceState>;
+      return authenticatedFetch("/api/org/intelligence/state", { headers: headers }) as Promise<OrgIntelligenceState>;
     },
     staleTime: 5 * 60 * 1000,
     refetchInterval: 10 * 60 * 1000,
   });
 
   const refreshMutation = useMutation({
-    mutationFn: async () => apiRequest("POST", "/api/org/intelligence/state/refresh", {}, headers),
+    mutationFn: async () => apiRequest("POST", "/api/org/intelligence/state/refresh", {}, headers ?? {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/org/intelligence/state", orgId] });
       toast({ title: "Org state refreshed" });

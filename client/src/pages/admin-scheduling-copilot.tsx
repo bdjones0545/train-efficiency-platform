@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useToast } from "@/hooks/use-toast";
 import {
   Bot, Send, User, Sparkles, TrendingUp, Users,
@@ -62,9 +63,7 @@ function HealthScoreWidget() {
   const { data, isLoading } = useQuery<HealthScore>({
     queryKey: ["/api/scheduling-intelligence/health-score"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/health-score", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
+      return authenticatedFetch("/api/scheduling-intelligence/health-score");
     },
   });
 

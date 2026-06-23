@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { fetchJson } from "@/lib/api-helpers";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -319,17 +320,11 @@ function CreateEventModal({
         body.orgWide = true;
       }
 
-      const res = await fetch(typeCfg.endpoint, {
+      return authenticatedFetch(typeCfg.endpoint, {
         method:  "POST",
         headers: { "Content-Type": "application/json", ...headers },
-        credentials: "include",
         body:    JSON.stringify(body),
       });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: res.statusText }));
-        throw new Error(err.message);
-      }
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/org/activity/calendar"] });

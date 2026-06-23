@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import {
   AlertTriangle,
   CheckCircle,
@@ -203,8 +204,7 @@ export default function AdminEmailAuditPage() {
       if (autoSentFilter === "true") params.set("autoSent", "true");
       if (autoSentFilter === "false") params.set("autoSent", "false");
       if (recipientFilter.trim()) params.set("recipientEmail", recipientFilter.trim());
-      const res = await fetch(`/api/email-audit?${params}`);
-      return res.json();
+      return authenticatedFetch(`/api/email-audit?${params}`);
     },
     staleTime: 15_000,
   });

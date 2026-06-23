@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useLocation } from "wouter";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { parseApiResponse } from "@/lib/api-helpers";
@@ -561,7 +562,7 @@ export default function BusinessBrainPage() {
     queryKey: ["/api/admin/workflows/eligibility", pending.map(r => r.id).join(",")],
     queryFn: async () => {
       if (pending.length === 0) return {};
-      const res = await fetch("/api/admin/workflows/eligibility", {
+      return authenticatedFetch("/api/admin/workflows/eligibility", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -574,7 +575,6 @@ export default function BusinessBrainPage() {
           })),
         }),
       });
-      return res.json();
     },
     enabled: pending.length > 0,
     staleTime: 30_000,

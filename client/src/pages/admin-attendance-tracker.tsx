@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -40,9 +41,7 @@ export default function AdminAttendanceTrackerPage() {
   const { data: programs = [], isLoading: programsLoading } = useQuery<any[]>({
     queryKey: ["/api/attendance/programs", orgId],
     queryFn: async () => {
-      const r = await fetch(`/api/attendance/programs?orgId=${orgId}`);
-      if (!r.ok) return [];
-      const data = await r.json();
+      const data = await authenticatedFetch<any[]>(`/api/attendance/programs?orgId=${orgId}`).catch(() => []);
       console.log("[AttendanceDashboard] programs count:", data.length, "ids:", data.map((p: any) => p.id));
       return data;
     },
@@ -58,9 +57,7 @@ export default function AdminAttendanceTrackerPage() {
     queryFn: async () => {
       const params = new URLSearchParams({ orgId });
       if (programIdFilter) params.set("programId", programIdFilter);
-      const r = await fetch(`/api/attendance/analytics?${params}`);
-      if (!r.ok) return null;
-      return r.json();
+      return authenticatedFetch(`/api/attendance/analytics?${params}`).catch(() => null);
     },
     enabled: !!orgId,
   });
@@ -70,9 +67,7 @@ export default function AdminAttendanceTrackerPage() {
     queryFn: async () => {
       const params = new URLSearchParams({ orgId, view });
       if (programIdFilter) params.set("programId", programIdFilter);
-      const r = await fetch(`/api/attendance/dashboard?${params}`);
-      if (!r.ok) return null;
-      return r.json();
+      return authenticatedFetch(`/api/attendance/dashboard?${params}`).catch(() => null);
     },
     enabled: !!orgId,
   });
@@ -82,9 +77,7 @@ export default function AdminAttendanceTrackerPage() {
     queryFn: async () => {
       if (!selectedAthlete) return null;
       const params = new URLSearchParams({ orgId, email: selectedAthlete });
-      const r = await fetch(`/api/attendance/athlete-history?${params}`);
-      if (!r.ok) return null;
-      return r.json();
+      return authenticatedFetch(`/api/attendance/athlete-history?${params}`).catch(() => null);
     },
     enabled: !!orgId && !!selectedAthlete,
   });
@@ -94,9 +87,7 @@ export default function AdminAttendanceTrackerPage() {
   const { data: reportRecipientsData } = useQuery<any>({
     queryKey: ["/api/attendance-programs", firstProgramId, "report-recipients"],
     queryFn: async () => {
-      const r = await fetch(`/api/attendance-programs/${firstProgramId}/report-recipients`);
-      if (!r.ok) return { recipients: [] };
-      return r.json();
+      return authenticatedFetch(`/api/attendance-programs/${firstProgramId}/report-recipients`).catch(() => ({ recipients: [] }));
     },
     enabled: !!firstProgramId,
   });

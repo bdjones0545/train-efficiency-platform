@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -143,25 +144,19 @@ export function AthleteIntelligenceSummary({ athleteUserId, orgId, athleteName }
   const { data, isLoading, isError } = useQuery({
     queryKey: ["/api/org/workout-builder/athletes", athleteUserId, "context", orgId],
     queryFn: async () => {
-      const res = await fetch(`/api/org/workout-builder/athletes/${athleteUserId}/context`, {
-        headers,
-        credentials: "include",
-      });
-      if (!res.ok) throw new Error("Failed to load context");
-      return res.json() as Promise<{ context: AthleteContext | null; message?: string }>;
+      return authenticatedFetch(`/api/org/workout-builder/athletes/${athleteUserId}/context`, {
+        headers: headers,
+      }) as Promise<{ context: AthleteContext | null; message?: string }>;
     },
     staleTime: 5 * 60 * 1000,
   });
 
   const refreshMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/org/workout-builder/athletes/${athleteUserId}/context/refresh`, {
+      return authenticatedFetch(`/api/org/workout-builder/athletes/${athleteUserId}/context/refresh`, {
         method: "POST",
-        headers,
-        credentials: "include",
+        headers: headers,
       });
-      if (!res.ok) throw new Error("Failed to refresh context");
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/org/workout-builder/athletes", athleteUserId, "context", orgId] });

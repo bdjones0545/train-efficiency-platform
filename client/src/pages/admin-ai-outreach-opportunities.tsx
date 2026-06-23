@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { parseApiResponse } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -20,9 +21,7 @@ import {
 // ─── Safe fetch + array helpers ────────────────────────────────────────────
 
 async function safeFetch(url: string) {
-  const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
-  return res.json();
+  return authenticatedFetch(url);
 }
 
 const asArray = <T,>(value: unknown): T[] =>

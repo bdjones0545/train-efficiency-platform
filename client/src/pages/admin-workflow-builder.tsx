@@ -18,6 +18,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -375,9 +376,7 @@ function WorkflowRegistryView({
   }>({
     queryKey: ["/api/admin/workflow-registry"],
     queryFn: async () => {
-      const r = await fetch("/api/admin/workflow-registry", { credentials: "include" });
-      if (!r.ok) throw new Error(`${r.status}`);
-      return r.json();
+      return authenticatedFetch("/api/admin/workflow-registry");
     },
   });
 
@@ -423,13 +422,11 @@ function WorkflowRegistryView({
     if (enabled) {
       // Check conflicts before enabling
       try {
-        const r = await fetch("/api/admin/workflow-registry/conflicts/check", {
+        const data = await authenticatedFetch("/api/admin/workflow-registry/conflicts/check", {
           method: "POST",
-          credentials: "include",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ workflowId: wf.id, triggerTypes: wf.triggerTypes, actionTypes: wf.actionTypes }),
         });
-        const data = await r.json();
         if (data.hasConflicts) {
           setConflicts(data.conflicts);
           setConflictPendingToggle({ wf, enabled });

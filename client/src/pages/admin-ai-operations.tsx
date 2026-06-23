@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -166,9 +167,7 @@ function LiveFeedTab() {
       const params = new URLSearchParams({ limit: "100" });
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (agentFilter !== "all") params.set("agent", agentFilter);
-      const r = await fetch(`/api/workforce/activity?${params}`, { credentials: "include" });
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
+      return authenticatedFetch(`/api/workforce/activity?${params}`);
     },
     refetchInterval: 15_000,
     staleTime: 10_000,
@@ -177,9 +176,7 @@ function LiveFeedTab() {
   const { data: decision, isLoading: decisionLoading } = useQuery<any>({
     queryKey: ["/api/ops/agent-decision", selectedAction?.id],
     queryFn: async () => {
-      const r = await fetch(`/api/ops/agent-decision/${selectedAction.id}`, { credentials: "include" });
-      if (!r.ok) throw new Error("Not found");
-      return r.json();
+      return authenticatedFetch(`/api/ops/agent-decision/${selectedAction.id}`);
     },
     enabled: !!selectedAction,
   });
@@ -786,9 +783,7 @@ function AnalyticsTab() {
   const { data: scorecard, isLoading } = useQuery<any>({
     queryKey: ["/api/workforce/scorecard", period],
     queryFn: async () => {
-      const r = await fetch(`/api/workforce/scorecard?period=${period}`, { credentials: "include" });
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
+      return authenticatedFetch(`/api/workforce/scorecard?period=${period}`);
     },
     staleTime: 60_000,
   });
@@ -910,9 +905,7 @@ function MemoryTab() {
   const { data: feed, isLoading } = useQuery<any[]>({
     queryKey: ["/api/workforce/activity"],
     queryFn: async () => {
-      const r = await fetch("/api/workforce/activity?limit=50", { credentials: "include" });
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
+      return authenticatedFetch("/api/workforce/activity?limit=50");
     },
     staleTime: 30_000,
   });
@@ -920,9 +913,7 @@ function MemoryTab() {
   const { data: decision, isLoading: decisionLoading } = useQuery<any>({
     queryKey: ["/api/ops/agent-decision", selectedId],
     queryFn: async () => {
-      const r = await fetch(`/api/ops/agent-decision/${selectedId}`, { credentials: "include" });
-      if (!r.ok) throw new Error("Not found");
-      return r.json();
+      return authenticatedFetch(`/api/ops/agent-decision/${selectedId}`);
     },
     enabled: !!selectedId,
   });

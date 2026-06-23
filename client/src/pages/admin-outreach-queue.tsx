@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -227,8 +228,7 @@ function DraftDetail({ draft, onClose, onUpdate }: { draft: OutreachDraft; onClo
   const { data: events } = useQuery<OutreachEvent[]>({
     queryKey: ["/api/admin/outreach", draft.id, "events"],
     queryFn: async () => {
-      const r = await fetch(`/api/admin/outreach/${draft.id}/events`, { credentials: "include" });
-      return r.json();
+      return authenticatedFetch(`/api/admin/outreach/${draft.id}/events`);
     },
   });
 
@@ -468,8 +468,7 @@ export default function AdminOutreachQueuePage() {
   const { data: drafts, isLoading, refetch, isFetching } = useQuery<OutreachDraft[]>({
     queryKey: ["/api/admin/outreach", tab, purposeFilter, channelFilter],
     queryFn: async () => {
-      const r = await fetch(`/api/admin/outreach?${buildParams()}`, { credentials: "include" });
-      return r.json();
+      return authenticatedFetch(`/api/admin/outreach?${buildParams()}`);
     },
   });
 

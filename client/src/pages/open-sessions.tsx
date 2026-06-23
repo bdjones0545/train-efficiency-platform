@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -38,9 +39,7 @@ function SessionPerformanceBadge({ bookingId }: { bookingId: string }) {
   const { data, isLoading } = useQuery<{ score: number; label: string; breakdown: any }>({
     queryKey: ["/api/scheduling-intelligence/session-performance", bookingId],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling-intelligence/session-performance/${bookingId}`, { credentials: "include" });
-      if (!res.ok) return null;
-      return res.json();
+      return authenticatedFetch(`/api/scheduling-intelligence/session-performance/${bookingId}`).catch(() => null);
     },
     retry: false,
   });
@@ -66,10 +65,8 @@ function AthleteRecommendationsPanel({ userId, currentSessionId }: { userId?: st
     queryKey: ["/api/scheduling-intelligence/athlete-recommendations", userId],
     queryFn: async () => {
       if (!userId) return { recommendations: [], hasProfile: false };
-      const url = `/api/scheduling-intelligence/athlete-recommendations`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) return { recommendations: [], hasProfile: false };
-      return res.json();
+      return authenticatedFetch("/api/scheduling-intelligence/athlete-recommendations")
+        .catch(() => ({ recommendations: [], hasProfile: false }));
     },
     enabled: !!userId,
     retry: false,
@@ -113,9 +110,7 @@ function RecommendedForYouStrip({
   const { data, isLoading } = useQuery<{ recommendations: any[] }>({
     queryKey: ["/api/scheduling-intelligence/athlete-recommendations", userId],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling-intelligence/athlete-recommendations`, { credentials: "include" });
-      if (!res.ok) return { recommendations: [] };
-      return res.json();
+      return authenticatedFetch("/api/scheduling-intelligence/athlete-recommendations").catch(() => ({ recommendations: [] }));
     },
     enabled: !!userId,
     retry: false,
@@ -189,10 +184,9 @@ function CoachFillCampaignButton({ session }: { session: OpenSession }) {
 
   const generateMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/scheduling-intelligence/fill-campaign/${session.id}`, {
+      return authenticatedFetch(`/api/scheduling-intelligence/fill-campaign/${session.id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({
           sessionName: session.service?.name || "Group Session",
           startAt: session.startAt,
@@ -200,8 +194,6 @@ function CoachFillCampaignButton({ session }: { session: OpenSession }) {
           coachName: session.coach?.user ? `${session.coach.user.firstName} ${session.coach.user.lastName}` : "",
         }),
       });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
     },
     onSuccess: (data) => {
       setDraft({ subject: data.subject, smsBody: data.smsBody, emailBody: data.emailBody });
@@ -503,9 +495,7 @@ function CompatibilityBadge({ session, userId }: { session: OpenSession; userId?
   const { data: profile } = useQuery<any>({
     queryKey: ["/api/scheduling/athlete-profile"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/athlete-profile", { credentials: "include" });
-      if (!res.ok) return null;
-      return res.json();
+      return authenticatedFetch("/api/scheduling/athlete-profile").catch(() => null);
     },
     enabled: !!userId,
   });
@@ -558,9 +548,7 @@ function RevenuePanel({ bookingId }: { bookingId: string }) {
   const { data } = useQuery<any>({
     queryKey: ["/api/scheduling/session-revenue", bookingId],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling/session-revenue/${bookingId}`, { credentials: "include" });
-      if (!res.ok) return null;
-      return res.json();
+      return authenticatedFetch(`/api/scheduling/session-revenue/${bookingId}`).catch(() => null);
     },
   });
 
@@ -609,13 +597,11 @@ function AttendancePanel({ bookingId, participants, sessionId }: { bookingId: st
   const mark = async (participantId: string, userId: string, status: string) => {
     setSaving(s => ({ ...s, [participantId]: true }));
     try {
-      const res = await fetch(`/api/scheduling/attendance/${bookingId}`, {
+      await authenticatedFetch(`/api/scheduling/attendance/${bookingId}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ participantUserId: userId, status }),
       });
-      if (!res.ok) throw new Error("Failed");
       setStatuses(s => ({ ...s, [participantId]: status }));
       toast({ title: "Attendance saved" });
     } catch {

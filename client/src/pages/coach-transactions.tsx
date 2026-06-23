@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -133,13 +134,7 @@ export default function CoachTransactionsPage() {
   const { data: revenueSummaryV2, isLoading: revSummaryLoading } = useQuery<RevenueSummaryV2>({
     queryKey: ["/api/admin/revenue-summary-v2", orgId],
     queryFn: async () => {
-      const res = await fetch("/api/admin/revenue-summary-v2", { credentials: "include" });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        console.error("[revenue-summary-v2] request failed", res.status, body);
-        throw new Error(`Failed to fetch revenue summary (${res.status})`);
-      }
-      return res.json();
+      return authenticatedFetch("/api/admin/revenue-summary-v2");
     },
     enabled: !!orgId,
   });

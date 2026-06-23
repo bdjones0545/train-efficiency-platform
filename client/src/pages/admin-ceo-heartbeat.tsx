@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { apiRequest } from "@/lib/queryClient";
 import { fetchJson, parseApiResponse} from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
@@ -433,9 +434,8 @@ export default function AdminCeoHeartbeatPage() {
                   data-testid="button-resolve-stale-alerts"
                   onClick={async () => {
                     try {
-                      const r = await fetch("/api/reliability/resolve-all-alerts", { method: "POST" });
-                      const d = await r.json();
-                      toast({ title: "Stale alerts resolved", description: `${d.resolved ?? 0} alert(s) cleared.` });
+                      const d = await authenticatedFetch("/api/reliability/resolve-all-alerts", { method: "POST" });
+                      toast({ title: "Stale alerts resolved", description: `${(d as any).resolved ?? 0} alert(s) cleared.` });
                       queryClient.refetchQueries({ queryKey: ["/api/reliability/executive-summary"] });
                     } catch {
                       toast({ title: "Error", description: "Could not resolve alerts.", variant: "destructive" });

@@ -1,3 +1,4 @@
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 /**
  * Event Stream Panel — Phase 4
  *
@@ -40,7 +41,7 @@ interface EventStreamData {
 
 interface Props {
   orgId: string;
-  headers: Record<string, string>;
+  headers?: Record<string, string>;
   compact?: boolean;
 }
 
@@ -75,9 +76,7 @@ export function EventStreamPanel({ orgId, headers, compact }: Props) {
   const { data, isLoading } = useQuery({
     queryKey: ["/api/org/intelligence/event-stream", orgId],
     queryFn: async () => {
-      const res = await fetch(`/api/org/intelligence/event-stream?limit=${compact ? 10 : 20}`, { headers });
-      if (!res.ok) throw new Error("Failed to load event stream");
-      return res.json() as Promise<EventStreamData>;
+      return authenticatedFetch(`/api/org/intelligence/event-stream?limit=${compact ? 10 : 20}`, { headers: headers }) as Promise<EventStreamData>;
     },
     staleTime: 30 * 1000,
     refetchInterval: 60 * 1000,

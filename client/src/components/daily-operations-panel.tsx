@@ -16,6 +16,7 @@ import {
   ChevronDown, ChevronUp, Zap, Target, ShieldAlert, BarChart3, ArrowRight
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ interface DailyOpsBrief {
 
 interface Props {
   orgId: string;
-  headers: Record<string, string>;
+  headers?: Record<string, string>;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -142,15 +143,13 @@ export function DailyOperationsPanel({ orgId, headers }: Props) {
   const { data: brief, isLoading } = useQuery({
     queryKey: ["/api/org/intelligence/daily-ops", orgId],
     queryFn: async () => {
-      const res = await fetch("/api/org/intelligence/daily-ops", { headers });
-      if (!res.ok) throw new Error("Failed to load daily ops brief");
-      return res.json() as Promise<DailyOpsBrief>;
+      return authenticatedFetch("/api/org/intelligence/daily-ops", { headers: headers }) as Promise<DailyOpsBrief>;
     },
     staleTime: 10 * 60 * 1000,
   });
 
   const regenerateMutation = useMutation({
-    mutationFn: () => apiRequest("POST", "/api/org/intelligence/daily-ops/regenerate", {}, headers),
+    mutationFn: () => apiRequest("POST", "/api/org/intelligence/daily-ops/regenerate", {}, headers ?? {}),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/org/intelligence/daily-ops", orgId] });
       toast({ title: "Daily ops brief regenerated" });

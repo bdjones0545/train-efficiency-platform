@@ -1,6 +1,6 @@
 import { Component, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { getAuthHeaders } from "@/lib/authToken";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,12 +67,7 @@ function OpportunityPreviewStrip() {
   const { data, isLoading } = useQuery<{ opportunities: any[] }>({
     queryKey: ["/api/scheduling-intelligence/opportunities"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/opportunities", {
-        credentials: "include",
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) return { opportunities: [] };
-      return res.json();
+      return authenticatedFetch("/api/scheduling-intelligence/opportunities").catch(() => ({ opportunities: [] }));
     },
     refetchInterval: 60000,
   });
@@ -140,12 +135,7 @@ function SessionPerformanceScore({ bookingId }: { bookingId: string }) {
   const { data } = useQuery<{ score: number; label: string } | null>({
     queryKey: ["/api/scheduling-intelligence/session-performance", bookingId],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling-intelligence/session-performance/${bookingId}`, {
-        credentials: "include",
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) return null;
-      return res.json();
+      return authenticatedFetch(`/api/scheduling-intelligence/session-performance/${bookingId}`).catch(() => null);
     },
     retry: false,
     staleTime: 300000,
@@ -168,12 +158,7 @@ function DemandForecastBadge({ bookingId }: { bookingId: string }) {
   const { data } = useQuery<{ predictedFillPct: number; predictedRevenueCents: number; confidence: string } | null>({
     queryKey: ["/api/scheduling-intelligence/demand-forecast", bookingId],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling-intelligence/demand-forecast/${bookingId}`, {
-        credentials: "include",
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) return null;
-      return res.json();
+      return authenticatedFetch(`/api/scheduling-intelligence/demand-forecast/${bookingId}`).catch(() => null);
     },
     retry: false,
     staleTime: 600000,
@@ -328,12 +313,7 @@ function HealthScorePanel() {
   const { data, isLoading } = useQuery<HealthScore>({
     queryKey: ["/api/scheduling-intelligence/health-score"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/health-score", {
-        credentials: "include",
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
+      return authenticatedFetch("/api/scheduling-intelligence/health-score");
     },
     refetchInterval: 120_000,
   });
@@ -404,12 +384,7 @@ function RevenueRecoveryPanel() {
   const { data, isLoading } = useQuery<RevenueRecovery>({
     queryKey: ["/api/scheduling-intelligence/revenue-recovery"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/revenue-recovery", {
-        credentials: "include",
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
+      return authenticatedFetch("/api/scheduling-intelligence/revenue-recovery");
     },
   });
 
@@ -486,12 +461,7 @@ function CalendarIntelligencePanel() {
   const { data, isLoading, isError } = useQuery<CalDashData>({
     queryKey: ["/api/scheduling-intelligence/calendar/dashboard"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/calendar/dashboard?days=7&durationMinutes=60", {
-        credentials: "include",
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
+      return authenticatedFetch("/api/scheduling-intelligence/calendar/dashboard?days=7&durationMinutes=60");
     },
     refetchInterval: 120_000,
     retry: 1,
@@ -659,15 +629,7 @@ export default function AdminSchedulingCommandCenterPage() {
   const { data, isLoading, isError, refetch } = useQuery<CommandCenterData>({
     queryKey: ["/api/scheduling/command-center"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/command-center", {
-        credentials: "include",
-        headers: { ...getAuthHeaders() },
-      });
-      if (!res.ok) {
-        const body = await res.text().catch(() => "");
-        throw new Error(`${res.status}: ${body || res.statusText}`);
-      }
-      return res.json();
+      return authenticatedFetch("/api/scheduling/command-center");
     },
     refetchInterval: 60_000,
     retry: 1,

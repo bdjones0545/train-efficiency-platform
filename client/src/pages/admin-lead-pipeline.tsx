@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1361,13 +1362,11 @@ export default function AdminLeadPipelinePage() {
   const runSimulation = async (index: number) => {
     setSimLoading(true);
     try {
-      const res = await fetch("/api/lead-capture/intelligence/test-simulation", {
+      const data = await authenticatedFetch("/api/lead-capture/intelligence/test-simulation", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        credentials: "include",
         body: JSON.stringify({ payloadIndex: index }),
       });
-      const data = await res.json();
       if (data.profileId) {
         toast({ title: "Simulation complete", description: `Score: ${data.leadScore} (${data.temperature})` });
         queryClient.invalidateQueries({ queryKey: ["/api/lead-capture/intelligence"] });

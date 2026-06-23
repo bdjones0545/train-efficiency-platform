@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { parseApiResponse } from "@/lib/api-helpers";
 import { QueryErrorState } from "@/components/query-error-state";
 import { useToast } from "@/hooks/use-toast";
@@ -115,9 +116,7 @@ const asArray = <T,>(value: unknown): T[] =>
 // Safe fetch wrapper — throws on HTTP errors so TanStack Query treats them as
 // errors (data stays undefined) rather than returning the error JSON as data.
 async function safeFetch(url: string): Promise<any> {
-  const res = await fetch(url, { credentials: "include" });
-  if (!res.ok) throw new Error(`${res.status}: ${res.statusText}`);
-  return res.json();
+  return authenticatedFetch(url);
 }
 
 // ─── Feedback Chips ───────────────────────────────────────────────────────────

@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Save, Key, Eye, EyeOff, CheckCircle2, XCircle, ExternalLink, RefreshCw, ShieldCheck, AlertTriangle, Wrench, ChevronDown, ChevronRight, Building2 } from "lucide-react";
 import { SiStripe } from "react-icons/si";
 
@@ -76,9 +77,7 @@ function StripeWalletSyncPanel() {
 
   const auditMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch(`/api/admin/platform-stripe-wallet-sync-audit?days=${days}`);
-      if (!res.ok) throw new Error((await res.json()).message || "Audit failed");
-      return res.json() as Promise<AuditResult>;
+      return authenticatedFetch<AuditResult>(`/api/admin/platform-stripe-wallet-sync-audit?days=${days}`);
     },
     onSuccess: (data) => {
       setAuditResult(data);

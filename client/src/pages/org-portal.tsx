@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useParams } from "wouter";
 import { logoutAllSessions } from "@/lib/logout";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -1234,11 +1235,9 @@ export default function OrgPortalPage() {
   const { data: portalData, isLoading: portalLoading } = useQuery<any>({
     queryKey: ["/api/org/portal/bootstrap", orgId, orgToken],
     queryFn: async () => {
-      const res = await fetch(`/api/org/portal/bootstrap?orgId=${orgId}`, {
+      return authenticatedFetch(`/api/org/portal/bootstrap?orgId=${orgId}`, {
         headers: { "X-Org-Auth-Token": orgToken! },
       });
-      if (!res.ok) throw new Error("Failed to load portal");
-      return res.json();
     },
     enabled: !!orgToken && !!orgId,
   });

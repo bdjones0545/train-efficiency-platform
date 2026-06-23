@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -60,7 +61,7 @@ export default function DeveloperSandbox() {
   async function validateDefinition() {
     setLoading(true);
     try {
-      const res = await fetch("/api/developer/validate", {
+      const validation = await authenticatedFetch("/api/developer/validate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -78,8 +79,7 @@ export default function DeveloperSandbox() {
           version: "1.0.0",
         }),
       });
-      const data = await res.json();
-      setValidation(data);
+      setValidation(validation);
     } catch {
       toast({ title: "Validation failed", variant: "destructive" });
     } finally {
@@ -91,7 +91,7 @@ export default function DeveloperSandbox() {
     setLoading(true);
     setResult(null);
     try {
-      const res = await fetch("/api/workforce/simulate", {
+      const data = await authenticatedFetch("/api/workforce/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -106,7 +106,6 @@ export default function DeveloperSandbox() {
           evidence: [form.capabilities],
         }),
       });
-      const data = await res.json();
       setResult(data);
     } catch {
       toast({ title: "Simulation failed", variant: "destructive" });

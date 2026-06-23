@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Link } from "wouter";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -237,8 +238,7 @@ function ROITab() {
   const { data, isLoading } = useQuery<ROIData>({
     queryKey: ["/api/autonomy/roi", period],
     queryFn: async () => {
-      const r = await fetch(`/api/autonomy/roi?period=${period}`, { credentials: "include" });
-      return r.json();
+      return authenticatedFetch(`/api/autonomy/roi?period=${period}`);
     },
     staleTime: 5 * 60_000,
   });

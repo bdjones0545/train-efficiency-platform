@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useParams } from "wouter";
 import { logoutAllSessions } from "@/lib/logout";
 import { useQuery } from "@tanstack/react-query";
@@ -112,11 +113,9 @@ export default function OrgMySchedulePage() {
   const { data: schedule, isLoading: scheduleLoading, refetch } = useQuery<any>({
     queryKey: ["/api/org/my-schedule", orgId, orgToken],
     queryFn: async () => {
-      const res = await fetch("/api/org/my-schedule", {
+      return authenticatedFetch("/api/org/my-schedule", {
         headers: { "X-Org-Auth-Token": orgToken! },
       });
-      if (!res.ok) throw new Error("Failed to load schedule");
-      return res.json();
     },
     enabled: !!orgToken && !!orgId,
   });

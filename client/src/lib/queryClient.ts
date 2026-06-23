@@ -1,5 +1,6 @@
 import { QueryClient, QueryCache, QueryFunction } from "@tanstack/react-query";
 import { getAuthHeaders } from "./authToken";
+import { authenticatedFetch } from "./authenticatedFetch";
 
 async function throwIfResNotOk(res: Response) {
   if (!res.ok) {
@@ -39,20 +40,19 @@ export const getQueryFn: <T>(options: {
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
   async ({ queryKey }) => {
-    const res = await fetch(queryKey.join("/") as string, {
-      credentials: "include",
-      headers: {
-        ...getAuthHeaders(),
-        "Cache-Control": "no-cache",
-      },
+    const url = queryKey.join("/") as string;
+    return authenticatedFetch<T>(url, {
+      headers: { "Cache-Control": "no-cache" },
+    }).catch((err: unknown) => {
+      if (
+        unauthorizedBehavior === "returnNull" &&
+        err instanceof Error &&
+        err.message.startsWith("401:")
+      ) {
+        return null;
+      }
+      throw err;
     });
-
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      return null;
-    }
-
-    await throwIfResNotOk(res);
-    return await res.json();
   };
 
 const PUBLIC_PATH_PREFIXES = [

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -41,7 +42,7 @@ interface AdaptationDraft {
 interface Props {
   orgId: string;
   athleteUserId?: string;
-  headers: Record<string, string>;
+  headers?: Record<string, string>;
   compact?: boolean;
 }
 
@@ -293,9 +294,7 @@ export function ProgramAdaptationDraftsPanel({ orgId, athleteUserId, headers, co
   const { data, isLoading } = useQuery({
     queryKey,
     queryFn: async () => {
-      const res = await fetch(endpoint, { headers, credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load adaptation drafts");
-      return res.json() as Promise<{ drafts: AdaptationDraft[] }>;
+      return authenticatedFetch(endpoint, { headers: headers }) as Promise<{ drafts: AdaptationDraft[] }>;
     },
     staleTime: 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
@@ -303,14 +302,11 @@ export function ProgramAdaptationDraftsPanel({ orgId, athleteUserId, headers, co
 
   const approveMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
-      const res = await fetch(`/api/org/workout-builder/adaptation-drafts/${id}/approve`, {
+      return authenticatedFetch(`/api/org/workout-builder/adaptation-drafts/${id}/approve`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify({ coachNotes: notes }),
       });
-      if (!res.ok) throw new Error("Failed to approve draft");
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -321,14 +317,11 @@ export function ProgramAdaptationDraftsPanel({ orgId, athleteUserId, headers, co
 
   const dismissMutation = useMutation({
     mutationFn: async ({ id, notes }: { id: string; notes: string }) => {
-      const res = await fetch(`/api/org/workout-builder/adaptation-drafts/${id}/dismiss`, {
+      return authenticatedFetch(`/api/org/workout-builder/adaptation-drafts/${id}/dismiss`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify({ coachNotes: notes }),
       });
-      if (!res.ok) throw new Error("Failed to dismiss draft");
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });
@@ -339,13 +332,10 @@ export function ProgramAdaptationDraftsPanel({ orgId, athleteUserId, headers, co
 
   const educationMutation = useMutation({
     mutationFn: async (id: string) => {
-      const res = await fetch(`/api/org/workout-builder/adaptation-drafts/${id}/assign-education`, {
+      return authenticatedFetch(`/api/org/workout-builder/adaptation-drafts/${id}/assign-education`, {
         method: "POST",
-        headers: { ...headers, "Content-Type": "application/json" },
-        credentials: "include",
+        headers: { "Content-Type": "application/json", ...headers },
       });
-      if (!res.ok) throw new Error("Failed to assign education");
-      return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey });

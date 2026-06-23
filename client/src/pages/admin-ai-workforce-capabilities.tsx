@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Link } from "wouter";
 import {
   ShieldCheck, ArrowLeft, CheckCircle, XCircle, Minus,
@@ -125,8 +126,7 @@ export default function AdminAiWorkforceCapabilitiesPage() {
   }>({
     queryKey: ["/api/workforce/capabilities"],
     queryFn: async () => {
-      const res = await fetch("/api/workforce/capabilities");
-      return res.json();
+      return authenticatedFetch("/api/workforce/capabilities");
     },
     refetchInterval: 60000,
   });

@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Loader2, CheckCircle2, Clock, AlertTriangle, Zap, BookOpen, Activity, MessageSquare, TrendingDown, TrendingUp, Minus, ShieldAlert } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ interface Props {
   orgId: string;
   athleteUserId: string;
   athleteName?: string;
-  headers: Record<string, string>;
+  headers?: Record<string, string>;
   compact?: boolean;
 }
 
@@ -119,19 +120,17 @@ export function AthleteIntelligenceTimeline({ orgId, athleteUserId, athleteName,
   const { data, isLoading, error } = useQuery({
     queryKey: ["/api/org/intelligence/athletes", athleteUserId, "timeline"],
     queryFn: async () => {
-      const res = await fetch(
+      return authenticatedFetch(
         `/api/org/intelligence/athletes/${athleteUserId}/timeline?limit=${compact ? 10 : 30}`,
-        { headers }
-      );
-      if (!res.ok) throw new Error("Failed to load timeline");
-      return res.json() as Promise<{ athleteUserId: string; events: TimelineEvent[] }>;
+        { headers: headers }
+      ) as Promise<{ athleteUserId: string; events: TimelineEvent[] }>;
     },
     staleTime: 2 * 60 * 1000,
   });
 
   const resolveMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("PATCH", `/api/org/intelligence/event-log/${id}/resolve`, {}, headers);
+      await apiRequest("PATCH", `/api/org/intelligence/event-log/${id}/resolve`, {}, headers ?? {});
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/org/intelligence/athletes", athleteUserId, "timeline"] });

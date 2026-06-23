@@ -2204,8 +2204,7 @@ export default function AdminTeamTrainingLeadsPage() {
             <button
               onClick={async () => {
                 try {
-                  const res = await fetch("/api/admin/team-training/prospects/backfill-lead-types", { method: "POST", headers: { "Content-Type": "application/json" } });
-                  const data = await res.json();
+                  const data = await authenticatedFetch("/api/admin/team-training/prospects/backfill-lead-types", { method: "POST", headers: { "Content-Type": "application/json" } });
                   queryClient.invalidateQueries({ queryKey: ["/api/admin/pipeline-segment-counts"] });
                   queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
                   queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/stats"] });

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { fetchJson } from "@/lib/api-helpers";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
@@ -232,13 +233,12 @@ function IntelPanel({ ex, headers, onRegress, onProgress }: {
     if (!aiQuestion || !ex._exId) return;
     setAiLoading(true);
     try {
-      const r = await fetch(`/api/org/exercises/${ex._exId}/ask-trainchat`, {
+      const data = await authenticatedFetch(`/api/org/exercises/${ex._exId}/ask-trainchat`, {
         method: "POST",
         headers: { "Content-Type": "application/json", ...headers },
         body: JSON.stringify({ question: aiQuestion, exerciseName: ex.name }),
       });
-      const data = await r.json();
-      setAiAnswer(data.answer ?? "No response");
+      setAiAnswer((data as any).answer ?? "No response");
     } catch {
       setAiAnswer("Could not reach AI. Please try again.");
     } finally { setAiLoading(false); }

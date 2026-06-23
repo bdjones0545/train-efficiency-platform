@@ -6,6 +6,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import {
   Inbox, TrendingUp, Users, AlertCircle, DollarSign,
   Clock, RefreshCw, ChevronRight, Zap, UserCheck,
@@ -261,9 +262,7 @@ export default function AdminSchedulingOpportunityInboxPage() {
   const { data, isLoading, refetch } = useQuery<OpportunityData>({
     queryKey: ["/api/scheduling-intelligence/opportunities"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/opportunities", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
+      return authenticatedFetch("/api/scheduling-intelligence/opportunities");
     },
     refetchInterval: 120_000,
   });

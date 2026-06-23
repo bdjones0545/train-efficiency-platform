@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -117,9 +118,7 @@ export function RecentAgentActivity({
   const { data, isLoading } = useQuery<LogEntry[]>({
     queryKey: ["/api/unified-action-log", { limit, status, actorType, actionType }],
     queryFn: async () => {
-      const res = await fetch(`/api/unified-action-log?${params.toString()}`);
-      if (!res.ok) throw new Error("Failed to fetch");
-      return res.json();
+      return authenticatedFetch(`/api/unified-action-log?${params.toString()}`);
     },
     refetchInterval: 30000,
   });

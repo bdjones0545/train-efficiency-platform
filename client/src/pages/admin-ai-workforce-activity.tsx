@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Link } from "wouter";
 import {
   Activity, ArrowLeft, CheckCircle, XCircle, Clock, AlertTriangle,
@@ -92,8 +93,7 @@ export default function AdminAiWorkforceActivityPage() {
       const params = new URLSearchParams({ limit });
       if (agentFilter !== "all") params.set("agent", agentFilter);
       if (statusFilter !== "all") params.set("status", statusFilter);
-      const res = await fetch(`/api/workforce/activity?${params}`);
-      return res.json();
+      return authenticatedFetch(`/api/workforce/activity?${params}`);
     },
     refetchInterval: 30000,
   });

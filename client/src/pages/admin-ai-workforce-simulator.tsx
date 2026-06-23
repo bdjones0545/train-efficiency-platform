@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { fetchJson } from "@/lib/api-helpers";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useToast } from "@/hooks/use-toast";
 
 const RISK_COLORS: Record<string, string> = {
@@ -75,12 +76,11 @@ export default function AdminAiWorkforceSimulator() {
     setSimLoading(true);
     setSimResult(null);
     try {
-      const res = await fetch("/api/workforce/simulate", {
+      const data = await authenticatedFetch("/api/workforce/simulate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(rec),
       });
-      const data = await res.json();
       setSimResult(data);
     } catch {
       toast({ title: "Simulation failed", variant: "destructive" });

@@ -1,5 +1,6 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
@@ -37,7 +38,7 @@ interface OrgLearningInsights {
 
 interface Props {
   orgId: string;
-  headers: Record<string, string>;
+  headers?: Record<string, string>;
   compact?: boolean;
 }
 
@@ -116,20 +117,16 @@ export function InterventionEffectivenessDashboard({ orgId, headers, compact = f
   const { data, isLoading } = useQuery<{ insights: OrgLearningInsights }>({
     queryKey,
     queryFn: async () => {
-      const res = await fetch("/api/org/intelligence/learning-insights", { headers, credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load learning insights");
-      return res.json();
+      return authenticatedFetch("/api/org/intelligence/learning-insights", { headers: headers });
     },
     staleTime: 10 * 60 * 1000,
   });
 
   const evalCronMutation = useMutation({
     mutationFn: async () => {
-      const res = await fetch("/api/org/intelligence/outcomes/run-evaluation-cron", {
-        method: "POST", headers: { ...headers, "Content-Type": "application/json" }, credentials: "include",
+      return authenticatedFetch("/api/org/intelligence/outcomes/run-evaluation-cron", {
+        method: "POST", headers: { "Content-Type": "application/json", ...headers },
       });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey });

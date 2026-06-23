@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import {
   DollarSign, Calendar, Zap, ChevronRight, Trash2, Edit2,
   TrendingUp, Target, Briefcase, Loader2, MessageSquare,
@@ -391,9 +392,7 @@ function ActivityTimeline({ dealId }: { dealId: string }) {
   const { data: activities = [], isLoading } = useQuery<DealActivity[]>({
     queryKey: ["/api/admin/team-training/deals", dealId, "activities"],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/team-training/deals/${dealId}/activities`, { credentials: "include" });
-      if (!res.ok) throw new Error("Failed to load activities");
-      return res.json();
+      return authenticatedFetch(`/api/admin/team-training/deals/${dealId}/activities`);
     },
     enabled: !!dealId,
   });
@@ -1222,9 +1221,7 @@ function PriorityActionQueue({
   const { data: pendingActions = [], isLoading: aLoading, refetch: refetchActions } = useQuery<AgentAction[]>({
     queryKey: ["/api/admin/team-training/revenue-agent/actions", "pending"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/team-training/revenue-agent/actions?status=pending", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
-      return res.json();
+      return authenticatedFetch("/api/admin/team-training/revenue-agent/actions?status=pending");
     },
     staleTime: 60000,
   });
@@ -1232,9 +1229,8 @@ function PriorityActionQueue({
   const { data: historyActions = [], refetch: refetchHistory } = useQuery<AgentAction[]>({
     queryKey: ["/api/admin/team-training/revenue-agent/actions", "history"],
     queryFn: async () => {
-      const res = await fetch("/api/admin/team-training/revenue-agent/actions", { credentials: "include" });
-      if (!res.ok) throw new Error("Failed");
-      return (await res.json()).filter((a: AgentAction) => a.status !== "pending");
+      return authenticatedFetch<AgentAction[]>("/api/admin/team-training/revenue-agent/actions")
+        .then(data => data.filter((a: AgentAction) => a.status !== "pending"));
     },
     enabled: tab === "history",
     staleTime: 60000,

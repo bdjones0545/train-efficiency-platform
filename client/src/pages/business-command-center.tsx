@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import {
   DashPageHeader,
   DashSectionReveal,
@@ -1330,7 +1331,7 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
     queryKey: ["/api/admin/workflows/eligibility", visibleForEligibility.map(a => a.id).join(",")],
     queryFn: async () => {
       if (visibleForEligibility.length === 0) return {};
-      const res = await fetch("/api/admin/workflows/eligibility", {
+      return authenticatedFetch("/api/admin/workflows/eligibility", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -1343,7 +1344,6 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
           })),
         }),
       });
-      return res.json();
     },
     enabled: visibleForEligibility.length > 0,
     staleTime: 30_000,

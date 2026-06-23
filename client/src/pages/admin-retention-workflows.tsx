@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -108,8 +109,7 @@ function WorkflowDetail({ wf, onClose, onTransition }: {
   const { data: events } = useQuery<WorkflowEvent[]>({
     queryKey: ["/api/admin/retention-workflows", wf.id, "events"],
     queryFn: async () => {
-      const r = await fetch(`/api/admin/retention-workflows/${wf.id}/events`, { credentials: "include" });
-      return r.json();
+      return authenticatedFetch(`/api/admin/retention-workflows/${wf.id}/events`);
     },
   });
 
@@ -398,8 +398,7 @@ export default function AdminRetentionWorkflowsPage() {
   const { data: workflows, isLoading, refetch, isFetching } = useQuery<RetentionWorkflow[]>({
     queryKey: ["/api/admin/retention-workflows", tab, typeFilter, severityFilter],
     queryFn: async () => {
-      const r = await fetch(`/api/admin/retention-workflows?${buildParams()}`, { credentials: "include" });
-      return r.json();
+      return authenticatedFetch(`/api/admin/retention-workflows?${buildParams()}`);
     },
   });
 

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { fetchJson } from "@/lib/api-helpers";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── Cert Badge ───────────────────────────────────────────────────────────────
@@ -275,7 +276,7 @@ function VerificationTab({ agents }: { agents: any[] }) {
   async function runVerification(agentId: string) {
     setVerifying(agentId);
     try {
-      await fetch(`/api/marketplace/verification/${agentId}`, { method: "POST" });
+      await authenticatedFetch(`/api/marketplace/verification/${agentId}`, { method: "POST" });
       queryClient.invalidateQueries({ queryKey: ["/api/marketplace/verification"] });
       toast({ title: "Verification complete" });
     } catch {

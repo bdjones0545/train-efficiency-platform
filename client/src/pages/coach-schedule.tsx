@@ -1,4 +1,5 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useParams, useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -99,12 +100,9 @@ export default function CoachSchedulePage() {
   const { data: slots, isLoading: slotsLoading } = useQuery<DaySlots[]>({
     queryKey: ["/api/coaches", activeCoachId, "slots", weekStartStr, selectedService],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/coaches/${activeCoachId}/slots?serviceId=${selectedService}&weekStart=${weekStartStr}`,
-        { credentials: "include" }
+      return authenticatedFetch(
+        `/api/coaches/${activeCoachId}/slots?serviceId=${selectedService}&weekStart=${weekStartStr}`
       );
-      if (!res.ok) throw new Error("Failed to fetch slots");
-      return res.json();
     },
     enabled: !!selectedService && !!activeCoachId,
   });

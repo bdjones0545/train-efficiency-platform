@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
-import { getAuthHeaders } from "@/lib/authToken";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -142,8 +142,7 @@ function RunDetail({ run, onClose, onUpdate }: { run: WorkflowRun; onClose: () =
   const { data: detail } = useQuery<WorkflowRun>({
     queryKey: ["/api/admin/workflow-runs", run.id],
     queryFn: async () => {
-      const r = await fetch(`/api/admin/workflow-runs/${run.id}`, { credentials: "include" });
-      return r.json();
+      return authenticatedFetch(`/api/admin/workflow-runs/${run.id}`);
     },
     refetchInterval: run.status === "running" || run.status === "waiting" ? 5000 : false,
   });
@@ -364,23 +363,9 @@ export default function AdminWorkflowOrchestratorPage() {
   const { data: runsRaw, isLoading, isError, error: runsError, refetch, isFetching } = useQuery({
     queryKey: ["/api/admin/workflow-runs", tab],
     queryFn: async () => {
-      const r = await fetch(`/api/admin/workflow-runs?${buildParams()}`, {
-        credentials: "include",
-        headers: { ...getAuthHeaders(), "Cache-Control": "no-cache" },
+      const raw = await authenticatedFetch<any>(`/api/admin/workflow-runs?${buildParams()}`, {
+        headers: { "Cache-Control": "no-cache" },
       });
-      if (!r.ok) {
-        let errorMsg = `${r.status} ${r.statusText}`;
-        try {
-          const body = await r.json();
-          if (body?.error) errorMsg = body.error;
-          else if (body?.message) errorMsg = body.message;
-        } catch {
-          const text = await r.text().catch(() => "");
-          if (text) errorMsg = text;
-        }
-        throw new Error(errorMsg);
-      }
-      const raw = await r.json();
       if (!Array.isArray(raw)) {
         console.warn("[WorkflowOrchestrator] Unexpected API response shape:", raw);
       }

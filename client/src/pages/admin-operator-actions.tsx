@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -84,8 +85,7 @@ function ActionDetail({ action, onClose, onTransition }: { action: OperatorActio
   const { data: events } = useQuery<ActionEvent[]>({
     queryKey: ["/api/admin/operator-actions", action.id, "events"],
     queryFn: async () => {
-      const r = await fetch(`/api/admin/operator-actions/${action.id}/events`, { credentials: "include" });
-      return r.json();
+      return authenticatedFetch(`/api/admin/operator-actions/${action.id}/events`);
     },
   });
 
@@ -370,8 +370,7 @@ export default function AdminOperatorActionsPage() {
   const { data: actions, isLoading, refetch, isFetching } = useQuery<OperatorAction[]>({
     queryKey: ["/api/admin/operator-actions", tab, severityFilter, categoryFilter],
     queryFn: async () => {
-      const r = await fetch(`/api/admin/operator-actions?${params}`, { credentials: "include" });
-      return r.json();
+      return authenticatedFetch(`/api/admin/operator-actions?${params}`);
     },
   });
 

@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from "react";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -159,11 +160,7 @@ export function ScheduleSessionForm({
     queryKey: ["/api/coach/clients/search", searchQuery],
     queryFn: async () => {
       if (searchQuery.length < 2) return [];
-      const res = await fetch(`/api/coach/clients/search?q=${encodeURIComponent(searchQuery)}`, {
-        credentials: "include",
-      });
-      if (!res.ok) return [];
-      return res.json();
+      return authenticatedFetch(`/api/coach/clients/search?q=${encodeURIComponent(searchQuery)}`).catch(() => []);
     },
     enabled: searchQuery.length >= 2,
   });
@@ -201,15 +198,7 @@ export function ScheduleSessionForm({
         if (resolvedCoachId) params.set("coachId", resolvedCoachId);
         if (excludeBookingId) params.set("excludeBookingId", excludeBookingId);
 
-        const res = await fetch(`/api/scheduling/check-availability?${params}`, {
-          credentials: "include",
-        });
-        if (!res.ok) {
-          setAvailabilityStatus("unknown");
-          setAvailabilityMessage("Could not check availability.");
-          return;
-        }
-        const data = await res.json();
+        const data = await authenticatedFetch<any>(`/api/scheduling/check-availability?${params}`);
         setAvailabilityStatus(data.status ?? "unknown");
         setAvailabilityMessage(data.message ?? "");
         setSuggestions(data.suggestions ?? []);

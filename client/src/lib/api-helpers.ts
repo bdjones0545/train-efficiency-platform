@@ -41,17 +41,8 @@ export async function fetchJson<T = Record<string, unknown>>(
   input: string | URL,
   init?: RequestInit
 ): Promise<T> {
-  const res = await fetch(input, { credentials: "include", ...init });
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    let message = `HTTP ${res.status}`;
-    try {
-      const body = JSON.parse(text) as { message?: string; error?: string };
-      message = body.message ?? body.error ?? message;
-    } catch {}
-    throw new Error(message);
-  }
-  return parseApiResponse<T>(res);
+  const { authenticatedFetch } = await import("./authenticatedFetch");
+  return authenticatedFetch<T>(String(input), init);
 }
 
 export function getErrorMessage(

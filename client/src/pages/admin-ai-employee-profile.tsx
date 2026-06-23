@@ -7,6 +7,7 @@
  */
 
 import { useQuery } from "@tanstack/react-query";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useLocation } from "wouter";
 import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -224,9 +225,7 @@ export default function AdminAiEmployeeProfilePage({ params }: { params?: { agen
   const { data: stats } = useQuery<any>({
     queryKey: ["/api/workforce/agent-stats", agentId],
     queryFn: async () => {
-      const r = await fetch(`/api/workforce/agent-stats/${agentId}`);
-      if (!r.ok) return null;
-      return r.json();
+      return authenticatedFetch(`/api/workforce/agent-stats/${agentId}`).catch(() => null);
     },
   });
 
