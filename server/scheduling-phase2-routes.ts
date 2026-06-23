@@ -585,8 +585,12 @@ export async function registerSchedulingPhase2Routes(app: Express, isAuthenticat
         totalUpcomingSessions: openSessions.length + fullSessions.length,
       });
     } catch (e: any) {
-      console.error("Command center error:", e);
-      res.status(500).json({ message: e.message });
+      console.error("[CommandCenter] /api/scheduling/command-center failed", {
+        userId: req.user?.claims?.sub ?? req.user?.id ?? "unknown",
+        error: e.message,
+        code: e.code,
+      });
+      res.status(500).json({ message: e.message, endpoint: "/api/scheduling/command-center" });
     }
   });
 

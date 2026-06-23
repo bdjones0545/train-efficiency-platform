@@ -73,6 +73,10 @@ const UNAUTHENTICATED_GET_ROUTES = [
   "/api/admin/workflows/active-summary",
   "/api/admin/day-review",
   "/api/admin/operator-score",
+  "/api/scheduling/command-center",
+  "/api/scheduling-intelligence/opportunities",
+  "/api/scheduling-intelligence/health-score",
+  "/api/scheduling-intelligence/revenue-recovery",
 ];
 
 const UNAUTHENTICATED_POST_ROUTES = [

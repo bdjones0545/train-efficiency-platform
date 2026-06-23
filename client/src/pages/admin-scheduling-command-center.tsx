@@ -1,5 +1,6 @@
 import { Component, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { getAuthHeaders } from "@/lib/authToken";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -66,7 +67,10 @@ function OpportunityPreviewStrip() {
   const { data, isLoading } = useQuery<{ opportunities: any[] }>({
     queryKey: ["/api/scheduling-intelligence/opportunities"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/opportunities", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/opportunities", {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
       if (!res.ok) return { opportunities: [] };
       return res.json();
     },
@@ -136,7 +140,10 @@ function SessionPerformanceScore({ bookingId }: { bookingId: string }) {
   const { data } = useQuery<{ score: number; label: string } | null>({
     queryKey: ["/api/scheduling-intelligence/session-performance", bookingId],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling-intelligence/session-performance/${bookingId}`, { credentials: "include" });
+      const res = await fetch(`/api/scheduling-intelligence/session-performance/${bookingId}`, {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
       if (!res.ok) return null;
       return res.json();
     },
@@ -161,7 +168,10 @@ function DemandForecastBadge({ bookingId }: { bookingId: string }) {
   const { data } = useQuery<{ predictedFillPct: number; predictedRevenueCents: number; confidence: string } | null>({
     queryKey: ["/api/scheduling-intelligence/demand-forecast", bookingId],
     queryFn: async () => {
-      const res = await fetch(`/api/scheduling-intelligence/demand-forecast/${bookingId}`, { credentials: "include" });
+      const res = await fetch(`/api/scheduling-intelligence/demand-forecast/${bookingId}`, {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
       if (!res.ok) return null;
       return res.json();
     },
@@ -318,7 +328,10 @@ function HealthScorePanel() {
   const { data, isLoading } = useQuery<HealthScore>({
     queryKey: ["/api/scheduling-intelligence/health-score"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/health-score", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/health-score", {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -391,7 +404,10 @@ function RevenueRecoveryPanel() {
   const { data, isLoading } = useQuery<RevenueRecovery>({
     queryKey: ["/api/scheduling-intelligence/revenue-recovery"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling-intelligence/revenue-recovery", { credentials: "include" });
+      const res = await fetch("/api/scheduling-intelligence/revenue-recovery", {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
       if (!res.ok) throw new Error("Failed");
       return res.json();
     },
@@ -472,6 +488,7 @@ function CalendarIntelligencePanel() {
     queryFn: async () => {
       const res = await fetch("/api/scheduling-intelligence/calendar/dashboard?days=7&durationMinutes=60", {
         credentials: "include",
+        headers: { ...getAuthHeaders() },
       });
       if (!res.ok) throw new Error("Failed");
       return res.json();
@@ -642,8 +659,14 @@ export default function AdminSchedulingCommandCenterPage() {
   const { data, isLoading, isError, refetch } = useQuery<CommandCenterData>({
     queryKey: ["/api/scheduling/command-center"],
     queryFn: async () => {
-      const res = await fetch("/api/scheduling/command-center", { credentials: "include" });
-      if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+      const res = await fetch("/api/scheduling/command-center", {
+        credentials: "include",
+        headers: { ...getAuthHeaders() },
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`${res.status}: ${body || res.statusText}`);
+      }
       return res.json();
     },
     refetchInterval: 60_000,
