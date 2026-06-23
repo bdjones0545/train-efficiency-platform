@@ -21,7 +21,7 @@
 
 import { getAuthHeaders } from "./authToken";
 
-export async function authenticatedFetch<T = unknown>(
+export async function authenticatedFetch<T = any>(
   url: string,
   options?: RequestInit
 ): Promise<T> {

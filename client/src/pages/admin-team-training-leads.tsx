@@ -15,6 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { getAuthHeaders } from "@/lib/authToken";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import {
   Search, Plus, Loader2, RefreshCw, Mail, CheckCircle, XCircle,
   ExternalLink, Edit2, ChevronDown, ChevronUp, Target, TrendingUp,

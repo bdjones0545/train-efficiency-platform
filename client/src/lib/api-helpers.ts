@@ -22,6 +22,8 @@
  *   Extracts { status, message } from apiRequest error strings ("404: Not Found").
  */
 
+import { authenticatedFetch } from "./authenticatedFetch";
+
 export async function parseApiResponse<T = Record<string, unknown>>(
   res: Response
 ): Promise<T> {
@@ -41,7 +43,6 @@ export async function fetchJson<T = Record<string, unknown>>(
   input: string | URL,
   init?: RequestInit
 ): Promise<T> {
-  const { authenticatedFetch } = await import("./authenticatedFetch");
   return authenticatedFetch<T>(String(input), init);
 }
 

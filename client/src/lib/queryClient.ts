@@ -35,11 +35,11 @@ export async function apiRequest(
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
-export const getQueryFn: <T>(options: {
+export function getQueryFn<T>(options: {
   on401: UnauthorizedBehavior;
-}) => QueryFunction<T> =
-  ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
+}): QueryFunction<T> {
+  const { on401: unauthorizedBehavior } = options;
+  return async ({ queryKey }) => {
     const url = queryKey.join("/") as string;
     return authenticatedFetch<T>(url, {
       headers: { "Cache-Control": "no-cache" },
@@ -49,11 +49,12 @@ export const getQueryFn: <T>(options: {
         err instanceof Error &&
         err.message.startsWith("401:")
       ) {
-        return null;
+        return null as unknown as T;
       }
       throw err;
     });
   };
+}
 
 const PUBLIC_PATH_PREFIXES = [
   "/apply/",
