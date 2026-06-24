@@ -18326,15 +18326,22 @@ Respond with this exact JSON structure:
       const policies = await storage.getCapabilityPolicies(orgId);
       const policyMap = new Map(policies.map(p => [p.agentType, p]));
 
-      // Get recent action stats per agent
-      const { getIntegrationExecutionLogs } = await import("./integration-runtime");
-      const recentLogs = await getIntegrationExecutionLogs(orgId, { limit: 200 });
+      // Get recent action stats per agent from unified_agent_action_log (actorType)
+      const { unifiedAgentActionLog: ual } = await import("@shared/schema");
+      const { gte: gteOp } = await import("drizzle-orm");
+      const since30d = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+      const recentUnified = await db
+        .select()
+        .from(ual)
+        .where(and(eq(ual.orgId, orgId), gteOp(ual.createdAt, since30d)))
+        .limit(500)
+        .catch(() => []);
       const actionCounts: Record<string, { total: number; success: number; blocked: number }> = {};
-      for (const log of recentLogs) {
-        const at = log.agentType ?? "unknown";
+      for (const log of recentUnified) {
+        const at = log.actorType ?? "unknown";
         if (!actionCounts[at]) actionCounts[at] = { total: 0, success: 0, blocked: 0 };
         actionCounts[at].total++;
-        if (log.status === "success") actionCounts[at].success++;
+        if (log.status === "completed" || log.status === "success") actionCounts[at].success++;
         if (log.status === "blocked") actionCounts[at].blocked++;
       }
 
@@ -31276,6 +31283,10 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       res.status(500).json({ message: "Failed to generate activation matrix" });
     }
   });
+
+  // ── Apex Agent Routes ─────────────────────────────────────────────────────
+  const { registerApexAgentRoutes } = await import("./agents/apex-agent-routes");
+  registerApexAgentRoutes(app);
 
   return httpServer;
 }

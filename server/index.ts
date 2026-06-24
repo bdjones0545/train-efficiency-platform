@@ -591,6 +591,10 @@ app.use((req, res, next) => {
   startCeoHeartbeat();
   setTimeout(() => runHeartbeatForAllOrgs("startup").catch(() => {}), 3 * 60 * 1000);
 
+  // ── Apex Agent — daily growth/revenue scanner ─────────────────────────────
+  const { startApexDailyCron } = await import("./agents/apex-agent");
+  startApexDailyCron();
+
   await registerRoutes(httpServer, app);
 
   // ── AI Infrastructure Startup Backfill ────────────────────────────────────

@@ -724,6 +724,12 @@ export function AppSidebar() {
         icon: Trophy,
         testId: "nav-workforce-leaderboard",
       },
+      {
+        title: "Apex — Growth Agent",
+        url: "/admin/apex-agent",
+        icon: Target,
+        testId: "nav-apex-agent",
+      },
     ],
   };
 

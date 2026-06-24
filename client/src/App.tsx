@@ -200,6 +200,7 @@ import AdminCoachCapacityPage from "@/pages/admin-coach-capacity";
 import AdminSchedulingCommandCenterPage from "@/pages/admin-scheduling-command-center";
 import AdminSchedulingOpportunityInboxPage from "@/pages/admin-scheduling-opportunity-inbox";
 import AdminSchedulingCopilotPage from "@/pages/admin-scheduling-copilot";
+import AdminApexAgentPage from "@/pages/admin-apex-agent";
 import AttendanceCheckinPage from "@/pages/attendance-checkin";
 import AttendanceProgramEditorPage from "@/pages/attendance-program-editor";
 import AdminAttendanceTrackerPage from "@/pages/admin-attendance-tracker";
@@ -620,6 +621,7 @@ function AuthenticatedLayout() {
                   <Route path="/developer" component={DeveloperPortalPage} />
                   <Route path="/developer/sandbox" component={DeveloperSandboxPage} />
                   <Route path="/marketplace/store" component={MarketplaceStorePage} />
+                  <Route path="/admin/apex-agent" component={AdminApexAgentPage} />
                   <Route path="/admin/ai-employee/:agentId" component={AdminAiEmployeeProfilePage} />
                   <Route path="/admin/recommendations" component={AdminRecommendationsPage} />
                   <Route path="/admin/action-center" component={AdminActionCenterPage} />
