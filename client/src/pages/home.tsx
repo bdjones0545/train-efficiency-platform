@@ -746,7 +746,7 @@ export default function HomePage() {
     const s = agentmailStatusQ.data;
     if (!s) return "unknown";
     if (s.connected) return "operational";
-    if (s.configured && !s.connected) return "degraded";
+    if (s.configured) return "degraded";
     return "unknown";
   }
 
@@ -754,7 +754,7 @@ export default function HomePage() {
     const s = heartbeatStatusQ.data;
     if (!s) return "unknown";
     if (!s.lastHeartbeatAt && !hbLastRun) return "unknown";
-    if ((hbLastRun?.errorsDetected ?? 0) > 0) return "degraded";
+    if ((hbLastRun?.errorsEncountered ?? 0) > 0) return "degraded";
     return "operational";
   }
 
@@ -775,26 +775,26 @@ export default function HomePage() {
     {
       name: "Hermes Learning Engine",
       status: hermesStatus(),
-      detail:
-        hermesStatsQ.data
+      detail: hermesStatsQ.data
+        ? hermesStatsQ.data.lastRunAt
           ? `${hermesStatsQ.data.recommendations24h ?? 0} insights (24h) · last active ${relativeTime(hermesStatsQ.data.lastRunAt)}`
-          : "No data",
+          : `${hermesStatsQ.data.recommendations24h ?? 0} insights (24h) · never run`
+        : "No data",
     },
     {
       name: "AgentMail",
       status: agentmailStatus(),
-      detail:
-        agentmailStatusQ.data?.connected
-          ? "Connected and routing"
-          : agentmailStatusQ.data?.configured
-          ? "Configured but not connected"
-          : "Not configured",
+      detail: agentmailStatusQ.data?.connected
+        ? "Connected and routing"
+        : agentmailStatusQ.data?.configured
+        ? "Configured · connection failed"
+        : "Not configured",
     },
     {
       name: "CEO Heartbeat",
       status: heartbeatStatus(),
       detail: hbLastRun
-        ? `Last run ${relativeTime(hbLastRun.startedAt ?? hbStatus?.lastHeartbeatAt)} · ${hbLastRun.agentsCoordinated ?? 0} agents`
+        ? `Last run ${relativeTime(hbLastRun.startedAt ?? hbStatus?.lastHeartbeatAt)} · ${hbLastRun.agentsCoordinated ?? hbLastRun.agents_coordinated ?? 0} agents`
         : hbStatus?.lastHeartbeatAt
         ? `Last active ${relativeTime(hbStatus.lastHeartbeatAt)}`
         : "No runs recorded",
@@ -813,7 +813,7 @@ export default function HomePage() {
     },
   ];
 
-  const allOperational = subsystems.every((s) => s.status === "operational" || s.status === "unknown");
+  const allOperational = subsystems.every((s) => s.status === "operational");
   const hasAttention = subsystems.some((s) => s.status === "attention");
   const hasDegraded = subsystems.some((s) => s.status === "degraded");
 

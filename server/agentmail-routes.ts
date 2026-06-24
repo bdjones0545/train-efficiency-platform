@@ -132,7 +132,16 @@ export async function registerAgentMailRoutes(
         });
       }
 
-      const status = await verifyAgentMailConnection();
+      let status: { configured: boolean; connected: boolean; message: string; details?: unknown };
+      try {
+        status = await verifyAgentMailConnection();
+      } catch (connErr: any) {
+        status = {
+          configured: true,
+          connected: false,
+          message: `AgentMail connection check failed: ${connErr?.message ?? "network error"}`,
+        };
+      }
 
       // Inbound stats
       const inboundStats = rows(await db.execute(sql`

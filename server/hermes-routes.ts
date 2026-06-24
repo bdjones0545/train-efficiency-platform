@@ -24,9 +24,17 @@ import {
   getUnifiedActionQueue,
   getActionContext,
 } from "./services/unified-action-queue";
+import { resolveOrgSession } from "./org-auth";
 
-function getOrgId(req: any): string {
-  return req.user?.orgId as string;
+async function getOrgId(req: any): Promise<string | null> {
+  if (req.query?.orgId) return req.query.orgId as string;
+  try {
+    const session = await resolveOrgSession(req);
+    if (session?.orgId) return session.orgId;
+  } catch {
+    // fall through
+  }
+  return req.user?.orgId ?? null;
 }
 
 function requireAdmin(req: Request, res: Response): boolean {
@@ -43,9 +51,9 @@ export function registerHermesRoutes(app: Express): void {
   app.get("/api/hermes/stats", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await ensureHermesTables();
-      const stats = await getHermesStats(orgId);
+      const stats = await getHermesStats(orgId as string);
       res.json({ ...stats, generatedAt: new Date().toISOString() });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to load Hermes stats" });
@@ -56,9 +64,9 @@ export function registerHermesRoutes(app: Express): void {
   app.get("/api/hermes/health", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await ensureHermesTables();
-      const health = await getHermesHealth(orgId);
+      const health = await getHermesHealth(orgId as string);
       res.json({ ...health, generatedAt: new Date().toISOString() });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to load Hermes health" });
@@ -69,7 +77,7 @@ export function registerHermesRoutes(app: Express): void {
   app.get("/api/hermes/recommendations", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await ensureHermesTables();
       const { type, status, limit = "50", offset = "0" } = req.query as Record<string, string>;
 
@@ -119,7 +127,7 @@ export function registerHermesRoutes(app: Express): void {
   app.get("/api/hermes/recommendations/:id", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await ensureHermesTables();
       const rows = await db.execute(sql`
         SELECT * FROM hermes_recommendations
@@ -147,7 +155,7 @@ export function registerHermesRoutes(app: Express): void {
   app.post("/api/hermes/recommendations/:id/feedback", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await ensureHermesTables();
       const { outcome, editNotes, actionQueueId, finalOutcome } = req.body;
 
@@ -208,7 +216,7 @@ export function registerHermesRoutes(app: Express): void {
   app.post("/api/hermes/run", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await ensureHermesTables();
       console.log(`[HermesRoutes] Manual Hermes cycle triggered by user=${req.user?.id} org=${orgId}`);
       const result = await runHermesIntelligenceCycle(orgId);
@@ -223,7 +231,7 @@ export function registerHermesRoutes(app: Express): void {
   app.get("/api/hermes/queue", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const {
         limit = "100",
         offset = "0",
@@ -251,7 +259,7 @@ export function registerHermesRoutes(app: Express): void {
   app.get("/api/actions/:id/context", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const ctx = await getActionContext(orgId, req.params.id);
       if (!ctx) {
         return res.status(404).json({ message: "Action not found in any queue" });
@@ -267,7 +275,7 @@ export function registerHermesRoutes(app: Express): void {
   app.get("/api/hermes/feedback", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await ensureHermesTables();
 
       const rows = await db.execute(sql`
