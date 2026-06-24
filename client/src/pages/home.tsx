@@ -187,7 +187,8 @@ interface HeartbeatPriority {
 interface HeartbeatRun {
   agentsCoordinated?: number;
   prioritiesGenerated?: number;
-  errorsDetected?: number;
+  errorsEncountered?: number;
+  durationMs?: number;
   status?: string;
   startedAt?: string;
 }
@@ -794,7 +795,7 @@ export default function HomePage() {
       name: "CEO Heartbeat",
       status: heartbeatStatus(),
       detail: hbLastRun
-        ? `Last run ${relativeTime(hbLastRun.startedAt ?? hbStatus?.lastHeartbeatAt)} · ${hbLastRun.agentsCoordinated ?? hbLastRun.agents_coordinated ?? 0} agents`
+        ? `Last run ${relativeTime(hbLastRun.startedAt ?? hbStatus?.lastHeartbeatAt)} · ${hbLastRun.agentsCoordinated ?? 0} agents`
         : hbStatus?.lastHeartbeatAt
         ? `Last active ${relativeTime(hbStatus.lastHeartbeatAt)}`
         : "No runs recorded",
@@ -1179,12 +1180,12 @@ export default function HomePage() {
                       </p>
                       <p
                         className={`text-base font-semibold ${
-                          (hbLastRun?.errorsDetected ?? 0) > 0
+                          (hbLastRun?.errorsEncountered ?? 0) > 0
                             ? "text-red-500"
                             : "text-green-600 dark:text-green-400"
                         }`}
                       >
-                        {hbLastRun?.errorsDetected ?? 0}
+                        {hbLastRun?.errorsEncountered ?? 0}
                       </p>
                     </div>
                     <div data-testid="hb-next-run">
