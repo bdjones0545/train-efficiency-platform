@@ -132,7 +132,7 @@ export async function runClientSuccessAgent(orgId: string): Promise<ClientSucces
         title: `${name}: ${completionRate}% session completion`,
         description: `${stats.completed} completed, ${stats.cancelled} cancelled, ${stats.noShow} no-show out of ${stats.total} sessions in 30 days`,
         severity,
-        score: 60 + (100 - completionRate) * 0.3,
+        score: Math.round(60 + (100 - completionRate) * 0.3),
         metadata: { completionRate, ...stats, email: u.email },
       });
 
@@ -146,7 +146,7 @@ export async function runClientSuccessAgent(orgId: string): Promise<ClientSucces
           entityName: name,
           severity,
           estimatedImpact: 12000,
-          priorityScore: 60 + (100 - completionRate) * 0.3,
+          priorityScore: Math.round(60 + (100 - completionRate) * 0.3),
           actionType: "client_checkin",
           crossAgentTypes: ["retention"],
           metadata: { completionRate, ...stats, email: u.email },
@@ -170,7 +170,7 @@ export async function runClientSuccessAgent(orgId: string): Promise<ClientSucces
       title: `Overall session completion at ${avgCompletionRate}%`,
       description: `${totalCompleted} of ${totalBooked} sessions completed across all clients in the last 30 days`,
       severity: avgCompletionRate < 50 ? "high" : "medium",
-      score: 60 + (70 - avgCompletionRate) * 0.5,
+      score: Math.round(60 + (70 - avgCompletionRate) * 0.5),
       metadata: { avgCompletionRate, totalCompleted, totalBooked },
     });
   }

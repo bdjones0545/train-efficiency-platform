@@ -797,8 +797,9 @@ export async function runLedgerDriftCheck(orgId: string): Promise<{
   const result = await db.execute(sql`
     SELECT u.id, u.balance_cents, COALESCE(SUM(wt.amount_cents), 0)::bigint AS computed
     FROM users u
+    JOIN user_profiles up ON up.user_id = u.id
     LEFT JOIN wallet_transactions wt ON wt.user_id = u.id
-    WHERE u.organization_id = ${orgId}
+    WHERE up.organization_id = ${orgId}
     GROUP BY u.id, u.balance_cents
   `);
   const rows: any[] = Array.isArray(result) ? result : (result as any).rows ?? [];

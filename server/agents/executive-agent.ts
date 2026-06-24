@@ -194,15 +194,27 @@ export async function runOrchestrator(orgId: string, triggeredBy = "manual"): Pr
 
     // --- Write all signals and recommendations ---
     if (allSignalInserts.length > 0) {
-      await db.insert(agentSignals).values(allSignalInserts);
+      try {
+        await db.insert(agentSignals).values(allSignalInserts);
+      } catch (insertErr: any) {
+        console.error("[Atlas] agentSignals insert failed — table=agent_signals payload_sample=%j error=%s",
+          allSignalInserts[0], insertErr.message);
+        throw insertErr;
+      }
     }
 
     let insertedRecs: (typeof agentRecommendations.$inferSelect)[] = [];
     if (allRecommendationInserts.length > 0) {
-      insertedRecs = await db
-        .insert(agentRecommendations)
-        .values(allRecommendationInserts)
-        .returning();
+      try {
+        insertedRecs = await db
+          .insert(agentRecommendations)
+          .values(allRecommendationInserts)
+          .returning();
+      } catch (insertErr: any) {
+        console.error("[Atlas] agentRecommendations insert failed — table=agent_recommendations payload_sample=%j error=%s",
+          allRecommendationInserts[0], insertErr.message);
+        throw insertErr;
+      }
     }
 
     totalSignals = allSignalInserts.length;
