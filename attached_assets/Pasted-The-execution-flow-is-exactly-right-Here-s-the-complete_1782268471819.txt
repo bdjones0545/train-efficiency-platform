@@ -1,0 +1,44 @@
+The execution flow is exactly right. Here's the complete audit report:
+
+Consolidation Report
+What Changed
+2 files rewritten:
+
+File	Before	After
+server/agents/growth-agent.ts	213 lines of duplicated prospect/deal analysis logic	110-line thin adapter — delegates to runApexForOrg(), maps output to v1 shape
+server/agents/retention-agent.ts	224 lines of duplicated booking/subscription analysis logic	115-line thin adapter — delegates to runPulseForOrg(), maps output to v1 shape
+Imports Updated
+None required. The adapter pattern was chosen precisely to avoid touching any callers. executive-agent.ts still imports runGrowthAgent / runRetentionAgent with the same signatures — it doesn't know or care that they now delegate to Apex/Pulse.
+
+Deprecated Agents
+Agent	Status
+Old growth-agent.ts logic	✅ Eliminated — replaced by Apex Engine
+Old retention-agent.ts logic	✅ Eliminated — replaced by Pulse Engine
+apex-agent.ts	Canonical Growth/Revenue engine
+pulse-agent.ts	Canonical Retention/Churn engine
+Execution Flow (after)
+CEO Heartbeat / Executive Agent (Atlas) 
+  └── runGrowthAgent()      →  growth-agent.ts adapter
+        └── runApexForOrg()  →  apex-agent.ts  ← SINGLE source of truth
+              ├── writes apex_recommendations (deduped)
+              └── writes unified_agent_action_log
+  └── runRetentionAgent()   →  retention-agent.ts adapter
+        └── runPulseForOrg() →  pulse-agent.ts  ← SINGLE source of truth
+              ├── writes pulse_recommendations (deduped)
+              └── unified_agent_action_log
+Apex daily cron (independent, via index.ts)
+  └── runApexForOrg() — skips duplicates (already tracked)
+Pulse daily cron (independent, via index.ts)
+  └── runPulseForOrg() — skips duplicates (already tracked)
+
+No double-counting: Apex and Pulse both have built-in deduplication — hasPendingRecommendation() checks before every insert, so if the cron already ran today, the Atlas-triggered call will skip all duplicates and cost near-zero.
+
+Remaining Risks
+Risk	Severity	Notes
+Atlas now triggers Apex/Pulse on demand (not just cron)	Low	Dedup gate prevents any double-writes; only logs one extra unified_agent_action_log entry per Atlas run
+bestLeadSource always returns null in the wrapper	Negligible	That field was only used by Atlas's mostValuableLead brief, which has a fallback to growthResult.signals
+Cron timing: Apex runs 2min after boot, Atlas runs hourly	Low	Both have dedup so overlapping runs are harmless
+Build Status
+TypeScript: Exit code 0 — no errors
+Server boot: Clean — all crons registered, serving on port 5000
+Crons confirmed running: [Apex] Daily cron started, [Pulse] Daily cron started, [BusinessBrain] Orchestrator cron started
