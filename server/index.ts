@@ -595,6 +595,9 @@ app.use((req, res, next) => {
   const { startApexDailyCron } = await import("./agents/apex-agent");
   startApexDailyCron();
 
+  const { startPulseDailyCron } = await import("./agents/pulse-agent");
+  startPulseDailyCron();
+
   await registerRoutes(httpServer, app);
 
   // ── AI Infrastructure Startup Backfill ────────────────────────────────────

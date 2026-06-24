@@ -201,6 +201,7 @@ import AdminSchedulingCommandCenterPage from "@/pages/admin-scheduling-command-c
 import AdminSchedulingOpportunityInboxPage from "@/pages/admin-scheduling-opportunity-inbox";
 import AdminSchedulingCopilotPage from "@/pages/admin-scheduling-copilot";
 import AdminApexAgentPage from "@/pages/admin-apex-agent";
+import AdminPulseAgentPage from "@/pages/admin-pulse-agent";
 import AttendanceCheckinPage from "@/pages/attendance-checkin";
 import AttendanceProgramEditorPage from "@/pages/attendance-program-editor";
 import AdminAttendanceTrackerPage from "@/pages/admin-attendance-tracker";
@@ -622,6 +623,7 @@ function AuthenticatedLayout() {
                   <Route path="/developer/sandbox" component={DeveloperSandboxPage} />
                   <Route path="/marketplace/store" component={MarketplaceStorePage} />
                   <Route path="/admin/apex-agent" component={AdminApexAgentPage} />
+                  <Route path="/admin/pulse-agent" component={AdminPulseAgentPage} />
                   <Route path="/admin/ai-employee/:agentId" component={AdminAiEmployeeProfilePage} />
                   <Route path="/admin/recommendations" component={AdminRecommendationsPage} />
                   <Route path="/admin/action-center" component={AdminActionCenterPage} />

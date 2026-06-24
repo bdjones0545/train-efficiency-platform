@@ -55,6 +55,7 @@ import {
   BadgeDollarSign,
   Handshake,
   LayoutDashboard,
+  Heart,
 } from "lucide-react";
 import { setLastOrgSlug } from "@/lib/logout";
 import type { UserProfile } from "@shared/schema";
@@ -729,6 +730,12 @@ export function AppSidebar() {
         url: "/admin/apex-agent",
         icon: Target,
         testId: "nav-apex-agent",
+      },
+      {
+        title: "Pulse — Retention Agent",
+        url: "/admin/pulse-agent",
+        icon: Heart,
+        testId: "nav-pulse-agent",
       },
     ],
   };

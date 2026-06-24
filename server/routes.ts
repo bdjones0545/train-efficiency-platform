@@ -31288,5 +31288,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerApexAgentRoutes } = await import("./agents/apex-agent-routes");
   registerApexAgentRoutes(app);
 
+  // ── Pulse Agent Routes ────────────────────────────────────────────────────
+  const { registerPulseAgentRoutes } = await import("./agents/pulse-agent-routes");
+  registerPulseAgentRoutes(app);
+
   return httpServer;
 }
