@@ -129,6 +129,11 @@ export async function ensureApexRecommendationsTable(): Promise<void> {
       created_at           TIMESTAMPTZ DEFAULT NOW()
     )
   `).catch(() => {});
+
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS apex_rec_org_status ON apex_recommendations (org_id, status)`).catch(() => {});
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS apex_rec_dedup ON apex_recommendations (org_id, signal_type, entity_id, status)`).catch(() => {});
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS apex_rec_created ON apex_recommendations (org_id, created_at DESC)`).catch(() => {});
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS apex_rec_expires ON apex_recommendations (org_id, expires_at) WHERE status = 'pending_review'`).catch(() => {});
 }
 
 // ─── Signal detectors ─────────────────────────────────────────────────────────

@@ -122,6 +122,11 @@ export async function ensurePulseRecommendationsTable(): Promise<void> {
       created_at           TIMESTAMPTZ DEFAULT NOW()
     )
   `).catch(() => {});
+
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS pulse_rec_org_status ON pulse_recommendations (org_id, status)`).catch(() => {});
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS pulse_rec_dedup ON pulse_recommendations (org_id, signal_type, entity_id, status)`).catch(() => {});
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS pulse_rec_created ON pulse_recommendations (org_id, created_at DESC)`).catch(() => {});
+  await db.execute(sql`CREATE INDEX IF NOT EXISTS pulse_rec_expires ON pulse_recommendations (org_id, expires_at) WHERE status = 'pending_review'`).catch(() => {});
 }
 
 // ─── Dedup check ──────────────────────────────────────────────────────────────

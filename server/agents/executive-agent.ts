@@ -7,6 +7,7 @@ import { runSchedulingAgent } from "./scheduling-agent";
 import { runGrowthAgent } from "./growth-agent";
 import { runClientSuccessAgent } from "./client-success-agent";
 import { runRevenueAgent } from "../revenue-agent";
+import { logUnifiedAction } from "../unified-action-logger";
 
 export interface OrchestratorResult {
   runId: string;
@@ -319,6 +320,27 @@ export async function runOrchestrator(orgId: string, triggeredBy = "manual"): Pr
         actionType: r.actionType || null,
       }));
 
+    // --- Write run summary to unified_agent_action_log (workforce dashboard counter) ---
+    await logUnifiedAction({
+      orgId,
+      actorType: "executive_agent",
+      actorName: "Atlas",
+      actionType: "atlas:orchestrator_run",
+      workflowRunId: run.id,
+      status: "completed",
+      riskLevel: "low",
+      reasoningSummary: `Atlas orchestrated ${Object.keys(agentSummary).length} agents — ${totalSignals} signals, ${totalRecommendations} recommendations, health score ${healthScore}`,
+      inputSnapshot: { triggeredBy, orgId },
+      outputSnapshot: {
+        healthScore,
+        totalSignals,
+        totalRecommendations,
+        agentSummary,
+        criticalCount: allSignalInserts.filter((s) => s.severity === "critical").length,
+      },
+      rollbackAvailable: false,
+    }).catch((err) => console.error("[Atlas] Failed to write telemetry:", err));
+
     return {
       runId: run.id,
       healthScore,
@@ -344,7 +366,11 @@ export async function runOrchestrator(orgId: string, triggeredBy = "manual"): Pr
   }
 }
 
+let _businessBrainTimer: ReturnType<typeof setInterval> | null = null;
+
 export function startBusinessBrainCron() {
+  if (_businessBrainTimer) return;
+
   const INTERVAL_MS = 60 * 60 * 1000;
 
   const tick = async () => {
@@ -393,6 +419,6 @@ export function startBusinessBrainCron() {
     }
   };
 
-  setInterval(tick, INTERVAL_MS);
+  _businessBrainTimer = setInterval(tick, INTERVAL_MS);
   console.log("[BusinessBrain] Orchestrator cron started (checks every hour)");
 }
