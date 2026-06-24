@@ -17649,8 +17649,10 @@ Respond with this exact JSON structure:
   // GET /api/job-queue/stats — job queue health metrics
   app.get("/api/job-queue/stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { getJobQueueStats } = await import("./workflow-job-queue");
-      const stats = await getJobQueueStats(req.user.orgId);
+      const stats = await getJobQueueStats(orgId);
       const { getRunnerStatus } = await import("./workflow-job-runner");
       res.json({ ...stats, runner: getRunnerStatus() });
     } catch (e: any) {
@@ -17662,7 +17664,8 @@ Respond with this exact JSON structure:
   // GET /api/job-queue/jobs — list jobs by status
   app.get("/api/job-queue/jobs", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const status = req.query.status as string | undefined;
       const limit = parseInt(req.query.limit as string ?? "50");
       const jobs = await storage.getWorkflowJobs(orgId, status, limit);
@@ -17676,7 +17679,9 @@ Respond with this exact JSON structure:
   // GET /api/job-queue/dead-letter — list dead letter jobs
   app.get("/api/job-queue/dead-letter", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const jobs = await storage.getDeadLetterJobs(req.user.orgId);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const jobs = await storage.getDeadLetterJobs(orgId);
       res.json(jobs);
     } catch (e: any) {
       console.error("[job-queue/dead-letter] error:", e);
@@ -17687,10 +17692,12 @@ Respond with this exact JSON structure:
   // POST /api/job-queue/dead-letter/:id/retry — manually retry a dead letter job
   app.post("/api/job-queue/dead-letter/:id/retry", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { retryDeadLetterJob } = await import("./workflow-job-queue");
       const result = await retryDeadLetterJob(
         req.params.id,
-        req.user.orgId,
+        orgId,
         req.user.name ?? req.user.email ?? "admin",
       );
       if (!result.ok) return res.status(400).json({ message: result.error });
@@ -17704,8 +17711,10 @@ Respond with this exact JSON structure:
   // POST /api/job-queue/:id/cancel — cancel a queued/retrying job
   app.post("/api/job-queue/:id/cancel", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { cancelWorkflowJob } = await import("./workflow-job-queue");
-      await cancelWorkflowJob(req.params.id, req.user.orgId, req.user.name ?? req.user.email ?? "admin");
+      await cancelWorkflowJob(req.params.id, orgId, req.user.name ?? req.user.email ?? "admin");
       res.json({ ok: true });
     } catch (e: any) {
       console.error("[job-queue/cancel] error:", e);
@@ -17716,7 +17725,9 @@ Respond with this exact JSON structure:
   // GET /api/job-queue/run/:runId — jobs for a specific workflow run
   app.get("/api/job-queue/run/:runId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const jobs = await storage.getJobsForRun(req.user.orgId, req.params.runId);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const jobs = await storage.getJobsForRun(orgId, req.params.runId);
       res.json(jobs);
     } catch (e: any) {
       console.error("[job-queue/run] error:", e);
@@ -17727,7 +17738,9 @@ Respond with this exact JSON structure:
   // GET /api/job-queue/rate-limits — org rate limit status
   app.get("/api/job-queue/rate-limits", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const limits = await storage.getRateLimits(req.user.orgId);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const limits = await storage.getRateLimits(orgId);
       res.json(limits);
     } catch (e: any) {
       console.error("[job-queue/rate-limits] error:", e);
@@ -17738,8 +17751,10 @@ Respond with this exact JSON structure:
   // POST /api/job-queue/enqueue — manually enqueue a job (admin only)
   app.post("/api/job-queue/enqueue", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { enqueueWorkflowJob } = await import("./workflow-job-queue");
-      const result = await enqueueWorkflowJob({ orgId: req.user.orgId, ...req.body });
+      const result = await enqueueWorkflowJob({ orgId: orgId, ...req.body });
       res.json(result);
     } catch (e: any) {
       console.error("[job-queue/enqueue] error:", e);
@@ -18315,8 +18330,10 @@ Respond with this exact JSON structure:
   // GET /api/integrations/research/activity — research agent activity feed
   app.get("/api/integrations/research/activity", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { getResearchActivityFeed } = await import("./integrations/research-agent");
-      const feed = await getResearchActivityFeed(req.user.orgId);
+      const feed = await getResearchActivityFeed(orgId);
       res.json(feed);
     } catch (e: any) {
       res.status(500).json({ message: "Failed to fetch research activity" });
@@ -18327,7 +18344,8 @@ Respond with this exact JSON structure:
   // Phase 1: respects enabled_departments from org_ai_workforce_settings
   app.get("/api/workforce/agents", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { listAgentIdentities } = await import("./agent-identities");
       const identities = listAgentIdentities();
 
@@ -18393,7 +18411,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/relationship-map — which agents use which integrations
   app.get("/api/workforce/relationship-map", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const integrations = await storage.getExternalIntegrations(orgId);
       const { listAgentIdentities } = await import("./agent-identities");
       const agents = listAgentIdentities();
@@ -18650,9 +18669,11 @@ Respond with this exact JSON structure:
   // POST /api/recommendations/:id/dismiss — dismiss a recommendation
   app.post("/api/recommendations/:id/dismiss", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { logUnifiedAction } = await import("./unified-action-logger");
       await logUnifiedAction({
-        orgId: req.user.orgId, agentType: "system_agent",
+        orgId: orgId, agentType: "system_agent",
         actionType: "recommendation_dismissed",
         status: "success",
         summary: `Operator dismissed recommendation: ${req.params.id}`,
@@ -18668,9 +18689,11 @@ Respond with this exact JSON structure:
   // POST /api/recommendations/:id/accept — accept/act on a recommendation
   app.post("/api/recommendations/:id/accept", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { logUnifiedAction } = await import("./unified-action-logger");
       await logUnifiedAction({
-        orgId: req.user.orgId, agentType: "system_agent",
+        orgId: orgId, agentType: "system_agent",
         actionType: "recommendation_accepted",
         status: "success",
         summary: `Operator accepted recommendation: ${req.params.id}`,
@@ -18681,7 +18704,7 @@ Respond with this exact JSON structure:
       try {
         const { recordRecommendationDecision } = await import("./services/decision-journal-service");
         await recordRecommendationDecision({
-          orgId: req.user.orgId,
+          orgId: orgId,
           recommendationId: req.params.id,
           action: "execute",
           source: "recommendation",
@@ -18697,18 +18720,20 @@ Respond with this exact JSON structure:
   // POST /api/workflow-graphs/generate-from-prompt — NL workflow generation
   app.post("/api/workflow-graphs/generate-from-prompt", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { prompt } = req.body;
       if (!prompt || typeof prompt !== "string" || prompt.trim().length < 5) {
         return res.status(400).json({ message: "A description is required" });
       }
       const { generateWorkflowFromPrompt } = await import("./recommendation-engine");
-      const result = await generateWorkflowFromPrompt(prompt.trim(), req.user.orgId);
+      const result = await generateWorkflowFromPrompt(prompt.trim(), orgId);
 
       // Log the generation
       try {
         const { logUnifiedAction } = await import("./unified-action-logger");
         await logUnifiedAction({
-          orgId: req.user.orgId, agentType: "system_agent",
+          orgId: orgId, agentType: "system_agent",
           actionType: "workflow_generated_from_prompt",
           status: "success",
           summary: `NL workflow generated: "${prompt.slice(0, 60)}"`,
@@ -18727,7 +18752,8 @@ Respond with this exact JSON structure:
   // GET /api/trust-signals — trust/safety metrics for the org
   app.get("/api/trust-signals", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const [graphs, jobs] = await Promise.all([
         storage.getWorkflowGraphs(orgId).catch(() => []),
         storage.getWorkflowJobs(orgId, undefined, 100).catch(() => []),
@@ -18754,7 +18780,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/agent-stats/:agentId — real per-agent execution stats
   app.get("/api/workforce/agent-stats/:agentId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const agentId = req.params.agentId;
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -18826,7 +18853,9 @@ Respond with this exact JSON structure:
   // GET /api/workflow-graphs — list all workflow graphs for org
   app.get("/api/workflow-graphs", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const graphs = await storage.getWorkflowGraphs(req.user.orgId, {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const graphs = await storage.getWorkflowGraphs(orgId, {
         isTemplate: req.query.isTemplate === "true" ? true : req.query.isTemplate === "false" ? false : undefined,
         category: req.query.category as string | undefined,
       });
@@ -18840,8 +18869,10 @@ Respond with this exact JSON structure:
   // GET /api/workflow-graphs/templates — built-in + org templates
   app.get("/api/workflow-graphs/templates", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { BUILT_IN_TEMPLATES } = await import("./workflow-graph-engine");
-      const orgTemplates = await storage.getWorkflowGraphs(req.user.orgId, { isTemplate: true });
+      const orgTemplates = await storage.getWorkflowGraphs(orgId, { isTemplate: true });
       res.json({
         builtIn: BUILT_IN_TEMPLATES.map(t => ({ ...t, graphDefinition: t.graphDefinition })),
         orgTemplates,
@@ -18854,7 +18885,9 @@ Respond with this exact JSON structure:
   // GET /api/workflow-graphs/:id — get single workflow graph
   app.get("/api/workflow-graphs/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const graph = await storage.getWorkflowGraph(req.user.orgId, req.params.id);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const graph = await storage.getWorkflowGraph(orgId, req.params.id);
       if (!graph) return res.status(404).json({ message: "Workflow not found" });
       res.json(graph);
     } catch (e: any) {
@@ -18865,11 +18898,13 @@ Respond with this exact JSON structure:
   // GET /api/workflow-graphs/:id/live — live execution state overlay
   app.get("/api/workflow-graphs/:id/live", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const graph = await storage.getWorkflowGraph(req.user.orgId, req.params.id);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const graph = await storage.getWorkflowGraph(orgId, req.params.id);
       if (!graph) return res.status(404).json({ message: "Workflow not found" });
 
       // Get recent workflow jobs (filter by graphId if jobs carry it)
-      const allJobs = await storage.getWorkflowJobs(req.user.orgId, undefined, 50).catch(() => []);
+      const allJobs = await storage.getWorkflowJobs(orgId, undefined, 50).catch(() => []);
       const jobs = allJobs.filter((j: any) => j.graphId === req.params.id || true).slice(0, 20);
 
       // Build node state map from job execution data
@@ -18924,15 +18959,17 @@ Respond with this exact JSON structure:
   // POST /api/workflow-graphs — create new workflow graph
   app.post("/api/workflow-graphs", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { validateWorkflowGraph, compileWorkflowGraph, calculateWorkflowComplexity, estimateExecutionRisk } = await import("./workflow-graph-engine");
       const { name, description, category, graphDefinition } = req.body;
 
       const validation = validateWorkflowGraph(graphDefinition ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } });
-      const compiled = graphDefinition?.nodes?.length > 0 ? compileWorkflowGraph(graphDefinition, req.user.orgId) : null;
+      const compiled = graphDefinition?.nodes?.length > 0 ? compileWorkflowGraph(graphDefinition, orgId) : null;
       const complexity = graphDefinition ? calculateWorkflowComplexity(graphDefinition) : 0;
       const riskLevel = graphDefinition ? estimateExecutionRisk(graphDefinition) : "low";
 
-      const graph = await storage.createWorkflowGraph(req.user.orgId, {
+      const graph = await storage.createWorkflowGraph(orgId, {
         name: name ?? "Untitled Workflow",
         description,
         category: category ?? "custom",
@@ -18950,7 +18987,7 @@ Respond with this exact JSON structure:
       try {
         const { logUnifiedAction } = await import("./unified-action-logger");
         await logUnifiedAction({
-          orgId: req.user.orgId, agentType: "system_agent",
+          orgId: orgId, agentType: "system_agent",
           actionType: "workflow_graph_created", status: "success",
           summary: `Workflow graph created: "${graph.name}" (${riskLevel} risk, complexity ${complexity})`,
           metadata: { graphId: graph.id, riskLevel, complexity, category: graph.category },
@@ -18968,6 +19005,8 @@ Respond with this exact JSON structure:
   // PUT /api/workflow-graphs/:id — update workflow graph
   app.put("/api/workflow-graphs/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { validateWorkflowGraph, compileWorkflowGraph, calculateWorkflowComplexity, estimateExecutionRisk } = await import("./workflow-graph-engine");
       const { name, description, category, graphDefinition } = req.body;
 
@@ -18977,7 +19016,7 @@ Respond with this exact JSON structure:
       if (category !== undefined) updateData.category = category;
 
       if (graphDefinition) {
-        const compiled = compileWorkflowGraph(graphDefinition, req.user.orgId);
+        const compiled = compileWorkflowGraph(graphDefinition, orgId);
         const validation = validateWorkflowGraph(graphDefinition);
         updateData.graphDefinition = graphDefinition;
         updateData.compiledDefinition = compiled;
@@ -18988,7 +19027,7 @@ Respond with this exact JSON structure:
         updateData.lastCompiledAt = compiled ? new Date() : null;
       }
 
-      const updated = await storage.updateWorkflowGraph(req.user.orgId, req.params.id, updateData);
+      const updated = await storage.updateWorkflowGraph(orgId, req.params.id, updateData);
       if (!updated) return res.status(404).json({ message: "Workflow not found" });
       res.json(updated);
     } catch (e: any) {
@@ -19000,7 +19039,9 @@ Respond with this exact JSON structure:
   // DELETE /api/workflow-graphs/:id — soft delete
   app.delete("/api/workflow-graphs/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      await storage.deleteWorkflowGraph(req.user.orgId, req.params.id);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      await storage.deleteWorkflowGraph(orgId, req.params.id);
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to delete workflow graph" });
@@ -19010,7 +19051,9 @@ Respond with this exact JSON structure:
   // POST /api/workflow-graphs/:id/duplicate — duplicate graph
   app.post("/api/workflow-graphs/:id/duplicate", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const copy = await storage.duplicateWorkflowGraph(req.user.orgId, req.params.id, req.user.id);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const copy = await storage.duplicateWorkflowGraph(orgId, req.params.id, req.user.id);
       res.json(copy);
     } catch (e: any) {
       res.status(500).json({ message: "Failed to duplicate workflow" });
@@ -19020,20 +19063,22 @@ Respond with this exact JSON structure:
   // POST /api/workflow-graphs/:id/publish — publish a new version
   app.post("/api/workflow-graphs/:id/publish", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const graph = await storage.getWorkflowGraph(req.user.orgId, req.params.id);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const graph = await storage.getWorkflowGraph(orgId, req.params.id);
       if (!graph) return res.status(404).json({ message: "Workflow not found" });
 
       const { compileWorkflowGraph } = await import("./workflow-graph-engine");
       const graphDef = graph.graphDefinition as any;
-      const compiled = compileWorkflowGraph(graphDef, req.user.orgId);
+      const compiled = compileWorkflowGraph(graphDef, orgId);
 
       // Get current version count
-      const versions = await storage.getWorkflowGraphVersions(req.user.orgId, req.params.id);
+      const versions = await storage.getWorkflowGraphVersions(orgId, req.params.id);
       const nextVersion = (versions[0]?.versionNumber ?? 0) + 1;
 
       // Create version snapshot
       const version = await storage.createWorkflowGraphVersion({
-        orgId: req.user.orgId,
+        orgId: orgId,
         graphId: req.params.id,
         versionNumber: nextVersion,
         snapshotDefinition: graphDef,
@@ -19045,7 +19090,7 @@ Respond with this exact JSON structure:
       });
 
       // Mark graph as published
-      await storage.updateWorkflowGraph(req.user.orgId, req.params.id, {
+      await storage.updateWorkflowGraph(orgId, req.params.id, {
         published: true,
         graphVersion: nextVersion,
         lastPublishedAt: new Date(),
@@ -19056,7 +19101,7 @@ Respond with this exact JSON structure:
       try {
         const { logUnifiedAction } = await import("./unified-action-logger");
         await logUnifiedAction({
-          orgId: req.user.orgId, agentType: "system_agent",
+          orgId: orgId, agentType: "system_agent",
           actionType: "workflow_graph_published", status: "success",
           summary: `Workflow graph published: "${graph.name}" v${nextVersion}`,
           metadata: { graphId: req.params.id, versionId: version.id, versionNumber: nextVersion },
@@ -19074,9 +19119,11 @@ Respond with this exact JSON structure:
   // POST /api/workflow-graphs/:id/rollback — rollback to a version
   app.post("/api/workflow-graphs/:id/rollback", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { versionId } = req.body;
       if (!versionId) return res.status(400).json({ message: "versionId required" });
-      const updated = await storage.rollbackWorkflowGraphVersion(req.user.orgId, req.params.id, versionId);
+      const updated = await storage.rollbackWorkflowGraphVersion(orgId, req.params.id, versionId);
       if (!updated) return res.status(404).json({ message: "Version not found" });
       res.json(updated);
     } catch (e: any) {
@@ -19087,7 +19134,9 @@ Respond with this exact JSON structure:
   // GET /api/workflow-graphs/:id/versions — version history
   app.get("/api/workflow-graphs/:id/versions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const versions = await storage.getWorkflowGraphVersions(req.user.orgId, req.params.id);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const versions = await storage.getWorkflowGraphVersions(orgId, req.params.id);
       res.json(versions);
     } catch (e: any) {
       res.status(500).json({ message: "Failed to fetch versions" });
@@ -19108,16 +19157,18 @@ Respond with this exact JSON structure:
   // POST /api/workflow-graphs/simulate — simulate execution
   app.post("/api/workflow-graphs/simulate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { simulateWorkflowExecution } = await import("./workflow-graph-engine");
       const result = await simulateWorkflowExecution(
         req.body.graphDefinition ?? { nodes: [], edges: [], viewport: { x: 0, y: 0, zoom: 1 } },
-        req.user.orgId,
+        orgId,
         req.body.simulationOptions ?? {},
       );
 
       // Update last simulated timestamp if graphId provided
       if (req.body.graphId) {
-        await storage.updateWorkflowGraph(req.user.orgId, req.body.graphId, {
+        await storage.updateWorkflowGraph(orgId, req.body.graphId, {
           lastSimulatedAt: new Date(),
         } as any);
       }
@@ -19126,7 +19177,7 @@ Respond with this exact JSON structure:
       try {
         const { logUnifiedAction } = await import("./unified-action-logger");
         await logUnifiedAction({
-          orgId: req.user.orgId, agentType: "system_agent",
+          orgId: orgId, agentType: "system_agent",
           actionType: "workflow_simulation_run", status: result.ok ? "success" : "failed",
           summary: `Workflow simulation: ${result.totalSteps} steps, ${result.riskLevel} risk, ${result.approvalCount} approvals`,
           metadata: { steps: result.totalSteps, riskLevel: result.riskLevel, approvalCount: result.approvalCount },
@@ -19144,12 +19195,14 @@ Respond with this exact JSON structure:
   // POST /api/workflow-graphs/compile — compile a graph definition
   app.post("/api/workflow-graphs/compile", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { compileWorkflowGraph, validateWorkflowGraph } = await import("./workflow-graph-engine");
       const validation = validateWorkflowGraph(req.body.graphDefinition);
       if (!validation.valid) {
         return res.status(400).json({ message: "Graph is invalid", errors: validation.errors });
       }
-      const compiled = compileWorkflowGraph(req.body.graphDefinition, req.user.orgId);
+      const compiled = compileWorkflowGraph(req.body.graphDefinition, orgId);
       res.json(compiled);
     } catch (e: any) {
       res.status(500).json({ message: "Compilation failed" });
@@ -19159,7 +19212,9 @@ Respond with this exact JSON structure:
   // GET /api/workflow-graphs/heatmap — operational heatmap data
   app.get("/api/workflow-graphs/heatmap", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const graphs = await storage.getWorkflowGraphs(req.user.orgId);
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
+      const graphs = await storage.getWorkflowGraphs(orgId);
       const heatmap = graphs.map(g => ({
         graphId: g.id,
         name: g.name,
@@ -20858,7 +20913,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/health — real workforce health summary
   app.get("/api/workforce/health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { db } = await import("./db");
       const { unifiedAgentActionLog, agentPendingActions, orgAiWorkforceAuditLog } = await import("@shared/schema");
       const { eq, and, gt, gte, count, sql: drizzleSql } = await import("drizzle-orm");
@@ -20942,7 +20998,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/readiness — onboarding readiness checklist
   app.get("/api/workforce/readiness", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { db } = await import("./db");
       const { orgAiWorkforceSettings } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
@@ -21035,7 +21092,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/activity — unified agent activity feed
   app.get("/api/workforce/activity", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const limit = Math.min(parseInt((req.query.limit as string) || "50", 10), 200);
       const status = req.query.status as string | undefined;
       const actorType = req.query.agent as string | undefined;
@@ -21117,7 +21175,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/scorecard — org-level workforce scorecard
   app.get("/api/workforce/scorecard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const period = (req.query.period as string) || "7d";
       const days = period === "today" ? 1 : period === "30d" ? 30 : 7;
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
@@ -21218,7 +21277,8 @@ Respond with this exact JSON structure:
   // GET /api/ai-workforce/setup-status — derived multi-table setup check (never trusts client orgId)
   app.get("/api/ai-workforce/setup-status", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { db } = await import("./db");
       const { orgAiWorkforceSettings, orgAiGovernanceSettings, orgAutomationSettings } = await import("@shared/schema");
       const { eq, count } = await import("drizzle-orm");
@@ -21267,7 +21327,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/settings — get workforce settings
   app.get("/api/workforce/settings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { db } = await import("./db");
       const { orgAiWorkforceSettings } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
@@ -21281,7 +21342,8 @@ Respond with this exact JSON structure:
   // PUT /api/workforce/settings — update workforce settings + re-seed governance + audit log
   app.put("/api/workforce/settings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const userId = req.user.claims?.sub ?? req.user.id ?? "unknown";
       const { db } = await import("./db");
       const { orgAiWorkforceSettings, orgAiWorkforceAuditLog } = await import("@shared/schema");
@@ -21345,7 +21407,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/audit-log — workforce settings audit history
   app.get("/api/workforce/audit-log", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const limit = Math.min(parseInt((req.query.limit as string) || "50", 10), 200);
       const { db } = await import("./db");
       const { orgAiWorkforceAuditLog } = await import("@shared/schema");
@@ -21363,7 +21426,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/capabilities — agent capability matrix
   app.get("/api/workforce/capabilities", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { AGENT_IDENTITIES } = await import("./agent-identities");
       const { db } = await import("./db");
       const { agentCapabilityPolicies, orgAiWorkforceSettings } = await import("@shared/schema");
@@ -21455,7 +21519,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/recommendations — goal/preset intelligence
   app.get("/api/workforce/recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { db } = await import("./db");
       const { orgAiWorkforceSettings } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
@@ -21909,7 +21974,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/activity-metrics — 24h dashboard metrics with prev-24h trend
   app.get("/api/workforce/activity-metrics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const now = new Date();
       const h24Start = new Date(now.getTime() - 24 * 60 * 60 * 1000);
       const h48Start = new Date(now.getTime() - 48 * 60 * 60 * 1000);
@@ -21968,7 +22034,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/coverage-analysis — gap detection across agents/integrations/workflows
   app.get("/api/workforce/coverage-analysis", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { db } = await import("./db");
       const { orgAiWorkforceSettings } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
@@ -22010,7 +22077,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/agent-marketplace — installed core agents + available expansion agents
   app.get("/api/workforce/agent-marketplace", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
       const enabledSet = new Set(agents.filter((a: any) => a.enabled).map((a: any) => a.agentType));
       const CORE_CATALOG = [
@@ -22043,7 +22111,8 @@ Respond with this exact JSON structure:
   // GET /api/workforce/insights — rule-based executive insights ranked by impact
   app.get("/api/workforce/insights", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { db } = await import("./db");
       const { orgAiWorkforceSettings, agentPendingActions, attentionItems } = await import("@shared/schema");
       const { eq, and, gt } = await import("drizzle-orm");
@@ -22096,7 +22165,8 @@ Respond with this exact JSON structure:
   // GET /api/ops/mission-control — top-level executive KPIs for command center
   app.get("/api/ops/mission-control", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const today = new Date(); today.setHours(0, 0, 0, 0);
       const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
       const activeAgents = agents.filter((a: any) => a.enabled).length;
@@ -22129,7 +22199,8 @@ Respond with this exact JSON structure:
   // POST /api/ops/control-panel — CEO override actions
   app.post("/api/ops/control-panel", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { action, payload } = req.body;
       const ALLOWED = ["pause_workforce", "resume_workforce", "pause_agent", "restart_agent", "disable_agent", "broadcast_instruction", "force_workflow", "trigger_task"];
       if (!ALLOWED.includes(action)) return res.status(400).json({ message: "Invalid action" });
@@ -22160,7 +22231,8 @@ Respond with this exact JSON structure:
   // GET /api/ops/autonomous-timeline — pipeline timeline showing autonomous business processes
   app.get("/api/ops/autonomous-timeline", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { AGENT_IDENTITIES } = await import("./agent-identities");
       const allLogs = await storage.getUnifiedActionLog(orgId, { limit: 1000 }).catch(() => []);
       const h7d = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -22197,7 +22269,8 @@ Respond with this exact JSON structure:
   // GET /api/ops/agent-decision/:actionId — action memory & decision viewer
   app.get("/api/ops/agent-decision/:actionId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { actionId } = req.params;
       const { AGENT_IDENTITIES } = await import("./agent-identities");
       const logs = await storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []);
@@ -22229,7 +22302,8 @@ Respond with this exact JSON structure:
   // GET /api/executive/briefing — daily executive briefing
   app.get("/api/executive/briefing", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const { orgAiOpportunities, attentionItems: ait, agentPendingActions } = await import("@shared/schema");
       const { eq, and, gt } = await import("drizzle-orm");
@@ -22301,7 +22375,8 @@ Respond with this exact JSON structure:
   // GET /api/executive/forecast — revenue forecast with 7d/30d/90d windows
   app.get("/api/executive/forecast", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const { orgAiOpportunities } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
@@ -22342,7 +22417,8 @@ Respond with this exact JSON structure:
   // GET /api/executive/bottlenecks — bottleneck detection
   app.get("/api/executive/bottlenecks", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { agentPendingActions } = await import("@shared/schema");
       const { eq, and, gt } = await import("drizzle-orm");
       const now = new Date();
@@ -22386,7 +22462,8 @@ Respond with this exact JSON structure:
   // GET /api/executive/risks — predictive risk monitoring
   app.get("/api/executive/risks", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const { attentionItems: ait, agentPendingActions } = await import("@shared/schema");
       const { eq, and, gt } = await import("drizzle-orm");
@@ -22443,7 +22520,8 @@ Respond with this exact JSON structure:
   // GET /api/executive/recommendations — strategic recommendations
   app.get("/api/executive/recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const agents = await storage.getWorkforceAgents(orgId).catch(() => []);
       const jobs = await storage.getWorkflowJobs(orgId, undefined, 200).catch(() => []);
       const logs = await storage.getUnifiedActionLog(orgId, { limit: 500 }).catch(() => []);
@@ -22497,7 +22575,8 @@ Respond with this exact JSON structure:
   // GET /api/executive/scorecards — domain performance scores
   app.get("/api/executive/scorecards", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const { orgAiOpportunities } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
@@ -22544,7 +22623,8 @@ Respond with this exact JSON structure:
   // POST /api/executive/recommendations/:id/action — approve/reject/schedule a recommendation
   app.post("/api/executive/recommendations/:id/action", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { id } = req.params;
       const { action, scheduledFor } = req.body;
       if (!["approve", "reject", "schedule"].includes(action)) return res.status(400).json({ message: "Invalid action" });
@@ -22577,7 +22657,8 @@ Respond with this exact JSON structure:
   // GET /api/executive/weekly-report — weekly report data
   app.get("/api/executive/weekly-report", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const { orgAiOpportunities } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
@@ -22610,7 +22691,8 @@ Respond with this exact JSON structure:
   // POST /api/executive/boardroom — AI CEO Advisor Q&A
   app.post("/api/executive/boardroom", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { question } = req.body;
       if (!question?.trim()) return res.status(400).json({ message: "Question required" });
 
@@ -25043,7 +25125,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // GET /api/autonomous/dashboard — combined stats
   app.get("/api/autonomous/dashboard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureAutonomousTables();
       const { sql } = await import("drizzle-orm");
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
@@ -25085,7 +25168,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // GET /api/autonomous/objectives
   app.get("/api/autonomous/objectives", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureAutonomousTables();
       const { sql } = await import("drizzle-orm");
       const rows = await db.execute(sql`SELECT * FROM business_objectives WHERE org_id = ${orgId} ORDER BY priority DESC, created_at DESC`).catch(() => ({ rows: [] }));
@@ -25100,7 +25184,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // POST /api/autonomous/objectives
   app.post("/api/autonomous/objectives", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureAutonomousTables();
       const { sql } = await import("drizzle-orm");
       const { title, description, targetValue, targetUnit, deadline, priority, assignedAgents, notes } = req.body;
@@ -25123,7 +25208,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // PATCH /api/autonomous/objectives/:id
   app.patch("/api/autonomous/objectives/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { id } = req.params;
       await ensureAutonomousTables();
       const { sql } = await import("drizzle-orm");
@@ -25148,7 +25234,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // DELETE /api/autonomous/objectives/:id
   app.delete("/api/autonomous/objectives/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { id } = req.params;
       const { sql } = await import("drizzle-orm");
       await db.execute(sql`DELETE FROM business_objectives WHERE id = ${id} AND org_id = ${orgId}`).catch(() => {});
@@ -25161,7 +25248,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // POST /api/autonomous/objectives/:id/generate-plan — AI generates execution plan
   app.post("/api/autonomous/objectives/:id/generate-plan", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { id } = req.params;
       await ensureAutonomousTables();
       const { sql } = await import("drizzle-orm");
@@ -25200,7 +25288,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // GET /api/autonomous/initiatives
   app.get("/api/autonomous/initiatives", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureAutonomousTables();
       const { sql } = await import("drizzle-orm");
       const rows = await db.execute(sql`SELECT * FROM autonomous_initiatives WHERE org_id = ${orgId} ORDER BY created_at DESC`).catch(() => ({ rows: [] }));
@@ -25213,7 +25302,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // POST /api/autonomous/initiatives
   app.post("/api/autonomous/initiatives", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureAutonomousTables();
       const { sql } = await import("drizzle-orm");
       const { name, description, initiativeType, automationMode, agentsAssigned } = req.body;
@@ -25234,7 +25324,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // PATCH /api/autonomous/initiatives/:id
   app.patch("/api/autonomous/initiatives/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { id } = req.params;
       const { sql } = await import("drizzle-orm");
       const { progress, status, resultsSummary, automationMode } = req.body;
@@ -25256,7 +25347,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // GET /api/autonomous/memory
   app.get("/api/autonomous/memory", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureAutonomousTables();
       const { sql } = await import("drizzle-orm");
       const rows = await db.execute(sql`SELECT * FROM business_memory WHERE org_id = ${orgId} ORDER BY created_at DESC LIMIT 100`).catch(() => ({ rows: [] }));
@@ -25269,7 +25361,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // POST /api/autonomous/memory
   app.post("/api/autonomous/memory", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureAutonomousTables();
       const { sql } = await import("drizzle-orm");
       const { memoryType, title, description, outcome, outcomeValue, tags, metadata } = req.body;
@@ -25290,7 +25383,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // POST /api/autonomous/simulate — business simulator
   app.post("/api/autonomous/simulate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { changeType, changeDescription, targetMetric } = req.body;
       if (!changeDescription?.trim()) return res.status(400).json({ message: "Change description required" });
 
@@ -25324,7 +25418,8 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // POST /api/autonomous/chief-of-staff — AI Chief of Staff
   app.post("/api/autonomous/chief-of-staff", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { question } = req.body;
       if (!question?.trim()) return res.status(400).json({ message: "Question required" });
 
@@ -25426,7 +25521,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // GET /api/autonomy/oversight — executive oversight dashboard
   app.get("/api/autonomy/oversight", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureTrustTables();
       const { sql } = await import("drizzle-orm");
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
@@ -25495,7 +25591,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // GET /api/autonomy/roi — ROI command center
   app.get("/api/autonomy/roi", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const period = (req.query.period as string) ?? "30d";
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const [attr, attr7d] = await Promise.all([
@@ -25539,7 +25636,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // GET /api/autonomy/attribution — outcome attribution engine
   app.get("/api/autonomy/attribution", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const attr = await computeOrgAttribution(orgId, "30d").catch(() => ({ totalRevenueGenerated: 0, totalRevenueInfluenced: 0, totalRevenueRecovered: 0, agents: [] as any[] }));
 
@@ -25575,7 +25673,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // GET /api/autonomy/audit — action audit + change log
   app.get("/api/autonomy/audit", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureTrustTables();
       const { sql } = await import("drizzle-orm");
       const filterAgent = req.query.agent as string | undefined;
@@ -25614,7 +25713,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // GET /api/autonomy/safety — autonomy safety center
   app.get("/api/autonomy/safety", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { orgAiGovernanceSettings } = await import("@shared/schema");
       const { eq } = await import("drizzle-orm");
       const [governance, logs, jobs] = await Promise.all([
@@ -25655,7 +25755,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // GET /api/autonomy/recommendations-effectiveness
   app.get("/api/autonomy/recommendations-effectiveness", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       await ensureTrustTables();
       const { sql } = await import("drizzle-orm");
       const rows = await db.execute(sql`SELECT * FROM recommendation_tracking WHERE org_id = ${orgId} ORDER BY created_at DESC`).catch(() => ({ rows: [] }));
@@ -25684,7 +25785,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // POST /api/autonomy/rollback/:actionId — rollback engine
   app.post("/api/autonomy/rollback/:actionId", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { actionId } = req.params;
       const { sql } = await import("drizzle-orm");
       await db.execute(sql`UPDATE autonomous_actions SET rolled_back = true, completed_at = now() WHERE id = ${actionId} AND org_id = ${orgId}`).catch(() => {});
@@ -25701,7 +25803,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // POST /api/autonomy/lab/compare — A/B performance lab
   app.post("/api/autonomy/lab/compare", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { metric, description } = req.body;
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const [attr7d, attr30d] = await Promise.all([
@@ -25748,7 +25851,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // GET /api/market/overview — market health + quick stats
   app.get("/api/market/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getOrgMarketContext(orgId);
       const marketHealthScore = Math.min(100, 62 + Math.min(25, Math.round((ctx.attr.totalRevenueInfluenced / 1000))) + Math.min(13, ctx.leadsCount));
       res.json({
@@ -25817,7 +25921,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // GET /api/market/sentiment — customer sentiment engine
   app.get("/api/market/sentiment", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const clients = await storage.getClients(orgId, 200).catch(() => []);
       const clientCount = (clients as any[]).length;
       const positiveScore = Math.min(100, 60 + Math.min(30, Math.round(clientCount * 0.4)));
@@ -25867,7 +25972,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // GET /api/market/hiring — hiring intelligence
   app.get("/api/market/hiring", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const coaches = await storage.getUsersByOrg(orgId).catch(() => []);
       const coachCount = (coaches as any[]).filter((u: any) => u.role === "COACH").length;
       const applicants = await (db.execute as any)(`SELECT * FROM employment_applicants WHERE org_id = '${orgId}' ORDER BY created_at DESC LIMIT 10`).catch(() => ({ rows: [] }));
@@ -25933,7 +26039,8 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // POST /api/market/growth-engine — AI growth opportunity generator
   app.post("/api/market/growth-engine", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { focus } = req.body;
       const ctx = await getOrgMarketContext(orgId);
       const OpenAI = (await import("openai")).default;
@@ -25970,7 +26077,8 @@ Generate 5 concrete, actionable growth opportunities specific to a S&C coaching 
   // POST /api/market/advantage — competitive advantage / SWOT analyzer
   app.post("/api/market/advantage", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getOrgMarketContext(orgId);
       const OpenAI = (await import("openai")).default;
       const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -26035,7 +26143,8 @@ Return: { "strengths": ["...", ...], "weaknesses": ["...", ...], "opportunities"
   // GET /api/network/overview
   app.get("/api/network/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgNetworkProfile(orgId);
       // Percentile driven by AI adoption, active clients, agent usage
       const aiAdoptionScore = Math.min(100, Math.round(profile.activeAgents * 11 + profile.totalActions * 0.3));
@@ -26066,7 +26175,8 @@ Return: { "strengths": ["...", ...], "weaknesses": ["...", ...], "opportunities"
   // GET /api/network/benchmarks
   app.get("/api/network/benchmarks", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgNetworkProfile(orgId);
       const myRetention = Math.min(98, Math.round(65 + Math.min(30, profile.clientCount * 0.5)));
       const myResponseHrs = Math.max(0.5, 12 - Math.min(10, profile.activeAgents * 1.2));
@@ -26130,7 +26240,8 @@ Return: { "strengths": ["...", ...], "weaknesses": ["...", ...], "opportunities"
   // GET /api/network/leaderboards
   app.get("/api/network/leaderboards", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgNetworkProfile(orgId);
       const myAutoScore = Math.min(100, profile.activeAgents * 12 + Math.round(profile.totalActions * 0.2));
       const myGrowthScore = Math.min(100, Math.round(profile.attr.totalRevenueInfluenced / 200 + profile.leadsCount * 2));
@@ -26172,7 +26283,8 @@ Return: { "strengths": ["...", ...], "weaknesses": ["...", ...], "opportunities"
   // GET /api/network/replication
   app.get("/api/network/replication", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgNetworkProfile(orgId);
       res.json({
         replicationTargets: [
@@ -26217,7 +26329,8 @@ Return: { "strengths": ["...", ...], "weaknesses": ["...", ...], "opportunities"
   // GET /api/network/recommendations
   app.get("/api/network/recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgNetworkProfile(orgId);
       const recs = [];
       if (profile.activeAgents < 4) recs.push({ id: "nr1", title: "Activate remaining AI agents", rationale: `Organizations similar to yours with ${profile.activeAgents + 2}+ active agents see 34% more automated revenue. You're leaving automation capacity unused.`, expectedImpact: "+34% automated revenue", confidence: 88, category: "automation", effort: "low", networkDataPoints: 212 });
@@ -26234,7 +26347,8 @@ Return: { "strengths": ["...", ...], "weaknesses": ["...", ...], "opportunities"
   // POST /api/network/strategy — AI strategy engine
   app.post("/api/network/strategy", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { horizon } = req.body;
       const profile = await getOrgNetworkProfile(orgId);
       const OpenAI = (await import("openai")).default;
@@ -26339,7 +26453,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // GET /api/productization/overview
   app.get("/api/productization/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgProductProfile(orgId);
       const currentPlan = profile.activeAgents >= 5 ? "growth" : profile.activeAgents >= 2 ? "professional" : "starter";
       const tier = PLAN_TIERS.find(t => t.id === currentPlan)!;
@@ -26373,7 +26488,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // GET /api/productization/entitlements
   app.get("/api/productization/entitlements", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgProductProfile(orgId);
       const currentPlan = profile.activeAgents >= 5 ? "growth" : profile.activeAgents >= 2 ? "professional" : "starter";
       const planOrder = ["starter", "professional", "growth", "enterprise"];
@@ -26396,7 +26512,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // GET /api/productization/activation
   app.get("/api/productization/activation", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgProductProfile(orgId);
       const steps = [
         { id: "org",       label: "Created Organization",     complete: true,                           impact: 10, category: "setup" },
@@ -26419,7 +26536,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // GET /api/productization/expansion
   app.get("/api/productization/expansion", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgProductProfile(orgId);
       const opps = [];
       if (profile.activeAgents < 2) opps.push({ id: "exp1", title: "Upgrade to Professional", trigger: "You're using scheduling and CRM but haven't activated the AI Workforce yet.", expectedROI: "+$3,800/year in automated revenue", timeSaved: "6 hours/week", targetPlan: "professional", confidence: 88, urgency: "high" });
@@ -26436,7 +26554,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // GET /api/productization/subscription-health
   app.get("/api/productization/subscription-health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgProductProfile(orgId);
       const currentPlan = profile.activeAgents >= 5 ? "growth" : profile.activeAgents >= 2 ? "professional" : "starter";
       const tier = PLAN_TIERS.find(t => t.id === currentPlan)!;
@@ -26465,7 +26584,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // GET /api/productization/usage
   app.get("/api/productization/usage", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgProductProfile(orgId);
       const featureUsage = [
         { feature: "AI Workforce",         usageScore: Math.min(100, profile.activeAgents * 14), trend: "up",   category: "ai",       valueTier: "high" },
@@ -26486,7 +26606,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // GET /api/productization/plan-comparison
   app.get("/api/productization/plan-comparison", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgProductProfile(orgId);
       const currentPlan = profile.activeAgents >= 5 ? "growth" : profile.activeAgents >= 2 ? "professional" : "starter";
       const planOrder = ["starter", "professional", "growth", "enterprise"];
@@ -26515,7 +26636,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // GET /api/productization/enterprise
   app.get("/api/productization/enterprise", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgProductProfile(orgId);
       const readinessItems = [
         { item: "Multi-coach team management",  ready: profile.coachCount >= 2,            readinessScore: profile.coachCount >= 2 ? 100 : 40,   category: "org" },
@@ -26548,7 +26670,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // GET /api/productization/revenue-ops
   app.get("/api/productization/revenue-ops", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const profile = await getOrgProductProfile(orgId);
       const currentPlan = profile.activeAgents >= 5 ? "growth" : profile.activeAgents >= 2 ? "professional" : "starter";
       const tier = PLAN_TIERS.find(t => t.id === currentPlan)!;
@@ -26602,7 +26725,8 @@ Return: { "strategicPriorities": [{"priority":"...","rationale":"...","expectedR
   // POST /api/productization/ai-advisor
   app.post("/api/productization/ai-advisor", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { question } = req.body;
       const profile = await getOrgProductProfile(orgId);
       const currentPlan = profile.activeAgents >= 5 ? "growth" : profile.activeAgents >= 2 ? "professional" : "starter";
@@ -26671,7 +26795,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/platform/health
   app.get("/api/platform/health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const snap = await getPlatformMetricsSnapshot(orgId);
       const apiSuccessRate = Math.min(99.9, 97.2 + Math.min(2.6, snap.activeAgents * 0.3));
       const aiSuccessRate = Math.min(99.5, 94 + Math.min(5, snap.totalActions * 0.02));
@@ -26717,7 +26842,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/platform/metrics
   app.get("/api/platform/metrics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const snap = await getPlatformMetricsSnapshot(orgId);
       res.json({
         requestsPerMinute: Math.round(18 + snap.activeAgents * 1.4),
@@ -26869,7 +26995,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/platform/workflow-health
   app.get("/api/platform/workflow-health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const snap = await getPlatformMetricsSnapshot(orgId);
 
       // ── Real last-run timestamps from DB (no more hardcoded "now - Xms") ──
@@ -26924,7 +27051,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/platform/ai-health
   app.get("/api/platform/ai-health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const snap = await getPlatformMetricsSnapshot(orgId);
       res.json({
         providers: [
@@ -26979,7 +27107,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/platform/observability
   app.get("/api/platform/observability", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const snap = await getPlatformMetricsSnapshot(orgId);
       const now = Date.now();
       // Simulate 30 data points over last 30 min
@@ -27092,7 +27221,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/execution/recommendations
   app.get("/api/execution/recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getExecutionContext(orgId);
       const recs = [
         { id: "r1", source: "Executive Intelligence", title: "Launch summer athlete enrollment campaign", expectedImpact: "18–24 new athletes", revenuePotential: Math.round(ctx.clientCount * 180), confidenceScore: 87, priority: "high", assignedAgents: ["Apex Agent", "Relay Agent"], requiredApprovals: 1, status: "pending", category: "growth" },
@@ -27138,7 +27268,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   app.post("/api/execution/campaign-builder", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const { goal, orgId: bodyOrgId } = req.body;
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       if (!goal) return res.status(400).json({ message: "goal required" });
       const ctx = await getExecutionContext(orgId);
       try {
@@ -27202,7 +27333,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/execution/revenue-recovery
   app.get("/api/execution/revenue-recovery", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getExecutionContext(orgId);
       const opportunities = [
         { id: "rv1", type: "Inactive Leads",        count: Math.max(4, Math.round(ctx.leadCount * 0.22)), estimatedValue: Math.round(ctx.leadCount * 0.22 * 380), recoveryStrategy: "AI re-engagement sequence with personalized offer", confidence: 72, urgency: "high" },
@@ -27227,7 +27359,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/execution/partnerships
   app.get("/api/execution/partnerships", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getExecutionContext(orgId);
       res.json({
         partnerships: [
@@ -27255,7 +27388,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/execution/objectives
   app.get("/api/execution/objectives", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getExecutionContext(orgId);
       res.json({
         objectives: [
@@ -27294,7 +27428,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   app.post("/api/execution/coo", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const { question } = req.body;
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getExecutionContext(orgId);
       if (!question) return res.status(400).json({ message: "question required" });
       try {
@@ -27330,7 +27465,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/execution/growth-velocity
   app.get("/api/execution/growth-velocity", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getExecutionContext(orgId);
       const leadScore = Math.min(100, Math.round((ctx.leadCount / Math.max(1, ctx.clientCount)) * 40));
       const meetingScore = Math.min(100, Math.round((ctx.hotLeads / Math.max(1, ctx.leadCount)) * 100 * 0.6 + 40));
@@ -27355,7 +27491,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/execution/workflows
   app.get("/api/execution/workflows", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getExecutionContext(orgId);
       const now = Date.now();
       res.json({
@@ -27462,7 +27599,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/ecosystem/overview
   app.get("/api/ecosystem/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getEcosystemContext(orgId);
       const orgs = makeOrgList(ctx);
       res.json({
@@ -27485,7 +27623,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/ecosystem/organizations
   app.get("/api/ecosystem/organizations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getEcosystemContext(orgId);
       const orgs = makeOrgList(ctx);
       res.json({ organizations: orgs, total: orgs.length, generatedAt: new Date().toISOString() });
@@ -27495,7 +27634,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/ecosystem/branding
   app.get("/api/ecosystem/branding", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const org = await storage.getOrganization(orgId).catch(() => null);
       res.json({
         whiteLabel: {
@@ -27619,7 +27759,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/ecosystem/agency
   app.get("/api/ecosystem/agency", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getEcosystemContext(orgId);
       const orgs = makeOrgList(ctx);
       res.json({
@@ -27663,7 +27804,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/ecosystem/benchmarking
   app.get("/api/ecosystem/benchmarking", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getEcosystemContext(orgId);
       const orgs = makeOrgList(ctx);
       res.json({
@@ -27761,7 +27903,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/ecosystem/trainchat
   app.get("/api/ecosystem/trainchat", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ctx = await getEcosystemContext(orgId);
       res.json({
         connectedBrains: ["Program Generator", "Coach Copilot", "Knowledge Base", "Education Engine", "Athlete Intelligence", "AI Coaching Brain"],
@@ -27909,7 +28052,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/integrations/overview
   app.get("/api/integrations/overview", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ints = await makeIntegrations(orgId);
       const connected = ints.filter(i => i.status === "connected").length;
       const needsAttention = ints.filter(i => i.status === "needs_attention").length;
@@ -27929,7 +28073,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/integrations/category/:cat
   app.get("/api/integrations/category/:cat", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { cat } = req.params;
       const ints = (await makeIntegrations(orgId)).filter(i => i.category === cat);
       res.json({ integrations: ints, category: cat, generatedAt: new Date().toISOString() });
@@ -27966,7 +28111,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/integrations/tool-registry
   app.get("/api/integrations/tool-registry", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const ints = await makeIntegrations(orgId);
       const connected = ints.filter(i => i.status === "connected").map(i => i.id);
       const registry = [
@@ -30918,7 +31064,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/admin/ai-infrastructure/status — per-org infrastructure health
   app.get("/api/admin/ai-infrastructure/status", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       if (!orgId) return res.status(400).json({ message: "No org context" });
       const { ensureOrgAiInfrastructure } = await import("./services/org-ai-infrastructure");
       const report = await ensureOrgAiInfrastructure(orgId);
@@ -30932,7 +31079,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // POST /api/admin/ai-infrastructure/provision — manually trigger provisioning for current org
   app.post("/api/admin/ai-infrastructure/provision", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       if (!orgId) return res.status(400).json({ message: "No org context" });
       const { ensureOrgAiInfrastructure } = await import("./services/org-ai-infrastructure");
       const report = await ensureOrgAiInfrastructure(orgId);
@@ -30946,7 +31094,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/admin/ai-infrastructure/activation-matrix — full per-component activation audit
   app.get("/api/admin/ai-infrastructure/activation-matrix", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId as string;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       if (!orgId) return res.status(400).json({ message: "No org context" });
 
       const { sql: drizzleSql } = await import("drizzle-orm");
