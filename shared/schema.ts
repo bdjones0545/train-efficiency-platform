@@ -3154,6 +3154,46 @@ export const insertUnifiedAgentActionLogSchema = createInsertSchema(unifiedAgent
 export type UnifiedAgentActionLog = typeof unifiedAgentActionLog.$inferSelect;
 export type InsertUnifiedAgentActionLog = z.infer<typeof insertUnifiedAgentActionLogSchema>;
 
+// ─── Apex Recommendations ─────────────────────────────────────────────────────
+// Dedicated table for Apex agent recommendations with lifecycle management.
+// Dedup key: (org_id, signal_type, entity_id) — only one pending_review rec per signal.
+export const apexRecommendations = pgTable("apex_recommendations", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+
+  // Signal identity (dedup key enforced at application level)
+  signalType: text("signal_type").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: text("entity_id").notNull(),
+  entityName: text("entity_name"),
+
+  // Content
+  urgency: text("urgency").notNull().default("medium"),
+  estimatedValueCents: integer("estimated_value_cents").default(0),
+  reasonText: text("reason_text"),
+  recommendedAction: text("recommended_action"),
+  confidenceScore: doublePrecision("confidence_score"),
+  staleDays: integer("stale_days").default(0),
+  sourceUrl: text("source_url"),
+
+  // Status lifecycle: pending_review → approved | dismissed | completed | expired
+  status: text("status").notNull().default("pending_review"),
+  statusUpdatedAt: timestamp("status_updated_at"),
+  statusUpdatedBy: text("status_updated_by"),
+  dismissReason: text("dismiss_reason"),
+
+  // Traceability
+  runId: text("run_id"),
+
+  // Expiry (default 7 days from creation)
+  expiresAt: timestamp("expires_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const insertApexRecommendationSchema = createInsertSchema(apexRecommendations).omit({ id: true, createdAt: true });
+export type ApexRecommendation = typeof apexRecommendations.$inferSelect;
+export type InsertApexRecommendation = z.infer<typeof insertApexRecommendationSchema>;
+
 // ─── Workflow Context (Memory) ────────────────────────────────────────────────
 // Persistent memory for workflows, entities, and organizational patterns.
 // entityType: athlete | lead | coach | workflow | campaign | client
