@@ -17453,7 +17453,8 @@ Respond with this exact JSON structure:
   // GET /api/governance/settings — get org governance settings (auto-creates defaults)
   app.get("/api/governance/settings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       let settings = await storage.getGovernanceSettings(orgId);
       if (!settings) {
         // Auto-provision safe defaults on first access
@@ -17484,7 +17485,8 @@ Respond with this exact JSON structure:
   // PATCH /api/governance/settings — update org governance settings
   app.patch("/api/governance/settings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const updates = req.body;
       const settings = await storage.upsertGovernanceSettings(orgId, updates);
       const { logUnifiedAction } = await import("./unified-action-logger");
@@ -17508,7 +17510,8 @@ Respond with this exact JSON structure:
   // POST /api/governance/autonomy-mode — change the global autonomy mode
   app.post("/api/governance/autonomy-mode", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { mode } = req.body;
       if (!["supervised", "collaborative", "autonomous"].includes(mode)) {
         return res.status(400).json({ message: "Invalid autonomy mode" });
@@ -17526,7 +17529,8 @@ Respond with this exact JSON structure:
   // POST /api/governance/emergency-pause — activate or deactivate emergency pause
   app.post("/api/governance/emergency-pause", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { enable, reason } = req.body;
       const operatorName = req.user.name ?? req.user.email ?? "admin";
       const { triggerEmergencyPause, disableEmergencyPause } = await import("./capability-enforcement-engine");
@@ -17546,7 +17550,8 @@ Respond with this exact JSON structure:
   // GET /api/governance/policies — list all capability policies for org
   app.get("/api/governance/policies", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       // Ensure defaults exist
       await storage.seedDefaultPolicies(orgId);
       const policies = await storage.getCapabilityPolicies(orgId);
@@ -17560,7 +17565,8 @@ Respond with this exact JSON structure:
   // PATCH /api/governance/policies/:agentType — update a specific agent's policy
   app.patch("/api/governance/policies/:agentType", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { agentType } = req.params;
       const updates = req.body;
       const policy = await storage.upsertCapabilityPolicy(orgId, agentType, updates);
@@ -17587,7 +17593,8 @@ Respond with this exact JSON structure:
     try {
       const { listAgentIdentities } = await import("./agent-identities");
       const identities = listAgentIdentities();
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const policies = await storage.getCapabilityPolicies(orgId);
 
       // Merge policy-enabled state into identity status
@@ -17610,7 +17617,8 @@ Respond with this exact JSON structure:
   // GET /api/governance/analytics — governance observability metrics
   app.get("/api/governance/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { getGovernanceAnalytics } = await import("./capability-enforcement-engine");
       const analytics = await getGovernanceAnalytics(orgId);
       res.json(analytics);
@@ -17623,7 +17631,8 @@ Respond with this exact JSON structure:
   // POST /api/governance/validate — validate a hypothetical agent action (for explainability)
   app.post("/api/governance/validate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user.orgId;
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { validateAgentCapability } = await import("./capability-enforcement-engine");
       const decision = await validateAgentCapability({ orgId, ...req.body });
       res.json(decision);
