@@ -1,7 +1,18 @@
-import { db } from "../db";
-import { teamTrainingProspects, teamTrainingDeals } from "@shared/schema";
-import { eq, and, gte, desc, sql, inArray } from "drizzle-orm";
-import { subDays, subMonths } from "date-fns";
+/**
+ * Growth Agent — ADAPTER (v1 compatibility shim)
+ *
+ * This file is a thin adapter that delegates all logic to Apex Agent (v2).
+ * Apex is the canonical Growth/Revenue intelligence engine.
+ *
+ * Preserved exports (GrowthSignal, GrowthRecommendation, GrowthAgentResult, runGrowthAgent)
+ * allow Executive Agent (Atlas) to keep working without changes.
+ *
+ * DO NOT add business logic here — put it in apex-agent.ts.
+ */
+
+import { runApexForOrg, type ApexSignal } from "./apex-agent";
+
+// ─── Re-exported types (keep shape stable for Executive Agent) ────────────────
 
 export interface GrowthSignal {
   signalType: string;
@@ -42,172 +53,86 @@ export interface GrowthAgentResult {
   };
 }
 
+// ─── Mapping helpers ──────────────────────────────────────────────────────────
+
+function apexSignalToGrowthSignal(s: ApexSignal): GrowthSignal {
+  return {
+    signalType: s.signalType,
+    entityType: s.entityType,
+    entityId: s.entityId,
+    entityName: s.entityName,
+    title: s.recommendedAction,
+    description: s.reasonText,
+    severity: s.urgency,
+    score: Math.round(s.confidenceScore * 100),
+    metadata: {
+      staleDays: s.staleDays,
+      estimatedValueCents: s.estimatedValueCents,
+      sourceUrl: s.sourceUrl,
+    },
+  };
+}
+
+function apexSignalToGrowthRecommendation(s: ApexSignal): GrowthRecommendation {
+  return {
+    title: s.recommendedAction,
+    description: s.reasonText,
+    reason: s.reasonText,
+    entityType: s.entityType,
+    entityId: s.entityId,
+    entityName: s.entityName,
+    severity: s.urgency,
+    estimatedImpact: s.estimatedValueCents,
+    priorityScore: Math.round(s.confidenceScore * 100),
+    actionType: s.signalType,
+    crossAgentTypes: ["revenue"],
+    metadata: {
+      staleDays: s.staleDays,
+      sourceUrl: s.sourceUrl,
+    },
+  };
+}
+
+// ─── Public adapter function ──────────────────────────────────────────────────
+
 export async function runGrowthAgent(orgId: string): Promise<GrowthAgentResult> {
-  const signals: GrowthSignal[] = [];
-  const recommendations: GrowthRecommendation[] = [];
-  const now = new Date();
-  const thirtyDays = subDays(now, 30);
-  const fourteenDays = subDays(now, 14);
+  const result = await runApexForOrg(orgId, "manual");
 
-  // --- Get all prospects ---
-  const prospects = await db
-    .select()
-    .from(teamTrainingProspects)
-    .where(eq(teamTrainingProspects.orgId, orgId))
-    .orderBy(desc(teamTrainingProspects.createdAt));
+  const signals: GrowthSignal[] = result.signals.map(apexSignalToGrowthSignal);
+  const recommendations: GrowthRecommendation[] = result.signals.map(apexSignalToGrowthRecommendation);
 
-  // --- Get all deals ---
-  const deals = await db
-    .select()
-    .from(teamTrainingDeals)
-    .where(eq(teamTrainingDeals.organizationId, orgId));
+  const hotLeadTypes = new Set([
+    "hot_lead_cooling",
+    "uncontacted_high_value_prospect",
+    "new_lead_no_action",
+  ]);
+  const dealTypes = new Set([
+    "stale_active_deal",
+    "high_value_stale_deal",
+    "abandoned_deal",
+    "overdue_followup",
+  ]);
 
-  const totalProspects = prospects.length;
-  const hotLeads = prospects.filter((p) =>
-    ["Replied", "Approved", "Contacted"].includes(p.outreachStatus || "")
-  );
-  const stalledDeals = deals.filter((d) => {
-    const isStalled =
-      d.lastActivityAt && d.lastActivityAt < fourteenDays &&
-      !["won", "lost"].includes(d.status || "");
-    return isStalled;
-  });
+  const hotLeads = result.signals.filter((s) => hotLeadTypes.has(s.signalType)).length;
+  const stalledDeals = result.signals.filter((s) => dealTypes.has(s.signalType)).length;
 
   const avgDealValue =
-    deals.length > 0
-      ? Math.round(deals.reduce((s, d) => s + (d.estimatedValue || 0), 0) / deals.length)
+    result.signals.length > 0
+      ? Math.round(
+          result.signals.reduce((sum, s) => sum + s.estimatedValueCents, 0) /
+            result.signals.length
+        )
       : 0;
-
-  // --- Analyze lead sources ---
-  const sourceCounts: Record<string, { total: number; converted: number; replied: number }> = {};
-  for (const p of prospects) {
-    const source = p.organizationType || "Unknown";
-    if (!sourceCounts[source]) sourceCounts[source] = { total: 0, converted: 0, replied: 0 };
-    sourceCounts[source].total++;
-    if (["Replied", "Approved", "Contacted"].includes(p.outreachStatus || "")) {
-      sourceCounts[source].replied++;
-    }
-    if (p.outreachStatus === "Replied") sourceCounts[source].converted++;
-  }
-
-  // Find best-performing source
-  let bestSource: string | null = null;
-  let bestConversionRate = 0;
-  for (const [source, data] of Object.entries(sourceCounts)) {
-    if (data.total < 2) continue;
-    const rate = data.replied / data.total;
-    if (rate > bestConversionRate) {
-      bestConversionRate = rate;
-      bestSource = source;
-    }
-  }
-
-  // --- Hot lead signal ---
-  if (hotLeads.length > 0) {
-    const topLead = hotLeads.sort((a, b) => (b.estimatedValue || 0) - (a.estimatedValue || 0))[0];
-    signals.push({
-      signalType: "hot_leads",
-      entityType: "prospect",
-      entityId: topLead.id,
-      entityName: topLead.prospectName,
-      title: `${hotLeads.length} hot lead${hotLeads.length > 1 ? "s" : ""} need attention`,
-      description: `Top: ${topLead.prospectName} (${topLead.outreachStatus}) — estimated $${((topLead.estimatedValue || 0) / 100).toFixed(0)}/yr`,
-      severity: "high",
-      score: 78,
-      metadata: { count: hotLeads.length, topLeadId: topLead.id, topLeadValue: topLead.estimatedValue },
-    });
-
-    recommendations.push({
-      title: `Follow up on ${hotLeads.length} warm lead${hotLeads.length > 1 ? "s" : ""}`,
-      description: `${hotLeads.length} prospects have shown interest but haven't converted yet. ${topLead.prospectName} is the highest-value at $${((topLead.estimatedValue || 0) / 100).toFixed(0)}/yr.`,
-      reason: `Hot leads in "Replied" or "Interested" status have 3x higher close rate if contacted within 48 hours.`,
-      entityType: "prospect",
-      entityId: topLead.id,
-      entityName: topLead.prospectName,
-      severity: "high",
-      estimatedImpact: hotLeads.reduce((s, l) => s + (l.estimatedValue || 0), 0),
-      priorityScore: 78,
-      actionType: "followup_hot_lead",
-      crossAgentTypes: ["revenue"],
-      metadata: { leadIds: hotLeads.map((l) => l.id).slice(0, 5), count: hotLeads.length },
-    });
-  }
-
-  // --- Stalled deals signal ---
-  for (const deal of stalledDeals.slice(0, 3)) {
-    const prospect = prospects.find((p) => p.id === deal.prospectId);
-    const name = prospect?.prospectName || "Unknown Deal";
-    const daysSinceActivity = deal.lastActivityAt
-      ? Math.floor((now.getTime() - deal.lastActivityAt.getTime()) / (1000 * 60 * 60 * 24))
-      : 0;
-
-    signals.push({
-      signalType: "stalled_deal",
-      entityType: "deal",
-      entityId: deal.id,
-      entityName: name,
-      title: `Deal with ${name} stalled ${daysSinceActivity}d`,
-      description: `No activity in ${daysSinceActivity} days. Deal worth $${((deal.estimatedValue || 0) / 100).toFixed(0)} at risk.`,
-      severity: daysSinceActivity > 21 ? "high" : "medium",
-      score: Math.min(85, daysSinceActivity * 2 + 30),
-      metadata: { daysSinceActivity, estimatedValue: deal.estimatedValue, status: deal.status },
-    });
-
-    recommendations.push({
-      title: `Revive stalled deal with ${name}`,
-      description: `This deal has had no activity in ${daysSinceActivity} days and is worth $${((deal.estimatedValue || 0) / 100).toFixed(0)}. Send a re-engagement message.`,
-      reason: `Deals stalled 14+ days have significantly lower close rates. Act now before it goes cold.`,
-      entityType: "deal",
-      entityId: deal.id,
-      entityName: name,
-      severity: daysSinceActivity > 21 ? "high" : "medium",
-      estimatedImpact: deal.estimatedValue || 0,
-      priorityScore: Math.min(82, daysSinceActivity * 2 + 30),
-      actionType: "revive_stalled_deal",
-      crossAgentTypes: ["revenue"],
-      metadata: { daysSinceActivity, prospectId: deal.prospectId },
-    });
-  }
-
-  // --- Best lead source signal ---
-  if (bestSource && bestConversionRate > 0.3) {
-    signals.push({
-      signalType: "high_converting_source",
-      entityType: "lead_source",
-      entityId: orgId,
-      entityName: bestSource,
-      title: `${bestSource} converts at ${(bestConversionRate * 100).toFixed(0)}%`,
-      description: `Your top-performing lead source. Double down on this segment.`,
-      severity: "low",
-      score: 45,
-      metadata: { source: bestSource, conversionRate: bestConversionRate, data: sourceCounts[bestSource] },
-    });
-
-    recommendations.push({
-      title: `Double down on ${bestSource} outreach`,
-      description: `${bestSource} leads convert at ${(bestConversionRate * 100).toFixed(0)}% — significantly above average. Prioritize this segment in your next outreach batch.`,
-      reason: `High-converting source identified via analysis of ${sourceCounts[bestSource]?.total} prospects.`,
-      entityType: "lead_source",
-      entityId: orgId,
-      entityName: bestSource,
-      severity: "low",
-      estimatedImpact: Math.round(avgDealValue * bestConversionRate * 3),
-      priorityScore: 45,
-      actionType: "expand_lead_source",
-      crossAgentTypes: [],
-      metadata: { source: bestSource, conversionRate: bestConversionRate },
-    });
-  }
 
   return {
     signals,
     recommendations,
     summary: {
-      totalProspects,
-      hotLeads: hotLeads.length,
-      stalledDeals: stalledDeals.length,
+      totalProspects: result.prospectsEvaluated,
+      hotLeads,
+      stalledDeals,
       avgDealValue,
-      bestLeadSource: bestSource,
+      bestLeadSource: null,
     },
   };
 }
