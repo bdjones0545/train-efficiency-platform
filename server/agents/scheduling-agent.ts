@@ -206,7 +206,7 @@ export async function runSchedulingAgent(orgId: string): Promise<SchedulingAgent
       title: `${cancelledBookings.length} cancellations this week`,
       description: "High cancellation rate may indicate client dissatisfaction or scheduling friction",
       severity: cancelledBookings.length >= 5 ? "high" : "medium",
-      score: cancelledBookings.length * 10 + 30,
+      score: Math.min(100, cancelledBookings.length * 10 + 30),
       metadata: { cancelCount: cancelledBookings.length },
     });
   }
