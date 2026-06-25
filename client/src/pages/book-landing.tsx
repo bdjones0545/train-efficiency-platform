@@ -1,6 +1,8 @@
 import { useState, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -31,8 +33,7 @@ import {
   ArrowRight,
   ShoppingCart,
   Eye,
-  Receipt,
-  Layers,
+  Loader2,
 } from "lucide-react";
 import bookCoverImg from "@assets/screen_1782422677135.png";
 
@@ -44,21 +45,92 @@ function trackEvent(name: string, props?: Record<string, unknown>) {
   console.log(`[Analytics] ${name}`, props ?? {});
 }
 
+interface EmailLeadForm {
+  firstName: string;
+  lastName: string;
+  email: string;
+  sendInstructions: boolean;
+}
+
+interface EmailLeadErrors {
+  firstName?: string;
+  email?: string;
+  sendInstructions?: string;
+}
+
 export default function BookLandingPage() {
   const [ctaModalOpen, setCtaModalOpen] = useState(false);
+  const [form, setForm] = useState<EmailLeadForm>({
+    firstName: "",
+    lastName: "",
+    email: "",
+    sendInstructions: false,
+  });
+  const [errors, setErrors] = useState<EmailLeadErrors>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   const previewRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   function handlePurchaseCta() {
     trackEvent("book_purchase_cta_clicked");
-    // TODO: Open email capture modal (next phase)
-    console.log("Email capture modal coming next.");
+    // Reset form state each time modal opens
+    setForm({ firstName: "", lastName: "", email: "", sendInstructions: false });
+    setErrors({});
     setCtaModalOpen(true);
   }
 
   function handlePreviewCta() {
     trackEvent("book_preview_clicked");
     previewRef.current?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function validateForm(): EmailLeadErrors {
+    const errs: EmailLeadErrors = {};
+    if (!form.firstName.trim()) errs.firstName = "First name is required.";
+    if (!form.email.trim()) {
+      errs.email = "Email address is required.";
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      errs.email = "Please enter a valid email address.";
+    }
+    if (!form.sendInstructions) {
+      errs.sendInstructions = "Please check the box to receive your redemption instructions.";
+    }
+    return errs;
+  }
+
+  async function handleModalSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const errs = validateForm();
+    if (Object.keys(errs).length > 0) {
+      setErrors(errs);
+      return;
+    }
+    setErrors({});
+    setIsSubmitting(true);
+
+    // TODO: POST lead data to backend when API is ready
+    // e.g. await apiRequest("POST", "/api/book-leads", { ...form })
+    trackEvent("book_email_submitted", { email: form.email });
+
+    // Simulate brief processing delay
+    await new Promise((r) => setTimeout(r, 600));
+
+    const isPlaceholderUrl = AMAZON_BOOK_URL.includes("TODO");
+    trackEvent("book_amazon_redirected", { placeholder: isPlaceholderUrl });
+
+    if (isPlaceholderUrl) {
+      setIsSubmitting(false);
+      toast({
+        title: "Amazon book URL not configured yet.",
+        description: "Your email has been saved. We'll send you the link as soon as the book is live.",
+      });
+      setCtaModalOpen(false);
+    } else {
+      window.open(AMAZON_BOOK_URL, "_blank", "noopener,noreferrer");
+      setIsSubmitting(false);
+      setCtaModalOpen(false);
+    }
   }
 
   // Track page view once on mount
@@ -349,7 +421,7 @@ export default function BookLandingPage() {
                     text: "Purchase the book on Amazon",
                   },
                   {
-                    icon: <Receipt className="h-4 w-4 text-[#ffd274]" />,
+                    icon: <ArrowRight className="h-4 w-4 text-[#ffd274]" />,
                     text: "Upload your Amazon receipt to verify your purchase",
                   },
                   {
@@ -659,74 +731,203 @@ export default function BookLandingPage() {
         </footer>
       </main>
 
-      {/* ── CTA Modal (placeholder for email capture) ── */}
+      {/* ── Email Capture Modal ── */}
       <Dialog open={ctaModalOpen} onOpenChange={setCtaModalOpen}>
-        <DialogContent className="bg-[#201f1f] border border-[#ffd274]/20 text-[#e5e2e1] max-w-md">
+        <DialogContent className="bg-[#201f1f] border border-[#ffd274]/20 text-[#e5e2e1] max-w-md w-full">
           <DialogHeader>
-            <DialogTitle className="text-[#ffd274] text-xl font-bold">
-              Purchase the Book
+            <DialogTitle className="text-[#ffd274] text-xl font-bold leading-snug">
+              Claim Your Free Month of TrainChat
             </DialogTitle>
-            <DialogDescription className="text-[#d3c5ae]">
-              You'll be redirected to Amazon to complete your purchase.
+            <DialogDescription className="text-[#d3c5ae] text-sm leading-relaxed pt-1">
+              Enter your email before heading to Amazon. After purchasing the
+              book, you'll receive instructions to upload your receipt and
+              redeem your free month of TrainChat.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-6 pt-2">
-            <div className="bg-[#131313] border border-white/10 rounded-xl p-5 space-y-3">
-              <div className="flex items-center gap-3">
-                <BookOpen className="h-5 w-5 text-[#ffd274]" />
-                <div>
-                  <p className="font-semibold text-[#e5e2e1] text-sm">
-                    The Structure of Training
-                  </p>
-                  <p className="text-xs text-[#9c8f7a]">
-                    Bryan Jones, MS, CSCS, PES, EP-C
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2 text-[#ffd274] text-xs font-bold uppercase tracking-wider">
-                <MessageSquare className="h-3.5 w-3.5" />
-                <span>Includes 30-day TrainChat bonus</span>
-              </div>
+          {/* Book context strip */}
+          <div className="bg-[#131313] border border-white/10 rounded-xl p-4 flex items-center gap-3">
+            <BookOpen className="h-5 w-5 text-[#ffd274] shrink-0" />
+            <div className="min-w-0">
+              <p className="font-semibold text-[#e5e2e1] text-sm truncate">
+                The Structure of Training
+              </p>
+              <p className="text-xs text-[#9c8f7a]">
+                Bryan Jones, MS, CSCS, PES, EP-C
+              </p>
             </div>
-
-            <p className="text-sm text-[#d3c5ae] text-center">
-              Email capture &amp; receipt upload coming soon. For now, purchase
-              directly through Amazon and check back here to redeem your
-              TrainChat bonus.
-            </p>
-
-            <div className="flex flex-col gap-3">
-              <Button
-                className="w-full rounded-full bg-[#ffd274] text-[#402d00] hover:bg-[#ebb42d] font-bold text-xs tracking-widest uppercase py-5"
-                onClick={() => {
-                  // TODO: Replace AMAZON_BOOK_URL with real link before launch
-                  console.log(
-                    "Redirecting to Amazon:",
-                    AMAZON_BOOK_URL,
-                    "— placeholder, not navigating yet."
-                  );
-                  toast({
-                    title: "Amazon link coming soon",
-                    description:
-                      "The book link will be live when the book launches.",
-                  });
-                }}
-                data-testid="button-modal-amazon"
-              >
-                <ShoppingCart className="mr-2 h-4 w-4" />
-                Go to Amazon
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full text-[#9c8f7a] text-xs hover:text-[#d3c5ae]"
-                onClick={() => setCtaModalOpen(false)}
-                data-testid="button-modal-close"
-              >
-                Close
-              </Button>
+            <div className="ml-auto flex items-center gap-1.5 text-[#ffd274] shrink-0">
+              <MessageSquare className="h-3.5 w-3.5" />
+              <span className="text-xs font-bold uppercase tracking-wider whitespace-nowrap">
+                +30 Days Free
+              </span>
             </div>
           </div>
+
+          <form onSubmit={handleModalSubmit} noValidate className="space-y-4 pt-1">
+            {/* Name row */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="book-first-name"
+                  className="text-xs font-bold tracking-widest uppercase text-[#d3c5ae]"
+                >
+                  First Name <span className="text-[#ffd274]">*</span>
+                </Label>
+                <Input
+                  id="book-first-name"
+                  type="text"
+                  autoComplete="given-name"
+                  placeholder="Bryan"
+                  value={form.firstName}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, firstName: e.target.value }))
+                  }
+                  className={`bg-[#131313] border text-[#e5e2e1] placeholder:text-[#4f4634] focus-visible:ring-[#ffd274] focus-visible:border-[#ffd274] ${
+                    errors.firstName
+                      ? "border-red-500/60"
+                      : "border-white/10"
+                  }`}
+                  data-testid="input-modal-first-name"
+                  aria-required="true"
+                  aria-describedby={errors.firstName ? "err-first-name" : undefined}
+                />
+                {errors.firstName && (
+                  <p
+                    id="err-first-name"
+                    className="text-xs text-red-400"
+                    role="alert"
+                  >
+                    {errors.firstName}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-1.5">
+                <Label
+                  htmlFor="book-last-name"
+                  className="text-xs font-bold tracking-widest uppercase text-[#d3c5ae]"
+                >
+                  Last Name
+                </Label>
+                <Input
+                  id="book-last-name"
+                  type="text"
+                  autoComplete="family-name"
+                  placeholder="Jones"
+                  value={form.lastName}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, lastName: e.target.value }))
+                  }
+                  className="bg-[#131313] border border-white/10 text-[#e5e2e1] placeholder:text-[#4f4634] focus-visible:ring-[#ffd274] focus-visible:border-[#ffd274]"
+                  data-testid="input-modal-last-name"
+                />
+              </div>
+            </div>
+
+            {/* Email */}
+            <div className="space-y-1.5">
+              <Label
+                htmlFor="book-email"
+                className="text-xs font-bold tracking-widest uppercase text-[#d3c5ae]"
+              >
+                Email Address <span className="text-[#ffd274]">*</span>
+              </Label>
+              <Input
+                id="book-email"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={form.email}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, email: e.target.value }))
+                }
+                className={`bg-[#131313] border text-[#e5e2e1] placeholder:text-[#4f4634] focus-visible:ring-[#ffd274] focus-visible:border-[#ffd274] ${
+                  errors.email ? "border-red-500/60" : "border-white/10"
+                }`}
+                data-testid="input-modal-email"
+                aria-required="true"
+                aria-describedby={errors.email ? "err-email" : undefined}
+              />
+              {errors.email && (
+                <p id="err-email" className="text-xs text-red-400" role="alert">
+                  {errors.email}
+                </p>
+              )}
+            </div>
+
+            {/* Checkbox */}
+            <div className="space-y-1.5">
+              <div className="flex items-start gap-3">
+                <Checkbox
+                  id="book-send-instructions"
+                  checked={form.sendInstructions}
+                  onCheckedChange={(checked) =>
+                    setForm((f) => ({
+                      ...f,
+                      sendInstructions: checked === true,
+                    }))
+                  }
+                  className="mt-0.5 border-white/20 data-[state=checked]:bg-[#ffd274] data-[state=checked]:border-[#ffd274]"
+                  data-testid="checkbox-modal-send-instructions"
+                  aria-describedby={errors.sendInstructions ? "err-checkbox" : undefined}
+                />
+                <Label
+                  htmlFor="book-send-instructions"
+                  className="text-sm text-[#d3c5ae] leading-snug cursor-pointer"
+                >
+                  Send me instructions for redeeming my TrainChat bonus.{" "}
+                  <span className="text-[#ffd274]">*</span>
+                </Label>
+              </div>
+              {errors.sendInstructions && (
+                <p
+                  id="err-checkbox"
+                  className="text-xs text-red-400 pl-7"
+                  role="alert"
+                >
+                  {errors.sendInstructions}
+                </p>
+              )}
+            </div>
+
+            {/* Actions */}
+            <div className="flex flex-col gap-3 pt-2">
+              <Button
+                type="submit"
+                disabled={isSubmitting}
+                className="w-full rounded-full bg-[#ffd274] text-[#402d00] hover:bg-[#ebb42d] font-bold text-xs tracking-widest uppercase py-5 transition-all shadow-[inset_0_0_12px_rgba(255,255,255,0.3)] disabled:opacity-70"
+                data-testid="button-modal-submit"
+              >
+                {isSubmitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Saving…
+                  </>
+                ) : (
+                  <>
+                    <ShoppingCart className="mr-2 h-4 w-4" />
+                    Continue to Amazon
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                className="w-full text-[#9c8f7a] text-xs hover:text-[#d3c5ae] hover:bg-transparent"
+                onClick={() => setCtaModalOpen(false)}
+                disabled={isSubmitting}
+                data-testid="button-modal-maybe-later"
+              >
+                Maybe Later
+              </Button>
+            </div>
+
+            <p className="text-xs text-[#9c8f7a] text-center pt-1">
+              No spam. Redemption instructions only.{" "}
+              {/* TODO: link to privacy policy once email backend is live */}
+            </p>
+          </form>
         </DialogContent>
       </Dialog>
 

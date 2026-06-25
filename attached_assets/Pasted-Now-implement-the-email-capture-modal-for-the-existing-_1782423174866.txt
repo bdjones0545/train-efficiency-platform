@@ -1,0 +1,89 @@
+Now implement the email capture modal for the existing /book landing page.
+
+Do not build the receipt upload flow yet.
+Do not build promo code logic yet.
+Do not build automation yet.
+
+Current state:
+
+* /book page exists in client/src/pages/book-landing.tsx
+* Primary CTA currently shows a toast/console placeholder
+* AMAZON_BOOK_URL constant exists as a placeholder
+* trackEvent() currently logs to console
+
+Goal:
+Replace the placeholder CTA behavior with a polished email capture modal.
+
+Modal requirements:
+
+When the user clicks any primary “Purchase Book” CTA:
+
+1. Open a modal.
+2. Modal headline:
+   “Claim Your Free Month of TrainChat”
+3. Modal copy:
+   “Enter your email before heading to Amazon. After purchasing the book, you’ll receive instructions to upload your receipt and redeem your free month of TrainChat.”
+4. Fields:
+
+   * First Name
+   * Last Name
+   * Email
+5. Checkbox:
+   “Send me instructions for redeeming my TrainChat bonus.”
+6. Primary button:
+   “Continue to Amazon”
+7. Secondary button:
+   “Maybe Later”
+
+Validation:
+
+* First name required
+* Email required
+* Email must be valid
+* Checkbox must be checked
+* Last name optional
+
+Behavior:
+
+* On submit, store the lead locally in component state for now.
+* Log/track event:
+  book_email_submitted
+* Log/track event:
+  book_amazon_redirected
+* Then redirect to AMAZON_BOOK_URL.
+* If AMAZON_BOOK_URL is still the placeholder, do not navigate away. Instead show a toast:
+  “Amazon book URL not configured yet.”
+* Keep the modal open or show a clean success/loading state before redirect.
+* Add a brief loading state on the button while processing.
+
+Design requirements:
+
+* Match the visual style already created for the /book page.
+* Use existing modal/dialog components if available.
+* Mobile responsive.
+* Accessible labels.
+* Escape key and overlay click should close the modal if the existing modal component supports it.
+* Clean error messages.
+* No backend API yet.
+* No database changes yet.
+
+Code quality:
+
+* Keep the implementation inside client/src/pages/book-landing.tsx unless extracting a small reusable component makes the file cleaner.
+* Do not modify unrelated files.
+* Do not break the existing route.
+* Do not introduce a new design system.
+* Keep TODO comments for future backend lead capture integration.
+
+After implementation, run:
+
+* npm run check
+
+Then report:
+
+* Files modified
+* Modal behavior added
+* Validation added
+* Events tracked
+* Any TODOs
+* Typecheck result
