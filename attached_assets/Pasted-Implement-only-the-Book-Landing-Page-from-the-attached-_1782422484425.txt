@@ -1,0 +1,112 @@
+Implement only the Book Landing Page from the attached MD specification.
+
+Do not build the full funnel yet.
+
+Focus only on creating a polished, responsive, production-quality landing page that matches the existing application design system.
+
+Create one new route:
+
+* /book
+
+Page requirements:
+
+* Use the attached MD file as the design reference.
+* Match the existing UI components, layout patterns, typography, colors, buttons, cards, spacing, and responsive behavior.
+* Do not introduce a separate design system.
+* Do not build backend APIs yet.
+* Do not build receipt upload yet.
+* Do not build promo code logic yet.
+* Do not build email automation yet.
+
+The landing page should include:
+
+1. Hero section
+
+   * Book title
+   * Author name and credentials
+   * Short value-focused subtitle
+   * 3D/premium book mockup placeholder
+   * Primary CTA: Purchase Book
+   * Secondary CTA: Preview Book
+   * TrainChat bonus badge
+
+2. Value/learning section
+
+   * Cards for:
+
+     * Speed Development
+     * Strength Development
+     * Program Design
+     * Athlete Development
+     * Performance Science
+     * Long-Term Adaptation
+
+3. TrainChat bonus section
+
+   * Explain: “Purchase the book and receive your first month of TrainChat free.”
+   * Show simple Book + TrainChat value layout
+   * Explain that buyers will upload their Amazon receipt after purchase to redeem the bonus
+
+4. Author section
+
+   * Bryan Jones, MS, CSCS, PES, EP-C
+   * Professional coaching biography placeholder/copy
+   * Credibility highlights
+
+5. Book preview section
+
+   * Use placeholder preview cards/pages for now
+   * Make it visually polished and responsive
+
+6. FAQ section
+
+   * Accordion-style if existing components support it
+   * Include questions about:
+
+     * Who the book is for
+     * How the TrainChat bonus works
+     * Whether purchase happens through Amazon
+     * How receipt upload works
+
+7. Final CTA section
+
+   * Strong closing headline
+   * Primary CTA: Purchase Book
+
+CTA behavior for now:
+
+* Primary CTA can open a placeholder modal, toast, or log a console message saying:
+  “Email capture modal coming next.”
+* Secondary CTA should scroll to the preview section if simple to implement.
+* Use a clearly marked AMAZON_BOOK_URL constant placeholder, but do not redirect yet unless the existing MD specifically requires it.
+
+Tracking for now:
+
+* If the app already has analytics/event logging utilities, add lightweight events for:
+
+  * book_page_view
+  * book_purchase_cta_clicked
+  * book_preview_clicked
+* If no existing analytics pattern is obvious, leave a TODO comment instead of inventing a new analytics system.
+
+Quality requirements:
+
+* Fully responsive on mobile, tablet, and desktop.
+* Clean loading-safe implementation.
+* No broken imports.
+* No hardcoded styling that conflicts with existing conventions.
+* Keep new components modular and easy to extend for the later modal and receipt flow.
+* Do not alter unrelated files unless required for routing.
+
+After implementation, run:
+
+* npm run check
+* npm run build if available
+
+Then report:
+
+* Files created
+* Files modified
+* Route added
+* Any placeholders/TODOs
+* Typecheck/build results

@@ -1,0 +1,491 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>TrainEfficiency | The Structure of Training</title>
+<!-- Google Fonts -->
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@600;700;800&amp;family=Inter:wght@400;600&amp;family=Space+Grotesk:wght@700&amp;display=swap" rel="stylesheet"/>
+<!-- Material Symbols -->
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "on-tertiary": "#313030",
+                    "surface-container-low": "#1c1b1b",
+                    "on-secondary-fixed": "#1a1c1c",
+                    "surface-variant": "#353534",
+                    "on-primary-container": "#624700",
+                    "secondary-fixed": "#e2e2e2",
+                    "tertiary": "#dad8d7",
+                    "primary": "#ffd274",
+                    "on-tertiary-container": "#4c4b4b",
+                    "on-secondary-container": "#b4b5b5",
+                    "surface-dim": "#131313",
+                    "surface": "#131313",
+                    "surface-container-highest": "#353534",
+                    "secondary-container": "#454747",
+                    "on-primary-fixed": "#261a00",
+                    "tertiary-fixed": "#e5e2e1",
+                    "secondary-fixed-dim": "#c6c6c7",
+                    "primary-container": "#ebb42d",
+                    "on-error-container": "#ffdad6",
+                    "on-secondary-fixed-variant": "#454747",
+                    "on-surface": "#e5e2e1",
+                    "surface-container": "#201f1f",
+                    "inverse-on-surface": "#313030",
+                    "inverse-primary": "#795900",
+                    "on-primary": "#402d00",
+                    "on-tertiary-fixed-variant": "#474746",
+                    "tertiary-container": "#bebcbb",
+                    "surface-container-high": "#2a2a2a",
+                    "outline-variant": "#4f4634",
+                    "on-secondary": "#2f3131",
+                    "on-error": "#690005",
+                    "tertiary-fixed-dim": "#c8c6c5",
+                    "background": "#131313",
+                    "on-background": "#e5e2e1",
+                    "surface-tint": "#f6be37",
+                    "primary-fixed": "#ffdfa0",
+                    "inverse-surface": "#e5e2e1",
+                    "outline": "#9c8f7a",
+                    "primary-fixed-dim": "#f6be37",
+                    "secondary": "#c6c6c7",
+                    "error": "#ffb4ab",
+                    "error-container": "#93000a",
+                    "on-surface-variant": "#d3c5ae",
+                    "on-primary-fixed-variant": "#5c4300",
+                    "on-tertiary-fixed": "#1c1b1b",
+                    "surface-bright": "#3a3939",
+                    "surface-container-lowest": "#0e0e0e"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.25rem",
+                    "lg": "0.5rem",
+                    "xl": "0.75rem",
+                    "full": "9999px"
+            },
+            "spacing": {
+                    "container-max": "1200px",
+                    "unit": "8px",
+                    "section-gap": "120px",
+                    "gutter": "24px",
+                    "margin-mobile": "20px"
+            },
+            "fontFamily": {
+                    "headline-md": ["Hanken Grotesk"],
+                    "body-lg": ["Inter"],
+                    "body-md": ["Inter"],
+                    "headline-lg": ["Hanken Grotesk"],
+                    "headline-lg-mobile": ["Hanken Grotesk"],
+                    "label-caps": ["Space Grotesk"],
+                    "display-lg": ["Hanken Grotesk"]
+            },
+            "fontSize": {
+                    "headline-md": ["32px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                    "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                    "headline-lg": ["48px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                    "headline-lg-mobile": ["36px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                    "label-caps": ["12px", {"lineHeight": "1.0", "letterSpacing": "0.1em", "fontWeight": "700"}],
+                    "display-lg": ["72px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "800"}]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        .glass-card {
+            background: rgba(14, 14, 14, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 210, 116, 0.1);
+        }
+        .gold-glow:hover {
+            box-shadow: 0 0 40px rgba(246, 190, 55, 0.15);
+            border-color: rgba(246, 190, 55, 0.4);
+        }
+        .cta-glow {
+            box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.3);
+        }
+        .hide-scrollbar::-webkit-scrollbar { display: none; }
+        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes subtle-float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        .animate-float { animation: subtle-float 6s ease-in-out infinite; }
+    </style>
+</head>
+<body class="bg-background text-on-background selection:bg-primary/30 selection:text-primary">
+<!-- Top Navigation -->
+<header class="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-white/10">
+<nav class="flex justify-between items-center px-6 md:px-gutter py-4 max-w-container-max mx-auto">
+<div class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">fitness_center</span>
+<span class="font-headline-md text-headline-md font-bold text-primary tracking-tight">TrainEfficiency</span>
+</div>
+<div class="hidden md:flex gap-8">
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors" href="#overview">Overview</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors" href="#trainchat">TrainChat</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors" href="#author">The Author</a>
+</div>
+<button class="bg-primary text-on-primary font-label-caps text-label-caps px-6 py-2 rounded-full hover:scale-105 active:scale-95 transition-all cta-glow" onclick="openModal()">Purchase Book</button>
+</nav>
+</header>
+<main class="pt-24 pb-32">
+<!-- Hero Section -->
+<section class="relative min-h-[80vh] flex items-center px-6 md:px-gutter py-section-gap overflow-hidden" id="overview">
+<div class="absolute inset-0 z-0 opacity-20 pointer-events-none">
+
+</div>
+<div class="max-w-container-max mx-auto grid grid-cols-1 md:grid-cols-2 gap-16 items-center z-10">
+<div class="order-2 md:order-1 space-y-8">
+<div class="inline-block bg-primary/10 border border-primary/20 px-4 py-1 rounded-full">
+<span class="font-label-caps text-label-caps text-primary uppercase">EVIDENCE-BASED PERFORMANCE</span>
+</div>
+<h1 class="font-display-lg text-[48px] md:text-display-lg leading-[1.1] text-on-surface">
+                        The Structure of Training for <span class="text-primary">Strength and Speed</span> for Youth Athletes
+                    </h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-xl">
+                        A science-based framework designed for coaches and parents to develop stronger, faster, and more resilient athletes using long-term adaptation principles.
+                    </p>
+<div class="flex flex-col sm:flex-row gap-4 pt-4">
+<button class="bg-primary text-on-primary font-label-caps text-label-caps px-10 py-5 rounded-full hover:bg-primary-container transition-all active:scale-95 cta-glow text-[14px]" onclick="openModal()">PURCHASE BOOK</button>
+<button class="bg-surface-container-high text-on-surface font-label-caps text-label-caps px-10 py-5 rounded-full hover:bg-surface-variant border border-white/5 transition-all active:scale-95 text-[14px]">PREVIEW CHAPTER 1</button>
+</div>
+</div>
+<div class="order-1 md:order-2 flex justify-center relative">
+<div class="absolute -inset-10 bg-primary/5 blur-[100px] rounded-full"></div>
+<img class="w-[320px] md:w-[480px] h-auto drop-shadow-[0_32px_64px_rgba(246,190,55,0.2)] animate-float relative z-10" data-alt="High-quality hardback book cover titled 'The Structure of Training for Strength and Speed for Youth Athletes' by Bryan Jones. The cover features a gritty, high-contrast action shot of a young athlete sprinting on a track at night under stadium lights. The book stands vertically on a dark wooden surface, with soft warm light highlighting its premium texture and gold typography against a deep black background." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD1VtY8Fl5dVhUOxTNMPck-puTlQ9Y0e8wjCgK8ywZNnCysRYdkhDd4AfaxT8m31KZ9pRgK_BZOnpyousSK4-J9tPmHSDCag5Pz2LpkQoPBDr-Oo3Qyh741ZCpdv9ymC9O5xFpD1bHE-ZLXtLccSbp6zeXkcEQPgeXdrF7Mpyo2g8cWsNchovjDwmF4ISUzZ7mtPdlX21ncQtYu97CR5NtdLLUDODchPV398k0F1VFB-E2e8Og0He6MLzOYKHzShPkgCdCq0aEZ7nE"/>
+</div>
+</div>
+</section>
+<!-- Value Section (Bento Grid) -->
+<section class="px-6 md:px-gutter py-section-gap bg-surface-container-lowest/50">
+<div class="max-w-container-max mx-auto">
+<div class="text-center mb-16 space-y-4">
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">Inside The Framework</h2>
+<p class="font-body-md text-body-md text-on-surface-variant max-w-2xl mx-auto">Bridging the gap between raw athletic power and high-fidelity scientific precision.</p>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+<!-- Card 1 -->
+<div class="glass-card p-10 rounded-xl gold-glow transition-all duration-500 group">
+<span class="material-symbols-outlined text-primary mb-6 text-4xl" style="font-variation-settings: 'FILL' 1;">bolt</span>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-4">Speed Development</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">The mechanics of linear acceleration, top-end velocity, and the neuro-muscular pathways required for elite speed.</p>
+</div>
+<!-- Card 2 -->
+<div class="glass-card p-10 rounded-xl gold-glow transition-all duration-500 md:row-span-2">
+<span class="material-symbols-outlined text-primary mb-6 text-4xl" style="font-variation-settings: 'FILL' 1;">fitness_center</span>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-4">Strength Foundations</h3>
+<p class="font-body-md text-body-md text-on-surface-variant mb-8">Building robust structural integrity and explosive power specifically tailored for developing skeletons and soft tissues.</p>
+<div class="bg-surface-container rounded-lg p-6 border border-white/5">
+<span class="font-label-caps text-label-caps text-primary">KEY METRIC</span>
+<div class="mt-4 flex items-baseline gap-2">
+<span class="text-4xl font-headline-md text-on-surface">24%</span>
+<span class="text-on-surface-variant font-body-md">Avg. Power Output Increase</span>
+</div>
+</div>
+</div>
+<!-- Card 3 -->
+<div class="glass-card p-10 rounded-xl gold-glow transition-all duration-500">
+<span class="material-symbols-outlined text-primary mb-6 text-4xl">architecture</span>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-4">Program Design</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">A modular architecture that allows you to build custom training blocks based on individual athlete needs.</p>
+</div>
+<!-- Card 4 -->
+<div class="glass-card p-10 rounded-xl gold-glow transition-all duration-500">
+<span class="material-symbols-outlined text-primary mb-6 text-4xl" style="font-variation-settings: 'FILL' 1;">groups</span>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-4">Athlete Development</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Prioritizing health and sustainability to ensure high performance through high school and beyond.</p>
+</div>
+<!-- Card 5 -->
+<div class="glass-card p-10 rounded-xl gold-glow transition-all duration-500">
+<span class="material-symbols-outlined text-primary mb-6 text-4xl" style="font-variation-settings: 'FILL' 1;">science</span>
+<h3 class="font-headline-md text-headline-md text-on-surface mb-4">Performance Science</h3>
+<p class="font-body-md text-body-md text-on-surface-variant">Deciphering the data behind the grit. How to measure what matters without the hype.</p>
+</div>
+</div>
+</div>
+</section>
+<!-- TrainChat Bonus Section -->
+<section class="px-6 md:px-gutter py-section-gap overflow-hidden relative" id="trainchat">
+<div class="max-w-container-max mx-auto glass-card rounded-3xl p-12 md:p-20 relative border-primary/20 overflow-hidden shadow-[0_0_80px_rgba(246,190,55,0.05)]">
+<div class="absolute top-0 right-0 p-12 opacity-5 pointer-events-none">
+<span class="material-symbols-outlined text-[300px]" style="font-variation-settings: 'FILL' 1;">forum</span>
+</div>
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+<div class="space-y-8">
+<div class="flex items-center gap-4">
+<div class="bg-primary p-3 rounded-xl shadow-[0_0_20px_rgba(246,190,55,0.4)]">
+<span class="material-symbols-outlined text-on-primary">redeem</span>
+</div>
+<span class="font-label-caps text-label-caps text-primary tracking-widest">LIMITED TIME BONUS</span>
+</div>
+<h2 class="font-display-lg text-[36px] md:text-headline-lg text-on-surface leading-tight">
+                            Get 30 Days of <span class="text-primary">TrainChat</span> for FREE
+                        </h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant">
+                            Purchase the book today and unlock an AI performance coach that has read every word of "The Structure of Training". Get instant answers, program adjustments, and technical feedback 24/7.
+                        </p>
+<div class="flex items-center gap-6 text-on-surface">
+<div class="text-center border-r border-white/10 pr-6">
+<div class="text-3xl font-headline-md text-primary">$49.99</div>
+<div class="font-label-caps text-[10px] text-on-surface-variant">MONTHLY VALUE</div>
+</div>
+<div class="font-body-md">Included free with every purchase.</div>
+</div>
+</div>
+<div class="relative group">
+<div class="absolute -inset-4 bg-primary/10 blur-3xl opacity-50 group-hover:opacity-100 transition-opacity"></div>
+<div class="flex gap-4 overflow-x-auto hide-scrollbar pb-4 md:justify-end">
+<img class="w-64 h-[450px] object-cover rounded-[2.5rem] border-[8px] border-surface-container-highest shadow-2xl flex-shrink-0" data-alt="A premium mobile UI design showing an AI fitness assistant called Atlas within the TrainChat app. The interface is dark with primary gold accents, featuring a chat bubble interaction where the AI is explaining speed development concepts. The aesthetic is clean, modern, and high-performance." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCYCODwgvXnHSK_QUsEqBIWfMbs1WrUs0q3yFDdQEhNk1ipaT7VakrX_ioHGhUzwoEbZHLtlC9JFerq12hckBnQso_XEf2Byi9pm5FSwZcTjJm_ZIY-oD3vPG0QMaGMuSIq3-GoptOZh60C3XeIITQKmbP4Z7nCw3AEEAaOBGlNgAsACJpHV_-CJjvs51nUojv5kfkBSJ9UznbImxizRGi3k3ZvWCXojfKOa_xRqeb4CWoKqMy5lFWwqAtTBC09TocUEPLAJSHj4VU"/>
+<img class="w-64 h-[450px] object-cover rounded-[2.5rem] border-[8px] border-surface-container-highest shadow-2xl mt-12 flex-shrink-0" data-alt="A mobile screen mockup of the TrainChat dashboard. It shows athletic metrics, a training focus selector for Strength, Speed, and Mobility, and a list of adaptive workout commands. The UI uses glassmorphism and subtle gradients to imply a premium, scientific feel." src="https://lh3.googleusercontent.com/aida-public/AB6AXuAphfidEZfONNRVw6Wn9q2wk5fXj-T7KGH-8sZ6-FB1UNshxqdm2STb0plSVzqF4mAqm-twj_0TiTbpp-MyPUVMI-ThgKNfvWZ1rGz9ylmwR8f1xUsbRSSMUIXMkdxW0xs4YAd-OD1hnKY7_uTPxsQjxcBrscTdxQjmfZvVqeahUNHAPJbsRuKXvaYvj813ZyGsFBiTdHaUDsNeHgZE3sTkdtydDIlM6_syLVxwu2FV_nVl_LA5CLwPMHLWGpGU74anB0bVV9NOzPQ"/>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Testimonial Carousel -->
+<section class="px-6 md:px-gutter py-section-gap">
+<div class="max-w-container-max mx-auto">
+<div class="flex flex-col md:flex-row justify-between items-end mb-12 gap-6">
+<div class="max-w-xl">
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface">Trusted by Elite Coaches</h2>
+<p class="font-body-md text-body-md text-on-surface-variant mt-4">Real results from the field, validated by the world's most rigorous training standards.</p>
+</div>
+<div class="flex gap-2">
+<button class="p-4 rounded-full border border-white/10 hover:bg-white/5 transition-all"><span class="material-symbols-outlined">chevron_left</span></button>
+<button class="p-4 rounded-full border border-primary/20 hover:bg-primary/5 text-primary transition-all"><span class="material-symbols-outlined">chevron_right</span></button>
+</div>
+</div>
+<div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+<div class="glass-card p-12 rounded-2xl relative">
+<span class="material-symbols-outlined text-primary/20 text-6xl absolute top-8 right-8">format_quote</span>
+<p class="font-body-lg text-body-lg italic text-on-surface leading-relaxed mb-8">
+                            "Bryan has simplified complex physiology into a manual that any parent or coach can use to actually improve their athlete's performance. This isn't just theory; it's a blueprint."
+                        </p>
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-highest overflow-hidden border border-primary/30">
+<img class="w-full h-full object-cover" data-alt="Close up portrait of a middle-aged male athletic coach with a professional and authoritative demeanor. He is wearing a dark polo shirt with a subtle athletic logo. The lighting is dramatic and moody, reflecting a high-performance environment like a stadium or elite gym." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCBmO8jr20anObx3t6tPGzazaFP7qt33gsKghtZPo785Nt8V6svpYSDJTUkjX4ZEEUGW8tA73JZYZf2kYQn1CwBZ9CfP1OMMe8xoDpRaYrk86Xy7RpxIy-xJ81P4vyleFwdAQwsCSQP4ZITdJ8rgHzbH4D_gMRkd6NgBKSO6Cg39JnWPrbBOfV2o3vekFWdsStzrq4LkLGnrFzuCAXuFloaEzCcTgtish5u_t4lcyMhmGcdV20EwmRqv73lUimf5Pa_GWhlzy5cHRk"/>
+</div>
+<div>
+<div class="font-headline-md text-[18px] text-on-surface">Mark Stevenson</div>
+<div class="font-label-caps text-[10px] text-primary">DIRECTOR OF PERFORMANCE, USA TRACK</div>
+</div>
+</div>
+</div>
+<div class="glass-card p-12 rounded-2xl relative">
+<span class="material-symbols-outlined text-primary/20 text-6xl absolute top-8 right-8">format_quote</span>
+<p class="font-body-lg text-body-lg italic text-on-surface leading-relaxed mb-8">
+                            "The principles of adaptation mentioned in this book are the closest thing to a 'secret sauce' for youth athlete development I've seen in 20 years of coaching."
+                        </p>
+<div class="flex items-center gap-4">
+<div class="w-12 h-12 rounded-full bg-surface-container-highest overflow-hidden border border-primary/30">
+<img class="w-full h-full object-cover" data-alt="Portrait of a female professional strength and conditioning coach with an athletic build. She has a confident, determined expression and is captured in a high-key, modern gym setting. She is wearing high-end athletic apparel." src="https://lh3.googleusercontent.com/aida-public/AB6AXuA_zS30FL9Do42Yxq6MNU77dPjyq4b34MA7VD8g2DMsBR70um_geUNyxRzna3f0n3A12N3lgFbzWYv3b-u8P8DHSVjNPoWZcA9os-3QF3GETc4gnwn-nKZix43Rxl5aAHPTwpyYxE8zXwRxHhSq3MRqUmvBCeB3EmSWbDiQoJXQ5h6mt1ejArEcGnlRBDYsR5twoAswlNMdBZxaalGDfKtegOhK_D_pdvSM8a4D_wrYydPDdsldgU65enmus2QDQQTBJrx6fgmqctI"/>
+</div>
+<div>
+<div class="font-headline-md text-[18px] text-on-surface">Dr. Elena Rodriguez</div>
+<div class="font-label-caps text-[10px] text-primary">PH.D. SPORTS PHYSIOLOGY</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- Author Section -->
+<section class="px-6 md:px-gutter py-section-gap bg-surface" id="author">
+<div class="max-w-container-max mx-auto grid grid-cols-1 md:grid-cols-2 gap-20 items-center">
+<div class="relative">
+<div class="aspect-[4/5] rounded-2xl overflow-hidden grayscale contrast-125 border border-white/10 group">
+<img class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" data-alt="A professional portrait of Bryan Jones, the author. He looks authoritative and scientific, standing in a high-tech athletic lab environment. He is wearing a dark, minimal quarter-zip sweater. The background is softly blurred showing gym equipment and data monitors." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDOUbrTP8z1D8gf1IwvBdioz5OtFZuHLzmze6TzZ6xh9kBq94G6UyUAZYEz26olsIJ1hch3V-zDj3hyQKg_Q5KVjaiOuNruzosyGxADGjmgG1x_1OEuBGamofZvGRHmJoAOJ0vhkxhH1lwXrs8DzLPmswZq7L0sDpFzx4fF65zdKwhpVVIzVgZJo-joXFKelWb0PApDi7Z1EppYN9wHzWpd9zTd6tnHZTxAEI4Knz7j7ecWyR8a5x-zpTdBtdKGmxPb8ZKNqThZwQ0"/>
+</div>
+<div class="absolute -bottom-8 -right-8 glass-card p-8 rounded-xl border-primary/30 hidden md:block">
+<div class="space-y-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-primary" style="font-variation-settings: 'FILL' 1;">verified</span>
+<span class="font-label-caps text-label-caps">CSCS, PES, EP-C</span>
+</div>
+<div class="text-on-surface font-body-md">15+ Years Experience</div>
+</div>
+</div>
+</div>
+<div class="space-y-8">
+<span class="font-label-caps text-label-caps text-primary">THE AUTHOR</span>
+<h2 class="font-display-lg text-[42px] text-on-surface">Bryan Jones</h2>
+<p class="font-body-lg text-body-lg text-on-surface-variant leading-relaxed">
+                        Bryan Jones is the founder of Efficiency Strength Training, LLC. He has dedicated his career to decoding the mechanics of youth athletic performance, moving away from "fatigue-based" training toward "adaptation-based" excellence.
+                    </p>
+<p class="font-body-md text-body-md text-on-surface-variant">
+                        His framework is currently used by hundreds of coaches across the United States to develop the next generation of elite speed and strength.
+                    </p>
+<div class="pt-4 border-t border-white/5">
+<div class="grid grid-cols-2 gap-4">
+<div class="p-4">
+<div class="text-2xl font-headline-md text-primary">500+</div>
+<div class="text-on-surface-variant font-label-caps text-[10px]">PROGRAMS BUILT</div>
+</div>
+<div class="p-4">
+<div class="text-2xl font-headline-md text-primary">12k+</div>
+<div class="text-on-surface-variant font-label-caps text-[10px]">ATHLETES IMPACTED</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<!-- FAQ Accordion -->
+<section class="px-6 md:px-gutter py-section-gap">
+<div class="max-w-[800px] mx-auto">
+<h2 class="font-headline-lg text-headline-lg-mobile md:text-headline-lg text-on-surface text-center mb-16">Common Questions</h2>
+<div class="space-y-4">
+<!-- FAQ 1 -->
+<div class="glass-card rounded-xl overflow-hidden border-white/5">
+<button class="w-full p-6 text-left flex justify-between items-center group" onclick="toggleFaq(this)">
+<span class="font-headline-md text-[20px] text-on-surface group-hover:text-primary transition-colors">Is this book for parents or coaches?</span>
+<span class="material-symbols-outlined transition-transform">expand_more</span>
+</button>
+<div class="px-6 pb-6 text-on-surface-variant font-body-md hidden">
+                            It's written for both. We bridge the gap between high-level sports science and practical, everyday training that can be implemented at home or in a professional weight room.
+                        </div>
+</div>
+<!-- FAQ 2 -->
+<div class="glass-card rounded-xl overflow-hidden border-white/5">
+<button class="w-full p-6 text-left flex justify-between items-center group" onclick="toggleFaq(this)">
+<span class="font-headline-md text-[20px] text-on-surface group-hover:text-primary transition-colors">What age group is this intended for?</span>
+<span class="material-symbols-outlined transition-transform">expand_more</span>
+</button>
+<div class="px-6 pb-6 text-on-surface-variant font-body-md hidden">
+                            The framework focuses on developmental years, typically from age 10 through 18, with specific modifications for pre-pubescent vs. post-pubescent physiology.
+                        </div>
+</div>
+<!-- FAQ 3 -->
+<div class="glass-card rounded-xl overflow-hidden border-white/5">
+<button class="w-full p-6 text-left flex justify-between items-center group" onclick="toggleFaq(this)">
+<span class="font-headline-md text-[20px] text-on-surface group-hover:text-primary transition-colors">How do I access the TrainChat bonus?</span>
+<span class="material-symbols-outlined transition-transform">expand_more</span>
+</button>
+<div class="px-6 pb-6 text-on-surface-variant font-body-md hidden">
+                            Inside every book purchase (digital or physical), you will find a unique redemption code and instructions to activate your 30-day free access.
+                        </div>
+</div>
+</div>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="bg-surface-container-lowest border-t border-outline-variant w-full py-section-gap">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-unit max-w-container-max mx-auto px-margin-mobile md:px-gutter">
+<div>
+<div class="text-headline-md font-headline-md text-on-surface mb-6">TrainEfficiency</div>
+<p class="text-on-surface-variant font-body-md opacity-80 max-w-sm">
+                    © 2024 TrainEfficiency. All Rights Reserved. Evidence-Based Performance.
+                </p>
+</div>
+<div class="grid grid-cols-2 gap-8 md:justify-items-end">
+<div class="flex flex-col gap-4">
+<a class="text-on-surface-variant font-body-md hover:text-on-surface transition-opacity" href="#">Terms</a>
+<a class="text-on-surface-variant font-body-md hover:text-on-surface transition-opacity" href="#">Privacy</a>
+</div>
+<div class="flex flex-col gap-4">
+<a class="text-on-surface-variant font-body-md hover:text-on-surface transition-opacity" href="#">Support</a>
+<a class="text-on-surface-variant font-body-md hover:text-on-surface transition-opacity" href="#">Contact</a>
+</div>
+</div>
+</div>
+</footer>
+<!-- Sticky Purchase Bar -->
+<div class="fixed bottom-0 left-0 w-full z-[60] bg-surface-container-lowest/90 backdrop-blur-lg border-t border-primary/20 shadow-[0_-8px_32px_rgba(246,190,55,0.15)] flex justify-between items-center h-20 px-6 md:px-gutter">
+<div class="flex flex-col">
+<span class="font-label-caps text-[10px] text-primary">TOTAL VALUE $69.98</span>
+<span class="font-headline-md text-headline-md text-on-surface">$19.99 <span class="text-[14px] text-on-surface-variant line-through font-normal">$69.98</span></span>
+</div>
+<div class="flex items-center gap-6">
+<div class="hidden md:flex items-center gap-2 text-on-surface-variant font-label-caps text-[10px]">
+<span class="material-symbols-outlined text-primary text-[14px]">local_shipping</span>
+                SHIPPING WORLDWIDE
+            </div>
+<button class="bg-primary text-on-primary font-label-caps text-label-caps px-8 py-3 rounded-full hover:scale-105 transition-all cta-glow" onclick="openModal()">PURCHASE NOW</button>
+</div>
+</div>
+<!-- Purchase Modal -->
+<div class="fixed inset-0 z-[100] hidden items-center justify-center p-6 bg-background/90 backdrop-blur-md" id="purchaseModal">
+<div class="glass-card w-full max-w-lg p-10 rounded-2xl border-primary/30 relative">
+<button class="absolute top-6 right-6 text-on-surface-variant hover:text-on-surface transition-colors" onclick="closeModal()">
+<span class="material-symbols-outlined">close</span>
+</button>
+<div class="text-center mb-10">
+<h3 class="font-headline-lg text-[28px] text-on-surface">Secure Your Copy</h3>
+<p class="text-on-surface-variant font-body-md mt-2">Enter your details to proceed to checkout.</p>
+</div>
+<form class="space-y-6">
+<div class="grid grid-cols-2 gap-4">
+<div class="space-y-2">
+<label class="font-label-caps text-[10px] text-on-surface-variant">FIRST NAME</label>
+<input class="w-full bg-surface-container-highest border-b-2 border-transparent focus:border-primary transition-all text-on-surface p-4 rounded-lg focus:ring-0 outline-none" placeholder="John" type="text"/>
+</div>
+<div class="space-y-2">
+<label class="font-label-caps text-[10px] text-on-surface-variant">LAST NAME</label>
+<input class="w-full bg-surface-container-highest border-b-2 border-transparent focus:border-primary transition-all text-on-surface p-4 rounded-lg focus:ring-0 outline-none" placeholder="Doe" type="text"/>
+</div>
+</div>
+<div class="space-y-2">
+<label class="font-label-caps text-[10px] text-on-surface-variant">EMAIL ADDRESS</label>
+<input class="w-full bg-surface-container-highest border-b-2 border-transparent focus:border-primary transition-all text-on-surface p-4 rounded-lg focus:ring-0 outline-none" placeholder="john@example.com" type="email"/>
+</div>
+<button class="w-full bg-primary text-on-primary font-label-caps text-label-caps py-5 rounded-full mt-4 hover:bg-primary-container transition-all active:scale-95 cta-glow" type="button">
+                    CONTINUE TO CHECKOUT
+                </button>
+<div class="flex justify-center gap-6 pt-4 opacity-50 grayscale">
+<span class="material-symbols-outlined">credit_card</span>
+<span class="material-symbols-outlined">account_balance_wallet</span>
+<span class="material-symbols-outlined">shopping_cart</span>
+</div>
+</form>
+</div>
+</div>
+<script>
+        function openModal() {
+            const modal = document.getElementById('purchaseModal');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+            document.body.style.overflow = 'hidden';
+        }
+
+        function closeModal() {
+            const modal = document.getElementById('purchaseModal');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.body.style.overflow = 'auto';
+        }
+
+        function toggleFaq(btn) {
+            const content = btn.nextElementSibling;
+            const icon = btn.querySelector('.material-symbols-outlined');
+            
+            content.classList.toggle('hidden');
+            icon.style.transform = content.classList.contains('hidden') ? 'rotate(0deg)' : 'rotate(180deg)';
+        }
+
+        // Close modal on escape key
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // Sticky Header scroll effect
+        window.addEventListener('scroll', () => {
+            const header = document.querySelector('header');
+            if (window.scrollY > 20) {
+                header.classList.add('shadow-xl');
+            } else {
+                header.classList.remove('shadow-xl');
+            }
+        });
+    </script>
+</body></html>

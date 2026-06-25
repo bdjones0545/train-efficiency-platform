@@ -1,0 +1,74 @@
+Implement the attached MD specification as a new feature within the existing application.
+
+The attached MD file is the source of truth for the design, user experience, layout, functionality, and user flow. Follow it closely while using the existing design system, component library, routing patterns, API helpers, authentication patterns, styling conventions, and architecture already established throughout the application.
+
+Create the following new pages:
+
+* Book Landing Page
+* Email Capture Modal
+* Thank You Page
+* Receipt Upload Page
+* Verification Success Page
+
+Requirements:
+
+* Match the existing UI/UX exactly.
+* Mobile-first and fully responsive.
+* Use existing components wherever possible.
+* Do not introduce a separate design system.
+* Include polished loading, empty, success, and error states.
+* Add tasteful micro-interactions and transitions consistent with the rest of the application.
+* Keep accessibility in mind.
+
+Functional flow:
+
+1. User lands on the Book page.
+2. User clicks Purchase Book.
+3. Email capture modal appears.
+4. Save the submitted lead.
+5. Redirect the user to the Amazon book URL.
+6. Automated flow directs the user back to upload their receipt.
+7. User uploads their Amazon receipt.
+8. Create a pending verification record.
+9. Display the verification success experience (use a placeholder promo code flow if the final TrainChat integration is not yet implemented).
+
+Implementation guidelines:
+
+* Use existing routing conventions.
+* Use existing API patterns.
+* Use existing storage/upload patterns if available.
+* Use existing database architecture and naming conventions.
+* Build reusable components where appropriate.
+* Keep the code clean, modular, and easy to maintain.
+* Avoid duplicate logic by reusing utilities already present in the codebase.
+
+Tracking:
+
+Implement analytics/event tracking hooks for major funnel events such as:
+
+* Page viewed
+* Purchase CTA clicked
+* Email submitted
+* Redirected to Amazon
+* Receipt uploaded
+* Verification completed
+
+Use the application's existing analytics/event logging approach if one already exists.
+
+Use a constant for the Amazon book URL so it can be updated easily later.
+
+After implementation:
+
+* Verify the new routes integrate correctly with the existing application.
+* Run a full type check.
+* Run a production build if available.
+* Report:
+
+  * Files created
+  * Files modified
+  * Routes added
+  * Database/API additions
+  * Any placeholders or TODOs
+  * Typecheck/build results
+
+Prioritize production-quality code that fits naturally into the existing codebase rather than creating an isolated feature.
