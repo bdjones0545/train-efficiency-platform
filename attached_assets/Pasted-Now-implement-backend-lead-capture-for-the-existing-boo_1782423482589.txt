@@ -1,0 +1,107 @@
+Now implement backend lead capture for the existing /book email capture modal.
+
+Do not build receipt upload yet.
+Do not build promo code logic yet.
+Do not build email automation yet.
+
+Current state:
+
+* /book page exists
+* Email capture modal works
+* Lead data is currently only handled locally
+* TODO exists to POST lead data to backend
+
+Goal:
+Persist book funnel leads and funnel events in the database.
+
+Implement:
+
+1. Database/schema support for book funnel leads
+2. Database/schema support for book funnel events
+3. API endpoint to create/update a lead
+4. API endpoint to log events
+5. Wire the existing modal submit to the new lead endpoint
+
+Tables/entities:
+
+book_funnel_leads:
+
+* id
+* firstName
+* lastName
+* email
+* source
+* amazonClickedAt
+* createdAt
+* updatedAt
+
+book_funnel_events:
+
+* id
+* leadId nullable if unavailable
+* email nullable
+* eventType
+* metadata json
+* createdAt
+
+API endpoints:
+
+POST /api/book-funnel/leads
+
+Behavior:
+
+* Accept firstName, lastName, email, source
+* Validate firstName and email
+* Normalize email to lowercase/trimmed
+* If lead already exists by email, update firstName, lastName, source, updatedAt
+* If new, create lead
+* Set amazonClickedAt when the email submit flow proceeds to Amazon
+* Return the lead id and normalized email
+
+POST /api/book-funnel/events
+
+Behavior:
+
+* Accept leadId optional, email optional, eventType, metadata optional
+* Validate eventType
+* Normalize email if provided
+* Store event
+* Return success
+
+Frontend wiring:
+
+In client/src/pages/book-landing.tsx:
+
+* Replace local-only TODO with POST /api/book-funnel/leads
+* On valid modal submit:
+
+  1. Create/update lead
+  2. Log book_email_submitted
+  3. Log book_amazon_redirected
+  4. Then redirect/open Amazon URL if configured
+* If backend call fails, show a clean toast error and do not redirect.
+* Keep loading state while API calls run.
+
+Important:
+
+* Use the existing app’s API helper/fetch wrapper patterns.
+* Use the existing database/schema patterns.
+* Use existing error handling conventions.
+* Keep route public; users should not need to be logged in.
+* Do not touch unrelated files.
+* Do not introduce a new analytics system.
+* Keep this isolated and easy to audit.
+
+After implementation run:
+
+* npm run check
+
+Then report:
+
+* Files created
+* Files modified
+* Database/schema changes
+* API endpoints added
+* Frontend wiring changed
+* Any TODOs
+* Typecheck result

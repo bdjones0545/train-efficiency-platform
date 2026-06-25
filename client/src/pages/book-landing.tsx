@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -109,27 +110,58 @@ export default function BookLandingPage() {
     setErrors({});
     setIsSubmitting(true);
 
-    // TODO: POST lead data to backend when API is ready
-    // e.g. await apiRequest("POST", "/api/book-leads", { ...form })
-    trackEvent("book_email_submitted", { email: form.email });
+    try {
+      const isPlaceholderUrl = AMAZON_BOOK_URL.includes("TODO");
 
-    // Simulate brief processing delay
-    await new Promise((r) => setTimeout(r, 600));
-
-    const isPlaceholderUrl = AMAZON_BOOK_URL.includes("TODO");
-    trackEvent("book_amazon_redirected", { placeholder: isPlaceholderUrl });
-
-    if (isPlaceholderUrl) {
-      setIsSubmitting(false);
-      toast({
-        title: "Amazon book URL not configured yet.",
-        description: "Your email has been saved. We'll send you the link as soon as the book is live.",
+      // 1. Persist lead (create or update by email)
+      const leadRes = await apiRequest("POST", "/api/book-funnel/leads", {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim() || undefined,
+        email: form.email.trim(),
+        source: "book_landing",
+        amazonClicked: !isPlaceholderUrl,
       });
+      const leadData = await leadRes.json();
+      const leadId: string | undefined = leadData?.leadId;
+
+      // 2. Log book_email_submitted event
+      trackEvent("book_email_submitted", { email: form.email });
+      await apiRequest("POST", "/api/book-funnel/events", {
+        leadId,
+        email: form.email.trim(),
+        eventType: "book_email_submitted",
+        metadata: { source: "book_landing" },
+      });
+
+      // 3. Log book_amazon_redirected event
+      trackEvent("book_amazon_redirected", { placeholder: isPlaceholderUrl });
+      await apiRequest("POST", "/api/book-funnel/events", {
+        leadId,
+        email: form.email.trim(),
+        eventType: "book_amazon_redirected",
+        metadata: { placeholder: isPlaceholderUrl },
+      });
+
+      // 4. Redirect or show placeholder toast
+      if (isPlaceholderUrl) {
+        toast({
+          title: "Amazon book URL not configured yet.",
+          description: "Your email has been saved. We'll send you the link as soon as the book is live.",
+        });
+      } else {
+        window.open(AMAZON_BOOK_URL, "_blank", "noopener,noreferrer");
+      }
+
       setCtaModalOpen(false);
-    } else {
-      window.open(AMAZON_BOOK_URL, "_blank", "noopener,noreferrer");
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
+      toast({
+        title: "Unable to save your details",
+        description: message,
+        variant: "destructive",
+      });
+    } finally {
       setIsSubmitting(false);
-      setCtaModalOpen(false);
     }
   }
 

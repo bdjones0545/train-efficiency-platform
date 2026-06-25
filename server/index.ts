@@ -612,6 +612,9 @@ app.use((req, res, next) => {
   const { registerAttendanceRoutes } = await import("./attendance-routes");
   await registerAttendanceRoutes(app);
 
+  const { registerBookFunnelRoutes } = await import("./book-funnel-routes");
+  await registerBookFunnelRoutes(app);
+
   const { registerEmailNotificationRoutes } = await import("./email-notification-routes");
   await registerEmailNotificationRoutes(app);
 
