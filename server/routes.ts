@@ -9981,58 +9981,61 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
 
   // ── CEO Agent Chat — POST /api/chat ─────────────────────────────────────────
-  // This is the endpoint the chat-widget.tsx floating panel calls.
-  // It streams SSE data: {"content":"..."} chunks that the widget accumulates.
-  app.post("/api/chat", isAuthenticated, async (req: any, res) => {
+  // Called by chat-widget.tsx. Streams SSE data: {"content":"..."} chunks.
+  // Auth: must be authenticated + ADMIN or COACH role + valid orgId (server-resolved).
+  app.post("/api/chat", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     const label = "[CEO Agent /api/chat]";
     try {
       console.log(`${label} route entered`);
+
+      // ── Auth & org resolution (same pattern as /api/business-command-center) ──
       const userId = req.user?.claims?.sub ?? req.user?.id;
       if (!userId) {
-        console.warn(`${label} no userId — unauthenticated`);
+        console.warn(`${label} auth failed — no userId`);
         return res.status(401).json({ message: "Unauthorized" });
       }
-
       const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId ?? null;
-      console.log(`${label} userId=${userId} orgId=${orgId} role=${profile?.role}`);
+      if (!profile?.organizationId) {
+        console.warn(`${label} org resolution failed userId=${userId}`);
+        return res.status(403).json({ message: "No organization" });
+      }
+      const orgId = profile.organizationId;
+      console.log(`${label} auth passed userId=<redacted> orgId=${orgId} role=${profile.role}`);
 
+      // ── Validate payload ──────────────────────────────────────────────────────
       const { messages } = req.body;
-      console.log(`${label} payload keys=${Object.keys(req.body).join(",")} messages count=${Array.isArray(messages) ? messages.length : "N/A"}`);
       if (!messages || !Array.isArray(messages)) {
         return res.status(400).json({ message: "messages array required" });
       }
 
+      // ── Resolve user display name and coach profile ───────────────────────────
       const user = await storage.getUser(userId);
       const coachProfile = await storage.getCoachProfileByUserId(userId);
       const userName = user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() : null;
 
-      // Build rich business context for the CEO agent
+      // ── Build CEO business context ────────────────────────────────────────────
       let businessContext: string | null = null;
-      if (orgId) {
-        try {
-          businessContext = await buildCommandCenterContextString(orgId);
-          console.log(`${label} business context built (${businessContext?.length ?? 0} chars)`);
-        } catch (ctxErr: any) {
-          console.warn(`${label} business context failed: ${ctxErr?.message}`);
-        }
+      try {
+        businessContext = await buildCommandCenterContextString(orgId);
+        console.log(`${label} business context built chars=${businessContext?.length ?? 0}`);
+      } catch (ctxErr: any) {
+        console.warn(`${label} business context failed: ${ctxErr?.message}`);
       }
 
-      // Set SSE headers — the widget reads data: {"content":"..."} chunks
+      // ── SSE headers — widget reads data: {"content":"..."} lines ─────────────
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache");
       res.setHeader("Connection", "keep-alive");
       res.setHeader("X-Accel-Buffering", "no");
+      console.log(`${label} SSE stream starting`);
 
-      const model = "gpt-5.1";
-      console.log(`${label} starting OpenAI stream model=${model}`);
-
+      // ── Stream from OpenAI via handleAssistantMessage ─────────────────────────
       let chunkCount = 0;
       try {
         const stream = handleAssistantMessage(
           messages,
           userId,
-          profile?.role ?? "ADMIN",
+          profile.role ?? "ADMIN",
           userName,
           coachProfile?.id ?? null,
           orgId,
@@ -10042,21 +10045,22 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
           chunkCount++;
           res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
         }
-        console.log(`${label} OpenAI stream complete chunks=${chunkCount}`);
+        console.log(`${label} stream complete chunks=${chunkCount}`);
       } catch (streamErr: any) {
         console.error(`${label} OpenAI stream error: ${streamErr?.message}`);
         if (!res.headersSent) {
-          return res.status(500).json({ message: streamErr.message });
+          return res.status(500).json({ message: "AI stream error" });
         }
-        res.write(`data: ${JSON.stringify({ content: "\n\nError: " + streamErr.message })}\n\n`);
+        res.write(`data: ${JSON.stringify({ content: "\n\nI encountered an error. Please try again." })}\n\n`);
       }
 
       res.write("data: [DONE]\n\n");
       res.end();
-      console.log(`${label} response ended successfully`);
+      console.log(`${label} response ended status=200`);
     } catch (err: any) {
       console.error(`${label} outer error: ${err?.message}`);
-      if (!res.headersSent) res.status(500).json({ message: err.message });
+      if (handleOrgError(err, res)) return;
+      if (!res.headersSent) res.status(500).json({ message: "Internal server error" });
     }
   });
 
