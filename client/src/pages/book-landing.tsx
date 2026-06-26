@@ -265,82 +265,15 @@ export default function BookLandingPage() {
               </div>
             </div>
 
-            {/* Book cover — component-based */}
+            {/* Book hero image */}
             <div className="order-1 md:order-2 flex justify-center relative">
               <div className="absolute -inset-10 bg-[#ffd274]/5 blur-[100px] rounded-full pointer-events-none" />
-              <div
-                className="relative z-10"
-                style={{ animation: "subtle-float 6s ease-in-out infinite" }}
-              >
-                {/* Book spine + cover block */}
-                <div
-                  className="w-[240px] md:w-[320px] rounded-xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.7),0_0_60px_rgba(246,190,55,0.18)] select-none"
-                  data-testid="img-book-cover"
-                  style={{
-                    background: "linear-gradient(160deg, #1a1814 0%, #0d0c0a 60%, #1f1c16 100%)",
-                    border: "1px solid rgba(255,210,116,0.15)",
-                  }}
-                >
-                  {/* Top accent bar */}
-                  <div className="h-1.5 w-full bg-gradient-to-r from-[#ffd274] via-[#ebb42d] to-[#ffd274]" />
-
-                  <div className="px-8 py-10 flex flex-col gap-6">
-                    {/* Series badge */}
-                    <div className="inline-flex self-start items-center gap-1.5 bg-[#ffd274]/10 border border-[#ffd274]/25 px-3 py-1 rounded-full">
-                      <Dumbbell className="h-3 w-3 text-[#ffd274]" />
-                      <span className="text-[9px] font-bold tracking-[0.18em] uppercase text-[#ffd274]">
-                        Evidence-Based Performance
-                      </span>
-                    </div>
-
-                    {/* Title */}
-                    <div>
-                      <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-[#9c8f7a] mb-3">
-                        The Structure of
-                      </p>
-                      <h2
-                        className="text-[38px] md:text-[44px] font-black leading-[1.0] text-[#e5e2e1]"
-                        style={{ letterSpacing: "-0.02em" }}
-                      >
-                        TRAINING
-                      </h2>
-                      <p className="text-sm font-bold text-[#ffd274] tracking-wide mt-2 leading-snug">
-                        for Strength and Speed<br />for Youth Athletes
-                      </p>
-                    </div>
-
-                    {/* Divider */}
-                    <div className="h-px w-full bg-gradient-to-r from-transparent via-[#ffd274]/30 to-transparent" />
-
-                    {/* Author block */}
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full bg-[#ffd274]/10 border border-[#ffd274]/20 flex items-center justify-center shrink-0">
-                        <Award className="h-4 w-4 text-[#ffd274]" />
-                      </div>
-                      <div>
-                        <p className="text-xs font-bold text-[#e5e2e1] leading-none">Bryan Jones</p>
-                        <p className="text-[9px] text-[#9c8f7a] tracking-widest uppercase mt-0.5">MS, CSCS, PES, EP-C</p>
-                      </div>
-                    </div>
-
-                    {/* Bottom accent */}
-                    <div className="flex items-center gap-2 pt-1">
-                      {[...Array(5)].map((_, i) => (
-                        <Star key={i} className="h-3 w-3 fill-[#ffd274] text-[#ffd274]" />
-                      ))}
-                      <span className="text-[9px] text-[#9c8f7a] ml-1">Evidence-Based</span>
-                    </div>
-                  </div>
-
-                  {/* Bottom accent bar */}
-                  <div className="h-1 w-full bg-gradient-to-r from-[#ffd274]/20 via-[#ffd274]/60 to-[#ffd274]/20" />
-                </div>
-
-                {/* Available on Amazon badge */}
-                <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#ffd274] text-[#402d00] text-xs font-bold tracking-widest uppercase px-4 py-1.5 rounded-full shadow-lg">
-                  Available on Amazon
-                </div>
-              </div>
+              <img
+                src={bookHeroImg}
+                alt="The Structure of Training for Strength and Speed for Youth Athletes by Bryan Jones"
+                className="relative z-10 w-full max-w-[480px] rounded-xl"
+                data-testid="img-book-hero"
+              />
             </div>
           </div>
         </section>
