@@ -1037,19 +1037,19 @@ function ValueCard({
 /* ── Static data ── */
 const previewChapters = [
   {
-    title: "The Science of Speed: Unlocking Athletic Velocity",
+    title: "Adaptation: The Objective",
     excerpt:
-      "An introduction to the neural mechanisms behind acceleration and how coaches can train them intentionally from day one.",
+      "Learn why adaptation—not fatigue—is the true objective of training and how every successful program should be designed around producing meaningful long-term physiological adaptations rather than simply making athletes tired.",
   },
   {
-    title: "Structural Strength for the Developing Athlete",
+    title: "Stress: The Language of Adaptation",
     excerpt:
-      "Why building connective tissue strength early determines long-term career trajectory — and exactly how to do it safely.",
+      "Explore how the body interprets mechanical, metabolic, and neurological stress to create adaptation, and why understanding stress is essential for designing effective training programs.",
   },
   {
-    title: "Program Architecture: Building Your Training Blueprint",
+    title: "Recovery: Where Adaptation Occurs",
     excerpt:
-      "A step-by-step system for constructing periodized training blocks that adapt to each athlete's unique development stage.",
+      "Discover why adaptation happens during recovery—not during the workout itself—and how sleep, nutrition, and proper recovery strategies determine long-term athletic development.",
   },
 ];
 
