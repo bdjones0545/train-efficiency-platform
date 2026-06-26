@@ -74,12 +74,22 @@ export async function getStripeSync() {
     const { StripeSync } = await import('stripe-replit-sync');
     const secretKey = await getStripeSecretKey();
 
+    const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+    if (!webhookSecret) {
+      console.warn(
+        '[Stripe] STRIPE_WEBHOOK_SECRET is not set. ' +
+        'Webhook signature verification will fall back to the managed-webhook secret stored in the database. ' +
+        'Set STRIPE_WEBHOOK_SECRET to the signing secret from your Stripe dashboard for explicit verification.'
+      );
+    }
+
     stripeSync = new StripeSync({
       poolConfig: {
         connectionString: process.env.DATABASE_URL!,
         max: 2,
       },
       stripeSecretKey: secretKey,
+      ...(webhookSecret ? { stripeWebhookSecret: webhookSecret } : {}),
     });
   }
   return stripeSync;
