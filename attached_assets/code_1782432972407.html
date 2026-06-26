@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Redeem Your TrainChat Bonus | TrainEfficiency</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;500&amp;family=Space+Grotesk:wght@700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary": "#313030",
+                        "surface-container-low": "#1c1b1b",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "surface-variant": "#353534",
+                        "on-primary-container": "#624700",
+                        "secondary-fixed": "#e2e2e2",
+                        "tertiary": "#dad8d7",
+                        "primary": "#ffd274",
+                        "on-tertiary-container": "#4c4b4b",
+                        "on-secondary-container": "#b4b5b5",
+                        "surface-dim": "#131313",
+                        "surface": "#131313",
+                        "surface-container-highest": "#353534",
+                        "secondary-container": "#454747",
+                        "on-primary-fixed": "#261a00",
+                        "tertiary-fixed": "#e5e2e1",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "primary-container": "#ebb42d",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#454747",
+                        "on-surface": "#e5e2e1",
+                        "surface-container": "#201f1f",
+                        "inverse-on-surface": "#313030",
+                        "inverse-primary": "#795900",
+                        "on-primary": "#402d00",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "tertiary-container": "#bebcbb",
+                        "surface-container-high": "#2a2a2a",
+                        "outline-variant": "#4f4634",
+                        "on-secondary": "#2f3131",
+                        "on-error": "#690005",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "background": "#131313",
+                        "on-background": "#e5e2e1",
+                        "surface-tint": "#f6be37",
+                        "primary-fixed": "#ffdfa0",
+                        "inverse-surface": "#e5e2e1",
+                        "outline": "#9c8f7a",
+                        "primary-fixed-dim": "#f6be37",
+                        "secondary": "#c6c6c7",
+                        "error": "#ffb4ab",
+                        "error-container": "#93000a",
+                        "on-surface-variant": "#d3c5ae",
+                        "on-primary-fixed-variant": "#5c4300",
+                        "on-tertiary-fixed": "#1c1b1b",
+                        "surface-bright": "#3a3939",
+                        "surface-container-lowest": "#0e0e0e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-max": "1200px",
+                        "unit": "8px",
+                        "section-gap": "120px",
+                        "gutter": "24px",
+                        "margin-mobile": "20px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Hanken Grotesk"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "label-caps": ["Space Grotesk"],
+                        "display-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["32px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "headline-lg": ["48px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-lg-mobile": ["36px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                        "label-caps": ["12px", {"lineHeight": "1.0", "letterSpacing": "0.1em", "fontWeight": "700"}],
+                        "display-lg": ["72px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "800"}]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .glass-card {
+            background: rgba(26, 26, 26, 0.6);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+        .soft-glow {
+            box-shadow: 0 0 40px rgba(246, 190, 55, 0.08);
+        }
+        .drop-zone-active {
+            border-color: #ffd274;
+            background: rgba(255, 210, 116, 0.05);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        @keyframes subtle-pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        .animate-pulse-custom {
+            animation: subtle-pulse 3s infinite ease-in-out;
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body-md selection:bg-primary selection:text-on-primary">
+<!-- Top Navigation Shell -->
+<header class="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-white/10">
+<nav class="flex justify-between items-center px-gutter py-4 max-w-container-max mx-auto">
+<div class="flex items-center gap-2 cursor-pointer active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-primary" data-icon="fitness_center">fitness_center</span>
+<span class="font-headline-md text-headline-md font-bold text-primary">TrainEfficiency</span>
+</div>
+<div class="hidden md:flex gap-8 items-center">
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors" href="#">Overview</a>
+<a class="font-label-caps text-label-caps text-primary border-b-2 border-primary pb-1" href="#">Redeem Bonus</a>
+<a class="font-label-caps text-label-caps text-on-surface-variant hover:text-primary transition-colors" href="#">Support</a>
+</div>
+<div class="cursor-pointer active:scale-95 transition-transform md:hidden">
+<span class="material-symbols-outlined text-on-surface" data-icon="menu">menu</span>
+</div>
+</nav>
+</header>
+<main class="pt-32 pb-section-gap px-margin-mobile md:px-gutter max-w-[800px] mx-auto min-h-screen">
+<!-- Header Section -->
+<section class="text-center mb-16">
+<span class="inline-block font-label-caps text-label-caps bg-primary/10 text-primary px-4 py-2 rounded-full mb-6 uppercase tracking-widest border border-primary/20">
+                Exclusive Bonus Access
+            </span>
+<h1 class="font-headline-lg text-headline-lg mb-4">Redeem Your TrainChat Bonus</h1>
+<p class="font-body-lg text-body-lg text-on-surface-variant max-w-[600px] mx-auto">
+                Upload your Amazon purchase confirmation to unlock 30 days of elite-level adaptive performance training.
+            </p>
+</section>
+<!-- Upload Interface -->
+<section class="glass-card soft-glow rounded-xl p-8 md:p-12">
+<div class="mb-10">
+<h3 class="font-headline-md text-headline-md mb-2">1. Upload your receipt</h3>
+<p class="text-on-surface-variant">Drag and drop your file or click to browse. We accept Amazon digital receipts or photos of physical invoices.</p>
+</div>
+<!-- Drag & Drop Zone -->
+<div class="relative border-2 border-dashed border-outline-variant rounded-xl p-12 transition-all duration-300 flex flex-col items-center justify-center text-center group cursor-pointer hover:border-primary/50 bg-surface-container-low/50" id="drop-zone">
+<input accept=".jpg,.png,.pdf,.heic" class="hidden" id="file-input" type="file"/>
+<div class="flex flex-col items-center" id="upload-prompt">
+<div class="w-16 h-16 rounded-full bg-surface-container-highest flex items-center justify-center mb-6 group-hover:bg-primary group-hover:text-on-primary transition-colors duration-300">
+<span class="material-symbols-outlined text-4xl" data-icon="cloud_upload">cloud_upload</span>
+</div>
+<div class="space-y-2">
+<p class="font-headline-md text-headline-md text-on-surface">Click or drag file here</p>
+<p class="text-on-surface-variant font-body-md">JPG, PNG, PDF, or HEIC (Max 10MB)</p>
+</div>
+</div>
+<!-- Preview Placeholder (Hidden by default) -->
+<div class="hidden w-full flex-col items-center" id="file-preview">
+<div class="w-24 h-32 bg-surface-container-highest rounded-lg flex items-center justify-center relative overflow-hidden mb-4 border border-white/10">
+<span class="material-symbols-outlined text-4xl opacity-50" data-icon="description">description</span>
+<div class="absolute bottom-0 left-0 right-0 bg-primary/90 text-on-primary text-[10px] py-1 font-bold">READY</div>
+</div>
+<p class="font-body-md text-primary font-semibold mb-2" id="file-name">receipt_amazon_2024.pdf</p>
+<button class="text-error text-label-caps font-label-caps flex items-center gap-1 hover:underline" id="remove-file">
+<span class="material-symbols-outlined text-sm" data-icon="close">close</span> REMOVE FILE
+                    </button>
+</div>
+</div>
+<!-- Email Input -->
+<div class="mt-10 space-y-4">
+<label class="block font-label-caps text-label-caps text-on-surface-variant tracking-wider">2. YOUR DELIVERY EMAIL</label>
+<div class="relative">
+<input class="w-full bg-surface-container-highest border-b-2 border-outline-variant focus:border-primary focus:ring-0 text-on-surface py-4 px-2 transition-colors duration-300 placeholder:text-on-surface-variant/30" placeholder="coach@example.com" type="email"/>
+</div>
+</div>
+<!-- Submit Action -->
+<div class="mt-12">
+<button class="w-full bg-primary text-on-primary font-headline-md text-headline-md py-6 rounded-full hover:scale-[1.01] active:scale-[0.98] transition-all duration-300 soft-glow flex items-center justify-center gap-3">
+                    Verify Purchase
+                    <span class="material-symbols-outlined" data-icon="arrow_forward">arrow_forward</span>
+</button>
+<p class="text-center text-on-surface-variant text-[12px] mt-6 flex items-center justify-center gap-2">
+<span class="material-symbols-outlined text-sm text-primary" data-icon="lock" style="font-variation-settings: 'FILL' 1;">lock</span>
+                    Your data is processed securely via high-fidelity AWS infrastructure.
+                </p>
+</div>
+</section>
+<!-- Support/Info Cards -->
+<section class="grid grid-cols-1 md:grid-cols-2 gap-gutter mt-12">
+<div class="glass-card p-6 rounded-xl border-l-4 border-l-primary/40">
+<h4 class="font-label-caps text-label-caps text-primary mb-2">WHERE IS MY RECEIPT?</h4>
+<p class="text-on-surface-variant text-body-md">Log in to Amazon, go to "Your Orders," and click "View Invoice" to download a PDF or take a screenshot.</p>
+</div>
+<div class="glass-card p-6 rounded-xl border-l-4 border-l-secondary/40">
+<h4 class="font-label-caps text-label-caps text-secondary mb-2">PROCESSING TIME</h4>
+<p class="text-on-surface-variant text-body-md">Verification is usually instant. You will receive your TrainChat access link via email within 5-10 minutes.</p>
+</div>
+</section>
+</main>
+<!-- Footer -->
+<footer class="w-full py-section-gap bg-surface-container-lowest border-t border-outline-variant">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-unit max-w-container-max mx-auto px-margin-mobile md:px-gutter">
+<div class="space-y-6">
+<span class="text-headline-md font-headline-md text-on-surface">TrainEfficiency</span>
+<p class="text-on-surface-variant max-w-sm">Built for coaches, parents, and serious youth athletes who value data-driven results over hype.</p>
+<p class="font-body-md text-body-md opacity-80">© 2024 TrainEfficiency. All Rights Reserved. Evidence-Based Performance.</p>
+</div>
+<div class="flex flex-col md:items-end justify-center space-y-4">
+<div class="flex gap-8">
+<a class="text-on-surface-variant hover:text-on-surface transition-opacity opacity-80 hover:opacity-100" href="#">Terms</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-opacity opacity-80 hover:opacity-100" href="#">Privacy</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-opacity opacity-80 hover:opacity-100" href="#">Support</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-opacity opacity-80 hover:opacity-100" href="#">Contact</a>
+</div>
+<div class="flex gap-4">
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center cursor-pointer hover:bg-primary hover:text-on-primary transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="share">share</span>
+</div>
+<div class="w-10 h-10 rounded-full bg-surface-container-high flex items-center justify-center cursor-pointer hover:bg-primary hover:text-on-primary transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="language">language</span>
+</div>
+</div>
+</div>
+</div>
+</footer>
+<!-- Bottom Navigation Shell (Mobile Only) -->
+<nav class="md:hidden fixed bottom-0 left-0 w-full z-50 rounded-t-xl bg-surface-container-lowest/90 backdrop-blur-lg border-t border-primary/20 shadow-[0_-8px_32px_rgba(246,190,55,0.15)] flex justify-around items-center h-20 px-6 pb-2">
+<div class="flex flex-col items-center justify-center text-on-surface-variant cursor-pointer transition-all duration-300 ease-in-out hover:text-primary">
+<span class="material-symbols-outlined" data-icon="menu_book">menu_book</span>
+<span class="font-label-caps text-[10px] mt-1">Overview</span>
+</div>
+<div class="flex flex-col items-center justify-center bg-primary text-on-primary rounded-full px-6 py-2 cursor-pointer transition-all duration-300 ease-in-out">
+<span class="material-symbols-outlined" data-icon="shopping_cart">shopping_cart</span>
+<span class="font-label-caps text-[10px] mt-1">Order Now</span>
+</div>
+</nav>
+<script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const uploadPrompt = document.getElementById('upload-prompt');
+        const filePreview = document.getElementById('file-preview');
+        const fileName = document.getElementById('file-name');
+        const removeFile = document.getElementById('remove-file');
+
+        // Drag and drop interaction
+        ['dragenter', 'dragover'].forEach(eventName => {
+            dropZone.addEventListener(eventName, (e) => {
+                e.preventDefault();
+                dropZone.classList.add('drop-zone-active');
+            }, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener</script></body></html>

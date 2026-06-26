@@ -1,0 +1,316 @@
+Implement the Book Receipt Redemption Portal using the attached MD specification.
+
+This is the next step in the existing book funnel.
+
+Current flow:
+
+* /book
+* Email Capture Modal
+* /book/thank-you
+* Amazon Purchase
+* Confirmation Email
+
+The email currently links to:
+
+/book/redeem
+
+This route should now be fully implemented.
+
+Do not build admin approval yet.
+Do not build promo code delivery yet.
+Do not build automatic AI receipt verification yet.
+
+The goal is to create a production-quality customer-facing receipt redemption experience.
+
+---
+
+## Route
+
+Add:
+
+/book/redeem
+
+---
+
+## Purpose
+
+Allow customers who purchased the book on Amazon to securely upload proof of purchase so they can receive their free month of TrainChat after manual approval.
+
+This page should feel like a polished portal, not simply a file upload screen.
+
+---
+
+## Page Layout
+
+### Hero
+
+Headline:
+
+Redeem Your TrainChat Bonus
+
+Subheadline:
+
+Upload your Amazon purchase confirmation to verify your purchase and activate your free month of TrainChat.
+
+Display a professional illustration or upload graphic.
+
+---
+
+### Progress
+
+Display the completed funnel:
+
+✓ Email Submitted
+
+✓ Amazon Purchase
+
+Current Step
+
+Upload Receipt
+
+Upcoming Step
+
+Approval
+
+Upcoming Step
+
+TrainChat Activated
+
+---
+
+### Upload Form
+
+Fields:
+
+Email Address
+
+Receipt Upload
+
+Accepted file types:
+
+* JPG
+* JPEG
+* PNG
+* PDF
+* HEIC
+
+Maximum size:
+
+10 MB
+
+Large drag-and-drop upload area.
+
+Allow click-to-upload.
+
+Display supported formats.
+
+Show upload progress.
+
+Preview uploaded image or filename after selection.
+
+---
+
+### Helpful Tips
+
+Display a premium info card.
+
+Explain acceptable uploads:
+
+* Amazon order confirmation page
+* Amazon order history screenshot
+* Amazon confirmation email screenshot
+* Amazon invoice PDF
+
+Explain:
+
+"We only need enough information to verify your purchase."
+
+---
+
+### Submission
+
+Primary Button
+
+Submit Receipt
+
+Secondary Button
+
+Back to Book Page
+
+---
+
+## Backend
+
+Reuse existing book_funnel_leads.
+
+Reuse existing book_funnel_events.
+
+Create or reuse:
+
+book_receipt_submissions
+
+Store:
+
+* leadId (nullable)
+* email
+* receiptFileUrl
+* originalFilename
+* mimeType
+* fileSize
+* status
+* uploadedAt
+* createdAt
+* updatedAt
+
+Status defaults to:
+
+pending_review
+
+---
+
+## API
+
+Create:
+
+POST /api/book-funnel/receipt
+
+Behavior:
+
+Validate:
+
+* Email
+* Supported file type
+* File size
+
+Attempt to associate the receipt with an existing lead by email.
+
+Store uploaded receipt using the application's existing upload/storage approach.
+
+Create submission.
+
+Create event:
+
+book_receipt_uploaded
+
+Return success.
+
+---
+
+## Frontend Behavior
+
+After successful upload:
+
+Navigate to:
+
+/book/redeem/success
+
+Do not generate promo codes.
+
+Do not approve automatically.
+
+Display:
+
+"Your receipt has been received and is pending verification."
+
+---
+
+## Tracking
+
+Log:
+
+book_receipt_page_viewed
+
+book_receipt_selected
+
+book_receipt_uploaded
+
+book_receipt_upload_failed
+
+Reuse existing analytics/event logging.
+
+---
+
+## Error States
+
+Handle:
+
+Invalid email
+
+Unsupported file type
+
+File too large
+
+Upload failure
+
+Network failure
+
+Duplicate submission
+
+Use friendly messages.
+
+---
+
+## Design
+
+Match the existing book funnel.
+
+Reuse components.
+
+Mobile-first.
+
+Premium SaaS appearance.
+
+Responsive.
+
+Accessible.
+
+No new design language.
+
+---
+
+## Security
+
+Server-side validation.
+
+Never trust client MIME type.
+
+Sanitize filenames.
+
+Generate unique stored filenames.
+
+Do not expose storage paths unnecessarily.
+
+Limit uploads to supported file types.
+
+---
+
+## Future Integration
+
+Leave clearly marked TODOs for:
+
+* Manual admin approval
+* AI receipt verification
+* Promo code generation
+* Automatic TrainChat activation
+
+Build the page so these features can plug in later without restructuring the code.
+
+---
+
+## After implementation
+
+Run:
+
+npm run check
+
+Report:
+
+* Files created
+* Files modified
+* Route added
+* Database changes
+* API endpoints added
+* Upload/storage implementation
+* Events tracked
+* TODOs
+* Typecheck results
