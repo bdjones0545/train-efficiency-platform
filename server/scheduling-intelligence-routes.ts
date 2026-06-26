@@ -177,6 +177,10 @@ export async function registerSchedulingIntelligenceRoutes(
       const totalRegistered = activeBookings.reduce((s: number, b: any) => s + parseInt(b.registered_count || 0), 0);
       const avgUtil = totalCapacity > 0 ? Math.round((totalRegistered / totalCapacity) * 100) : 0;
 
+      // revenueCapture / revenueScore / revenueFactor are SCHEDULING CAPACITY metrics:
+      // they measure what % of maximum possible capacity revenue was filled via registrations.
+      // These are intentionally booking-based fill-rate estimates, NOT accounting revenue.
+      // Accounting revenue (ledger-based) lives in financial-metrics.ts.
       const maxRevenue = activeBookings.reduce((s: number, b: any) =>
         s + parseInt(b.max_participants || 6) * parseInt(b.price_cents || 0), 0);
       const actualRevenue = activeBookings.reduce((s: number, b: any) =>
