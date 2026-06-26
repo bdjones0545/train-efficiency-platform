@@ -225,12 +225,6 @@ export default function BookLandingPage() {
           <div className="max-w-[1200px] mx-auto grid grid-cols-1 md:grid-cols-2 gap-16 items-center z-10 w-full">
             {/* Text side */}
             <div className="order-2 md:order-1 space-y-8">
-              <div className="inline-flex items-center gap-2 bg-[#ffd274]/10 border border-[#ffd274]/20 px-4 py-1.5 rounded-full">
-                <span className="text-xs font-bold tracking-widest uppercase text-[#ffd274]">
-                  Evidence-Based Performance
-                </span>
-              </div>
-
               <h1 className="text-[44px] md:text-[64px] font-extrabold leading-[1.1] tracking-[-0.03em] text-[#e5e2e1]">
                 The Structure of Training for{" "}
                 <span className="text-[#ffd274]">Strength and Speed</span> for
