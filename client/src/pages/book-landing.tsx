@@ -516,6 +516,11 @@ export default function BookLandingPage() {
           id="author"
         >
           <div className="max-w-[1200px] mx-auto">
+            <div className="text-center mb-16 space-y-4">
+              <h2 className="text-[36px] md:text-[48px] font-bold leading-[1.2] tracking-[-0.02em] text-[#e5e2e1]">
+                Meet the Author
+              </h2>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
               {/* Author photo */}
               <div className="relative flex justify-center">
