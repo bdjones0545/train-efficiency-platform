@@ -9,16 +9,42 @@ function getRows(result: any): any[] {
   return Array.isArray(result) ? result : ((result as any)?.rows ?? []);
 }
 
+/**
+ * Resolve userId and org/role profile for both auth paths:
+ *  - Replit OIDC  → req.user.claims.sub
+ *  - Custom email/password → req.user.id
+ * Role and organizationId live in user_profiles, never on req.user directly.
+ */
+async function resolveAuthProfile(req: any): Promise<{ userId: string; orgId: string; role: string } | null> {
+  const userId = req.user?.claims?.sub ?? req.user?.id;
+  if (!userId) return null;
+  const raw = await db.execute(sql`
+    SELECT role, organization_id FROM user_profiles WHERE user_id = ${userId} LIMIT 1
+  `).catch(() => ({ rows: [] }));
+  const profile = (Array.isArray(raw) ? raw : (raw as any)?.rows ?? [])[0];
+  if (!profile?.organization_id) return null;
+  return { userId, orgId: profile.organization_id, role: profile.role ?? "CLIENT" };
+}
+
 export async function registerSchedulingIntelligenceRoutes(
   app: Express,
   isAuthenticated: any
 ) {
-  // Inline role guard: admin/coach/staff-only intelligence endpoints
-  const privilegedOnly = (req: Request, res: Response, next: Function) => {
-    const role = (req as any).user?.role;
+  // Inline role guard: admin/coach/staff-only intelligence endpoints.
+  // Must be async — role and organizationId live in user_profiles, never on req.user directly.
+  // Also caches the resolved profile on req._authProfile so handlers need not re-query.
+  const privilegedOnly = async (req: Request, res: Response, next: Function) => {
+    const userId = (req as any).user?.claims?.sub ?? (req as any).user?.id;
+    if (!userId) return res.status(401).json({ message: "Unauthorized" });
+    const raw = await db.execute(sql`
+      SELECT role, organization_id FROM user_profiles WHERE user_id = ${userId} LIMIT 1
+    `).catch(() => ({ rows: [] }));
+    const profile = (Array.isArray(raw) ? raw : (raw as any)?.rows ?? [])[0];
+    const role = profile?.role;
     if (!["ADMIN", "COACH", "STAFF"].includes(role)) {
       return res.status(403).json({ message: "Insufficient permissions — requires admin, coach, or staff role" });
     }
+    (req as any)._authProfile = { userId, orgId: profile.organization_id, role };
     next();
   };
   // ─── Ensure tables exist ──────────────────────────────────────────────────
@@ -100,7 +126,7 @@ export async function registerSchedulingIntelligenceRoutes(
   // ─── Health Score ─────────────────────────────────────────────────────────
   app.get("/api/scheduling-intelligence/health-score", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const now = new Date();
@@ -219,7 +245,7 @@ export async function registerSchedulingIntelligenceRoutes(
   // ─── Session Performance Score ────────────────────────────────────────────
   app.get("/api/scheduling-intelligence/session-performance/:bookingId", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       const { bookingId } = req.params;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
@@ -295,7 +321,7 @@ export async function registerSchedulingIntelligenceRoutes(
   // ─── Opportunity Inbox ────────────────────────────────────────────────────
   app.get("/api/scheduling-intelligence/opportunities", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const now = new Date();
@@ -567,7 +593,7 @@ export async function registerSchedulingIntelligenceRoutes(
   // ─── Revenue Recovery (72h focus + AI recommendations) ────────────────────
   app.get("/api/scheduling-intelligence/revenue-recovery", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const now = new Date();
@@ -745,7 +771,7 @@ export async function registerSchedulingIntelligenceRoutes(
   // ─── Retention Risk ───────────────────────────────────────────────────────
   app.get("/api/scheduling-intelligence/retention-risk", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const now = new Date();
@@ -837,7 +863,7 @@ export async function registerSchedulingIntelligenceRoutes(
   // ─── Demand Forecast (per-session) ───────────────────────────────────────
   app.get("/api/scheduling-intelligence/demand-forecast/:bookingId", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       const { bookingId } = req.params;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
@@ -925,7 +951,7 @@ export async function registerSchedulingIntelligenceRoutes(
   // ─── Demand Forecast (org-level) ──────────────────────────────────────────
   app.get("/api/scheduling-intelligence/demand-forecast", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const now = new Date();
@@ -1021,7 +1047,7 @@ export async function registerSchedulingIntelligenceRoutes(
   // ─── Utilization Intelligence (coach recommendations) ─────────────────────
   app.get("/api/scheduling-intelligence/utilization-intelligence", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const now = new Date();
@@ -1103,7 +1129,7 @@ export async function registerSchedulingIntelligenceRoutes(
   // ─── Fill Campaign Generator (AI) ─────────────────────────────────────────
   app.post("/api/scheduling-intelligence/fill-campaign/:bookingId", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const { bookingId } = req.params;
@@ -1171,7 +1197,7 @@ Return as JSON:
   // ─── Capacity Optimization ────────────────────────────────────────────────
   app.get("/api/scheduling-intelligence/capacity-optimization", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const now = new Date();
@@ -1327,7 +1353,7 @@ Return as JSON:
   // ─── Athlete Session Recommendations (auth-scoped) ────────────────────────
   app.get("/api/scheduling-intelligence/athlete-recommendations", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       const authUserId = (req as any).user?.id;
       const authRole = (req as any).user?.role;
       if (!orgId) return res.status(403).json({ message: "No org" });
@@ -1448,7 +1474,7 @@ Return as JSON:
   // ─── Persist fill campaign draft ──────────────────────────────────────────
   app.post("/api/scheduling-intelligence/fill-campaign/save", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
       const { sessionId, subject, emailBody, smsBody, targetCount } = req.body;
       await db.execute(sql`
@@ -1464,7 +1490,7 @@ Return as JSON:
   // ─── Snapshot health score ────────────────────────────────────────────────
   app.post("/api/scheduling-intelligence/health-score/snapshot", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
-      const orgId = (req as any).user?.organizationId;
+      const orgId = (req as any)._authProfile?.orgId;
       if (!orgId) return res.status(403).json({ message: "No org" });
       const { score, label, summary, breakdown } = req.body;
       await db.execute(sql`
@@ -1479,11 +1505,18 @@ Return as JSON:
 
   // ─── AI Scheduling Copilot ────────────────────────────────────────────────
   app.post("/api/scheduling-intelligence/copilot", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    console.log("[copilot] route entered");
     try {
-      const orgId = (req as any).user?.organizationId;
-      if (!orgId) return res.status(403).json({ message: "No org" });
+      const authProfile = (req as any)._authProfile;
+      console.log("[copilot] auth passed — userId:", authProfile?.userId, "orgId:", authProfile?.orgId, "role:", authProfile?.role);
+      if (!authProfile?.orgId) {
+        console.log("[copilot] BLOCKED: no orgId in _authProfile");
+        return res.status(403).json({ message: "No org" });
+      }
+      const { orgId } = authProfile;
 
       const { question, conversationHistory } = req.body;
+      console.log("[copilot] payload keys:", Object.keys(req.body), "question length:", question?.length ?? 0);
       if (!question) return res.status(400).json({ message: "Question required" });
 
       const now = new Date();
@@ -1496,6 +1529,7 @@ Return as JSON:
       const thirtyDaysAgo = new Date(now);
       thirtyDaysAgo.setDate(now.getDate() - 30);
 
+      console.log("[copilot] fetching scheduling context from DB");
       const [statsRaw, upcomingRaw, recentRaw] = await Promise.all([
         db.execute(sql`
           SELECT
@@ -1503,7 +1537,7 @@ Return as JSON:
             COUNT(*) FILTER (WHERE status = 'CANCELLED' AND start_at >= ${weekStart.toISOString()}) as cancellations_this_week,
             COUNT(*) FILTER (WHERE status IN ('CONFIRMED','COMPLETED') AND start_at >= ${thirtyDaysAgo.toISOString()}) as sessions_30d
           FROM bookings WHERE organization_id = ${orgId}
-        `).catch(() => ({ rows: [{}] })),
+        `).catch((err: any) => { console.log("[copilot] stats query failed:", err?.message); return { rows: [{}] }; }),
         db.execute(sql`
           SELECT b.id, b.start_at, b.max_participants, s.name as service_name,
                  u.first_name as coach_first, u.last_name as coach_last,
@@ -1520,7 +1554,7 @@ Return as JSON:
           GROUP BY b.id, s.name, u.first_name, u.last_name
           ORDER BY b.start_at ASC
           LIMIT 10
-        `).catch(() => ({ rows: [] })),
+        `).catch((err: any) => { console.log("[copilot] upcoming query failed:", err?.message); return { rows: [] }; }),
         db.execute(sql`
           SELECT u.first_name, u.last_name, MAX(b.start_at) as last_booking,
                  COUNT(b.id) as total_bookings
@@ -1532,8 +1566,9 @@ Return as JSON:
           GROUP BY u.id, u.first_name, u.last_name
           ORDER BY MAX(b.start_at) DESC
           LIMIT 10
-        `).catch(() => ({ rows: [] })),
+        `).catch((err: any) => { console.log("[copilot] recent clients query failed:", err?.message); return { rows: [] }; }),
       ]);
+      console.log("[copilot] scheduling context OK");
 
       const stats = getRows(statsRaw)[0] || {};
       const upcoming = getRows(upcomingRaw);
@@ -1579,13 +1614,27 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
 
       messages.push({ role: "user", content: question });
 
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages,
-        max_tokens: 500,
-      });
+      console.log("[copilot] calling OpenAI model=gpt-4o-mini messages=", messages.length);
+      let completion: any;
+      try {
+        completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages,
+          max_tokens: 500,
+        });
+        console.log("[copilot] OpenAI call succeeded");
+      } catch (openaiErr: any) {
+        console.error("[copilot] OpenAI call FAILED:", openaiErr?.status, openaiErr?.message, openaiErr?.code);
+        return res.status(500).json({
+          message: "OpenAI call failed",
+          error: openaiErr?.message,
+          code: openaiErr?.code,
+          status: openaiErr?.status,
+        });
+      }
 
       const answer = completion.choices[0]?.message?.content ?? "I couldn't generate a response. Please try again.";
+      console.log("[copilot] responding OK answer length:", answer.length);
 
       res.json({
         answer,
@@ -1600,6 +1649,7 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
         },
       });
     } catch (e: any) {
+      console.error("[copilot] unexpected error:", e?.message, e?.stack?.split("\n")[1]);
       res.status(500).json({ message: "Failed to get copilot response", error: e.message });
     }
   });

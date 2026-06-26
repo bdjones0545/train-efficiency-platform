@@ -217,13 +217,23 @@ export default function AdminSchedulingCopilotPage() {
         },
       ]);
     },
-    onError: () => {
-      toast({ title: "Error", description: "Could not reach the AI copilot.", variant: "destructive" });
+    onError: (err: any) => {
+      const rawMsg = err?.message ?? "";
+      let detail = "Could not reach the AI copilot.";
+      try {
+        const jsonStr = rawMsg.replace(/^\d+:\s*/, "");
+        const parsed = JSON.parse(jsonStr);
+        detail = parsed.error ?? parsed.message ?? detail;
+      } catch {
+        if (rawMsg) detail = rawMsg;
+      }
+      console.error("[copilot-ui] mutation failed:", rawMsg);
+      toast({ title: "Copilot Error", description: detail, variant: "destructive" });
       setMessages(prev => [
         ...prev,
         {
           role: "assistant",
-          content: "Sorry, I encountered an error. Please try again.",
+          content: `Sorry, I encountered an error: ${detail}`,
           timestamp: new Date(),
         },
       ]);
