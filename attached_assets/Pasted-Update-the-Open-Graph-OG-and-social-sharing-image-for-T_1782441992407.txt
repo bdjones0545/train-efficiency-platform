@@ -1,0 +1,59 @@
+Update the Open Graph (OG) and social sharing image for TrainEfficiency so every time someone shares https://trainefficiency.com on LinkedIn, X, Facebook, iMessage, Slack, Discord, etc., it uses the attached image as the preview.
+
+Requirements:
+
+1. Replace the current blue social preview image with the attached image.
+2. Configure all metadata correctly:
+   - og:image
+   - twitter:image
+   - og:image:width
+   - og:image:height
+   - twitter:card = summary_large_image
+3. The image should be served from a permanent public URL (not a local asset path that won't exist after deployment).
+4. The image should be 1200×630 (or preserve the supplied aspect ratio if already optimized for social sharing).
+5. Update the metadata title and description to better represent TrainEfficiency's current positioning.
+
+Use:
+
+Title:
+TrainEfficiency | AI Business Operating System for Strength Coaches
+
+Description:
+Run your fitness business with AI agents. Scheduling, payments, CRM, lead generation, client communication, analytics, and autonomous business operations—all in one platform.
+
+Keywords the preview should communicate:
+• AI Agents
+• Business Operating System
+• Scheduling
+• CRM
+• Payments
+• Lead Generation
+• Automation
+• Strength & Conditioning Coaches
+
+Technical requirements:
+
+• Find where the app generates Open Graph metadata (React Helmet, Vite index.html, Express SSR, etc.)
+• Replace every reference to the old share image.
+• Ensure the image is publicly accessible after deployment.
+• Verify the following tags exist:
+
+<meta property="og:title">
+<meta property="og:description">
+<meta property="og:image">
+<meta property="og:image:width">
+<meta property="og:image:height">
+<meta property="og:type" content="website">
+<meta property="og:url">
+
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title">
+<meta name="twitter:description">
+<meta name="twitter:image">
+
+After making the changes:
+1. Tell me exactly which files were modified.
+2. Show the final metadata.
+3. Confirm the public image URL.
+4. Confirm the site is ready for LinkedIn, Facebook, X, Slack, Discord, and iMessage link previews.
+5. If caching is expected, tell me which cache debugging tools (LinkedIn Post Inspector, Facebook Sharing Debugger, etc.) I should use after deployment.
