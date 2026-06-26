@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useQuery } from "@tanstack/react-query";
 import { fetchJson } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";

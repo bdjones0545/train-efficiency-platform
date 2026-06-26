@@ -493,7 +493,7 @@ function PortalHome({
                   intelligence: "text-cyan-400 bg-cyan-400/10",
                 };
                 const IconMap: Record<string, any> = {
-                  booking: CalendarDays, workout: readiness: Heart,
+                  booking: CalendarDays, workout: TrainLogo, readiness: Heart,
                   pr: Trophy, alert: Zap, message: MessageSquare,
                   intelligence: TrendingUp,
                 };

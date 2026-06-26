@@ -24,6 +24,7 @@ import {
   Building2, BarChart2, GraduationCap, HeartPulse,
   Star, Layers,
 } from "lucide-react";
+import { TrainLogo } from "@/components/train-logo";
 
 // ─── Data definitions ─────────────────────────────────────────────────────────
 
