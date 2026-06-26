@@ -13,7 +13,7 @@ import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
   UserPlus, Menu, X, DollarSign, CreditCard, BarChart3, Mail, Dumbbell,
   ClipboardList, UserCheck, Wallet, Receipt, Building2, CheckCircle2, ArrowRight, Sparkles,
-  ChevronRight, Star, Lock, Globe, Activity, Layers, BookOpen, Bot,
+  ChevronRight, Star, Lock, Globe, Activity, Layers, BookOpen,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -133,9 +133,6 @@ export default function LandingPage() {
             <a href="/book">
               <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-xs" data-testid="link-book">Book</Button>
             </a>
-            <a href="/marketplace/store">
-              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-xs" data-testid="link-marketplace">AI Agents</Button>
-            </a>
             <div className="w-px h-4 bg-border/60 mx-1" />
             <Button
               variant="ghost"
@@ -183,9 +180,6 @@ export default function LandingPage() {
             </a>
             <a href="/book" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start text-sm" data-testid="link-book-mobile">Book</Button>
-            </a>
-            <a href="/marketplace/store" onClick={() => setMobileMenuOpen(false)}>
-              <Button variant="ghost" size="sm" className="w-full justify-start text-sm" data-testid="link-marketplace-mobile">AI Agent Marketplace</Button>
             </a>
             <div className="h-px bg-border/60 my-1" />
             <Button
@@ -645,27 +639,6 @@ export default function LandingPage() {
               </a>
             </div>
 
-            {/* Agent Marketplace CTA */}
-            <div
-              className="flex flex-col gap-4 p-6 rounded-xl border border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card transition-all duration-200"
-              data-testid="card-marketplace-funnel"
-            >
-              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
-                <Bot className="h-5 w-5 text-primary" />
-              </div>
-              <div className="space-y-1.5 flex-1">
-                <h3 className="text-base font-bold">AI Agent Marketplace</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">
-                  Explore the agent labor marketplace prototype.
-                </p>
-              </div>
-              <a href="/marketplace/store" data-testid="link-marketplace-cta">
-                <Button size="sm" variant="outline" className="w-full text-sm" data-testid="button-view-marketplace">
-                  View Marketplace
-                  <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
-                </Button>
-              </a>
-            </div>
           </div>
         </div>
       </section>
