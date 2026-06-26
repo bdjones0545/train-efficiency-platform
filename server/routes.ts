@@ -9979,6 +9979,87 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
+
+  // ── CEO Agent Chat — POST /api/chat ─────────────────────────────────────────
+  // This is the endpoint the chat-widget.tsx floating panel calls.
+  // It streams SSE data: {"content":"..."} chunks that the widget accumulates.
+  app.post("/api/chat", isAuthenticated, async (req: any, res) => {
+    const label = "[CEO Agent /api/chat]";
+    try {
+      console.log(`${label} route entered`);
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      if (!userId) {
+        console.warn(`${label} no userId — unauthenticated`);
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const profile = await storage.getUserProfile(userId);
+      const orgId = profile?.organizationId ?? null;
+      console.log(`${label} userId=${userId} orgId=${orgId} role=${profile?.role}`);
+
+      const { messages } = req.body;
+      console.log(`${label} payload keys=${Object.keys(req.body).join(",")} messages count=${Array.isArray(messages) ? messages.length : "N/A"}`);
+      if (!messages || !Array.isArray(messages)) {
+        return res.status(400).json({ message: "messages array required" });
+      }
+
+      const user = await storage.getUser(userId);
+      const coachProfile = await storage.getCoachProfileByUserId(userId);
+      const userName = user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() : null;
+
+      // Build rich business context for the CEO agent
+      let businessContext: string | null = null;
+      if (orgId) {
+        try {
+          businessContext = await buildCommandCenterContextString(orgId);
+          console.log(`${label} business context built (${businessContext?.length ?? 0} chars)`);
+        } catch (ctxErr: any) {
+          console.warn(`${label} business context failed: ${ctxErr?.message}`);
+        }
+      }
+
+      // Set SSE headers — the widget reads data: {"content":"..."} chunks
+      res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
+      res.setHeader("Cache-Control", "no-cache");
+      res.setHeader("Connection", "keep-alive");
+      res.setHeader("X-Accel-Buffering", "no");
+
+      const model = "gpt-5.1";
+      console.log(`${label} starting OpenAI stream model=${model}`);
+
+      let chunkCount = 0;
+      try {
+        const stream = handleAssistantMessage(
+          messages,
+          userId,
+          profile?.role ?? "ADMIN",
+          userName,
+          coachProfile?.id ?? null,
+          orgId,
+          businessContext
+        );
+        for await (const chunk of stream) {
+          chunkCount++;
+          res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
+        }
+        console.log(`${label} OpenAI stream complete chunks=${chunkCount}`);
+      } catch (streamErr: any) {
+        console.error(`${label} OpenAI stream error: ${streamErr?.message}`);
+        if (!res.headersSent) {
+          return res.status(500).json({ message: streamErr.message });
+        }
+        res.write(`data: ${JSON.stringify({ content: "\n\nError: " + streamErr.message })}\n\n`);
+      }
+
+      res.write("data: [DONE]\n\n");
+      res.end();
+      console.log(`${label} response ended successfully`);
+    } catch (err: any) {
+      console.error(`${label} outer error: ${err?.message}`);
+      if (!res.headersSent) res.status(500).json({ message: err.message });
+    }
+  });
+
   // ── Agent pending-action endpoints (button-driven, deterministic execution) ──
 
   // GET active pending actions for the current user (for rehydration on load)
