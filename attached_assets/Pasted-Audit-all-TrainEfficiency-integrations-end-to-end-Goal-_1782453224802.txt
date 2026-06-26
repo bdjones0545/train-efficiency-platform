@@ -1,0 +1,57 @@
+Audit all TrainEfficiency integrations end-to-end.
+
+Goal:
+Create a complete integration health audit across every external/internal integration in the app, without changing behavior unless a clear bug is found.
+
+Audit these areas:
+1. Gmail integration
+2. Google Calendar integration
+3. Slack integration
+4. AgentMail integration
+5. Hermes / Obsidian integration
+6. Composio integration
+7. Stripe integration
+8. Email sending / notification system
+9. SMS or Twilio if present
+10. OpenAI / AI agent integrations
+11. GitHub integration if present
+12. Any webhook handlers
+13. Any env-variable-dependent services
+14. Any cron jobs that depend on integrations
+
+For each integration, verify:
+- Required environment variables
+- Server routes/endpoints
+- Auth/session/org resolution
+- Connection test route behavior
+- Error handling
+- Timeout handling
+- Whether failures return safe JSON instead of 500s
+- Whether logs clearly identify the failing integration
+- Whether frontend UI correctly displays connected/disconnected/error states
+- Whether mock/demo fallback behavior exists and is safe
+- Whether production behavior differs from local behavior
+- Whether any integration can crash cron jobs or agent runs
+- Whether org isolation is enforced
+- Whether secrets are ever exposed to the frontend
+
+Deliverables:
+1. A table of every integration found.
+2. Current status: working, partial, broken, unverified, or risky.
+3. Exact files/routes involved.
+4. Required environment variables.
+5. Any discovered bugs.
+6. Recommended fixes ranked by priority.
+7. Do not make broad refactors.
+8. Only make fixes if they are obvious, low-risk, and directly related to integration reliability.
+9. After any fix, run the relevant typecheck/build/lint command available in package.json and report exact results.
+
+Important:
+Pay special attention to prior known issues:
+- Obsidian/Hermes ngrok/local REST API connectivity
+- AgentMail connection test should not 500 on network failure
+- Gmail/Slack/Calendar org/session resolution
+- Stripe subscription payments must not accidentally credit wallet balances
+- Cron integrations should not duplicate intervals or crash from failed external services
+
+Start by searching the codebase for integration-related routes, env vars, service clients, cron jobs, and webhook handlers. Then produce the audit report before making changes.
