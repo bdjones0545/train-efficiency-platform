@@ -2,6 +2,59 @@ import type { Express } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { getUncachableSendGridClient } from "./email";
+import multer from "multer";
+import path from "path";
+import { randomUUID } from "crypto";
+import { Storage } from "@google-cloud/storage";
+
+// ─── GCS client (same credentials pattern as mediaStorage.ts) ───────────────
+const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
+
+const gcs = new Storage({
+  credentials: {
+    audience: "replit",
+    subject_token_type: "access_token",
+    token_url: `${REPLIT_SIDECAR_ENDPOINT}/token`,
+    type: "external_account",
+    credential_source: {
+      url: `${REPLIT_SIDECAR_ENDPOINT}/credential`,
+      format: { type: "json", subject_token_field_name: "access_token" },
+    },
+    universe_domain: "googleapis.com",
+  } as any,
+  projectId: "",
+});
+
+function getBucketName(): string {
+  const paths = process.env.PUBLIC_OBJECT_SEARCH_PATHS || "";
+  const first = paths.split(",")[0]?.trim();
+  if (!first) throw new Error("PUBLIC_OBJECT_SEARCH_PATHS not set");
+  return first.replace(/^\//, "").split("/")[0];
+}
+
+async function uploadReceiptToCloud(
+  buffer: Buffer,
+  originalName: string,
+  mimeType: string,
+): Promise<{ storedPath: string }> {
+  const bucketName = getBucketName();
+  const ext = path.extname(originalName).toLowerCase();
+  const unique = `${Date.now()}-${randomUUID()}${ext}`;
+  const objectPath = `.private/receipts/${unique}`;
+
+  const bucket = gcs.bucket(bucketName);
+  const file = bucket.file(objectPath);
+
+  await file.save(buffer, {
+    contentType: mimeType,
+    resumable: false,
+  });
+
+  // Return internal path only — never expose this in API responses
+  return { storedPath: objectPath };
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
 
 function rows(result: unknown): any[] {
   if (Array.isArray(result)) return result;
@@ -18,12 +71,58 @@ const APP_BASE_URL =
   null;
 
 const BOOK_RECEIPT_UPLOAD_PATH = "/book/redeem";
-// TODO: swap to a verified absolute domain when APP_BASE_URL / PUBLIC_APP_URL env var is set
 const BOOK_RECEIPT_UPLOAD_URL = APP_BASE_URL
   ? `${APP_BASE_URL.replace(/\/$/, "")}${BOOK_RECEIPT_UPLOAD_PATH}`
   : BOOK_RECEIPT_UPLOAD_PATH;
 
 const AMAZON_BOOK_URL = "https://www.amazon.com/dp/B0H6CDZ85W";
+
+// ─── MIME type allow-list (server-side validation, never trust client MIME) ──
+const ALLOWED_EXTENSIONS = new Set([".jpg", ".jpeg", ".png", ".pdf", ".heic"]);
+const ALLOWED_MIMES = new Set([
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "application/pdf",
+  "image/heic",
+  "image/heif",
+]);
+
+// Magic-byte signatures for server-side type verification
+function detectMimeFromBuffer(buf: Buffer): string | null {
+  if (buf.length < 4) return null;
+  // JPEG: FF D8 FF
+  if (buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  // PNG: 89 50 4E 47
+  if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) return "image/png";
+  // PDF: %PDF
+  if (buf[0] === 0x25 && buf[1] === 0x50 && buf[2] === 0x44 && buf[3] === 0x46) return "application/pdf";
+  // HEIC/HEIF: ftyp box (bytes 4-7 are 'ftyp')
+  if (buf.length >= 12 && buf[4] === 0x66 && buf[5] === 0x74 && buf[6] === 0x79 && buf[7] === 0x70) {
+    return "image/heic";
+  }
+  return null;
+}
+
+function sanitizeFilename(name: string): string {
+  return name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 200);
+}
+
+// ─── Multer: memory storage, 10 MB cap ──────────────────────────────────────
+const receiptUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ALLOWED_EXTENSIONS.has(ext)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported file type. Please upload a JPG, PNG, PDF, or HEIC file.`));
+    }
+  },
+});
+
+// ─── Email helpers ───────────────────────────────────────────────────────────
 
 function esc(str: string): string {
   return String(str)
@@ -150,6 +249,8 @@ async function sendBookBonusEmail(
   });
 }
 
+// ─── Event logging ───────────────────────────────────────────────────────────
+
 async function logFunnelEvent(
   leadId: string | null,
   email: string | null,
@@ -170,6 +271,8 @@ async function logFunnelEvent(
     console.error("[BookFunnel] Failed to log event:", eventType, err);
   }
 }
+
+// ─── Table setup ─────────────────────────────────────────────────────────────
 
 async function ensureBookFunnelTables() {
   await db.execute(sql`
@@ -202,14 +305,37 @@ async function ensureBookFunnelTables() {
     ADD COLUMN IF NOT EXISTS bonus_email_sent_at TIMESTAMP
   `);
 
+  // ── Receipt submissions table ──────────────────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS book_receipt_submissions (
+      id                 VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      lead_id            VARCHAR REFERENCES book_funnel_leads(id) ON DELETE SET NULL,
+      email              TEXT NOT NULL,
+      receipt_file_url   TEXT NOT NULL,
+      original_filename  TEXT NOT NULL,
+      mime_type          TEXT NOT NULL,
+      file_size          INTEGER NOT NULL,
+      status             TEXT NOT NULL DEFAULT 'pending_review',
+      uploaded_at        TIMESTAMP DEFAULT NOW(),
+      created_at         TIMESTAMP DEFAULT NOW(),
+      updated_at         TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
+  // TODO: Add reviewed_at, reviewed_by, reviewer_notes columns when admin approval is built
+  // TODO: Add promo_code column when promo code delivery is built
+  // TODO: Add ai_verification_result JSONB column when AI receipt verification is built
+  // TODO: Add trainchat_activated_at when automatic TrainChat activation is built
+
   console.log("[BookFunnel] Tables ready");
 }
+
+// ─── Route registration ───────────────────────────────────────────────────────
 
 export async function registerBookFunnelRoutes(app: Express) {
   await ensureBookFunnelTables();
 
-  // POST /api/book-funnel/leads
-  // Create or update a book funnel lead by email (upsert), then send bonus email once.
+  // ── POST /api/book-funnel/leads ───────────────────────────────────────────
   app.post("/api/book-funnel/leads", async (req, res) => {
     try {
       const { firstName, lastName, email, source, amazonClicked } = req.body ?? {};
@@ -230,7 +356,6 @@ export async function registerBookFunnelRoutes(app: Express) {
       const normalizedLast   = typeof lastName === "string" ? lastName.trim() : null;
       const normalizedSource = typeof source === "string" ? source.trim() : "book_landing";
 
-      // Upsert: if email exists, update. Otherwise insert.
       const existing = row0(await db.execute(sql`
         SELECT id, bonus_email_sent_at FROM book_funnel_leads WHERE email = ${normalizedEmail}
       `));
@@ -267,7 +392,6 @@ export async function registerBookFunnelRoutes(app: Express) {
         leadId = inserted?.id;
       }
 
-      // ── Bonus email (send once per lead) ──────────────────────────────────
       let emailSent = false;
       let emailAlreadySent = false;
 
@@ -278,23 +402,18 @@ export async function registerBookFunnelRoutes(app: Express) {
         try {
           await sendBookBonusEmail(normalizedEmail, normalizedFirst);
           emailSent = true;
-
-          // Mark column so we never resend
           await db.execute(sql`
             UPDATE book_funnel_leads
             SET bonus_email_sent_at = NOW()
             WHERE id = ${leadId}
           `);
-
           await logFunnelEvent(leadId, normalizedEmail, "book_bonus_email_sent", {
             provider: "sendgrid",
             subject: "Your TrainChat Bonus Is Waiting",
           });
-
           console.log(`[BookFunnel] Bonus email sent to ${normalizedEmail}`);
         } catch (emailErr: any) {
           console.error("[BookFunnel] Failed to send bonus email:", emailErr?.message ?? emailErr);
-
           await logFunnelEvent(leadId, normalizedEmail, "book_bonus_email_failed", {
             provider: "sendgrid",
             error: emailErr?.message ?? "unknown",
@@ -309,8 +428,7 @@ export async function registerBookFunnelRoutes(app: Express) {
     }
   });
 
-  // POST /api/book-funnel/events
-  // Log a funnel event. leadId and email are optional.
+  // ── POST /api/book-funnel/events ──────────────────────────────────────────
   app.post("/api/book-funnel/events", async (req, res) => {
     try {
       const { leadId, email, eventType, metadata } = req.body ?? {};
@@ -339,6 +457,142 @@ export async function registerBookFunnelRoutes(app: Express) {
       return res.status(500).json({ error: "Failed to log event." });
     }
   });
+
+  // ── POST /api/book-funnel/receipt ─────────────────────────────────────────
+  // Accepts multipart/form-data: { email: string, receipt: File }
+  app.post(
+    "/api/book-funnel/receipt",
+    (req, res, next) => {
+      receiptUpload.single("receipt")(req, res, (err) => {
+        if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
+          return res.status(400).json({ error: "File is too large. Maximum size is 10 MB." });
+        }
+        if (err) {
+          return res.status(400).json({ error: err.message ?? "File upload error." });
+        }
+        next();
+      });
+    },
+    async (req: any, res) => {
+      try {
+        // ── 1. Validate email ──────────────────────────────────────────────
+        const rawEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+        if (!rawEmail) {
+          return res.status(400).json({ error: "Email address is required." });
+        }
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+          return res.status(400).json({ error: "Please enter a valid email address." });
+        }
+
+        // ── 2. Validate file present ───────────────────────────────────────
+        if (!req.file) {
+          return res.status(400).json({ error: "Please select a file to upload." });
+        }
+
+        const { buffer, originalname, mimetype, size } = req.file;
+        const ext = path.extname(originalname).toLowerCase();
+
+        // ── 3. Server-side extension check ────────────────────────────────
+        if (!ALLOWED_EXTENSIONS.has(ext)) {
+          return res.status(400).json({ error: "Unsupported file type. Please upload a JPG, PNG, PDF, or HEIC file." });
+        }
+
+        // ── 4. Magic-byte verification (never trust client MIME) ───────────
+        const detectedMime = detectMimeFromBuffer(buffer);
+        // Allow if: detected type is in allow-list, OR file is HEIC/HEIF (magic byte is ftyp box),
+        // OR if detection inconclusive but extension and reported mime both pass.
+        const mimeOk =
+          (detectedMime !== null && ALLOWED_MIMES.has(detectedMime)) ||
+          (detectedMime === null && ALLOWED_MIMES.has(mimetype) && ALLOWED_EXTENSIONS.has(ext));
+
+        if (!mimeOk) {
+          return res.status(400).json({ error: "File content does not match a supported type (JPG, PNG, PDF, HEIC)." });
+        }
+
+        const resolvedMime = detectedMime ?? mimetype;
+
+        // ── 5. File size (already enforced by multer, but double-check) ───
+        if (size > 10 * 1024 * 1024) {
+          return res.status(400).json({ error: "File is too large. Maximum size is 10 MB." });
+        }
+
+        // ── 6. Sanitize filename ──────────────────────────────────────────
+        const safeFilename = sanitizeFilename(originalname);
+
+        // ── 7. Check for existing pending submission (duplicate guard) ────
+        const existingSubmission = row0(await db.execute(sql`
+          SELECT id FROM book_receipt_submissions
+          WHERE email = ${rawEmail} AND status = 'pending_review'
+          LIMIT 1
+        `));
+
+        if (existingSubmission?.id) {
+          return res.status(409).json({
+            error: "A receipt from this email is already pending review. We'll be in touch soon!",
+          });
+        }
+
+        // ── 8. Look up existing lead by email ────────────────────────────
+        const lead = row0(await db.execute(sql`
+          SELECT id FROM book_funnel_leads WHERE email = ${rawEmail}
+        `));
+        const leadId: string | null = lead?.id ?? null;
+
+        // ── 9. Upload file to private cloud storage ───────────────────────
+        let storedPath: string;
+        try {
+          const upload = await uploadReceiptToCloud(buffer, safeFilename, resolvedMime);
+          storedPath = upload.storedPath;
+        } catch (uploadErr: any) {
+          console.error("[BookFunnel] Receipt upload to storage failed:", uploadErr?.message);
+          await logFunnelEvent(leadId, rawEmail, "book_receipt_upload_failed", {
+            error: uploadErr?.message ?? "storage_error",
+            filename: safeFilename,
+          });
+          return res.status(500).json({ error: "Failed to store your receipt. Please try again." });
+        }
+
+        // ── 10. Create submission record ──────────────────────────────────
+        const submission = row0(await db.execute(sql`
+          INSERT INTO book_receipt_submissions
+            (lead_id, email, receipt_file_url, original_filename, mime_type, file_size, status)
+          VALUES (
+            ${leadId},
+            ${rawEmail},
+            ${storedPath},
+            ${safeFilename},
+            ${resolvedMime},
+            ${size},
+            'pending_review'
+          )
+          RETURNING id
+        `));
+
+        // ── 11. Log event ─────────────────────────────────────────────────
+        await logFunnelEvent(leadId, rawEmail, "book_receipt_uploaded", {
+          submissionId: submission?.id ?? null,
+          filename: safeFilename,
+          mimeType: resolvedMime,
+          fileSizeBytes: size,
+          hasExistingLead: !!leadId,
+          // TODO: trigger manual admin review notification here
+          // TODO: trigger AI receipt verification here
+        });
+
+        console.log(`[BookFunnel] Receipt submitted for ${rawEmail}, submission ${submission?.id}`);
+
+        return res.json({
+          success: true,
+          submissionId: submission?.id ?? null,
+          status: "pending_review",
+          message: "Your receipt has been received and is pending verification.",
+        });
+      } catch (err: any) {
+        console.error("[BookFunnel] POST /receipt error:", err);
+        return res.status(500).json({ error: "An unexpected error occurred. Please try again." });
+      }
+    },
+  );
 
   console.log("[BookFunnel] Routes registered");
 }
