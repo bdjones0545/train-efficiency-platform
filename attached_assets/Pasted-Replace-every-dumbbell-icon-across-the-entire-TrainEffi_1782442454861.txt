@@ -1,0 +1,109 @@
+Replace every dumbbell icon across the entire TrainEfficiency application with the attached TrainEfficiency AI network logo.
+
+This is now the official brand mark for TrainEfficiency and should become the single source of truth for branding across the platform.
+
+Requirements
+
+1. Create a reusable brand asset
+- Save the attached image as the primary TrainEfficiency logo asset.
+- Create SVG versions where appropriate.
+- Generate favicon versions (16x16, 32x32, 48x48).
+- Generate app icon versions (180x180, 192x192, 512x512, 1024x1024).
+- Use this asset everywhere instead of the dumbbell.
+
+2. Replace every dumbbell icon
+Search the entire repository for:
+- dumbbell icons
+- weightlifting icons
+- fitness icons
+- lucide Dumbbell
+- FontAwesome dumbbell
+- Heroicons equivalents
+- emoji dumbbells
+- image assets
+- SVG dumbbells
+- favicons
+- logos
+
+Replace them with the new TrainEfficiency logo.
+
+This includes but is not limited to:
+
+• Navbar
+• Sidebar
+• Mobile navigation
+• Landing page
+• Login page
+• Registration page
+• Dashboard
+• Loading screens
+• Empty states
+• Email templates
+• Browser favicon
+• PWA icons
+• Manifest icons
+• Apple touch icon
+• Social icons
+• Open Graph image (where appropriate)
+• Notifications
+• Mobile app branding
+• Splash screen
+• App launcher icon
+
+3. Update branding
+
+The TrainEfficiency logo should now represent:
+
+- AI Agents
+- Business Operating System
+- Automation
+- Connected Intelligence
+- Orchestrated Business Workflows
+
+The brand is no longer centered around a dumbbell.
+
+It is an AI operating system for coaching businesses.
+
+4. Consistency
+
+Use exactly the same logo everywhere.
+
+Do not create variations.
+
+Do not recolor it.
+
+Maintain:
+
+- matte black background
+- TrainEfficiency green
+- flat design
+- no glow
+- crisp edges
+- centered alignment
+- identical padding everywhere
+
+5. Update application metadata
+
+Replace branding assets for:
+
+- favicon.ico
+- favicon.svg
+- apple-touch-icon.png
+- android-chrome-192x192.png
+- android-chrome-512x512.png
+- site.webmanifest
+- manifest.json
+- browserconfig.xml
+- pinned-tab icon (if present)
+
+6. Audit
+
+After completing the work provide:
+
+- Every file modified
+- Every dumbbell icon removed
+- Every new logo asset created
+- Any remaining references to dumbbells
+- Confirmation that the new logo is now the universal TrainEfficiency brand asset
+
+Finally, perform a repository-wide search to ensure there are zero remaining dumbbell icons, dumbbell assets, or dumbbell component imports.
