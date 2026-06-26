@@ -28141,19 +28141,44 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   type IntegrationStatus = "connected" | "disconnected" | "needs_attention";
   interface Integration { id: string; name: string; category: string; status: IntegrationStatus; healthScore: number; lastSync: string | null; errorRate: number; usageLast30d: number; tokenHealth: string; description: string; capabilities: string[] }
 
-  async function makeIntegrations(_orgId: string): Promise<Integration[]> {
+  async function makeIntegrations(orgId: string): Promise<Integration[]> {
     const now = Date.now();
     const ago = (h: number) => new Date(now - h * 3600000).toISOString();
 
     const hasEnv = (k: string) => !!process.env[k];
-    const gmailOk        = hasEnv("GOOGLE_GMAIL_ACCESS_TOKEN") || hasEnv("GMAIL_ACCESS_TOKEN") || hasEnv("GOOGLE_CLIENT_SECRET");
-    const sendgridOk     = hasEnv("SENDGRID_API_KEY");
-    const stripeOk       = hasEnv("STRIPE_SECRET_KEY");
-    const agentmailOk    = hasEnv("AGENTMAIL_API_KEY");
-    const twilioOk       = hasEnv("TWILIO_ACCOUNT_SID") && hasEnv("TWILIO_AUTH_TOKEN");
-    const gcalOk         = hasEnv("GOOGLE_CALENDAR_CLIENT_SECRET") || hasEnv("GOOGLE_CLIENT_SECRET");
-    const hubspotOk      = hasEnv("HUBSPOT_ACCESS_TOKEN") || hasEnv("HUBSPOT_API_KEY");
-    const openaiOk       = hasEnv("OPENAI_API_KEY");
+
+    // ── DB-first checks for integrations whose credentials live in the DB ──────
+    // Env-var fallback is only used where credentials are stored as env vars.
+    // GOOGLE_CLIENT_SECRET is the OAuth *app* secret (needed to start the OAuth
+    // flow) — it is NOT evidence that Gmail or Google Calendar has been authorized.
+    let _dbConnected = new Set<string>();
+    let _gcalHasToken = false;
+    try {
+      const _intRows = await db.execute(sql`
+        SELECT integration_type FROM external_integrations
+        WHERE org_id = ${orgId} AND status = 'connected'
+      `);
+      const _intArr: any[] = Array.isArray(_intRows) ? _intRows : (_intRows as any).rows ?? [];
+      for (const r of _intArr) _dbConnected.add(r.integration_type);
+    } catch {}
+    try {
+      const _ctRows = await db.execute(sql`
+        SELECT 1 FROM connector_tokens WHERE org_id = ${orgId} AND connector = 'google_calendar' LIMIT 1
+      `);
+      const _ctArr: any[] = Array.isArray(_ctRows) ? _ctRows : (_ctRows as any).rows ?? [];
+      _gcalHasToken = _ctArr.length > 0;
+    } catch {}
+
+    // Gmail: DB row (status=connected) wins; env-var fallback requires an actual access token
+    const gmailOk    = _dbConnected.has("gmail") || hasEnv("GOOGLE_GMAIL_ACCESS_TOKEN") || hasEnv("GMAIL_ACCESS_TOKEN");
+    const sendgridOk = hasEnv("SENDGRID_API_KEY");
+    const stripeOk   = hasEnv("STRIPE_SECRET_KEY");
+    const agentmailOk = hasEnv("AGENTMAIL_API_KEY");
+    const twilioOk   = hasEnv("TWILIO_ACCOUNT_SID") && hasEnv("TWILIO_AUTH_TOKEN");
+    // GCal: connector_tokens DB row wins; env-var client secrets are not evidence of connection
+    const gcalOk     = _gcalHasToken || _dbConnected.has("google_calendar");
+    const hubspotOk  = hasEnv("HUBSPOT_ACCESS_TOKEN") || hasEnv("HUBSPOT_API_KEY");
+    const openaiOk   = hasEnv("OPENAI_API_KEY");
 
     let gmailLastSync: string | null = null;
     let gmailSentCount = 0;
