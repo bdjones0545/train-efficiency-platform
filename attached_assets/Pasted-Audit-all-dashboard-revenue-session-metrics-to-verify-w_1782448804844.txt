@@ -1,0 +1,57 @@
+Audit all dashboard revenue/session metrics to verify whether they pull only from Stripe and not from redeemed/internal database records.
+
+Goal:
+Dashboards should reflect both:
+1. Stripe revenue/payment data
+2. Internal redeemed/used session data from the database
+
+Audit scope:
+- Admin dashboard
+- Business Command Center
+- CEO Agent / CEO Heartbeat context
+- Revenue Agent
+- Scheduling dashboard
+- Client/athlete dashboards if they show package/session usage
+- Any analytics cards showing:
+  - revenue
+  - payments
+  - booked sessions
+  - completed sessions
+  - redeemed sessions
+  - remaining package sessions
+  - package utilization
+  - attendance/check-ins
+  - client value/LTV
+
+Trace:
+1. Find every frontend dashboard endpoint.
+2. Find every backend route feeding those dashboards.
+3. Identify whether each metric source is:
+   - Stripe only
+   - database only
+   - combined Stripe + database
+   - mock/fallback value
+4. Find the database tables that track redeemed sessions, package purchases, attendance, bookings, check-ins, or session usage.
+5. Compare those DB tables against the dashboard queries.
+6. Identify missing joins or missing aggregation logic.
+7. Check whether Stripe payment records are linked to internal package/session records.
+8. Check whether redeemed sessions reduce remaining sessions anywhere.
+9. Check whether dashboards confuse revenue collected with sessions redeemed.
+10. Check whether CEO Agent / Heartbeat context is using the same incomplete metrics.
+
+Likely issue:
+Dashboards may be calculating revenue from Stripe invoices/charges but ignoring internal redeemed session records, so they show money collected but not true service delivery, utilization, or remaining package liability.
+
+Expected output:
+- List of dashboards audited
+- Endpoints involved
+- Current data source for each metric
+- Tables found for redeemed/session/package usage
+- Gaps found
+- Whether Stripe-only metrics are intentional or a bug
+- Minimal fix plan
+- Files that need changes
+- Any schema/index changes needed
+- Safe migration plan if needed
+
+Do not implement broad changes yet. Audit first and report the exact source-of-truth problem.
