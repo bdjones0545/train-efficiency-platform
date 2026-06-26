@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Almost Finished | TrainEfficiency</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;600;700;800&amp;family=Inter:wght@400;600&amp;family=Space+Grotesk:wght@700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-tertiary": "#313030",
+                        "surface-container-low": "#1c1b1b",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "surface-variant": "#353534",
+                        "on-primary-container": "#624700",
+                        "secondary-fixed": "#e2e2e2",
+                        "tertiary": "#dad8d7",
+                        "primary": "#ffd274",
+                        "on-tertiary-container": "#4c4b4b",
+                        "on-secondary-container": "#b4b5b5",
+                        "surface-dim": "#131313",
+                        "surface": "#131313",
+                        "surface-container-highest": "#353534",
+                        "secondary-container": "#454747",
+                        "on-primary-fixed": "#261a00",
+                        "tertiary-fixed": "#e5e2e1",
+                        "secondary-fixed-dim": "#c6c6c7",
+                        "primary-container": "#ebb42d",
+                        "on-error-container": "#ffdad6",
+                        "on-secondary-fixed-variant": "#454747",
+                        "on-surface": "#e5e2e1",
+                        "surface-container": "#201f1f",
+                        "inverse-on-surface": "#313030",
+                        "inverse-primary": "#795900",
+                        "on-primary": "#402d00",
+                        "on-tertiary-fixed-variant": "#474746",
+                        "tertiary-container": "#bebcbb",
+                        "surface-container-high": "#2a2a2a",
+                        "outline-variant": "#4f4634",
+                        "on-secondary": "#2f3131",
+                        "on-error": "#690005",
+                        "tertiary-fixed-dim": "#c8c6c5",
+                        "background": "#131313",
+                        "on-background": "#e5e2e1",
+                        "surface-tint": "#f6be37",
+                        "primary-fixed": "#ffdfa0",
+                        "inverse-surface": "#e5e2e1",
+                        "outline": "#9c8f7a",
+                        "primary-fixed-dim": "#f6be37",
+                        "secondary": "#c6c6c7",
+                        "error": "#ffb4ab",
+                        "error-container": "#93000a",
+                        "on-surface-variant": "#d3c5ae",
+                        "on-primary-fixed-variant": "#5c4300",
+                        "on-tertiary-fixed": "#1c1b1b",
+                        "surface-bright": "#3a3939",
+                        "surface-container-lowest": "#0e0e0e"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "spacing": {
+                        "container-max": "1200px",
+                        "unit": "8px",
+                        "section-gap": "120px",
+                        "gutter": "24px",
+                        "margin-mobile": "20px"
+                    },
+                    "fontFamily": {
+                        "headline-md": ["Hanken Grotesk"],
+                        "body-lg": ["Inter"],
+                        "body-md": ["Inter"],
+                        "headline-lg": ["Hanken Grotesk"],
+                        "headline-lg-mobile": ["Hanken Grotesk"],
+                        "label-caps": ["Space Grotesk"],
+                        "display-lg": ["Hanken Grotesk"]
+                    },
+                    "fontSize": {
+                        "headline-md": ["32px", {"lineHeight": "1.3", "fontWeight": "600"}],
+                        "body-lg": ["18px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "body-md": ["16px", {"lineHeight": "1.6", "fontWeight": "400"}],
+                        "headline-lg": ["48px", {"lineHeight": "1.2", "letterSpacing": "-0.02em", "fontWeight": "700"}],
+                        "headline-lg-mobile": ["36px", {"lineHeight": "1.2", "fontWeight": "700"}],
+                        "label-caps": ["12px", {"lineHeight": "1.0", "letterSpacing": "0.1em", "fontWeight": "700"}],
+                        "display-lg": ["72px", {"lineHeight": "1.1", "letterSpacing": "-0.04em", "fontWeight": "800"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .step-active::before {
+            content: '';
+            position: absolute;
+            left: -2px;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            background: #ffd274;
+            border-radius: 99px;
+            box-shadow: 0 0 15px rgba(255, 210, 116, 0.4);
+        }
+        .glow-hover:hover {
+            box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.2), 0 0 24px rgba(246, 190, 55, 0.2);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background min-h-screen flex flex-col font-body-md overflow-x-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-xl border-b border-white/10">
+<div class="flex justify-between items-center px-gutter py-4 max-w-container-max mx-auto">
+<div class="flex items-center gap-3 cursor-pointer active:scale-95 transition-transform">
+<span class="material-symbols-outlined text-primary text-3xl">fitness_center</span>
+<span class="font-headline-md text-headline-md font-bold text-primary">TrainEfficiency</span>
+</div>
+</div>
+</header>
+<!-- Main Content -->
+<main class="flex-grow pt-32 pb-section-gap px-margin-mobile md:px-gutter">
+<div class="max-w-[800px] mx-auto">
+<!-- Intro -->
+<div class="text-center mb-16">
+<div class="inline-block px-4 py-1 rounded-full border border-outline-variant bg-surface-container-low mb-6">
+<span class="font-label-caps text-label-caps text-primary uppercase tracking-widest">Action Required</span>
+</div>
+<h1 class="font-headline-lg text-headline-lg mb-4 md:hidden">You're Almost Finished</h1>
+<h1 class="font-headline-lg text-headline-lg mb-4 hidden md:block">You're Almost Finished</h1>
+<p class="text-on-surface-variant font-body-lg text-body-lg max-w-[600px] mx-auto">
+                    Complete the following steps to unlock your 30-day free access to the TrainChat adaptive programming system.
+                </p>
+</div>
+<!-- Stepper Bento Card -->
+<div class="bg-surface-container-lowest border border-white/5 rounded-xl p-8 md:p-12 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-hidden">
+<div class="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full blur-[100px] -mr-32 -mt-32"></div>
+<div class="space-y-12 relative">
+<!-- Step 1: Completed -->
+<div class="flex gap-8 items-start opacity-60">
+<div class="flex flex-col items-center">
+<div class="w-10 h-10 rounded-full bg-primary text-on-primary flex items-center justify-center shadow-lg">
+<span class="material-symbols-outlined text-xl" style="font-variation-settings: 'wght' 700;">check</span>
+</div>
+<div class="w-px h-12 bg-outline-variant mt-4"></div>
+</div>
+<div class="pt-1">
+<h3 class="font-headline-md text-[20px] font-bold text-on-surface">Email Received</h3>
+<p class="text-on-surface-variant text-body-md">We've confirmed your registration details.</p>
+</div>
+</div>
+<!-- Step 2: Active -->
+<div class="flex gap-8 items-start relative pl-1">
+<div class="flex flex-col items-center">
+<div class="w-10 h-10 rounded-full border-2 border-primary text-primary flex items-center justify-center bg-primary/10 animate-pulse">
+<span class="material-symbols-outlined text-xl">shopping_cart</span>
+</div>
+<div class="w-px h-12 bg-outline-variant mt-4"></div>
+</div>
+<div class="pt-1">
+<h3 class="font-headline-md text-[20px] font-bold text-primary">Purchase Book on Amazon</h3>
+<p class="text-on-surface-variant text-body-md mb-4">Click below to purchase "The Structure of Training" paperback or digital edition.</p>
+<a class="inline-flex items-center gap-2 text-primary hover:underline font-bold transition-all" href="#">
+                                Go to Amazon Marketplace
+                                <span class="material-symbols-outlined text-sm">open_in_new</span>
+</a>
+</div>
+</div>
+<!-- Step 3: Pending -->
+<div class="flex gap-8 items-start">
+<div class="flex flex-col items-center">
+<div class="w-10 h-10 rounded-full border border-outline-variant text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-xl">cloud_upload</span>
+</div>
+<div class="w-px h-12 bg-outline-variant mt-4"></div>
+</div>
+<div class="pt-1">
+<h3 class="font-headline-md text-[20px] font-bold text-on-surface">Upload Receipt</h3>
+<p class="text-on-surface-variant text-body-md">Provide a screenshot or PDF of your Amazon order confirmation.</p>
+</div>
+</div>
+<!-- Step 4: Final -->
+<div class="flex gap-8 items-start">
+<div class="flex flex-col items-center">
+<div class="w-10 h-10 rounded-full border border-outline-variant text-on-surface-variant flex items-center justify-center">
+<span class="material-symbols-outlined text-xl">key</span>
+</div>
+</div>
+<div class="pt-1">
+<h3 class="font-headline-md text-[20px] font-bold text-on-surface">Receive Promo Code</h3>
+<p class="text-on-surface-variant text-body-md">Your 30-day TrainChat access code will be sent instantly.</p>
+</div>
+</div>
+</div>
+<!-- CTA Section -->
+<div class="mt-16 pt-12 border-t border-white/10 flex flex-col items-center">
+<button class="glow-hover w-full md:w-auto bg-primary text-on-primary font-headline-md px-12 py-5 rounded-full flex items-center justify-center gap-3 active:scale-95 transition-all shadow-xl">
+<span class="material-symbols-outlined">upload_file</span>
+                        Upload Receipt
+                    </button>
+<p class="mt-6 text-on-surface-variant text-label-caps font-label-caps uppercase tracking-widest opacity-60">
+                        Accepted formats: JPG, PNG, PDF (Max 10MB)
+                    </p>
+</div>
+</div>
+<!-- Trust Badge -->
+<div class="mt-16 grid grid-cols-1 md:grid-cols-3 gap-8 opacity-70">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary">verified_user</span>
+<span class="text-body-md font-semibold">Secure Verification</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary">bolt</span>
+<span class="text-body-md font-semibold">Instant Activation</span>
+</div>
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-primary">support_agent</span>
+<span class="text-body-md font-semibold">24/7 Priority Support</span>
+</div>
+</div>
+</div>
+</main>
+<!-- Footer -->
+<footer class="w-full py-section-gap bg-surface-container-lowest border-t border-outline-variant">
+<div class="grid grid-cols-1 md:grid-cols-2 gap-unit max-w-container-max mx-auto px-margin-mobile md:px-gutter">
+<div class="flex flex-col gap-4">
+<span class="text-headline-md font-headline-md text-on-surface">TrainEfficiency</span>
+<p class="text-on-surface-variant font-body-md max-w-sm">© 2024 TrainEfficiency. All Rights Reserved. Evidence-Based Performance.</p>
+</div>
+<div class="flex flex-wrap gap-x-8 gap-y-4 md:justify-end items-center">
+<a class="text-on-surface-variant hover:text-on-surface transition-opacity font-body-md opacity-80 hover:opacity-100" href="#">Terms</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-opacity font-body-md opacity-80 hover:opacity-100" href="#">Privacy</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-opacity font-body-md opacity-80 hover:opacity-100" href="#">Support</a>
+<a class="text-on-surface-variant hover:text-on-surface transition-opacity font-body-md opacity-80 hover:opacity-100" href="#">Contact</a>
+</div>
+</div>
+</footer>
+<!-- Micro-interaction script -->
+<script>
+        document.querySelector('button').addEventListener('click', function() {
+            const originalText = this.innerHTML;
+            this.innerHTML = '<span class="material-symbols-outlined animate-spin">sync</span> Processing...';
+            setTimeout(() => {
+                this.innerHTML = originalText;
+                alert('File picker would open here in a real application.');
+            }, 1000);
+        });
+    </script>
+</body></html>

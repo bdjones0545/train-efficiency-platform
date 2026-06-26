@@ -1,0 +1,135 @@
+Implement only the Thank You / Amazon Redirect page for the existing book funnel.
+
+Use the attached MD file as design context, but focus only on this page and its connection to the existing /book flow.
+
+Do not build receipt upload yet.
+Do not build promo code logic yet.
+Do not build email automation yet.
+
+Current state:
+
+* /book landing page exists
+* Email capture modal works
+* Leads are saved through POST /api/book-funnel/leads
+* Funnel events are saved through POST /api/book-funnel/events
+* AMAZON_BOOK_URL constant exists on the book landing page
+* Current modal either redirects directly to Amazon or shows placeholder toast
+
+Goal:
+Create a transition page that appears after email capture and then sends the user to Amazon to complete the book purchase.
+
+Add route:
+
+* /book/thank-you
+
+Updated funnel flow:
+
+1. User visits /book
+2. User clicks Purchase Book
+3. Email capture modal opens
+4. User enters first name, optional last name, email, and checks the bonus instruction checkbox
+5. Lead is saved to backend
+6. User is routed to /book/thank-you?email=<encoded email>
+7. Thank You page displays a short confirmation
+8. Thank You page auto-redirects the user to Amazon after a short delay if AMAZON_BOOK_URL is configured
+9. User can also click a manual “Continue to Amazon” button
+10. If Amazon URL is not configured, show a clean message and do not redirect
+
+Important change:
+Do not redirect directly to Amazon from the modal anymore.
+After successful lead save, route the user to /book/thank-you instead.
+
+Thank You page content:
+
+Headline:
+“One Last Step”
+
+Subheadline:
+“Your information has been saved. We’re taking you to Amazon to complete your book purchase.”
+
+Progress/status area:
+
+* Email Saved
+* Continue to Amazon
+* Upload Receipt
+* Unlock TrainChat
+
+Primary button:
+“Continue to Amazon”
+
+Secondary button:
+“Return to Book Page”
+
+Small helper copy:
+“After purchasing on Amazon, check your email for instructions to upload your receipt and redeem your free month of TrainChat.”
+
+If AMAZON_BOOK_URL is not configured:
+
+* Do not attempt redirect
+* Show message:
+  “Amazon book URL not configured yet.”
+* Keep the Continue to Amazon button disabled or show a toast when clicked
+
+Auto-redirect behavior:
+
+* Wait approximately 3 seconds before redirecting to Amazon
+* Display countdown or loading/progress indicator
+* Open Amazon in the same tab or use the existing app convention if there is one
+* Provide manual fallback button in case redirect does not happen
+
+Tracking/events:
+
+* On page view:
+
+  * frontend trackEvent("book_thank_you_viewed")
+  * POST /api/book-funnel/events with eventType: "book_thank_you_viewed" and email from query param if present
+* When auto-redirect fires:
+
+  * eventType: "book_amazon_auto_redirected"
+* When manual button clicked:
+
+  * eventType: "book_amazon_manual_clicked"
+* If Amazon URL is missing:
+
+  * eventType: "book_amazon_url_missing"
+
+Frontend wiring update:
+In client/src/pages/book-landing.tsx:
+
+* After successful lead save and event logging, navigate to:
+  /book/thank-you?email=<encoded email>
+* Remove direct Amazon window.open from the modal submit handler
+* Keep validation and loading behavior intact
+
+Design requirements:
+
+* Match the existing /book page style
+* Premium, clean, SaaS-like
+* Mobile-first
+* Reuse existing UI components where possible
+* Include loading/progress visual
+* Do not introduce a new design system
+
+Implementation:
+
+* Add the new route in App.tsx
+* Create a new page file if appropriate, such as:
+  client/src/pages/book-thank-you.tsx
+* Reuse or duplicate the AMAZON_BOOK_URL constant safely if no shared constants file exists
+* If there is a clean shared constants location, move AMAZON_BOOK_URL there and update imports
+
+Do not modify unrelated files.
+
+After implementation run:
+
+* npm run check
+
+Report:
+
+* Files created
+* Files modified
+* Route added
+* Flow changed from modal to thank-you page
+* Events tracked
+* Any TODOs/placeholders
+* Typecheck result
