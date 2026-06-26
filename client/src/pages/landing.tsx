@@ -13,7 +13,7 @@ import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
   UserPlus, Menu, X, DollarSign, CreditCard, BarChart3, Mail, Dumbbell,
   ClipboardList, UserCheck, Wallet, Receipt, Building2, CheckCircle2, ArrowRight, Sparkles,
-  ChevronRight, Star, Lock, Globe, Activity, Layers,
+  ChevronRight, Star, Lock, Globe, Activity, Layers, BookOpen, Bot,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -130,6 +130,12 @@ export default function LandingPage() {
             <a href="/portal">
               <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-xs" data-testid="link-client-portal">Client Portal</Button>
             </a>
+            <a href="/book">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-xs" data-testid="link-book">Book</Button>
+            </a>
+            <a href="/marketplace/store">
+              <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground text-xs" data-testid="link-marketplace">AI Agents</Button>
+            </a>
             <div className="w-px h-4 bg-border/60 mx-1" />
             <Button
               variant="ghost"
@@ -174,6 +180,12 @@ export default function LandingPage() {
             </a>
             <a href="/portal" onClick={() => setMobileMenuOpen(false)}>
               <Button variant="ghost" size="sm" className="w-full justify-start text-sm" data-testid="link-client-portal-mobile">Client Portal</Button>
+            </a>
+            <a href="/book" onClick={() => setMobileMenuOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start text-sm" data-testid="link-book-mobile">Book</Button>
+            </a>
+            <a href="/marketplace/store" onClick={() => setMobileMenuOpen(false)}>
+              <Button variant="ghost" size="sm" className="w-full justify-start text-sm" data-testid="link-marketplace-mobile">AI Agent Marketplace</Button>
             </a>
             <div className="h-px bg-border/60 my-1" />
             <Button
@@ -599,6 +611,61 @@ export default function LandingPage() {
                 <p className="text-xs text-center text-muted-foreground mt-3">No credit card required to start your trial</p>
               </div>
             </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* ── EXPLORE FUNNELS ── */}
+      <section className="py-16 px-5 border-t border-border/60">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-10 space-y-2">
+            <p className="text-xs font-semibold text-primary uppercase tracking-widest">Explore More</p>
+            <h2 className="text-2xl sm:text-3xl font-bold tracking-tight">Two more ways to get started</h2>
+          </div>
+          <div className="grid sm:grid-cols-2 gap-5">
+            {/* Book CTA */}
+            <div
+              className="flex flex-col gap-4 p-6 rounded-xl border border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card transition-all duration-200"
+              data-testid="card-book-funnel"
+            >
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <BookOpen className="h-5 w-5 text-primary" />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <h3 className="text-base font-bold">Strength &amp; Speed Book</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Get the book and unlock your first month of TrainChat free.
+                </p>
+              </div>
+              <a href="/book" data-testid="link-book-cta">
+                <Button size="sm" className="w-full text-sm" data-testid="button-view-book">
+                  View Book
+                  <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+                </Button>
+              </a>
+            </div>
+
+            {/* Agent Marketplace CTA */}
+            <div
+              className="flex flex-col gap-4 p-6 rounded-xl border border-border/60 bg-card/60 hover:border-primary/30 hover:bg-card transition-all duration-200"
+              data-testid="card-marketplace-funnel"
+            >
+              <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                <Bot className="h-5 w-5 text-primary" />
+              </div>
+              <div className="space-y-1.5 flex-1">
+                <h3 className="text-base font-bold">AI Agent Marketplace</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  Explore the agent labor marketplace prototype.
+                </p>
+              </div>
+              <a href="/marketplace/store" data-testid="link-marketplace-cta">
+                <Button size="sm" variant="outline" className="w-full text-sm" data-testid="button-view-marketplace">
+                  View Marketplace
+                  <ArrowRight className="h-3.5 w-3.5 ml-1.5" />
+                </Button>
+              </a>
+            </div>
           </div>
         </div>
       </section>
