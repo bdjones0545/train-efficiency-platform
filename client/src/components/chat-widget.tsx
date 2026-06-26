@@ -1118,30 +1118,28 @@ export function ChatWidget() {
         </div>
       )}
 
-      {/* Floating action button — always on top */}
-      <button
-        type="button"
-        className="fixed right-5 z-[9999] flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 rounded-full bg-green-600 text-white shadow-[0_4px_24px_rgba(34,197,94,0.4)] hover:scale-105 active:scale-95 transition-transform"
-        style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          console.log("[BrainFAB:click] isOpen=", isOpen, "pathname =", pathname);
-          isOpen ? handleClose() : handleOpen();
-        }}
-        data-testid="button-toggle-chat"
-      >
-        {isOpen ? (
-          <X className="h-6 w-6 sm:h-7 sm:w-7" />
-        ) : (
+      {/* Floating action button — only shown when drawer is closed */}
+      {!isOpen && (
+        <button
+          type="button"
+          className="fixed right-5 z-[9999] flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 rounded-full bg-green-600 text-white shadow-[0_4px_24px_rgba(34,197,94,0.4)] hover:scale-105 active:scale-95 transition-transform"
+          style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            console.log("[BrainFAB:click] isOpen=", isOpen, "pathname =", pathname);
+            handleOpen();
+          }}
+          data-testid="button-toggle-chat"
+        >
           <Brain className="h-6 w-6 sm:h-7 sm:w-7" />
-        )}
-        {!isOpen && pendingCount > 0 && (
-          <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full px-1">
-            {pendingCount > 9 ? "9+" : pendingCount}
-          </span>
-        )}
-      </button>
+          {pendingCount > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[9px] font-bold rounded-full px-1">
+              {pendingCount > 9 ? "9+" : pendingCount}
+            </span>
+          )}
+        </button>
+      )}
     </BrainPortalErrorBoundary>,
     document.body
   );
