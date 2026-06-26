@@ -2367,7 +2367,7 @@ export async function registerRoutes(
   app.post("/api/bookings", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const { coachId, serviceId, startAt, endAt } = req.body;
+      const { coachId, serviceId, startAt, endAt, subscriptionPlanId: requestedPlanId } = req.body;
 
       if (!coachId || !serviceId || !startAt || !endAt) {
         return res.status(400).json({ message: "Missing required fields" });
@@ -2428,6 +2428,48 @@ export async function registerRoutes(
 
       const isSemiPrivate = service.sessionType === "GROUP";
 
+      // ── Payment model: subscription/package vs wallet ────────────────────────
+      // subscriptionPlanId is only attached when the client explicitly sends it
+      // (e.g. booking from a subscription-aware UI). We validate that they have an
+      // active subscription matching that planId in this coach's org. We do NOT
+      // auto-attach based on wallet balance — wallet credits are a separate model.
+      let resolvedSubscriptionPlanId: string | null = null;
+      if (requestedPlanId && coach.organizationId) {
+        const clientSubs = await storage.getUserSubscriptions(userId);
+        const matchingSub = clientSubs.find(
+          s => s.planId === requestedPlanId
+            && s.organizationId === coach.organizationId
+            && (s.status === "active" || s.status === "past_due")
+        );
+        if (matchingSub) {
+          resolvedSubscriptionPlanId = requestedPlanId;
+          console.log(JSON.stringify({
+            system: 'booking',
+            paymentModel: 'subscription',
+            userId,
+            planId: requestedPlanId,
+            subscriptionId: matchingSub.id,
+            sessionsRemaining: matchingSub.sessionsRemaining,
+            message: 'Booking attached to active subscription plan — redemption will decrement sessionsRemaining',
+          }));
+        } else {
+          console.warn(JSON.stringify({
+            system: 'booking',
+            paymentModel: 'wallet_fallback',
+            userId,
+            requestedPlanId,
+            message: 'Requested subscriptionPlanId has no matching active subscription for this client/org — falling back to wallet model',
+          }));
+        }
+      } else {
+        console.log(JSON.stringify({
+          system: 'booking',
+          paymentModel: 'wallet',
+          userId,
+          message: 'No subscriptionPlanId provided — booking will use wallet debit model on redemption',
+        }));
+      }
+
       const booking = await storage.createBooking({
         clientId: userId,
         coachId,
@@ -2442,6 +2484,7 @@ export async function registerRoutes(
         ageRange: isSemiPrivate ? (req.body.ageRange || "") : "",
         skillLevel: isSemiPrivate ? (req.body.skillLevel || "") : "",
         organizationId: coach.organizationId || null,
+        subscriptionPlanId: resolvedSubscriptionPlanId,
       });
 
       if (coach.organizationId) {
@@ -3633,6 +3676,19 @@ export async function registerRoutes(
       if (isFreeIntro) {
         amountCents = 2000;
       } else if (booking.subscriptionPlanId) {
+        // ── Payment model: SUBSCRIPTION/PACKAGE ─────────────────────────────────
+        // This booking is tied to a subscription plan. Coach pay is drawn from the
+        // plan's per-session rate. Wallet is NOT debited. sessionsRemaining will be
+        // decremented below after the redemption record is created.
+        console.log(JSON.stringify({
+          system: 'redemption',
+          paymentModel: 'subscription',
+          bookingId,
+          clientId: booking.clientId,
+          coachId: booking.coachId,
+          subscriptionPlanId: booking.subscriptionPlanId,
+          message: 'Redemption using subscription/package model — will decrement sessionsRemaining, no wallet debit',
+        }));
         const plans = booking.coachId ? await (async () => {
           const coachProfile = await storage.getCoachProfile(booking.coachId);
           if (coachProfile?.organizationId) {
@@ -3664,6 +3720,20 @@ export async function registerRoutes(
       } else if (isTeamContract) {
         amountCents = (service?.durationMin || 60) <= 30 ? 1000 : 2000;
       } else {
+        // ── Payment model: WALLET/PREPAID ────────────────────────────────────────
+        // No subscriptionPlanId on this booking. Client's wallet balance (funded via
+        // Stripe deposit, cash, Venmo, or manual credit) is debited at service price.
+        // sessionsRemaining is NOT touched.
+        console.log(JSON.stringify({
+          system: 'redemption',
+          paymentModel: 'wallet',
+          bookingId,
+          clientId: booking.clientId,
+          coachId: booking.coachId,
+          servicePriceCents: perPersonCents,
+          isSemiPrivate,
+          message: 'Redemption using wallet/prepaid model — will debit wallet balance, no sessionsRemaining change',
+        }));
         if (isSemiPrivate) {
           const participants = await storage.getBookingParticipants(bookingId);
 
