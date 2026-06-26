@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useLocation, useSearch } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -19,7 +20,7 @@ import {
   Users, Zap, Layout, BookOpen, Calendar, Palette, Loader2, Plus, Trash2,
   GripVertical, ChevronUp, ChevronDown, Check, AlertTriangle, Globe, Link2,
   TrendingUp, Target, Lightbulb, Smartphone, Monitor, RefreshCw,
-  X, Award, Shield, Flame, Dumbbell, BriefcaseBusiness, GitBranch,
+  X, Award, Shield, Flame, BriefcaseBusiness, GitBranch,
   Workflow, Bell, Bot, FileCheck, DollarSign, ClipboardList,
   Upload, Video, Film, ImagePlus, ChevronDown as ChevronDownIcon, Library, UserCircle2,
   Rocket, FlaskConical, CheckCircle2, XCircle, AlertCircle, Clock, Wrench, PlayCircle
@@ -189,7 +190,7 @@ const FUNNEL_CONFIGS: Record<FunnelType, {
   athlete_application: {
     label: "Athlete Application",
     badgeLabel: "B2C",
-    icon: <Dumbbell className="h-4 w-4" />,
+    icon: <TrainLogo className="h-4 w-4" />,
     accent: "text-orange-400",
     accentBg: "bg-orange-500/10",
     accentBorder: "border-orange-500/20",
@@ -360,7 +361,7 @@ const ICON_OPTIONS = [
   { value: "Award", label: "🏆 Award" },
   { value: "Shield", label: "🛡 Shield" },
   { value: "Flame", label: "🔥 Fire" },
-  { value: "Dumbbell", label: "💪 Dumbbell" },
+  { value: "Dumbbell", label: "💪 Fitness" },
   { value: "TrendingUp", label: "📈 Trending" },
   { value: "Users", label: "👥 Team" },
   { value: "DollarSign", label: "💲 Dollar" },

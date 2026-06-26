@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Calendar, Dumbbell, Trophy, Heart, Zap, MessageSquare,
+  Calendar, Trophy, Heart, Zap, MessageSquare,
   TrendingUp, Bell, ArrowLeft, ChevronLeft, ChevronRight,
   CalendarDays, List, Clock, Plus, Users, Loader2,
   CalendarPlus, CheckCircle,
@@ -35,7 +35,7 @@ import { format, parseISO, addDays, startOfWeek, isToday, isSameDay } from "date
 
 const SOURCE_ICONS: Record<string, { Icon: any; color: string; bg: string; label: string; actionPath?: string }> = {
   booking:      { Icon: Calendar,      color: "text-blue-400",    bg: "bg-blue-400/10",    label: "Booking",      actionPath: "bookings" },
-  workout:      { Icon: Dumbbell,      color: "text-green-400",   bg: "bg-green-400/10",   label: "Workout",      actionPath: "workouts" },
+  workout:      { Icon: TrainLogo, color: "text-green-400",   bg: "bg-green-400/10",   label: "Workout",      actionPath: "workouts" },
   readiness:    { Icon: Heart,         color: "text-rose-400",    bg: "bg-rose-400/10",    label: "Readiness",    actionPath: "readiness" },
   pr:           { Icon: Trophy,        color: "text-amber-400",   bg: "bg-amber-400/10",   label: "PR",           actionPath: "pr-tracker" },
   alert:        { Icon: Zap,           color: "text-orange-400",  bg: "bg-orange-400/10",  label: "Alert",        actionPath: "athletes" },
@@ -66,7 +66,7 @@ const EVENT_TYPE_CONFIG: Record<string, { label: string; Icon: any; color: strin
   },
   workout: {
     label: "Workout Assignment",
-    Icon: Dumbbell,
+    Icon: TrainLogo,
     color: "text-green-400",
     endpoint: "/api/org/calendar/workouts",
     defaultTitle: "Workout",

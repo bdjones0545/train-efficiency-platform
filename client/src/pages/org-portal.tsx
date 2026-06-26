@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useEffect } from "react";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useParams } from "wouter";
@@ -21,7 +22,6 @@ import {
   LayoutDashboard,
   ArrowRight,
   Clock,
-  Dumbbell,
   TrendingUp,
   Settings2,
   ChevronRight,
@@ -493,7 +493,7 @@ function PortalHome({
                   intelligence: "text-cyan-400 bg-cyan-400/10",
                 };
                 const IconMap: Record<string, any> = {
-                  booking: CalendarDays, workout: Dumbbell, readiness: Heart,
+                  booking: CalendarDays, workout: readiness: Heart,
                   pr: Trophy, alert: Zap, message: MessageSquare,
                   intelligence: TrendingUp,
                 };
@@ -826,7 +826,7 @@ function PortalHome({
               <a key={p.id} href={`/org/${slug}/programs/${p.slug}`} data-testid={`link-workout-program-${p.id}`}>
                 <Card className="p-4 flex items-center gap-3 hover:border-primary/30 transition-colors">
                   <div className="rounded-lg bg-primary/10 p-2">
-                    <Dumbbell className="h-5 w-5 text-primary" />
+                    <TrainLogo className="h-5 w-5 text-primary" />
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold text-sm">{p.name}</p>
@@ -1058,7 +1058,7 @@ function PortalHome({
                         <div className={`h-7 w-7 rounded-lg flex items-center justify-center flex-shrink-0
                           ${isPr ? "bg-amber-400/15 text-amber-400" : "bg-primary/10 text-primary"}
                         `}>
-                          {isPr ? <Trophy className="h-3.5 w-3.5" /> : <Dumbbell className="h-3.5 w-3.5" />}
+                          {isPr ? <Trophy className="h-3.5 w-3.5" /> : <TrainLogo className="h-3.5 w-3.5" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium leading-snug">{n.title}</p>

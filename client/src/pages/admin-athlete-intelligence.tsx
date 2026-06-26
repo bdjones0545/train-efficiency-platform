@@ -14,7 +14,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   Brain, Zap, AlertTriangle, CheckCircle2, Activity, TrendingUp,
   TrendingDown, RefreshCw, Shield, Target, BarChart3, FileText,
-  ChevronRight, Star, XCircle, Clock, User, Dumbbell
+  ChevronRight, Star, XCircle, Clock, User
 } from "lucide-react";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────

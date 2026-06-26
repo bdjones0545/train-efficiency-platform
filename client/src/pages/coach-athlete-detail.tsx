@@ -33,7 +33,6 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
-  Dumbbell,
   TrendingUp,
   Activity,
   Lock,

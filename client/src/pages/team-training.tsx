@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useEffect } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Users, MapPin, Trophy, Target, Send, CheckCircle, Dumbbell } from "lucide-react";
+import { Users, MapPin, Trophy, Target, Send, CheckCircle } from "lucide-react";
 
 const SPORT_OPTIONS = [
   "Football",
@@ -123,7 +124,7 @@ export default function TeamTrainingPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold flex items-center gap-2" data-testid="text-team-training-title">
-          <Dumbbell className="h-6 w-6 text-primary" />
+          <TrainLogo className="h-6 w-6 text-primary" />
           Team Training
         </h1>
         <p className="text-muted-foreground mt-1">

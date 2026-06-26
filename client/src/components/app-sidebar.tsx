@@ -20,7 +20,6 @@ import {
   UserCog,
   Trophy,
   Wallet,
-  Dumbbell,
   Settings,
   Paintbrush,
   CreditCard,
@@ -1218,12 +1217,12 @@ export function AppSidebar() {
         ) : orgLoading ? (
           <div className="h-7 w-7 rounded-md bg-muted animate-pulse flex-shrink-0" />
         ) : (
-          <div
-            className="h-7 w-7 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold text-xs flex-shrink-0"
+          <img
+            src="/train-logo.png"
+            alt="TrainEfficiency"
+            className="h-7 w-7 rounded-md object-contain flex-shrink-0 bg-black"
             data-testid="img-sidebar-logo"
-          >
-            {(organization?.name || "").charAt(0).toUpperCase()}
-          </div>
+          />
         )}
         <span className="font-semibold text-sm tracking-tight truncate">
           {organization?.name || (orgLoading ? "Loading..." : "My Organization")}

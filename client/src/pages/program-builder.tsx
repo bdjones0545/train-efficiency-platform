@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -16,7 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Dumbbell, Plus, Trash2, GripVertical, ChevronDown, ChevronUp,
+  Plus, Trash2, GripVertical, ChevronDown, ChevronUp,
   Loader2, Save, Sparkles, BookOpen, Copy, Edit3, X, Search,
   Youtube, Link2, Brain, ArrowLeft, Check, Layers, Zap, RefreshCw,
   ChevronRight, Clock, Target,
@@ -456,7 +457,7 @@ function SessionPanel({
       {/* Exercise list */}
       {exercises.length === 0 ? (
         <div className="border border-dashed border-neutral-700 rounded-lg py-10 text-center">
-          <Dumbbell className="h-8 w-8 mx-auto text-neutral-600 mb-2" />
+          <TrainLogo className="h-8 w-8 mx-auto text-neutral-600 mb-2" />
           <p className="text-neutral-500 text-sm">No exercises yet</p>
           <p className="text-neutral-600 text-xs mt-1">Add from the library or type a quick add below</p>
           <Button size="sm" className="mt-3 bg-neutral-800 border border-neutral-700 text-neutral-300 hover:bg-neutral-700 text-xs"
@@ -829,7 +830,7 @@ export default function ProgramBuilderPage() {
           <OrgSidebar orgSlug={slug!} />
           <main className="flex-1 flex items-center justify-center">
             <div className="text-center space-y-4">
-              <Dumbbell className="h-12 w-12 mx-auto text-neutral-600" />
+              <TrainLogo className="h-12 w-12 mx-auto text-neutral-600" />
               <h2 className="text-xl font-semibold text-neutral-300">No Program Found</h2>
               <p className="text-neutral-500 text-sm">Generate a program with TrainChat first, then open the builder.</p>
               <Button variant="outline" className="border-neutral-700 bg-neutral-800 text-neutral-300"

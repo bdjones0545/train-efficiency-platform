@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -16,7 +17,7 @@ import { apiRequest, queryClient } from "@/lib/queryClient";
 import { fetchJson, parseApiResponse } from "@/lib/api-helpers";
 import { Slider } from "@/components/ui/slider";
 import {
-  Dumbbell, Wifi, WifiOff, Plus, Loader2, ChevronRight, ChevronLeft,
+  Wifi, WifiOff, Plus, Loader2, ChevronRight, ChevronLeft,
   Check, Star, Users, User, Archive, Pencil, ArrowRight, Calendar,
   Target, Clock, Zap, AlertTriangle, CheckCircle2, BarChart3,
   MessageSquarePlus, X, ClipboardList, Activity, Brain, TrendingUp,
@@ -144,7 +145,7 @@ function SessionCard({ session, completions, orgSlug }: { session: Session; comp
       <div className="mt-2 flex items-center gap-3">
         {exercises.length > 0 && (
           <p className="text-xs text-muted-foreground flex items-center gap-1">
-            <Dumbbell className="h-3 w-3" /> {exercises.length} exercise{exercises.length !== 1 ? "s" : ""}
+            <TrainLogo className="h-3 w-3" /> {exercises.length} exercise{exercises.length !== 1 ? "s" : ""}
           </p>
         )}
         {done ? (
@@ -465,7 +466,7 @@ function GenerateWizard({ programToolId, bootstrap, onGenerated, onClose }: { pr
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Dumbbell className="h-5 w-5 text-primary" />
+            <TrainLogo className="h-5 w-5 text-primary" />
             Generate Program
           </DialogTitle>
         </DialogHeader>
@@ -612,7 +613,7 @@ function GenerateWizard({ programToolId, bootstrap, onGenerated, onClose }: { pr
               <Card className="p-3 space-y-2 bg-muted/30 text-xs leading-relaxed">
                 <p className="flex items-center gap-2"><Target className="h-3.5 w-3.5 text-primary" /><span><strong>Target:</strong> {targetType === "team" ? `Team: ${selectedTeam?.name ?? selectedTeamId}` : `${selectedAthletes.length} athlete(s)`}</span></p>
                 <p className="flex items-center gap-2"><BarChart3 className="h-3.5 w-3.5 text-primary" /><span><strong>Goal:</strong> {GOAL_LABELS[goal] ?? goal}</span></p>
-                {sport && <p className="flex items-center gap-2"><Dumbbell className="h-3.5 w-3.5 text-primary" /><span><strong>Sport:</strong> {sport}</span></p>}
+                {sport && <p className="flex items-center gap-2"><TrainLogo className="h-3.5 w-3.5 text-primary" /><span><strong>Sport:</strong> {sport}</span></p>}
                 <p className="flex items-center gap-2"><Calendar className="h-3.5 w-3.5 text-primary" /><span><strong>Program:</strong> {durationWeeks} weeks · {daysPerWeek}x/week</span></p>
                 {equipment && <p className="flex items-center gap-2"><ClipboardList className="h-3.5 w-3.5 text-primary" /><span><strong>Equipment:</strong> {equipment}</span></p>}
                 {constraints && <p className="flex items-center gap-2"><AlertTriangle className="h-3.5 w-3.5 text-amber-400" /><span><strong>Constraints:</strong> {constraints}</span></p>}
@@ -683,7 +684,7 @@ function CoachLibraryView({ programs, onSelect, onGenerate }: { programs: any[];
 
       {filtered.length === 0 ? (
         <Card className="p-10 text-center space-y-4">
-          <Dumbbell className="h-10 w-10 text-muted-foreground mx-auto" />
+          <TrainLogo className="h-10 w-10 text-muted-foreground mx-auto" />
           <div>
             <p className="font-semibold">{programs.length === 0 ? "No programs yet" : "No programs match this filter"}</p>
             <p className="text-sm text-muted-foreground mt-1">{programs.length === 0 ? "Generate your first program using TrainChat." : "Try a different filter."}</p>
@@ -1018,7 +1019,7 @@ function AthleteWorkoutsView({ orgSlug, orgId, programToolId, trainChatConnected
       {tab === "assigned" && (
         programs.length === 0 ? (
           <Card className="p-10 text-center space-y-3" data-testid="card-no-assigned-workouts">
-            <Dumbbell className="h-10 w-10 text-muted-foreground mx-auto" />
+            <TrainLogo className="h-10 w-10 text-muted-foreground mx-auto" />
             <p className="font-semibold">No workouts assigned yet</p>
             <p className="text-sm text-muted-foreground">Your coach will assign programs once they've been generated.</p>
           </Card>
@@ -1356,7 +1357,7 @@ export default function WorkoutBuilderPage({ program, orgSlug, contextAthleteId,
       <div className="space-y-4" data-testid="page-workout-builder-athlete">
         <div className="flex items-center justify-between flex-wrap gap-2">
           <div>
-            <h1 className="text-xl font-bold flex items-center gap-2"><Dumbbell className="h-5 w-5" /> My Workouts</h1>
+            <h1 className="text-xl font-bold flex items-center gap-2"><TrainLogo className="h-5 w-5" /> My Workouts</h1>
             <p className="text-sm text-muted-foreground mt-0.5">{program?.name}</p>
           </div>
           {trainChatConnected && (
@@ -1381,7 +1382,7 @@ export default function WorkoutBuilderPage({ program, orgSlug, contextAthleteId,
     return (
       <div className="space-y-4" data-testid="page-workout-builder-guardian">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2"><Dumbbell className="h-5 w-5" /> Workouts</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><TrainLogo className="h-5 w-5" /> Workouts</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{program?.name}</p>
         </div>
         <Card className="p-4 flex items-start gap-3 border-muted">
@@ -1406,7 +1407,7 @@ export default function WorkoutBuilderPage({ program, orgSlug, contextAthleteId,
     return (
       <div className="space-y-4" data-testid="page-workout-builder-team-coach">
         <div>
-          <h1 className="text-xl font-bold flex items-center gap-2"><Dumbbell className="h-5 w-5" /> Workout Builder</h1>
+          <h1 className="text-xl font-bold flex items-center gap-2"><TrainLogo className="h-5 w-5" /> Workout Builder</h1>
           <p className="text-sm text-muted-foreground mt-0.5">{program?.name}</p>
         </div>
         <AthleteWorkoutsView
@@ -1437,7 +1438,7 @@ export default function WorkoutBuilderPage({ program, orgSlug, contextAthleteId,
       <div className="flex items-center justify-between flex-wrap gap-3">
         <div>
           <h1 className="text-xl font-bold flex items-center gap-2">
-            <Dumbbell className="h-5 w-5 text-primary" />
+            <TrainLogo className="h-5 w-5 text-primary" />
             Workout Builder
           </h1>
           <p className="text-sm text-muted-foreground mt-0.5">{program?.name}</p>

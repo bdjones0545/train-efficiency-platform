@@ -1,9 +1,10 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useEffect, useState } from "react";
 import {
   Calendar, Users, DollarSign, BarChart3, Building2, Wallet,
   UserCog, Mail, Zap, ChevronRight, Bell, Search, TrendingUp,
   Clock, CheckCircle2, AlertCircle, ArrowUpRight, Activity,
-  Target, Dumbbell, CreditCard, Star,
+  Target, CreditCard, Star,
 } from "lucide-react";
 
 const pulse = "animate-pulse";
@@ -114,7 +115,7 @@ export default function HeroDashboard() {
           {/* Brand */}
           <div className="flex items-center gap-2 px-3 py-3 border-b border-border/40">
             <div className="w-5 h-5 rounded-md bg-primary flex items-center justify-center flex-shrink-0">
-              <Dumbbell className="h-2.5 w-2.5 text-primary-foreground" />
+              <TrainLogo className="h-2.5 w-2.5 text-primary-foreground" />
             </div>
             <span className="text-[10px] font-semibold truncate">TrainEfficiency</span>
           </div>

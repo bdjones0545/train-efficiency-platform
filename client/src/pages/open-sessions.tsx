@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { Card } from "@/components/ui/card";
@@ -20,7 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import {
   Calendar, Clock, Filter, MapPin, Trash2, Users, UserPlus, UserMinus,
   Plus, X, ChevronLeft, ChevronRight, CalendarDays, LayoutGrid,
-  List, AlertCircle, CheckCircle2, Clock3, Dumbbell, SlidersHorizontal,
+  List, AlertCircle, CheckCircle2, Clock3, SlidersHorizontal,
   TrendingUp, DollarSign, Sparkles, Star, Zap, Target
 } from "lucide-react";
 import { useState, useMemo } from "react";
@@ -857,7 +858,7 @@ function SessionDetailModal({
                 )}
                 {session.sport && (
                   <Badge variant="outline" className="text-xs" data-testid={`badge-sport-${session.id}`}>
-                    <Dumbbell className="h-3 w-3 mr-1" />{session.sport}
+                    <TrainLogo className="h-3 w-3 mr-1" />{session.sport}
                   </Badge>
                 )}
               </div>

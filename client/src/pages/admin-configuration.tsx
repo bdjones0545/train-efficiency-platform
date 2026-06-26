@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { QueryErrorState } from "@/components/query-error-state";
 import QRCode from "react-qr-code";
@@ -19,7 +20,6 @@ import {
   Pencil,
   Percent,
   Settings,
-  Dumbbell,
   Save,
   X,
   Trash2,
@@ -2713,7 +2713,7 @@ export default function AdminConfigurationPage() {
           <section>
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-base font-semibold flex items-center gap-2">
-                <Dumbbell className="h-4 w-4 text-muted-foreground" />
+                <TrainLogo className="h-4 w-4 text-muted-foreground" />
                 Training Options
               </h2>
           <Dialog open={serviceDialogOpen} onOpenChange={setServiceDialogOpen}>
@@ -3552,7 +3552,7 @@ export default function AdminConfigurationPage() {
                     value: "athlete_application" as const,
                     label: "Athlete Application",
                     desc: "High-converting B2C funnels for individual athlete recruiting. Captures goals, experience, commitment, and AI qualifies each lead.",
-                    icon: <Dumbbell className="h-5 w-5" />,
+                    icon: <TrainLogo className="h-5 w-5" />,
                     color: "border-orange-500/40 bg-orange-50/30 dark:bg-orange-950/20",
                     iconColor: "text-orange-500",
                     badge: "bg-orange-500",
@@ -3890,7 +3890,7 @@ export default function AdminConfigurationPage() {
                     {(p.type === "scheduling" || !p.type) && (
                       <div className="flex flex-wrap gap-4 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {formatHourLabel(p.startHour)} - {formatHourLabel(p.endHour)}</span>
-                        <span className="flex items-center gap-1"><Dumbbell className="h-3.5 w-3.5" /> {(p.trainingTypes || []).join(", ")}</span>
+                        <span className="flex items-center gap-1"><TrainLogo className="h-3.5 w-3.5" /> {(p.trainingTypes || []).join(", ")}</span>
                         <span>Max {p.maxTeamsPerSlot} teams/slot</span>
                       </div>
                     )}

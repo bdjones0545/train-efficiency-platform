@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -12,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
 import {
   ArrowLeft, ArrowRight, Check, CheckCircle2, X, ChevronDown, ChevronUp,
-  Play, Pause, RotateCcw, Dumbbell, Brain, Target, AlertTriangle,
+  Play, Pause, RotateCcw, Brain, Target, AlertTriangle,
   TrendingUp, TrendingDown, Clock, Flame, Star, Loader2, Zap,
   Youtube, Volume2, ChevronLeft, ChevronRight, Sparkles, Trophy,
   Heart, BarChart3, Info, RefreshCw, MessageSquare,
@@ -887,7 +888,7 @@ export default function AthleteExecutionPage() {
     return (
       <div className="min-h-screen bg-neutral-950 flex items-center justify-center">
         <div className="text-center space-y-3">
-          <Dumbbell className="h-10 w-10 mx-auto text-neutral-600 animate-pulse" />
+          <TrainLogo className="h-10 w-10 mx-auto text-neutral-600 animate-pulse" />
           <p className="text-neutral-500 text-sm">Loading session…</p>
         </div>
       </div>
@@ -964,7 +965,7 @@ export default function AthleteExecutionPage() {
         {phase === "execute" && exercises.length === 0 && (
           <div className="flex-1 flex items-center justify-center text-center space-y-4">
             <div>
-              <Dumbbell className="h-12 w-12 mx-auto text-neutral-700 mb-3" />
+              <TrainLogo className="h-12 w-12 mx-auto text-neutral-700 mb-3" />
               <p className="text-neutral-400">No exercises in this session.</p>
               <Button className="mt-4 bg-neutral-800 border border-neutral-700" onClick={() => setPhase("wrapup")}>
                 Go to Summary

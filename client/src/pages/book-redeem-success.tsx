@@ -1,5 +1,6 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useEffect, useRef, useState } from "react";
-import { Dumbbell, CheckCircle2, Copy, Check, ExternalLink, ArrowLeft, Receipt } from "lucide-react";
+import { CheckCircle2, Copy, Check, ExternalLink, ArrowLeft, Receipt } from "lucide-react";
 
 // ── Analytics helpers ──────────────────────────────────────────────────────
 function trackEvent(name: string, props?: Record<string, unknown>) {
@@ -201,7 +202,7 @@ export default function BookRedeemSuccessPage() {
             className="flex items-center gap-2 transition-transform active:scale-95"
             data-testid="link-success-nav-home"
           >
-            <Dumbbell className="h-5 w-5 text-[#ffd274]" />
+            <TrainLogo className="h-5 w-5 text-[#ffd274]" />
             <span className="font-bold text-lg text-[#ffd274] tracking-tight">TrainEfficiency</span>
           </a>
           <nav className="hidden md:flex gap-8 items-center">

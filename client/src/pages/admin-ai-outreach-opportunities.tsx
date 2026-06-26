@@ -14,7 +14,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
-  Zap, GraduationCap, Users, Building2, Briefcase, Heart, Dumbbell,
+  Zap, GraduationCap, Users, Building2, Briefcase, Heart,
   Store, ChevronRight, CheckCheck, RefreshCw, Mail, Target, AlertCircle,
 } from "lucide-react";
 
@@ -103,7 +103,7 @@ const OUTREACH_DOMAINS = [
   {
     key: "facility_partnership",
     label: "Facility Partners",
-    icon: Dumbbell,
+    icon: TrainLogo,
     color: "text-rose-600 dark:text-rose-400",
     bg: "bg-rose-50 dark:bg-rose-950/20 border-rose-200 dark:border-rose-800",
     badge: "bg-rose-100 text-rose-800 dark:bg-rose-900/30 dark:text-rose-300",

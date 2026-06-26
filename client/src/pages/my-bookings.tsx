@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useMemo } from "react";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -18,7 +19,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import {
-  Calendar, Clock, X, Users, MapPin, Dumbbell, ExternalLink,
+  Calendar, Clock, X, Users, MapPin, ExternalLink,
   UserCheck, Zap, ChevronDown, ChevronRight, SlidersHorizontal,
   DollarSign, Target, Star, LayoutList, UsersRound,
 } from "lucide-react";
@@ -179,7 +180,7 @@ function CompactBookingCard({
           <div className="flex flex-wrap gap-1.5">
             {booking.sport && (
               <Badge variant="outline" className="text-xs py-0">
-                <Dumbbell className="h-3 w-3 mr-1" />{booking.sport}
+                <TrainLogo className="h-3 w-3 mr-1" />{booking.sport}
               </Badge>
             )}
             {booking.skillLevel && (
@@ -338,7 +339,7 @@ function BookingDetailDrawer({
             <div className="flex flex-wrap gap-2">
               {booking.sport && (
                 <Badge variant="outline" className="text-xs">
-                  <Dumbbell className="h-3 w-3 mr-1" />{booking.sport}
+                  <TrainLogo className="h-3 w-3 mr-1" />{booking.sport}
                 </Badge>
               )}
               {booking.skillLevel && <Badge variant="outline" className="text-xs">{booking.skillLevel}</Badge>}

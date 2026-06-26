@@ -14,8 +14,7 @@ import {
 } from "@/components/ui/command";
 import {
   Users, UsersRound, Calendar, CalendarClock, LayoutDashboard,
-  DollarSign, UserCog, Trophy, Wallet, Briefcase, FileText,
-  Dumbbell, Settings, Paintbrush, CreditCard, Sparkles, Bot,
+  DollarSign, UserCog, Trophy, Wallet, Briefcase, FileText, Settings, Paintbrush, CreditCard, Sparkles, Bot,
   CalendarDays, ImagePlay, Target, Flame, KanbanSquare, Activity,
   Brain, Plug, GitBranch, ShieldAlert, Home, TrendingUp, Cpu,
   Building2, Radio, Clock, Zap, Send, CalendarPlus, CheckSquare,
@@ -204,7 +203,7 @@ const ALL_PAGES: PageDef[] = [
   { id: "dashboard", label: "Dashboard", url: "/coach", icon: LayoutDashboard, section: "Home", keywords: "overview stats", minRole: "COACH" },
   { id: "coaches", label: "Coaches", url: "/coaches", icon: UserCog, section: "Browse", keywords: "coaches trainers" },
   { id: "group-sessions", label: "Group Sessions", url: "/sessions", icon: UsersRound, section: "Browse", keywords: "classes open sessions group" },
-  { id: "team-training", label: "Team Training", url: "/team-training", icon: Dumbbell, section: "Browse", keywords: "corporate team strength" },
+  { id: "team-training", label: "Team Training", url: "/team-training", icon: TrainLogo, section: "Browse", keywords: "corporate team strength" },
   { id: "my-bookings", label: "My Bookings", url: "/bookings", icon: Calendar, section: "Browse", keywords: "appointments sessions" },
   { id: "schedule", label: "Schedule", url: "/scheduling", icon: CalendarDays, section: "Scheduling", keywords: "calendar book sessions", minRole: "STAFF" },
   { id: "scheduling-agent", label: "Scheduling Agent", url: "/scheduling/agent", icon: Bot, section: "Scheduling", keywords: "AI schedule bot" },

@@ -3,7 +3,7 @@ import { fetchJson } from "@/lib/api-helpers";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Calendar, Dumbbell, MessageSquare, Trophy, Heart, Zap, TrendingUp, Bell,
+  Calendar, MessageSquare, Trophy, Heart, Zap, TrendingUp, Bell,
   BookOpen, GitBranch, Users, Activity,
 } from "lucide-react";
 
@@ -11,7 +11,7 @@ import {
 
 const SOURCE_CONFIG: Record<string, { color: string; bgColor: string; icon: any; label: string }> = {
   booking:      { color: "text-blue-400",    bgColor: "bg-blue-500/10",    icon: Calendar,      label: "Booking" },
-  workout:      { color: "text-emerald-400", bgColor: "bg-emerald-500/10", icon: Dumbbell,      label: "Workout" },
+  workout:      { color: "text-emerald-400", bgColor: "bg-emerald-500/10", icon: TrainLogo, label: "Workout" },
   readiness:    { color: "text-rose-400",    bgColor: "bg-rose-500/10",    icon: Heart,         label: "Readiness" },
   pr:           { color: "text-amber-400",   bgColor: "bg-amber-500/10",   icon: Trophy,        label: "PR" },
   alert:        { color: "text-orange-400",  bgColor: "bg-orange-500/10",  icon: Zap,           label: "Alert" },

@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -15,7 +16,7 @@ import {
   Users, Zap, Brain, TrendingUp, TrendingDown, Minus,
   Shield, ShieldAlert, ShieldCheck, Clock, Filter, Sparkles,
   ChevronRight, BarChart2, Loader2, X, ThumbsUp, ThumbsDown,
-  MessageSquare, Dumbbell,
+  MessageSquare,
 } from "lucide-react";
 import { navigateWithContext } from "@/lib/navigateWithContext";
 
@@ -360,7 +361,7 @@ function AthleteDetail({
                         <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-emerald-400"
                           data-testid={`button-workout-intervention-${iv.id}`}
                           onClick={() => navigateWithContext(setLocation, { route: `/coach/athletes/${userId}`, orgSlug: slug, athleteId: userId, source: "athlete-status" })}>
-                          <Dumbbell className="h-2.5 w-2.5" />Workout
+                          <TrainLogo className="h-2.5 w-2.5" />Workout
                         </Button>
                       </div>
                     </div>
@@ -728,7 +729,7 @@ export default function CoachAthleteStatusPage() {
                       <Button size="sm" variant="ghost" className="h-6 text-[10px] px-2 gap-1 text-emerald-400"
                         data-testid={`button-workout-queue-${iv.id}`}
                         onClick={() => navigateWithContext(setLocation, { route: `/coach/athletes/${iv.athleteUserId}`, orgSlug: slug, athleteId: iv.athleteUserId, source: "athlete-status" })}>
-                        <Dumbbell className="h-2.5 w-2.5" />Workout
+                        <TrainLogo className="h-2.5 w-2.5" />Workout
                       </Button>
                     </div>
                   </div>

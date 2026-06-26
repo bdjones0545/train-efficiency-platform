@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState } from "react";
 import { useParams } from "wouter";
 import { useQuery } from "@tanstack/react-query";
@@ -7,14 +8,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Calendar, Dumbbell, Trophy, Heart, Zap, MessageSquare,
+  Calendar, Trophy, Heart, Zap, MessageSquare,
   TrendingUp, Bell, ArrowLeft, User, BarChart2,
 } from "lucide-react";
 import { format, parseISO, isToday, isYesterday } from "date-fns";
 
 const SOURCE_CFG: Record<string, { Icon: any; color: string; bg: string; label: string }> = {
   booking:      { Icon: Calendar,      color: "text-blue-400",   bg: "bg-blue-400/10",    label: "Booking" },
-  workout:      { Icon: Dumbbell,      color: "text-green-400",  bg: "bg-green-400/10",   label: "Workout" },
+  workout:      { Icon: TrainLogo, color: "text-green-400",  bg: "bg-green-400/10",   label: "Workout" },
   readiness:    { Icon: Heart,         color: "text-rose-400",   bg: "bg-rose-400/10",    label: "Readiness" },
   pr:           { Icon: Trophy,        color: "text-amber-400",  bg: "bg-amber-400/10",   label: "PR" },
   alert:        { Icon: Zap,           color: "text-orange-400", bg: "bg-orange-400/10",  label: "Alert" },
@@ -144,7 +145,7 @@ export default function AthleteTimelinePage() {
         {!isLoading && (
           <div className="grid grid-cols-4 gap-2">
             <Card className="p-2.5 text-center border-border/30 bg-green-400/[0.04]">
-              <Dumbbell className="h-3.5 w-3.5 text-green-400 mx-auto mb-0.5" />
+              <TrainLogo className="h-3.5 w-3.5 text-green-400 mx-auto mb-0.5" />
               <p className="text-sm font-bold">{stats.totalCompletions ?? 0}</p>
               <p className="text-[10px] text-muted-foreground">Workouts</p>
             </Card>

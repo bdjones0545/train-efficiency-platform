@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState } from "react";
 import { useParams, useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -12,7 +13,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   ChevronLeft, ChevronRight, Bell, BookOpen, Calendar,
   CheckCircle2, Trophy, Users, GraduationCap, Loader2,
-  ShieldCheck, Dumbbell, User, Flame, Star, Heart,
+  ShieldCheck, User, Flame, Star, Heart,
   Target, TrendingUp, Clock, MessageSquare, Settings,
   Circle, Dot, ArrowLeft, Sparkles, Award,
 } from "lucide-react";
@@ -57,7 +58,7 @@ function NotifIcon({ type }: { type: string }) {
   if (type === "missed_workout")
     return <Clock className="h-4 w-4 text-amber-400" />;
   if (type === "workout_completion")
-    return <Dumbbell className="h-4 w-4 text-blue-400" />;
+    return <TrainLogo className="h-4 w-4 text-blue-400" />;
   if (type === "streak_milestone")
     return <Flame className="h-4 w-4 text-orange-400" />;
   if (type === "coach_announcement")
@@ -256,7 +257,7 @@ function AthleteDetailView({
         <div className="grid grid-cols-3 gap-2" data-testid="section-snapshot-stats">
           <StatCard icon={<Flame className="h-4 w-4" />} value={streak.currentStreak} label="Day Streak" color="orange" />
           <StatCard icon={<CheckCircle2 className="h-4 w-4" />} value={`${edu.percentComplete}%`} label="Education" color="green" />
-          <StatCard icon={<Dumbbell className="h-4 w-4" />} value={attendance.completedLast30Days} label="Sessions 30d" color="blue" />
+          <StatCard icon={<TrainLogo className="h-4 w-4" />} value={attendance.completedLast30Days} label="Sessions 30d" color="blue" />
         </div>
 
         {/* ── B. Upcoming Schedule ─────────────────────────────────────────────── */}

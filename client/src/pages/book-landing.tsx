@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import bookHeroImg from "@assets/B44D7E27-9E35-4B28-9E5F-4B0A73EAA972_1782438528568.PNG";
@@ -22,7 +23,6 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import {
   Zap,
-  Dumbbell,
   Layout,
   Users,
   FlaskConical,
@@ -163,7 +163,7 @@ export default function BookLandingPage() {
             className="flex items-center gap-2 transition-transform active:scale-95"
             data-testid="link-book-nav-home"
           >
-            <Dumbbell className="h-5 w-5 text-[#ffd274]" />
+            <TrainLogo className="h-5 w-5 text-[#ffd274]" />
             <span className="font-bold text-lg text-[#ffd274] tracking-tight">
               TrainEfficiency
             </span>
@@ -307,7 +307,7 @@ export default function BookLandingPage() {
                 description="Why adaptation — not fatigue — is the true purpose of training, and how to design every session around that principle."
               />
               <ValueCard
-                icon={<Dumbbell className="h-8 w-8 text-[#ffd274]" />}
+                icon={<TrainLogo className="h-8 w-8 text-[#ffd274]" />}
                 title="Building Physical Qualities"
                 description="How strength, speed, power, and work capacity develop throughout the athletic journey — and in what order they should be prioritized."
               />
@@ -695,7 +695,7 @@ export default function BookLandingPage() {
         <footer className="px-6 md:px-8 py-10 border-t border-white/5">
           <div className="max-w-[1200px] mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="flex items-center gap-2">
-              <Dumbbell className="h-4 w-4 text-[#ffd274]" />
+              <TrainLogo className="h-4 w-4 text-[#ffd274]" />
               <span className="text-sm font-bold text-[#ffd274]">
                 TrainEfficiency
               </span>

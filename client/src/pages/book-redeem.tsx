@@ -1,6 +1,7 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { Dumbbell, CheckCircle2, Upload, Lock, FileText, Image, X, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
+import { CheckCircle2, Upload, Lock, FileText, Image, X, AlertCircle, Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 const ACCEPTED_TYPES = ["image/jpeg", "image/jpg", "image/png", "application/pdf", "image/heic", "image/heif"];
@@ -261,7 +262,7 @@ export default function BookRedeemPage() {
             className="flex items-center gap-2 transition-transform active:scale-95"
             data-testid="link-redeem-nav-home"
           >
-            <Dumbbell className="h-5 w-5 text-[#ffd274]" />
+            <TrainLogo className="h-5 w-5 text-[#ffd274]" />
             <span className="font-bold text-lg text-[#ffd274] tracking-tight">TrainEfficiency</span>
           </a>
           <div className="hidden md:flex gap-8 items-center">

@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -11,7 +12,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from "@/components/ui/dialog";
-import { ChevronLeft, ChevronRight, Clock, Users, Trophy, Zap, Dumbbell, Plus, X, Trash2 } from "lucide-react";
+import { ChevronLeft, ChevronRight, Clock, Users, Trophy, Zap, Plus, X, Trash2 } from "lucide-react";
 import { Calendar as CalendarIcon } from "lucide-react";
 import { format, addDays, subDays } from "date-fns";
 import { Calendar } from "@/components/ui/calendar";
@@ -371,7 +372,7 @@ export default function CoachAthleticPage() {
                     }`}
                     data-testid={`button-training-${type.toLowerCase()}`}
                   >
-                    <Dumbbell className={`h-6 w-6 ${trainingType === type ? "text-primary" : "text-muted-foreground"}`} />
+                    <TrainLogo className={`h-6 w-6 ${trainingType === type ? "text-primary" : "text-muted-foreground"}`} />
                     <span className={`text-sm font-medium ${trainingType === type ? "text-primary" : "text-muted-foreground"}`}>
                       {type}
                     </span>

@@ -21,7 +21,7 @@ import {
   CheckCircle, ChevronRight, ChevronLeft, Zap, Users, Shield,
   GitBranch, Cpu, Brain, Target, TrendingUp, MessageSquare,
   Calendar, Search, Globe, Mail, Hash, Sparkles, ArrowRight,
-  Building2, BarChart2, Dumbbell, GraduationCap, HeartPulse,
+  Building2, BarChart2, GraduationCap, HeartPulse,
   Star, Layers,
 } from "lucide-react";
 
@@ -39,7 +39,7 @@ const ORG_GOALS = [
 ];
 
 const ORG_PRESETS = [
-  { id: "private_trainer", label: "Private Trainer", icon: Dumbbell, desc: "Solo practitioner, 5–30 clients", governance: "balanced" },
+  { id: "private_trainer", label: "Private Trainer", icon: TrainLogo, desc: "Solo practitioner, 5–30 clients", governance: "balanced" },
   { id: "performance_facility", label: "Performance Facility", icon: Building2, desc: "Team of coaches, 50–200 clients", governance: "balanced" },
   { id: "high_school", label: "High School Program", icon: GraduationCap, desc: "S&C for student athletes", governance: "conservative" },
   { id: "college_program", label: "College Program", icon: GraduationCap, desc: "NCAA-level performance dept", governance: "balanced" },

@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useParams, useLocation } from "wouter";
@@ -21,7 +22,6 @@ import {
   Trophy,
   ArrowLeft,
   Zap,
-  Dumbbell,
   X,
   AlertTriangle,
   User,
@@ -89,7 +89,7 @@ function ProgramSelector({ org, programs }: { org: any; programs: AthleticProgra
                   </div>
                   <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                     <span className="flex items-center gap-1"><Clock className="h-3.5 w-3.5" /> {formatHour(p.startHour)} - {formatHour(p.endHour)}</span>
-                    <span className="flex items-center gap-1"><Dumbbell className="h-3.5 w-3.5" /> {(p.trainingTypes || []).join(", ")}</span>
+                    <span className="flex items-center gap-1"><TrainLogo className="h-3.5 w-3.5" /> {(p.trainingTypes || []).join(", ")}</span>
                     <span>Max {p.maxTeamsPerSlot} teams/slot</span>
                   </div>
                 </Card>
@@ -826,7 +826,7 @@ export default function AthleticSchedulingPage() {
                     }`}
                     data-testid={`button-training-${type.toLowerCase()}`}
                   >
-                    <Dumbbell className={`h-6 w-6 ${trainingType === type ? "text-primary" : "text-muted-foreground"}`} />
+                    <TrainLogo className={`h-6 w-6 ${trainingType === type ? "text-primary" : "text-muted-foreground"}`} />
                     <span className={`text-sm font-medium ${trainingType === type ? "text-primary" : "text-muted-foreground"}`}>
                       {type}
                     </span>

@@ -44,7 +44,6 @@ import {
   ArrowRight,
   Circle,
   MessageSquare,
-  Dumbbell,
   UserCircle,
 } from "lucide-react";
 

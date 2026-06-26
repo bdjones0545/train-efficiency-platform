@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useMemo, useCallback, useRef } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { QueryErrorState } from "@/components/query-error-state";
@@ -60,7 +61,6 @@ import {
   Clock,
   User as UserIcon,
   MapPin,
-  Dumbbell,
   Bot,
   CalendarIcon,
   Lock,
@@ -343,7 +343,7 @@ function EventDetailDialog({
             )}
             {booking.coach?.user && (
               <div className="flex items-center gap-2">
-                <Dumbbell className="h-3.5 w-3.5 shrink-0" />
+                <TrainLogo className="h-3.5 w-3.5 shrink-0" />
                 <span>{booking.coach.user.firstName} {booking.coach.user.lastName}</span>
               </div>
             )}
@@ -930,7 +930,7 @@ function AgendaView({
                               </span>
                               {b.coach?.user && (
                                 <span className="flex items-center gap-1">
-                                  <Dumbbell className="h-3 w-3" />
+                                  <TrainLogo className="h-3 w-3" />
                                   {b.coach.user.firstName} {b.coach.user.lastName}
                                 </span>
                               )}

@@ -9,14 +9,14 @@ import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   ArrowLeft, CheckCircle2, BookOpen, Trophy, ChevronRight,
-  Zap, Droplets, Clock, Salad, Dumbbell, Star, RotateCcw,
+  Zap, Droplets, Clock, Salad, Star, RotateCcw,
   ChevronDown, ChevronUp, AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 // ─── Module icons ─────────────────────────────────────────────────────────────
 
-const MODULE_ICONS = [Zap, Dumbbell, BookOpen, Droplets, Clock, Salad];
+const MODULE_ICONS = [Zap, BookOpen, Droplets, Clock, Salad];
 const MODULE_COLORS = [
   "text-amber-400 bg-amber-400/10",
   "text-green-400 bg-green-400/10",

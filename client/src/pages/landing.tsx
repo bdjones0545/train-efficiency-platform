@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -11,7 +12,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   Calendar, Users, Shield, Clock, TrendingUp, Zap, UserCog, LogIn, Eye, EyeOff,
-  UserPlus, Menu, X, DollarSign, CreditCard, BarChart3, Mail, Dumbbell,
+  UserPlus, Menu, X, DollarSign, CreditCard, BarChart3, Mail,
   ClipboardList, UserCheck, Wallet, Receipt, Building2, CheckCircle2, ArrowRight, Sparkles,
   ChevronRight, Star, Lock, Globe, Activity, Layers, BookOpen,
 } from "lucide-react";
@@ -111,7 +112,7 @@ export default function LandingPage() {
         <div className="max-w-6xl mx-auto px-5 h-15 flex items-center justify-between gap-4" style={{ height: "60px" }}>
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-md bg-primary flex items-center justify-center flex-shrink-0">
-              <Dumbbell className="h-3.5 w-3.5 text-primary-foreground" />
+              <TrainLogo className="h-3.5 w-3.5 text-primary-foreground" />
             </div>
             <span className="font-semibold text-sm tracking-tight" data-testid="text-brand-name">
               TrainEfficiency
@@ -375,7 +376,7 @@ export default function LandingPage() {
           {/* Founder note */}
           <div className="mt-8 p-5 rounded-xl border border-border/60 bg-card/50 flex gap-4 items-start max-w-2xl mx-auto">
             <div className="w-10 h-10 rounded-full bg-primary/15 flex items-center justify-center flex-shrink-0">
-              <Dumbbell className="h-5 w-5 text-primary" />
+              <TrainLogo className="h-5 w-5 text-primary" />
             </div>
             <div>
               <p className="text-sm leading-relaxed text-muted-foreground italic">
@@ -678,7 +679,7 @@ export default function LandingPage() {
           <div className="flex flex-wrap items-center justify-between gap-4 text-xs text-muted-foreground">
             <div className="flex items-center gap-2">
               <div className="w-6 h-6 rounded-md bg-primary/15 flex items-center justify-center">
-                <Dumbbell className="h-3 w-3 text-primary" />
+                <TrainLogo className="h-3 w-3 text-primary" />
               </div>
               <span className="font-medium text-foreground/70">TrainEfficiency</span>
               <span>— Built for S&C coaches</span>

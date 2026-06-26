@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {
-  Calendar, Dumbbell, Trophy, Heart, Zap, MessageSquare,
+  Calendar, Trophy, Heart, Zap, MessageSquare,
   TrendingUp, Bell, ArrowLeft, Search, Activity,
   ChevronDown,
 } from "lucide-react";
@@ -16,7 +16,7 @@ import { format, parseISO, isToday, isYesterday } from "date-fns";
 
 const SOURCE_CFG: Record<string, { Icon: any; color: string; bg: string; label: string }> = {
   booking:      { Icon: Calendar,      color: "text-blue-400",   bg: "bg-blue-400/10",    label: "Booking" },
-  workout:      { Icon: Dumbbell,      color: "text-green-400",  bg: "bg-green-400/10",   label: "Workout" },
+  workout:      { Icon: TrainLogo, color: "text-green-400",  bg: "bg-green-400/10",   label: "Workout" },
   readiness:    { Icon: Heart,         color: "text-rose-400",   bg: "bg-rose-400/10",    label: "Readiness" },
   pr:           { Icon: Trophy,        color: "text-amber-400",  bg: "bg-amber-400/10",   label: "PR" },
   alert:        { Icon: Zap,           color: "text-orange-400", bg: "bg-orange-400/10",  label: "Alert" },

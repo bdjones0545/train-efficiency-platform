@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import { queryClient } from "@/lib/queryClient";
 import { fetchJson } from "@/lib/api-helpers";
 import {
-  Bell, BellOff, CheckCheck, Dumbbell, Trophy, Calendar,
+  Bell, BellOff, CheckCheck, Trophy, Calendar,
   MessageSquare, Megaphone, AlertTriangle, ArrowLeft, Zap,
   Heart, Loader2, Activity, ChevronRight, Sparkles, TrendingUp,
   Eye, User,
@@ -28,7 +28,7 @@ interface NotifMeta {
 }
 
 const NOTIF_CONFIG: Record<string, NotifMeta> = {
-  workout_assigned:    { icon: Dumbbell,       color: "text-primary",        bg: "bg-primary/10",       border: "border-primary/20",    label: "Workout Assigned",    severity: "info" },
+  workout_assigned:    { icon: TrainLogo, color: "text-primary",        bg: "bg-primary/10",       border: "border-primary/20",    label: "Workout Assigned",    severity: "info" },
   workout_completed:   { icon: CheckCheck,     color: "text-emerald-400",    bg: "bg-emerald-400/10",   border: "border-emerald-400/20", label: "Completed",           severity: "info" },
   workout_reminder:    { icon: Calendar,       color: "text-amber-400",      bg: "bg-amber-400/10",     border: "border-amber-400/20",  label: "Reminder",            severity: "warning" },
   missed_workout:      { icon: AlertTriangle,  color: "text-red-400",        bg: "bg-red-400/10",       border: "border-red-400/20",    label: "Missed Workout",      severity: "alert" },
@@ -81,7 +81,7 @@ function getQuickActions(n: any, slug: string) {
   const actions: Array<{ label: string; icon: any; href?: string }> = [];
 
   if (n.type === "workout_assigned" || n.type === "missed_workout" || n.type === "readiness_followup") {
-    actions.push({ label: "View Workout", icon: Dumbbell, href: `/org/${slug}/portal` });
+    actions.push({ label: "View Workout", icon: TrainLogo, href: `/org/${slug}/portal` });
   }
   if (n.type === "pr_celebration") {
     actions.push({ label: "View PRs", icon: Trophy, href: `/org/${slug}/portal` });

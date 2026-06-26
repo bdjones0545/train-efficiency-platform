@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -10,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useAuth } from "@/hooks/use-auth";
-import { Users, DollarSign, Send, FileText, Dumbbell, Zap, ExternalLink, Calendar, Trash2 } from "lucide-react";
+import { Users, DollarSign, Send, FileText, Zap, ExternalLink, Calendar, Trash2 } from "lucide-react";
 import type { TeamQuote } from "@shared/schema";
 
 const FREQUENCY_OPTIONS = [
@@ -188,7 +189,7 @@ export default function TeamQuotesPage() {
                 <SelectContent>
                   <SelectItem value="STRENGTH">
                     <span className="flex items-center gap-2">
-                      <Dumbbell className="h-4 w-4" />
+                      <TrainLogo className="h-4 w-4" />
                       Strength
                     </span>
                   </SelectItem>
@@ -303,7 +304,7 @@ export default function TeamQuotesPage() {
                     <h3 className="font-semibold text-base">{group.teamName}</h3>
                     <Badge variant="outline">
                       {group.trainingType === "STRENGTH" ? (
-                        <span className="flex items-center gap-1"><Dumbbell className="h-3 w-3" /> Strength</span>
+                        <span className="flex items-center gap-1"><TrainLogo className="h-3 w-3" /> Strength</span>
                       ) : (
                         <span className="flex items-center gap-1"><Zap className="h-3 w-3" /> Speed</span>
                       )}

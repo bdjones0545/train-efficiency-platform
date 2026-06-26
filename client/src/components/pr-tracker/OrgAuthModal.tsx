@@ -1,3 +1,4 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -6,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Trophy, ShieldCheck, User, CheckCircle2, Dumbbell, BarChart3, Users } from "lucide-react";
+import { Loader2, Trophy, ShieldCheck, User, CheckCircle2, BarChart3, Users } from "lucide-react";
 
 interface OrgAuthModalProps {
   orgId: string;
@@ -133,7 +134,7 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
               {isCoach ? (
                 <>
                   <div className="flex items-center gap-2 text-sm" data-testid="feature-workout-builder">
-                    <Dumbbell className="h-4 w-4 text-primary shrink-0" />
+                    <TrainLogo className="h-4 w-4 text-primary shrink-0" />
                     <span>Workout Builder — create and assign programs</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm" data-testid="feature-pr-tracker">
@@ -152,7 +153,7 @@ export function OrgAuthModal({ orgId, programId = "", programName, onAuthenticat
                     <span>PR Tracker — log and track personal records</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm" data-testid="feature-workout-builder">
-                    <Dumbbell className="h-4 w-4 text-primary shrink-0" />
+                    <TrainLogo className="h-4 w-4 text-primary shrink-0" />
                     <span>Workout Builder — view assigned workouts</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm" data-testid="feature-team">

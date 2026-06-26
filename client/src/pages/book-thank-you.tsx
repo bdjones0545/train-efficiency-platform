@@ -1,8 +1,9 @@
+import { TrainLogo } from "@/components/train-logo";
 import { useEffect, useState, useRef } from "react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
-import { Dumbbell, CheckCircle2, ShoppingCart, ArrowLeft, Loader2 } from "lucide-react";
+import { CheckCircle2, ShoppingCart, ArrowLeft, Loader2 } from "lucide-react";
 
 const AMAZON_BOOK_URL = "https://www.amazon.com/dp/B0H6CDZ85W";
 
@@ -115,7 +116,7 @@ export default function BookThankYouPage() {
             className="flex items-center gap-2 transition-transform active:scale-95"
             data-testid="link-thankyou-nav-home"
           >
-            <Dumbbell className="h-5 w-5 text-[#ffd274]" />
+            <TrainLogo className="h-5 w-5 text-[#ffd274]" />
             <span className="font-bold text-lg text-[#ffd274] tracking-tight">
               TrainEfficiency
             </span>
