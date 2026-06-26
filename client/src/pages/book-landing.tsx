@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
+import bookHeroImg from "@assets/B44D7E27-9E35-4B28-9E5F-4B0A73EAA972_1782438528568.PNG";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
