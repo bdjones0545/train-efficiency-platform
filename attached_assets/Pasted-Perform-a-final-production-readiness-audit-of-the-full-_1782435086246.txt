@@ -1,0 +1,81 @@
+Perform a final production-readiness audit of the full book funnel.
+
+Do not add new features yet.
+Do not refactor unless a bug or security issue is found.
+
+Audit this complete flow:
+
+/book
+→ email capture modal
+→ backend lead save
+→ SendGrid bonus email
+→ /book/thank-you
+→ Amazon redirect
+→ /book/redeem
+→ receipt upload
+→ /book/redeem/success
+→ TrainChat activation CTA
+
+Check:
+
+* All routes render cleanly
+* Mobile responsiveness
+* CTA behavior
+* Email modal validation
+* Lead upsert behavior
+* Duplicate email prevention
+* SendGrid failure handling
+* Amazon URL placeholder handling
+* Receipt upload validation
+* File type/magic-byte validation
+* File size limits
+* Private storage path safety
+* No internal file paths exposed
+* Duplicate receipt behavior
+* Promo code uniqueness
+* Success page code display/copy behavior
+* TrainChat link opens correctly
+* Analytics/funnel events write correctly
+* No auth required for public funnel pages
+* No unrelated routes broken
+* No secrets exposed client-side
+* No console errors
+* No TypeScript/import errors from touched files
+
+Security audit:
+
+* Validate server-side inputs
+* Confirm upload filenames are sanitized
+* Confirm only supported receipt file types are accepted
+* Confirm files are stored privately
+* Confirm API responses do not leak sensitive paths or credentials
+* Confirm SendGrid key remains server-side only
+
+Production config audit:
+
+Identify every placeholder that must be set before launch:
+
+* AMAZON_BOOK_URL
+* APP_BASE_URL / PUBLIC_APP_URL
+* BOOK_RECEIPT_UPLOAD_URL behavior
+* TrainChat URL
+* SendGrid sender/from configuration
+* Any Stripe coupon TODOs
+
+Run whatever checks are practical:
+
+* npm run check
+* npm run build if available
+* targeted client/server import checks if full tsc OOMs
+* manual browser route checks
+
+Report:
+
+* Pass/fail summary
+* Bugs found
+* Security issues found
+* Files needing changes
+* Production placeholders remaining
+* Recommended launch blockers
+* Non-blocking future improvements
+* Final recommendation: ready / not ready
