@@ -37,7 +37,6 @@ import {
   Eye,
   Loader2,
 } from "lucide-react";
-import bookCoverImg from "@assets/screen_1782422677135.png";
 
 const AMAZON_BOOK_URL = "https://www.amazon.com/dp/B0H6CDZ85W";
 
@@ -271,22 +270,78 @@ export default function BookLandingPage() {
               </div>
             </div>
 
-            {/* Book mockup side */}
+            {/* Book cover — component-based */}
             <div className="order-1 md:order-2 flex justify-center relative">
               <div className="absolute -inset-10 bg-[#ffd274]/5 blur-[100px] rounded-full pointer-events-none" />
               <div
-                className="relative z-10 animate-[subtle-float_6s_ease-in-out_infinite]"
-                style={{
-                  animation: "subtle-float 6s ease-in-out infinite",
-                }}
+                className="relative z-10"
+                style={{ animation: "subtle-float 6s ease-in-out infinite" }}
               >
-                <img
-                  src={bookCoverImg}
-                  alt="The Structure of Training for Strength and Speed for Youth Athletes by Bryan Jones"
-                  className="w-[280px] md:w-[400px] h-auto drop-shadow-[0_32px_64px_rgba(246,190,55,0.25)] rounded-lg"
+                {/* Book spine + cover block */}
+                <div
+                  className="w-[240px] md:w-[320px] rounded-xl overflow-hidden shadow-[0_32px_80px_rgba(0,0,0,0.7),0_0_60px_rgba(246,190,55,0.18)] select-none"
                   data-testid="img-book-cover"
-                />
-                {/* Premium label overlay */}
+                  style={{
+                    background: "linear-gradient(160deg, #1a1814 0%, #0d0c0a 60%, #1f1c16 100%)",
+                    border: "1px solid rgba(255,210,116,0.15)",
+                  }}
+                >
+                  {/* Top accent bar */}
+                  <div className="h-1.5 w-full bg-gradient-to-r from-[#ffd274] via-[#ebb42d] to-[#ffd274]" />
+
+                  <div className="px-8 py-10 flex flex-col gap-6">
+                    {/* Series badge */}
+                    <div className="inline-flex self-start items-center gap-1.5 bg-[#ffd274]/10 border border-[#ffd274]/25 px-3 py-1 rounded-full">
+                      <Dumbbell className="h-3 w-3 text-[#ffd274]" />
+                      <span className="text-[9px] font-bold tracking-[0.18em] uppercase text-[#ffd274]">
+                        Evidence-Based Performance
+                      </span>
+                    </div>
+
+                    {/* Title */}
+                    <div>
+                      <p className="text-[11px] font-bold tracking-[0.2em] uppercase text-[#9c8f7a] mb-3">
+                        The Structure of
+                      </p>
+                      <h2
+                        className="text-[38px] md:text-[44px] font-black leading-[1.0] text-[#e5e2e1]"
+                        style={{ letterSpacing: "-0.02em" }}
+                      >
+                        TRAINING
+                      </h2>
+                      <p className="text-sm font-bold text-[#ffd274] tracking-wide mt-2 leading-snug">
+                        for Strength and Speed<br />for Youth Athletes
+                      </p>
+                    </div>
+
+                    {/* Divider */}
+                    <div className="h-px w-full bg-gradient-to-r from-transparent via-[#ffd274]/30 to-transparent" />
+
+                    {/* Author block */}
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-[#ffd274]/10 border border-[#ffd274]/20 flex items-center justify-center shrink-0">
+                        <Award className="h-4 w-4 text-[#ffd274]" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-[#e5e2e1] leading-none">Bryan Jones</p>
+                        <p className="text-[9px] text-[#9c8f7a] tracking-widest uppercase mt-0.5">MS, CSCS, PES, EP-C</p>
+                      </div>
+                    </div>
+
+                    {/* Bottom accent */}
+                    <div className="flex items-center gap-2 pt-1">
+                      {[...Array(5)].map((_, i) => (
+                        <Star key={i} className="h-3 w-3 fill-[#ffd274] text-[#ffd274]" />
+                      ))}
+                      <span className="text-[9px] text-[#9c8f7a] ml-1">Evidence-Based</span>
+                    </div>
+                  </div>
+
+                  {/* Bottom accent bar */}
+                  <div className="h-1 w-full bg-gradient-to-r from-[#ffd274]/20 via-[#ffd274]/60 to-[#ffd274]/20" />
+                </div>
+
+                {/* Available on Amazon badge */}
                 <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#ffd274] text-[#402d00] text-xs font-bold tracking-widest uppercase px-4 py-1.5 rounded-full shadow-lg">
                   Available on Amazon
                 </div>
@@ -469,17 +524,15 @@ export default function BookLandingPage() {
         >
           <div className="max-w-[1200px] mx-auto">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-16 items-center">
-              {/* Author image placeholder */}
+              {/* Author photo */}
               <div className="relative flex justify-center">
-                <div className="w-[280px] h-[360px] md:w-[360px] md:h-[460px] rounded-2xl bg-gradient-to-br from-[#2a2a2a] to-[#1c1b1b] border border-white/10 flex items-center justify-center shadow-[0_32px_64px_rgba(0,0,0,0.5)]">
-                  <div className="text-center space-y-3 p-8">
-                    <div className="w-20 h-20 rounded-full bg-[#ffd274]/10 border border-[#ffd274]/20 flex items-center justify-center mx-auto">
-                      <Users className="h-10 w-10 text-[#ffd274]" />
-                    </div>
-                    <p className="text-xs font-bold tracking-widest uppercase text-[#9c8f7a]">
-                      Author Photo
-                    </p>
-                  </div>
+                <div className="w-[280px] md:w-[360px] rounded-2xl overflow-hidden border border-white/10 shadow-[0_32px_64px_rgba(0,0,0,0.5)]">
+                  <img
+                    src="/bryan-jones.jpeg"
+                    alt="Bryan Jones — MS, CSCS, PES, EP-C"
+                    className="w-full h-auto object-cover"
+                    data-testid="img-author-photo"
+                  />
                 </div>
                 <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap bg-[#201f1f] border border-[#ffd274]/20 text-[#ffd274] text-xs font-bold tracking-widest uppercase px-5 py-2 rounded-full">
                   Bryan Jones
