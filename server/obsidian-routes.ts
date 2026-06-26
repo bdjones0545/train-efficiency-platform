@@ -252,4 +252,55 @@ export function registerObsidianRoutes(
       res.status(500).json({ message: e.message });
     }
   });
+
+  // ─── Obsidian Sync Queue Management ──────────────────────────────────────
+
+  // GET /api/obsidian/sync-queue/stats — queue health summary
+  app.get("/api/obsidian/sync-queue/stats", async (_req: any, res) => {
+    try {
+      const { getQueueStats } = await import("./services/obsidian-sync-service");
+      const stats = await getQueueStats();
+      res.json({ success: true, stats });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // GET /api/obsidian/sync-queue/items — list queue items
+  app.get("/api/obsidian/sync-queue/items", async (req: any, res) => {
+    try {
+      const { getQueueItems } = await import("./services/obsidian-sync-service");
+      const { status, limit, offset } = req.query as { status?: string; limit?: string; offset?: string };
+      const items = await getQueueItems({
+        status: status || undefined,
+        limit: limit ? parseInt(limit, 10) : 50,
+        offset: offset ? parseInt(offset, 10) : 0,
+      });
+      res.json({ success: true, items, count: items.length });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // POST /api/obsidian/sync-queue/retry-failed — reset failed items back to pending
+  app.post("/api/obsidian/sync-queue/retry-failed", async (_req: any, res) => {
+    try {
+      const { requeueFailed } = await import("./services/obsidian-sync-service");
+      const count = await requeueFailed();
+      res.json({ success: true, requeuedCount: count, message: `${count} failed items reset to pending` });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // POST /api/obsidian/sync-queue/process-now — trigger immediate retry sweep
+  app.post("/api/obsidian/sync-queue/process-now", async (_req: any, res) => {
+    try {
+      const { processObsidianSyncQueue } = await import("./services/obsidian-sync-service");
+      const result = await processObsidianSyncQueue();
+      res.json({ success: true, ...result });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
 }

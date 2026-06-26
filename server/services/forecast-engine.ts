@@ -839,6 +839,19 @@ export async function getBusinessOSScore(orgId: string): Promise<{
     obsidianNotes = stats.totalNotes ?? 0;
   } catch (_) {}
 
+  // DB fallback: if Obsidian is offline, use hermes learnings + decisions count as memory proxy
+  if (obsidianNotes === 0) {
+    try {
+      const memRes = await db.execute(sql`
+        SELECT
+          (SELECT COUNT(*) FROM hermes_auto_learnings WHERE org_id = ${orgId})::int +
+          (SELECT COUNT(*) FROM decision_journal_entries WHERE org_id = ${orgId})::int AS total_memory
+      `).catch(() => [{ total_memory: 0 }]);
+      const memRows: any[] = Array.isArray(memRes) ? memRes : (memRes as any)?.rows ?? [];
+      obsidianNotes = Number(memRows[0]?.total_memory ?? 0);
+    } catch (_) {}
+  }
+
   const ta = (await toArr(trustRows))[0] ?? {};
   const oa = (await toArr(outcomeRows))[0] ?? {};
 

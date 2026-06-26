@@ -848,13 +848,25 @@ _Written automatically by CEO Heartbeat Agent_
     tags: ["heartbeat", "priorities", "executive"],
   };
 
-  await createNote(OBSIDIAN_FOLDERS.ceoHeartbeat, `${dateStr} Heartbeat`, content, meta);
-  await appendToNote(
-    OBSIDIAN_FOLDERS.dailyReports,
-    dateStr,
-    `\n## ${timeStr} — CEO Heartbeat\n\n${topList || "_No priorities_"}\n`,
-    { type: "daily_report", agent: "CEO Heartbeat Agent", organizationId: orgId, tags: ["daily", "heartbeat"] },
-  );
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `heartbeat-${runId}-${dateStr}`,
+    noteAction: "create",
+    folder: OBSIDIAN_FOLDERS.ceoHeartbeat,
+    title: `${dateStr} Heartbeat`,
+    content,
+    metadata: meta,
+    contextLabel: `CEO Heartbeat report runId=${runId}`,
+  });
+  await trySyncNow({
+    idempotencyKey: `heartbeat-daily-${runId}-${dateStr}`,
+    noteAction: "append",
+    folder: OBSIDIAN_FOLDERS.dailyReports,
+    title: dateStr,
+    content: `\n## ${timeStr} — CEO Heartbeat\n\n${topList || "_No priorities_"}\n`,
+    metadata: { type: "daily_report", agent: "CEO Heartbeat Agent", organizationId: orgId, tags: ["daily", "heartbeat"] } as NoteMetadata,
+    contextLabel: `CEO Heartbeat daily report ${dateStr}`,
+  });
 }
 
 export async function writeAgentDecision(opts: {
@@ -890,7 +902,16 @@ ${outcome ? `**Outcome:** ${outcome}` : ""}
     tags: ["decision", actionType.toLowerCase().replace(/\s+/g, "_")],
   };
 
-  await appendToNote(OBSIDIAN_FOLDERS.agentDecisions, `${dateStr} Decisions`, entry, meta);
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `agent-decision-${orgId}-${actionType}-${(executedAt ?? new Date()).getTime()}`,
+    noteAction: "append",
+    folder: OBSIDIAN_FOLDERS.agentDecisions,
+    title: `${dateStr} Decisions`,
+    content: entry,
+    metadata: meta,
+    contextLabel: `Agent decision: ${title}`,
+  });
 }
 
 export async function writeSoftwareImprovement(opts: {
@@ -922,7 +943,16 @@ ${fix ? `**Fix Applied:** ${fix}` : ""}
     tags: ["software", "improvement", severity || "info"],
   };
 
-  await appendToNote(OBSIDIAN_FOLDERS.softwareImprovements, `${dateStr} Improvements`, entry, meta);
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `sw-improvement-${(orgId ?? "").slice(0, 8)}-${Date.now()}`,
+    noteAction: "append",
+    folder: OBSIDIAN_FOLDERS.softwareImprovements,
+    title: `${dateStr} Improvements`,
+    content: entry,
+    metadata: meta,
+    contextLabel: `Software improvement: ${title}`,
+  });
 }
 
 export async function writeHermesLearning(opts: {
@@ -946,7 +976,16 @@ export async function writeHermesLearning(opts: {
     tags: ["learning", "hermes", ...(tags || [])],
   };
 
-  await appendToNote(OBSIDIAN_FOLDERS.hermesLearning, `${dateStr} Hermes Learning`, entry, meta);
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `hermes-learning-${(orgId ?? "global").slice(0, 8)}-${Date.now()}`,
+    noteAction: "append",
+    folder: OBSIDIAN_FOLDERS.hermesLearning,
+    title: `${dateStr} Hermes Learning`,
+    content: entry,
+    metadata: meta,
+    contextLabel: `Hermes learning: ${topic}`,
+  });
 }
 
 // ─── Agent Writers — Phase 2: New Pipelines ───────────────────────────────────
@@ -989,7 +1028,17 @@ ${metric ? `**Metric:** ${metric}: ${metricValue}` : ""}
   };
 
   const title = `${dateStr} Hermes Learning`;
-  return appendToNote(OBSIDIAN_FOLDERS.hermesLearning, title, "\n" + content, meta);
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `outcome-learning-${domain.slice(0, 20)}-${Date.now()}`,
+    noteAction: "append",
+    folder: OBSIDIAN_FOLDERS.hermesLearning,
+    title,
+    content: "\n" + content,
+    metadata: meta,
+    contextLabel: `Hermes outcome learning: ${domain}`,
+  });
+  return true;
 }
 
 /**
@@ -1036,7 +1085,17 @@ ${outcome ? `**Outcome:** ${outcome}\n\n` : ""}${followUp ? `**Follow-Up:** ${fo
     tags: ["decision", "journal", ...(tags || [])],
   };
 
-  return appendToNote(OBSIDIAN_FOLDERS.decisionJournal, title, entry, meta);
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `decision-journal-${(orgId ?? "").slice(0, 8)}-${Date.now()}`,
+    noteAction: "append",
+    folder: OBSIDIAN_FOLDERS.decisionJournal,
+    title,
+    content: entry,
+    metadata: meta,
+    contextLabel: `Decision journal: ${decision.slice(0, 60)}`,
+  });
+  return true;
 }
 
 /**
@@ -1101,7 +1160,47 @@ ${filesSection}**Outcome:** ${outcome}
     tags: ["software", "kb", "fix", ...(tags || [])],
   };
 
-  return appendToNote(OBSIDIAN_FOLDERS.softwareKB, title, entry, meta);
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `sw-kb-${(orgId ?? "").slice(0, 8)}-${Date.now()}`,
+    noteAction: "append",
+    folder: OBSIDIAN_FOLDERS.softwareKB,
+    title,
+    content: entry,
+    metadata: meta,
+    contextLabel: `Software KB: ${issue.slice(0, 60)}`,
+  });
+  return true;
+}
+
+/**
+ * Write (create/overwrite) a note at an arbitrary vault path.
+ * path format: "Folder/Note Title" (no .md extension)
+ * Routes through the sync service so failures are queued for retry.
+ */
+export async function writeNote(
+  vaultPath: string,
+  content: string,
+  extraMeta?: Record<string, unknown>,
+): Promise<boolean> {
+  const parts = vaultPath.split("/");
+  const title = parts.pop() ?? vaultPath;
+  const folder = parts.join("/") || "General";
+  const meta: NoteMetadata = {
+    type: "manual",
+    ...(extraMeta ?? {}),
+  };
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `note-${vaultPath.replace(/[^a-z0-9]/gi, "-")}-${Date.now()}`,
+    noteAction: "create",
+    folder,
+    title,
+    content,
+    metadata: meta,
+    contextLabel: `Note: ${vaultPath}`,
+  });
+  return true;
 }
 
 /**
@@ -1165,7 +1264,17 @@ ${whatStop}
     tags: ["ceo", "review", "outcomes", "daily"],
   };
 
-  return appendToNote(OBSIDIAN_FOLDERS.ceoReviews, title, entry, meta);
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `ceo-review-${(orgId ?? "").slice(0, 8)}-${title}`,
+    noteAction: "append",
+    folder: OBSIDIAN_FOLDERS.ceoReviews,
+    title,
+    content: entry,
+    metadata: meta,
+    contextLabel: `CEO Review ${title}`,
+  });
+  return true;
 }
 
 /**
@@ -1220,5 +1329,15 @@ ${expectedOutcome ?? `Based on ${evidenceCount} historical cases with ${successR
     tags: ["playbook", "sop", "promoted", patternType ?? "general"],
   };
 
-  return appendToNote(OBSIDIAN_FOLDERS.playbooks, noteTitle, entry, meta);
+  const { trySyncNow } = await import("./obsidian-sync-service");
+  await trySyncNow({
+    idempotencyKey: `playbook-${(orgId ?? "").slice(0, 8)}-${noteTitle.replace(/\s/g, "-")}`,
+    noteAction: "append",
+    folder: OBSIDIAN_FOLDERS.playbooks,
+    title: noteTitle,
+    content: entry,
+    metadata: meta,
+    contextLabel: `Playbook: ${title}`,
+  });
+  return true;
 }
