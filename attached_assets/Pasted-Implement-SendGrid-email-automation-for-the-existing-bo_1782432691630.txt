@@ -1,0 +1,130 @@
+Implement SendGrid email automation for the existing book funnel lead capture flow.
+
+Do not build receipt upload yet.
+Do not build promo code logic yet.
+Do not build admin review yet.
+
+Current state:
+
+* /book landing page exists
+* Email capture modal saves leads through POST /api/book-funnel/leads
+* /book/thank-you exists and handles Amazon redirect
+* book_funnel_leads and book_funnel_events tables exist
+* POST /api/book-funnel/events exists
+* SendGrid integration may already exist elsewhere in the application
+
+Goal:
+After a user submits the email capture modal, send a confirmation email that explains how to redeem their free month of TrainChat after purchasing the book.
+
+Use the existing SendGrid integration if one already exists.
+Do not create a duplicate SendGrid setup if the app already has one.
+
+Email trigger:
+Send the email after a successful lead create/update in POST /api/book-funnel/leads.
+
+Email subject:
+Your TrainChat Bonus Is Waiting
+
+Email purpose:
+Tell the user:
+
+* Their email was saved
+* They should complete the book purchase on Amazon
+* After purchasing, they can upload their Amazon receipt
+* Once verified, they will receive their free month of TrainChat
+
+Receipt upload link:
+Use a constant placeholder for now:
+BOOK_RECEIPT_UPLOAD_URL = "/book/redeem"
+
+If the app has an absolute public app URL environment variable, use it to create the full URL.
+Otherwise, include a clearly marked TODO and use the relative path for now.
+
+Email content:
+
+Headline:
+Your TrainChat Bonus Is Waiting
+
+Body:
+Thanks for claiming your TrainChat bonus with The Structure of Training for Strength and Speed for Youth Athletes.
+
+Next steps:
+
+1. Complete your book purchase on Amazon.
+2. Save or screenshot your Amazon receipt.
+3. Upload your receipt to redeem your free month of TrainChat.
+
+Button:
+Upload Receipt
+
+Footer note:
+If you have not purchased the book yet, complete your purchase on Amazon first, then return to this email to upload your receipt.
+
+Plain text fallback:
+Include a clean plain text version of the same email.
+
+Technical requirements:
+
+* Find and reuse the existing SendGrid email utility/service.
+* If no reusable SendGrid utility exists, create one small isolated helper using the existing environment variables and conventions.
+* Do not hard-fail lead capture if email sending fails.
+* If email sending fails:
+
+  * Still save the lead
+  * Log the error server-side
+  * Store/log a book_funnel_events eventType: "book_bonus_email_failed"
+* If email sends successfully:
+
+  * Store/log a book_funnel_events eventType: "book_bonus_email_sent"
+* Include metadata with provider: "sendgrid"
+
+API behavior update:
+POST /api/book-funnel/leads should:
+
+1. Validate and upsert lead
+2. Attempt to send the bonus email
+3. Log book_bonus_email_sent or book_bonus_email_failed
+4. Return the lead response even if email failed
+
+Avoid duplicate emails:
+If possible, avoid sending the same bonus email repeatedly to the same email on every modal submit.
+Preferred approach:
+
+* Add a nullable bonus_email_sent_at column to book_funnel_leads
+* If bonus_email_sent_at is already set, do not resend unless explicitly requested later
+* If email sends successfully, set bonus_email_sent_at = now()
+
+If schema changes are done through CREATE TABLE IF NOT EXISTS at startup, add a safe ALTER TABLE IF NOT EXISTS pattern or equivalent used elsewhere in the app.
+
+Frontend behavior:
+No major UI changes needed.
+If the lead endpoint returns emailSent or emailAlreadySent, optionally show a slightly better toast/message, but do not overbuild UI.
+
+Keep the flow:
+Modal submit → save lead + send email → route to /book/thank-you?email=<encoded>
+
+Security/quality:
+
+* Do not expose SendGrid API keys to the client.
+* Keep all email sending server-side.
+* Use existing sender identity/from email conventions.
+* Validate email before attempting to send.
+* Escape dynamic values in HTML email.
+* Keep implementation isolated and easy to audit.
+* Do not modify unrelated files.
+
+After implementation run:
+
+* npm run check
+
+Report:
+
+* Files created
+* Files modified
+* SendGrid utility reused or created
+* Email subject/content added
+* Database/schema changes
+* Events added
+* Duplicate email prevention behavior
+* Any TODOs/placeholders
+* Typecheck result
