@@ -1,0 +1,61 @@
+Audit why coach session redemption is not deducting from a client account/package after the client paid through Stripe.
+
+Trace the full purchase → account credit → booking → coach redemption → deduction flow before changing anything.
+
+Audit scope:
+1. Stripe payment flow
+   - Locate Stripe webhook handlers.
+   - Identify which Stripe events create wallet credits, subscriptions, packages, session credits, or revenue ledger events.
+   - Confirm whether a successful Stripe payment creates:
+     - wallet_transactions CREDIT
+     - user_subscriptions row
+     - sessions_remaining value
+     - credit_ledger_events
+     - revenue_ledger_events payment_received
+   - Confirm whether one-time Stripe payments and recurring/package Stripe payments follow different paths.
+
+2. Booking flow
+   - Locate booking creation route.
+   - Confirm how booking.clientId, subscriptionPlanId, serviceId, priceCents, paymentMethod, and wallet/payment fields are set.
+   - Check whether a booking created for a Stripe-paid client has subscriptionPlanId populated.
+   - Check whether Stripe-paid package clients are linked to user_subscriptions correctly.
+
+3. Redemption flow
+   - Locate POST /api/redemptions.
+   - Confirm the deduction logic.
+   - Check whether it only deducts sessions_remaining when booking.subscriptionPlanId exists.
+   - Check whether it handles wallet-paid Stripe clients.
+   - Check whether it writes credit_ledger_events.
+   - Check whether it writes revenue_ledger_events revenue_recognized / deferred_revenue_released.
+   - Check whether duplicate redemption is prevented.
+
+4. Data model mismatch
+   Specifically investigate whether Stripe payments are stored as wallet credits instead of session-package credits.
+   If yes, explain why redemption does not reduce sessions_remaining.
+
+Likely causes:
+- Stripe payment creates wallet credit but not user_subscriptions.sessions_remaining.
+- Booking has no subscriptionPlanId, so redemption skips the session decrement block.
+- Stripe checkout webhook does not map purchased product/price to an organization_subscription_plan.
+- Client has paid cash/Stripe but system tracks money, not session count.
+- Booking created manually does not attach the active subscription plan.
+- sessions_remaining is only decremented for subscriptionPlanId-backed bookings.
+- Wallet debit path and package session decrement path are separate and only one is used.
+
+Expected output:
+- Root cause
+- Exact Stripe webhook file/handler involved
+- Exact booking route involved
+- Exact redemption route involved
+- Tables involved
+- Whether Stripe-paid sessions are being tracked as wallet balance, package sessions, or only revenue
+- Why redemption does not deduct
+- Minimal fix plan
+- Whether fix requires schema changes
+- Test cases:
+  1. Stripe package purchase creates sessions_remaining.
+  2. Booking attaches subscriptionPlanId.
+  3. Coach redemption decrements sessions_remaining.
+  4. Stripe wallet/pay-per-session client is handled correctly.
+  5. Duplicate redemption does not double-deduct.
+Do not implement broad changes yet. Audit first and report the exact mismatch.
