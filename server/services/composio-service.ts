@@ -35,6 +35,8 @@ function getApiKey(): string {
   return key;
 }
 
+const COMPOSIO_FETCH_TIMEOUT_MS = 20_000;
+
 async function composioFetch(
   path: string,
   options: RequestInit = {},
@@ -42,6 +44,7 @@ async function composioFetch(
   const url = `${COMPOSIO_BASE_URL}/api/${COMPOSIO_API_VERSION}${path}`;
   const res = await fetch(url, {
     ...options,
+    signal: AbortSignal.timeout(COMPOSIO_FETCH_TIMEOUT_MS),
     headers: {
       "x-api-key": getApiKey(),
       "content-type": "application/json",

@@ -106,7 +106,7 @@ async function ensureAgentMailTables(): Promise<void> {
 }
 
 function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? req.query.orgId ?? null;
+  return req.user?.orgId ?? null;
 }
 
 export async function registerAgentMailRoutes(

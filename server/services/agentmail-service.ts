@@ -52,9 +52,11 @@ async function agentMailRequest(
     return { ok: false, status: 503, data: null, error: "AgentMail not configured. Add AGENTMAIL_API_KEY to Replit Secrets." };
   }
 
+  const AGENTMAIL_FETCH_TIMEOUT_MS = 15_000;
   try {
     const res = await fetch(`${c.baseUrl}${path}`, {
       method,
+      signal: AbortSignal.timeout(AGENTMAIL_FETCH_TIMEOUT_MS),
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${c.apiKey}`,
