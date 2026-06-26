@@ -13475,6 +13475,13 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   //   https://[your-domain]/api/webhooks/sendgrid-inbound
   app.post("/api/webhooks/sendgrid-inbound", express.urlencoded({ extended: true }), async (req: any, res: any) => {
     // Always 200 immediately so SendGrid does not retry
+    // URL-token guard (enforced only when SENDGRID_INBOUND_SECRET is set).
+    // In SendGrid dashboard: append ?token=<secret> to the inbound parse webhook URL.
+    const _inboundSecret = process.env.SENDGRID_INBOUND_SECRET;
+    if (_inboundSecret && req.query.token !== _inboundSecret) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
     res.status(200).json({ ok: true });
 
     try {

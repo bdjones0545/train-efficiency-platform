@@ -354,7 +354,7 @@ Return ONLY a valid JSON object with these exact fields (use null for insufficie
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       max_tokens: 1200,
-    });
+    }, { timeout: 60_000 });
 
     aiSynthesis = JSON.parse(resp.choices[0]?.message?.content ?? "{}");
     if (Array.isArray(aiSynthesis.patternsFound)) {

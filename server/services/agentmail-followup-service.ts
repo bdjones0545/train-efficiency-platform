@@ -178,7 +178,7 @@ Do not use placeholders like [Name] — use the actual name if provided, otherwi
       messages: [{ role: "user", content: prompt }],
       max_tokens: 300,
       temperature: 0.7,
-    });
+    }, { timeout: 60_000 });
 
     return resp.choices[0]?.message?.content?.trim() ?? generateFallbackDraft(params);
   } catch {

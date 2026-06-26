@@ -78,7 +78,11 @@ function envVarConnected(type: ExternalIntegrationType): boolean {
     case "google_calendar":
       return !!(e.GOOGLE_CALENDAR_CLIENT_SECRET || e.GOOGLE_CLIENT_SECRET);
     case "slack":
-      return !!(e.SLACK_BOT_TOKEN || e.SLACK_API_TOKEN);
+      // Slack credentials are stored exclusively in the external_integrations DB row
+      // (see server/integrations/slack.ts — getIntegration reads botToken/webhookUrl from DB).
+      // Env vars SLACK_BOT_TOKEN / SLACK_API_TOKEN are NOT used by the actual send path,
+      // so returning true here would produce a false "connected" status. DB row wins.
+      return false;
     case "stripe":
       return !!(e.STRIPE_SECRET_KEY);
     case "sendgrid":

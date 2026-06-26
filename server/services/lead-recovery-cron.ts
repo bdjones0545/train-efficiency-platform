@@ -92,13 +92,14 @@ Return JSON: { "subject": "...", "body": "..." }`;
       messages: [{ role: "user", content: prompt }],
       response_format: { type: "json_object" },
       max_tokens: 300,
-    });
+    }, { timeout: 60_000 });
     const parsed = JSON.parse(resp.choices[0].message.content || "{}");
     return {
       subject: parsed.subject || `Following up — ${programName}`,
       body: parsed.body || `Hi ${firstName}, just checking in on your application. Let us know if you have any questions!`,
     };
-  } catch {
+  } catch (err: any) {
+    console.warn("[LeadRecovery] OpenAI call skipped:", err?.message ?? err);
     return {
       subject: `Following up — ${programName}`,
       body: `Hi ${firstName},\n\nJust checking in to see if you're still interested in the program. Happy to answer any questions — reply here or grab a time on our calendar.\n\nLooking forward to it!`,

@@ -231,6 +231,7 @@ async function calendarFetch(
 
   const init: RequestInit = {
     method,
+    signal: AbortSignal.timeout(10_000),
     headers: {
       Authorization: `Bearer ${token}`,
       "Content-Type": "application/json",

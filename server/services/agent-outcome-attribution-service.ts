@@ -321,7 +321,7 @@ export async function generateCEOReview(orgId: string): Promise<{
         },
       ],
       max_tokens: 600,
-    });
+    }, { timeout: 60_000 });
 
     const text = response.choices[0]?.message?.content ?? "";
     const parts = text.split("|||").map((s) => s.trim());

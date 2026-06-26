@@ -828,7 +828,7 @@ async function _enhanceDraftWithAI(draftId: string, params: any, meta: Record<st
     const r = await openai.chat.completions.create({
       model: "gpt-4o-mini", max_tokens: isEmail ? 200 : 100,
       messages: [{ role: "system", content: systemPrompt }, { role: "user", content: `Client context: ${JSON.stringify(meta)}` }],
-    });
+    }, { timeout: 60_000 });
     const raw = r.choices[0]?.message?.content || "";
     let content = raw.trim();
     let subject: string | undefined;
@@ -841,5 +841,7 @@ async function _enhanceDraftWithAI(draftId: string, params: any, meta: Record<st
       await storage.updateOutreachDraft(draftId, { content, subject: subject || undefined, aiGenerated: true });
       await storage.createOutreachEvent({ outreachDraftId: draftId, actorId, eventType: "edited", note: "AI enhanced by orchestrator" });
     }
-  } catch {}
+  } catch (err: any) {
+    console.warn("[Orchestrator] OpenAI enhance skipped:", err?.message ?? err);
+  }
 }
