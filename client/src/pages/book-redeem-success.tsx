@@ -39,8 +39,8 @@ function ActivationCodeCard({ code }: { code: string }) {
       document.body.removeChild(el);
     }
     setCopied(true);
-    trackEvent("book_activation_code_copied", { code });
-    logFunnelEvent("book_activation_code_copied", undefined, { code });
+    trackEvent("book_activation_code_copied");
+    logFunnelEvent("book_activation_code_copied");
     setTimeout(() => setCopied(false), 2500);
   }
 
@@ -115,8 +115,8 @@ function ActivationCodeCard({ code }: { code: string }) {
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => {
-              trackEvent("book_trainchat_clicked", { code });
-              logFunnelEvent("book_trainchat_clicked", undefined, { code });
+              trackEvent("book_trainchat_clicked");
+              logFunnelEvent("book_trainchat_clicked");
             }}
             className="w-full bg-[#ffd274] text-[#402d00] font-extrabold tracking-widest uppercase py-5 rounded-full flex items-center justify-center gap-3 shadow-[0_8px_32px_rgba(246,190,55,0.3)] hover:brightness-110 hover:scale-[1.01] active:scale-[0.98] transition-all duration-300"
             style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "12px" }}
@@ -357,7 +357,7 @@ export default function BookRedeemSuccessPage() {
           <div>
             <p className="font-bold text-lg text-[#e5e2e1]">TrainEfficiency</p>
             <p className="text-sm text-[#9c8f7a] mt-1">
-              © 2024 TrainEfficiency. All Rights Reserved. Evidence-Based Performance.
+              © {new Date().getFullYear()} TrainEfficiency. All Rights Reserved. Evidence-Based Performance.
             </p>
           </div>
           <div className="flex flex-wrap gap-x-8 gap-y-3 md:justify-end">

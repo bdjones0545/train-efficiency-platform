@@ -302,7 +302,7 @@ export default function BookThankYouPage() {
           <div>
             <p className="font-bold text-lg text-[#e5e2e1]">TrainEfficiency</p>
             <p className="text-sm text-[#9c8f7a] mt-1">
-              © 2024 TrainEfficiency. All Rights Reserved. Evidence-Based Performance.
+              © {new Date().getFullYear()} TrainEfficiency. All Rights Reserved. Evidence-Based Performance.
             </p>
           </div>
           <div className="flex gap-8">

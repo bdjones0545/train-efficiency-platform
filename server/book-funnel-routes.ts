@@ -78,6 +78,15 @@ const APP_BASE_URL =
   process.env.PUBLIC_APP_URL ||
   null;
 
+if (!APP_BASE_URL) {
+  console.warn(
+    "[BookFunnel] WARNING: APP_BASE_URL / PUBLIC_APP_URL is not set. " +
+    "The receipt upload link in bonus emails will be a relative path (/book/redeem) " +
+    "which is NOT clickable in email clients. Set APP_BASE_URL to the full public URL " +
+    "(e.g. https://yourapp.replit.app) before sending emails in production.",
+  );
+}
+
 const BOOK_RECEIPT_UPLOAD_PATH = "/book/redeem";
 const BOOK_RECEIPT_UPLOAD_URL = APP_BASE_URL
   ? `${APP_BASE_URL.replace(/\/$/, "")}${BOOK_RECEIPT_UPLOAD_PATH}`
@@ -210,7 +219,7 @@ function buildBonusEmailHtml(firstName: string): string {
       </p>
     </div>
     <div class="footer">
-      © 2024 TrainEfficiency. Evidence-Based Performance.<br/>
+      © ${new Date().getFullYear()} TrainEfficiency. Evidence-Based Performance.<br/>
       Bryan Jones, MS, CSCS, PES, EP-C
     </div>
   </div>
@@ -239,7 +248,7 @@ Once verified, your TrainChat access is activated automatically.
 ---
 If you haven't purchased the book yet, complete your purchase on Amazon first, then return to this email to upload your receipt.
 
-© 2024 TrainEfficiency. Evidence-Based Performance.
+© ${new Date().getFullYear()} TrainEfficiency. Evidence-Based Performance.
 Bryan Jones, MS, CSCS, PES, EP-C`;
 }
 

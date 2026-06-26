@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
@@ -149,10 +149,9 @@ export default function BookLandingPage() {
     }
   }
 
-  // Track page view once on mount
-  useState(() => {
+  useEffect(() => {
     trackEvent("book_page_view");
-  });
+  }, []);
 
   return (
     <div className="min-h-screen bg-[#131313] text-[#e5e2e1] selection:bg-[#ffd274]/30 selection:text-[#ffd274]">
@@ -453,10 +452,12 @@ export default function BookLandingPage() {
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-[#9c8f7a] pt-2">
-                Receipt upload portal coming soon — receipt upload will be
-                available here after purchase.
-              </p>
+              <a
+                href="/book/redeem"
+                className="inline-flex items-center gap-1 text-xs font-bold tracking-widest uppercase text-[#ffd274] hover:underline pt-2"
+              >
+                Already purchased? Upload your receipt here →
+              </a>
             </div>
           </div>
         </section>
@@ -1036,7 +1037,7 @@ const faqs = [
   {
     question: "How does the TrainChat bonus work?",
     answer:
-      "After purchasing the book on Amazon, you'll upload your receipt here to verify your purchase. Once verified, your first month of TrainChat — our AI-powered coaching assistant — is activated at no cost. The receipt upload portal will be available soon.",
+      "After purchasing the book on Amazon, you'll upload your receipt at trainingefficiency.com/book/redeem to verify your purchase. Once verified, your first month of TrainChat — our AI-powered coaching assistant — is activated at no cost.",
   },
   {
     question: "Does the book purchase happen through Amazon?",
@@ -1046,7 +1047,7 @@ const faqs = [
   {
     question: "How does receipt upload work?",
     answer:
-      "Once you have your Amazon order confirmation email, you'll upload a screenshot or PDF of your receipt through the portal on this page. Our system verifies the purchase and automatically activates your TrainChat subscription. The upload portal is coming soon.",
+      "Once you have your Amazon order confirmation email, you'll upload a screenshot or PDF of your receipt at /book/redeem. Our system verifies the purchase and your promo code is issued immediately on the confirmation page.",
   },
   {
     question: "Is this book available in digital format?",
