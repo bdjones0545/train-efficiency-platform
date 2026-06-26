@@ -1,0 +1,104 @@
+Evolve the CEO Agent chat from a context-aware GPT wrapper into a true CEO Agent orchestrator.
+
+Goal:
+When the admin/coach chats with the CEO Agent, the agent should decide whether to answer directly or delegate work to existing business agents, then synthesize their results into an executive response.
+
+Audit first, then implement minimally.
+
+Phase 1 — Audit existing agent capabilities
+Find existing callable functions/routes for:
+- CEO Heartbeat
+- Revenue Agent
+- Growth Agent
+- Scheduling Agent
+- Retention Agent
+- Client Success Agent
+- Executive/Atlas/Command Center summaries
+- Obsidian write / Decision Journal / Hermes memory if available
+
+For each, report:
+- File/function name
+- Required inputs
+- Return shape
+- Whether safe to call from `/api/chat`
+- Whether it mutates data, sends messages, or only reads/analyzes
+
+Phase 2 — Add CEO orchestration layer
+Create a server-side orchestration function, for example:
+
+`runCeoAgentOrchestration({ orgId, userId, messages })`
+
+It should:
+1. Classify the user message intent:
+   - direct_answer
+   - revenue_analysis
+   - growth_analysis
+   - scheduling_analysis
+   - retention_analysis
+   - client_success_analysis
+   - full_business_diagnosis
+   - write_decision_or_note
+   - action_request
+2. Decide which existing agents/tools to call.
+3. Call only safe internal analysis functions first.
+4. Collect structured outputs.
+5. Synthesize one CEO-level answer.
+6. Return streamed SSE content in the same format the chat widget expects.
+
+Phase 3 — Safety / permissions
+- Keep `/api/chat` protected with:
+  - `isAuthenticated`
+  - `requireRole("ADMIN", "COACH")`
+  - hard orgId guard
+- Do not trust client-supplied orgId.
+- Do not send emails/SMS/create external side effects from chat unless explicitly confirmed by the user.
+- For destructive or external actions, return a proposed action plan and ask for confirmation.
+- Internal read-only diagnostics are allowed.
+- Obsidian note/Decision Journal writes are allowed only if the user explicitly asks to save/write/log something.
+
+Phase 4 — Routing behavior
+Examples:
+- “What should I focus on today?” → run Command Center/CEO context and answer directly.
+- “Why are leads slowing down?” → call Growth Agent + Revenue Agent.
+- “Why is revenue down?” → call Revenue Agent + Scheduling Agent + Client Success.
+- “Which clients are at risk?” → call Client Success/Retention.
+- “How full is my schedule?” → call Scheduling Agent.
+- “Run a full business diagnosis” → call Revenue + Growth + Scheduling + Retention + Client Success, then synthesize.
+- “Save this decision to Obsidian” → write only after explicit save/log wording.
+
+Phase 5 — Response format
+The CEO Agent should respond like an executive operator:
+- Brief answer first
+- What I checked
+- Findings
+- Recommended next actions
+- Optional: “I can run X next” only when useful
+
+Phase 6 — Logging
+Add safe logs:
+- route entered
+- orchestration intent
+- agents selected
+- agent success/failure
+- total duration
+- final response status
+
+Do not log full user messages, secrets, or full business intelligence payloads.
+
+Phase 7 — Tests
+Test:
+1. Direct question still streams.
+2. “Why are leads slowing down?” triggers Growth/Revenue analysis.
+3. “Run a full business diagnosis” calls multiple agents.
+4. CLIENT role is blocked.
+5. Unauthenticated is blocked.
+6. Obsidian write does not happen unless explicitly requested.
+7. Existing CEO Heartbeat cron still works.
+
+Expected output:
+- Audit results
+- Files changed
+- New orchestration function name/location
+- Which agents are actually callable now
+- Which agents were stubbed or skipped and why
+- Test results

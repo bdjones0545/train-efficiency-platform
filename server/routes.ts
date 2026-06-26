@@ -36,6 +36,7 @@ import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClie
 import { startWeeklyReminderJob } from "./weekly-reminder";
 import { startSessionReminderJob } from "./session-reminders";
 import { handleAssistantMessage, executeConfirmedPendingAction, getActivePendingActionsForUser } from "./scheduling-assistant";
+import { runCeoAgentOrchestration } from "./ceo-agent-orchestrator";
 import { onPaymentReceived, onRedemption, onCashoutPaid } from "./revenue-recognition";
 import { computeCommandCenter, setMonthlyGoal, buildCommandCenterContextString } from "./business-command-center";
 
@@ -10013,15 +10014,6 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const coachProfile = await storage.getCoachProfileByUserId(userId);
       const userName = user ? `${user.firstName ?? ""} ${user.lastName ?? ""}`.trim() : null;
 
-      // ── Build CEO business context ────────────────────────────────────────────
-      let businessContext: string | null = null;
-      try {
-        businessContext = await buildCommandCenterContextString(orgId);
-        console.log(`${label} business context built chars=${businessContext?.length ?? 0}`);
-      } catch (ctxErr: any) {
-        console.warn(`${label} business context failed: ${ctxErr?.message}`);
-      }
-
       // ── SSE headers — widget reads data: {"content":"..."} lines ─────────────
       res.setHeader("Content-Type", "text/event-stream; charset=utf-8");
       res.setHeader("Cache-Control", "no-cache");
@@ -10029,25 +10021,23 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       res.setHeader("X-Accel-Buffering", "no");
       console.log(`${label} SSE stream starting`);
 
-      // ── Stream from OpenAI via handleAssistantMessage ─────────────────────────
+      // ── CEO Agent Orchestrator — classifies intent, delegates to agents ────────
       let chunkCount = 0;
       try {
-        const stream = handleAssistantMessage(
-          messages,
-          userId,
-          profile.role ?? "ADMIN",
-          userName,
-          coachProfile?.id ?? null,
+        const orchestratorStream = await runCeoAgentOrchestration({
           orgId,
-          businessContext
-        );
-        for await (const chunk of stream) {
+          userId,
+          role: profile.role ?? "ADMIN",
+          messages,
+          userName,
+        });
+        for await (const chunk of orchestratorStream) {
           chunkCount++;
           res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
         }
-        console.log(`${label} stream complete chunks=${chunkCount}`);
+        console.log(`${label} orchestrator stream complete chunks=${chunkCount}`);
       } catch (streamErr: any) {
-        console.error(`${label} OpenAI stream error: ${streamErr?.message}`);
+        console.error(`${label} orchestrator error: ${streamErr?.message}`);
         if (!res.headersSent) {
           return res.status(500).json({ message: "AI stream error" });
         }
