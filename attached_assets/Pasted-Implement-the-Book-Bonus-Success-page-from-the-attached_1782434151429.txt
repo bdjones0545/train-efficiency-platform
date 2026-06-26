@@ -1,0 +1,205 @@
+Implement the Book Bonus Success page from the attached MD specification.
+
+This page has not been built yet.
+
+Use the attached MD file as the visual and UX reference.
+
+Current completed flow:
+
+* /book
+* Email Capture Modal
+* /book/thank-you
+* Amazon Purchase
+* Confirmation Email
+* /book/redeem
+* Receipt Upload
+
+The next step is to build the final success page that appears immediately after a successful receipt upload.
+
+Do not implement manual approval.
+Do not implement AI receipt verification.
+Do not implement an admin review queue.
+
+The business flow is now immediate redemption.
+
+---
+
+## Route
+
+Create:
+
+/book/redeem/success
+
+After a successful receipt upload, automatically navigate the user to this page.
+
+---
+
+## Purpose
+
+Celebrate the successful completion of the book redemption process and guide the user into TrainChat.
+
+This is the final step of the funnel.
+
+---
+
+## Hero
+
+Follow the attached design closely.
+
+Badge:
+
+BONUS UNLOCKED
+
+Headline:
+
+Your TrainChat Bonus Is Ready
+
+Subheadline:
+
+Thanks for purchasing **The Structure of Training for Strength and Speed for Youth Athletes.**
+
+We've received your purchase confirmation and your complimentary month of TrainChat is ready to activate.
+
+Do not mention:
+
+* manual approval
+* pending review
+* verification queue
+* physical book shipment
+
+The experience should feel immediate and rewarding.
+
+---
+
+## Activation Code Card
+
+Implement the premium activation card shown in the design.
+
+Title:
+
+TrainChat Activation Code
+
+Display:
+
+* Large activation code
+* Copy button
+* Success feedback after copying
+
+Helper text:
+
+Use this activation code during TrainChat checkout to receive your first month free.
+
+---
+
+## Primary CTA
+
+Button:
+
+Activate TrainChat
+
+Destination:
+
+https://www.trainchat.ai
+
+Open in a new browser tab.
+
+---
+
+## Secondary Actions
+
+Include:
+
+Return to TrainEfficiency
+
+View Uploaded Receipt
+
+Match the attached design.
+
+---
+
+## Promo Code
+
+If a promo code already exists for the submission, display it.
+
+Otherwise:
+
+Generate a unique activation code using the application's existing UUID/token utilities.
+
+Store the activation code with the receipt submission.
+
+Extend the existing receipt submission schema as needed.
+
+Suggested fields:
+
+* promo_code
+* promo_code_generated_at
+* promo_code_redeemed_at (nullable)
+* trainchat_account_email (nullable)
+
+Do not implement redemption tracking yet.
+
+Simply prepare the schema.
+
+---
+
+## Analytics
+
+Track:
+
+* book_bonus_unlocked_viewed
+* book_activation_code_copied
+* book_trainchat_clicked
+
+Reuse the existing analytics/event logging utilities.
+
+---
+
+## Design
+
+Recreate the attached MD design as accurately as possible.
+
+Maintain:
+
+* Premium dark aesthetic
+* Gold accents
+* Success icon
+* Activation code card
+* Large CTA
+* Mobile-first responsiveness
+* Existing TrainEfficiency design language
+
+Do not introduce a different design system.
+
+---
+
+## Future TODOs
+
+Leave clearly marked TODO comments for future enhancements:
+
+* Stripe coupon synchronization
+* Promo code redemption tracking
+* TrainChat account linking
+* Automatic coupon invalidation after redemption
+* Stripe webhook confirmation
+
+Do not implement these features yet.
+
+---
+
+## After Implementation
+
+Run:
+
+* npm run check
+
+Report:
+
+* Files created
+* Files modified
+* Route added
+* Database/schema changes
+* Promo code generation implementation
+* Events tracked
+* TrainChat integration
+* TODOs
+* Typecheck results
