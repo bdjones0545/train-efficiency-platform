@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
+import bookHeroImg from "@assets/B44D7E27-9E35-4B28-9E5F-4B0A73EAA972_1782438528568.PNG";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -200,6 +201,16 @@ export default function BookLandingPage() {
       </header>
 
       <main className="pt-24">
+        {/* ── Image Hero ── */}
+        <section className="w-full bg-black">
+          <img
+            src={bookHeroImg}
+            alt="The Structure of Training for Strength and Speed for Youth Athletes by Bryan Jones — Get 30 days of TrainChat free with purchase"
+            className="w-full max-w-[900px] mx-auto block"
+            data-testid="img-book-hero"
+          />
+        </section>
+
         {/* ── Hero Section ── */}
         <section
           id="overview"
