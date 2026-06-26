@@ -1,0 +1,36 @@
+Audit Report — AI Scheduling Copilot
+Root Cause
+The privilegedOnly role guard in server/scheduling-intelligence-routes.ts was reading req.user?.role and req.user?.organizationId — both of which are always undefined in this app.
+
+This app stores role and orgId in the user_profiles table, not on the session user object. The session only carries the raw user ID (req.user.id for custom email/password auth, or req.user.claims.sub for Replit OIDC). Every single request to every /api/scheduling-intelligence/* endpoint — including the copilot, health score, and all others — was silently returning a 403 before any handler logic ran.
+
+The generic onError in the frontend swallowed the 403 and showed "Sorry, I encountered an error" with no details.
+
+Trace
+Step	Finding
+Frontend payload	POST /api/scheduling-intelligence/copilot with { question, conversationHistory } ✓
+Backend endpoint	Exists at line 1481 in scheduling-intelligence-routes.ts ✓
+Registration	Inside registerRoutes() (line 25134 of routes.ts), before Vite SPA catch-all ✓
+Vite shadow	Not the issue — registration order is correct ✓
+Auth middleware	isAuthenticated passes, privilegedOnly blocks — reads req.user?.role (undefined) → 403
+orgId resolution	Same bug: req.user?.organizationId (undefined) → additional 403 if role check somehow passed
+Payload shape	Frontend sends { question, conversationHistory }, backend reads same ✓
+Response shape	Backend returns { answer, supportingData }, frontend reads data.answer ✓
+SSE vs JSON	Both use plain JSON, no mismatch ✓
+OpenAI model	gpt-4o-mini, key present at startup ([Startup] OPENAI_API_KEY ✓) ✓
+Shared infra	Separate from CEO Agent — its own openai instance and routes file, no shared helper
+Frontend error hiding	onError ignored the error argument entirely — no logging, no detail surfaced
+Confirmed by Playwright test: Logged in as ADMIN user, sent a question, got exactly "Insufficient permissions — requires admin, coach, or staff role" — the 403 from privilegedOnly, not an OpenAI error.
+
+Files Changed
+server/scheduling-intelligence-routes.ts
+
+privilegedOnly is now async, queries user_profiles using userId = req.user?.claims?.sub ?? req.user?.id, and caches { userId, orgId, role } on req._authProfile
+All 13 handlers: req.user?.organizationId → (req as any)._authProfile?.orgId
+Copilot handler: reads _authProfile set by privilegedOnly (no extra DB round-trip)
+Diagnostic console.log added at each key stage (route entered, auth, DB context, OpenAI call, response)
+client/src/pages/admin-scheduling-copilot.tsx
+
+onError now parses and surfaces the real server error message in both the toast and the chat bubble instead of always showing a generic string
+Auth/Security Status
+The fix is additive only — the access control is now stricter in practice (it actually enforces role checking rather than accidentally passing everything as 403). No bypass was introduced. The privilegedOnly guard correctly rejects non-admin/coach/staff users with the same 403 it always intended.
