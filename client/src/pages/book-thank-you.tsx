@@ -4,7 +4,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Dumbbell, CheckCircle2, ShoppingCart, ArrowLeft, Loader2 } from "lucide-react";
 
-export const AMAZON_BOOK_URL = "https://amazon.com/TODO_BOOK_URL";
+export const AMAZON_BOOK_URL = "https://www.amazon.com/dp/B0H6CDZ85W";
 
 const IS_AMAZON_CONFIGURED = !AMAZON_BOOK_URL.includes("TODO");
 

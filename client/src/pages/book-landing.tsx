@@ -39,8 +39,7 @@ import {
 } from "lucide-react";
 import bookCoverImg from "@assets/screen_1782422677135.png";
 
-// TODO: Replace with real Amazon URL when available
-const AMAZON_BOOK_URL = "https://amazon.com/TODO_BOOK_URL";
+const AMAZON_BOOK_URL = "https://www.amazon.com/dp/B0H6CDZ85W";
 
 // TODO: If app-level analytics are added, wire these events into that system
 function trackEvent(name: string, props?: Record<string, unknown>) {
