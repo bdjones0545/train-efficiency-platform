@@ -377,69 +377,51 @@ export default function BookLandingPage() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Card 1 — Speed Development */}
-              <ValueCard
-                icon={<Zap className="h-8 w-8 text-[#ffd274]" />}
-                title="Speed Development"
-                description="The mechanics of linear acceleration, top-end velocity, and the neuro-muscular pathways required for elite speed."
-              />
-
-              {/* Card 2 — Strength (tall, spans 2 rows) */}
-              <div
-                className="glass-card rounded-xl p-10 transition-all duration-500 hover:shadow-[0_0_40px_rgba(246,190,55,0.15)] hover:border-[#ffd274]/40 md:row-span-2"
-                data-testid="card-strength-development"
-              >
-                <Dumbbell className="h-8 w-8 text-[#ffd274] mb-6" />
-                <h3 className="text-[28px] font-semibold leading-[1.3] text-[#e5e2e1] mb-4">
-                  Strength Foundations
-                </h3>
-                <p className="text-base text-[#d3c5ae] leading-relaxed mb-8">
-                  Building robust structural integrity and explosive power
-                  specifically tailored for developing skeletons and soft
-                  tissues.
-                </p>
-                <div className="bg-[#201f1f] rounded-lg p-6 border border-white/5">
-                  <p className="text-xs font-bold tracking-widest uppercase text-[#ffd274]">
-                    Key Metric
-                  </p>
-                  <div className="mt-4 flex items-baseline gap-2">
-                    <span className="text-4xl font-semibold text-[#e5e2e1]">
-                      24%
-                    </span>
-                    <span className="text-sm text-[#d3c5ae]">
-                      Avg. Power Output Increase
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Card 3 — Program Design */}
-              <ValueCard
-                icon={<Layout className="h-8 w-8 text-[#ffd274]" />}
-                title="Program Design"
-                description="A modular architecture that allows you to build custom training blocks based on individual athlete needs."
-              />
-
-              {/* Card 4 — Athlete Development */}
-              <ValueCard
-                icon={<Users className="h-8 w-8 text-[#ffd274]" />}
-                title="Athlete Development"
-                description="Prioritizing health and sustainability to ensure high performance through high school and beyond."
-              />
-
-              {/* Card 5 — Performance Science */}
-              <ValueCard
-                icon={<FlaskConical className="h-8 w-8 text-[#ffd274]" />}
-                title="Performance Science"
-                description="Deciphering the data behind the grit. How to measure what matters without the hype."
-              />
-
-              {/* Card 6 — Long-Term Adaptation */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <ValueCard
                 icon={<TrendingUp className="h-8 w-8 text-[#ffd274]" />}
-                title="Long-Term Adaptation"
-                description="Periodization principles designed to compound athletic gains safely across months and years."
+                title="Adaptation as the Objective"
+                description="Why adaptation — not fatigue — is the true purpose of training, and how to design every session around that principle."
+              />
+              <ValueCard
+                icon={<Dumbbell className="h-8 w-8 text-[#ffd274]" />}
+                title="Building Physical Qualities"
+                description="How strength, speed, power, and work capacity develop throughout the athletic journey — and in what order they should be prioritized."
+              />
+              <ValueCard
+                icon={<Layout className="h-8 w-8 text-[#ffd274]" />}
+                title="Movement Competency First"
+                description="The importance of establishing sound movement patterns before introducing advanced training methods or loading."
+              />
+              <ValueCard
+                icon={<CheckCircle2 className="h-8 w-8 text-[#ffd274]" />}
+                title="The Power of Consistency"
+                description="Why consistency is one of the most important — and most undervalued — factors in long-term athletic development."
+              />
+              <ValueCard
+                icon={<Users className="h-8 w-8 text-[#ffd274]" />}
+                title="Age-Appropriate Progressions"
+                description="How to create training progressions that match an athlete's developmental stage rather than their sport level or physical size."
+              />
+              <ValueCard
+                icon={<Eye className="h-8 w-8 text-[#ffd274]" />}
+                title="Avoiding Common Mistakes"
+                description="The most common coaching and programming errors that limit athletic development — and how to avoid them."
+              />
+              <ValueCard
+                icon={<Zap className="h-8 w-8 text-[#ffd274]" />}
+                title="Sport Practice & Physical Prep"
+                description="Understanding the relationship between sport-specific practice and physical preparation — and how to balance both."
+              />
+              <ValueCard
+                icon={<FlaskConical className="h-8 w-8 text-[#ffd274]" />}
+                title="Recovery & Adaptation"
+                description="How recovery influences performance and adaptation, and why it deserves the same attention as the training itself."
+              />
+              <ValueCard
+                icon={<Award className="h-8 w-8 text-[#ffd274]" />}
+                title="Building Resilient Athletes"
+                description="How to develop athletes who are capable of sustained improvement — durable, adaptable, and prepared for the long arc of athletic development."
               />
             </div>
           </div>
