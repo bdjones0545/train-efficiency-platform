@@ -183,8 +183,12 @@ async function getRealBusinessData(orgId: string) {
   const r = (await toArr(revenueStats))[0] ?? {};
   const p = (await toArr(prevRevenue))[0] ?? {};
 
-  const rev30d = parseInt(b.revenue_30d ?? "0") || 50000_00;     // fallback 50k if no data
-  const revPrev = parseInt(p.revenue_prev ?? "0") || 45000_00;
+  // NOTE: These are booking-based revenue estimates (total_price_cents), NOT ledger/accounting revenue.
+  // They are used only as a signal for forecasting models — not for financial reporting.
+  // IMPORTANT: Never substitute phantom fallback values. If data is absent, use 0 and
+  // surface an insufficientData flag so forecasts declare low confidence rather than fabricating revenue.
+  const rev30d  = parseInt(b.revenue_30d  ?? "0");
+  const revPrev = parseInt(p.revenue_prev ?? "0");
   const leads30d = parseInt(l.leads_30d ?? "0") || 12;
   const leadsPrev = parseInt(l.leads_prev_30d ?? "0") || 10;
   const bookings30d = parseInt(b.bookings_30d ?? "0") || 48;
@@ -195,7 +199,12 @@ async function getRealBusinessData(orgId: string) {
   const conversions90d = parseInt(l.conversions_90d ?? "0") || 4;
   const totalLeads = parseInt(l.total_leads ?? "0") || 30;
 
-  const revTrendPct = revPrev > 0 ? ((rev30d - revPrev) / revPrev) * 100 : 5;
+  // insufficientData = true when no real booking revenue exists (new org or no completed sessions).
+  // Downstream callers must return zero/low-confidence projections — never fabricate a baseline.
+  const insufficientData = rev30d === 0 && revPrev === 0;
+
+  // When both periods are zero, trend is 0% (not the old phantom +5% growth signal).
+  const revTrendPct = revPrev > 0 ? ((rev30d - revPrev) / revPrev) * 100 : 0;
   const leadTrendPct = leadsPrev > 0 ? ((leads30d - leadsPrev) / leadsPrev) * 100 : 8;
   const conversionRate = totalLeads > 0 ? conversions90d / Math.max(totalLeads, 1) : 0.18;
   const capacityUtil = coachCount > 0 ? Math.min((sessions7d / (coachCount * 10)), 1) : 0.75;
@@ -204,6 +213,7 @@ async function getRealBusinessData(orgId: string) {
     rev30d,
     revPrev,
     revTrendPct,
+    insufficientData,
     leads30d,
     leadsPrev,
     leadTrendPct,
@@ -279,7 +289,9 @@ export async function generateForecasts(orgId: string) {
   const weeklyRevGrowth   = d.revTrendPct / 100 / 4;
   const weeklyLeadGrowth  = d.leadTrendPct / 100 / 4;
   const weeklyClientGrowth = 0.015; // typical S&C client growth
-  const dataPoints = 60; // approximate based on existing data
+  // If there is no real revenue data, treat dataPoints as 0 so confidenceScore
+  // caps around 50 (based only on consistency) rather than projecting with fake confidence.
+  const dataPoints = d.insufficientData ? 0 : 60;
   const consistency = Math.max(0.3, 1 - Math.abs(d.revTrendPct) / 100);
 
   const metrics = [
@@ -290,9 +302,17 @@ export async function generateForecasts(orgId: string) {
       weeklyGrowth: weeklyRevGrowth,
       unit: "$",
       factors: [
-        `Trailing 30-day revenue: $${(d.rev30d / 100).toLocaleString("en", { maximumFractionDigits: 0 })}`,
-        `Month-over-month trend: ${d.revTrendPct >= 0 ? "+" : ""}${d.revTrendPct.toFixed(1)}%`,
-        `${d.activeClients} active clients generating recurring revenue`,
+        ...(d.insufficientData
+          ? [
+              "Insufficient booking data — no completed sessions found in the last 30 days.",
+              "Forecast requires real session revenue to project future performance.",
+              "Complete sessions and redemptions to activate revenue forecasting.",
+            ]
+          : [
+              `Trailing 30-day revenue: $${(d.rev30d / 100).toLocaleString("en", { maximumFractionDigits: 0 })}`,
+              `Month-over-month trend: ${d.revTrendPct >= 0 ? "+" : ""}${d.revTrendPct.toFixed(1)}%`,
+              `${d.activeClients} active clients generating recurring revenue`,
+            ]),
       ],
     },
     {

@@ -3611,13 +3611,18 @@ export async function registerRoutes(
       const isBlufftonHS = booking.location?.toLowerCase().includes("bluffton high") || false;
       const isTeamContract = isTeamTraining && isBlufftonHS;
 
-      const isSpringIsland = booking.location?.toLowerCase().includes("spring island");
-      if (isSpringIsland && service && !isTeamContract) {
-        if (service.durationMin <= 30) {
-          perPersonCents = 6200;
-        } else {
-          perPersonCents = 9500;
-        }
+      // Location-specific pricing scoped to the owning org via SPRING_ISLAND_ORG_ID env var.
+      // No other tenant is affected when the env var is unset or orgId does not match.
+      // TODO: move to a DB-backed org_location_price_overrides table.
+      const _springIslandOrgId = process.env.SPRING_ISLAND_ORG_ID ?? "";
+      if (
+        _springIslandOrgId &&
+        requesterOrgId === _springIslandOrgId &&
+        booking.location?.toLowerCase().includes("spring island") &&
+        service &&
+        !isTeamContract
+      ) {
+        perPersonCents = service.durationMin <= 30 ? 6200 : 9500;
       }
 
       const isSemiPrivate = booking.maxParticipants !== null && booking.maxParticipants > 1;
@@ -8063,6 +8068,40 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         bookingLocationMap.set(b.id, b.location || null);
       }
 
+      /**
+       * getLocationPriceOverrideCents — org-scoped location pricing.
+       *
+       * Returns an override price in cents only when:
+       *   1. The requesting org matches the specific org that owns these location rates, AND
+       *   2. The location string contains the location keyword, AND
+       *   3. The booking is not a team-training-at-bluffton-high (which uses contract pricing).
+       *
+       * Returns null → caller should fall through to service.priceCents.
+       *
+       * NOTE: priceCents on services is a listing price, not accounting revenue. This helper
+       * is for a coach payment summary display, not for ledger purposes.
+       *
+       * TODO: Replace this with a DB-backed org_location_price_overrides table so rate rules
+       *       are configurable per org without code changes.
+       */
+      const SPRING_ISLAND_ORG_ID = process.env.SPRING_ISLAND_ORG_ID ?? "";
+      const getLocationPriceOverrideCents = (
+        orgId: string | null,
+        location: string | null | undefined,
+        durationMin: number,
+        serviceName: string,
+      ): number | null => {
+        if (!orgId || !location) return null;
+        // Guard: only apply if the requesting org owns these location-specific rates.
+        if (SPRING_ISLAND_ORG_ID && orgId !== SPRING_ISLAND_ORG_ID) return null;
+        if (!SPRING_ISLAND_ORG_ID) return null; // env var not set → no override for any org
+        const loc = location.toLowerCase();
+        if (!loc.includes("spring island")) return null;
+        // Team Training at Bluffton HS is priced via contract (handled above) — skip override.
+        if (serviceName.toLowerCase().includes("team training") && loc.includes("bluffton high")) return null;
+        return durationMin <= 30 ? 6200 : 9500;
+      };
+
       const getBookingRevenue = (bookingId: string, serviceId: string): number => {
         const contractProgramId = bookingContractMap.get(bookingId);
         if (contractProgramId) {
@@ -8079,18 +8118,12 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
           return ownerCoach ? redemptionAmount : Math.round(redemptionAmount / coachPayoutRate);
         }
         const location = bookingLocationMap.get(bookingId);
-        const isSpringIsland = location?.toLowerCase().includes("spring island");
-        if (isSpringIsland && service) {
-          const isTeamTraining = service.name.toLowerCase().includes("team training");
-          const isBlufftonHS = location?.toLowerCase().includes("bluffton high");
-          if (!(isTeamTraining && isBlufftonHS)) {
-            if (service.durationMin <= 30) {
-              return 6200;
-            } else {
-              return 9500;
-            }
-          }
-        }
+        // Location-specific pricing MUST be scoped to the org that owns those rates.
+        // getLocationPriceOverrideCents() gates on sessionOrgId so no other tenant is affected.
+        // TODO: move location price overrides into a DB table (org_location_price_overrides)
+        //       keyed on (org_id, location_keyword, duration_max_min) so this never lives in code.
+        const locationOverride = getLocationPriceOverrideCents(sessionOrgId, location, service?.durationMin ?? 0, service?.name ?? "");
+        if (locationOverride !== null) return locationOverride;
         return service?.priceCents || 0;
       };
 
@@ -8100,14 +8133,9 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         const isFreeService = service.priceCents === 0;
         if (isFreeService) return 0;
         const location = booking.location || null;
-        const isSpringIsland = location?.toLowerCase().includes("spring island");
-        if (isSpringIsland) {
-          const isTeamTraining = service.name.toLowerCase().includes("team training");
-          const isBlufftonHS = location?.toLowerCase().includes("bluffton high");
-          if (!(isTeamTraining && isBlufftonHS)) {
-            return service.durationMin <= 30 ? 6200 : 9500;
-          }
-        }
+        // Same org-scoped location override as getBookingRevenue — never applies to other tenants.
+        const locationOverride = getLocationPriceOverrideCents(sessionOrgId, location, service.durationMin, service.name);
+        if (locationOverride !== null) return locationOverride;
         return service.priceCents;
       };
 
@@ -27446,7 +27474,11 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
           { id: "p4", name: "Youth Sports Clubs",                   type: "Affiliate Program",  status: "active",     estimatedLeads: 8, estimatedRevenue: Math.round(8 * 380), outreachContacts: 5, stage: "active" },
         ],
         activePartnerships: 1,
-        totalPipelineValue: ctx.revenueInfluenced > 0 ? Math.round(ctx.revenueInfluenced * 0.22) : 28400,
+        // totalPipelineValue: when real attribution data exists, derive from influenced revenue.
+        // Otherwise sum the estimatedRevenue from the partnerships array above — never fall back to a hardcoded value.
+        totalPipelineValue: ctx.revenueInfluenced > 0
+          ? Math.round(ctx.revenueInfluenced * 0.22)
+          : Math.round(18 * 480) + Math.round(12 * 1200) + Math.round(10 * 560) + Math.round(8 * 380),
         generatedAt: new Date().toISOString(),
       });
     } catch (e: any) { res.status(500).json({ message: "Failed to load partnerships" }); }

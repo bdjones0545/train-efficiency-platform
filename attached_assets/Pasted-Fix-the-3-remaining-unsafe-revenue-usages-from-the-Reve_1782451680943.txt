@@ -1,0 +1,54 @@
+Fix the 3 remaining unsafe revenue usages from the Revenue Reference Audit.
+
+Scope:
+1. server/services/forecast-engine.ts
+2. server/routes.ts around /api/execution/partnerships
+3. server/routes.ts around /api/coach/:id/clients coach billing pricing
+
+Fix 1 — Forecast phantom baseline
+Current bug:
+- Forecast engine falls back to $500,000 / $450,000 revenue when no data exists.
+
+Required fix:
+- Replace phantom fallbacks with 0.
+- Add an explicit insufficientData flag when current/prior revenue are both 0 or when data coverage is too thin.
+- Forecast output should never fabricate baseline revenue.
+- If insufficient data, return conservative zero/low confidence projections with a reason.
+
+Fix 2 — Hardcoded $28,400 partnership pipeline fallback
+Current bug:
+- /api/execution/partnerships returns 28400 when no real attribution data exists.
+
+Required fix:
+- Remove the hardcoded 28400 fallback.
+- Either use 0 or compute totalPipelineValue from the partnerships array values already generated from real inputs.
+- Make sure empty/no-data orgs return 0, not a fake pipeline.
+
+Fix 3 — Spring Island hardcoded pricing in multi-tenant coach billing
+Current bug:
+- /api/coach/:id/clients applies hardcoded $62/$95 pricing when location includes "spring island".
+- This is unsafe in a multi-tenant route.
+
+Required fix:
+- Remove unscoped hardcoded Spring Island pricing.
+- Use service.priceCents as the default source.
+- If Spring Island pricing is required, scope it to the correct organization only using orgId.
+- Prefer an org-scoped helper function with a clear TODO for moving location-specific overrides into the database later.
+- No other org should ever get Spring Island pricing because of a location string match alone.
+
+Requirements:
+- No schema changes.
+- No broad refactors.
+- Preserve response shapes.
+- Add comments explaining:
+  - booking price is not accounting revenue
+  - forecast no-data state must not fabricate revenue
+  - location-specific pricing must be org-scoped
+- TypeScript clean.
+- Test the affected endpoints.
+
+Expected output:
+- Files changed
+- Exact code changes
+- Test results
+- Confirmation that no fake revenue fallback remains
