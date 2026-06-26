@@ -46,6 +46,7 @@ import OrgLandingPage from "@/pages/org-landing";
 import PrivacyPolicyPage from "@/pages/privacy-policy";
 import TermsConditionsPage from "@/pages/terms-conditions";
 import BookLandingPage from "@/pages/book-landing";
+import BookThankYouPage from "@/pages/book-thank-you";
 import CreatePasswordPage from "@/pages/create-password";
 import ForgotPasswordPage from "@/pages/forgot-password";
 import ResetPasswordPage from "@/pages/reset-password";
@@ -688,6 +689,7 @@ function PublicLayout() {
       <Route path="/privacy" component={PrivacyPolicyPage} />
       <Route path="/terms" component={TermsConditionsPage} />
       <Route path="/book" component={BookLandingPage} />
+      <Route path="/book/thank-you" component={BookThankYouPage} />
       <Route path="/unsubscribe/:token" component={UnsubscribePage} />
       <Route><LandingPage /></Route>
     </Switch>

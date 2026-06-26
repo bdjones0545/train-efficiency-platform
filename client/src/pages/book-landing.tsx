@@ -1,4 +1,5 @@
 import { useState, useRef } from "react";
+import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -60,6 +61,7 @@ interface EmailLeadErrors {
 }
 
 export default function BookLandingPage() {
+  const [, navigate] = useLocation();
   const [ctaModalOpen, setCtaModalOpen] = useState(false);
   const [form, setForm] = useState<EmailLeadForm>({
     firstName: "",
@@ -133,26 +135,9 @@ export default function BookLandingPage() {
         metadata: { source: "book_landing" },
       });
 
-      // 3. Log book_amazon_redirected event
-      trackEvent("book_amazon_redirected", { placeholder: isPlaceholderUrl });
-      await apiRequest("POST", "/api/book-funnel/events", {
-        leadId,
-        email: form.email.trim(),
-        eventType: "book_amazon_redirected",
-        metadata: { placeholder: isPlaceholderUrl },
-      });
-
-      // 4. Redirect or show placeholder toast
-      if (isPlaceholderUrl) {
-        toast({
-          title: "Amazon book URL not configured yet.",
-          description: "Your email has been saved. We'll send you the link as soon as the book is live.",
-        });
-      } else {
-        window.open(AMAZON_BOOK_URL, "_blank", "noopener,noreferrer");
-      }
-
+      // 3. Navigate to thank-you page (handles Amazon redirect from there)
       setCtaModalOpen(false);
+      navigate(`/book/thank-you?email=${encodeURIComponent(form.email.trim())}`);
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : "Something went wrong. Please try again.";
       toast({
