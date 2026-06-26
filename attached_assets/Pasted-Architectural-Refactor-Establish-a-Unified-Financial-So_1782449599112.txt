@@ -1,0 +1,105 @@
+Architectural Refactor — Establish a Unified Financial Source of Truth
+
+Goal:
+Every dashboard, AI agent, Business Command Center, CEO Agent, Heartbeat, Scheduling Dashboard, Revenue Dashboard, and Financial Dashboard should derive their metrics from one unified financial aggregation layer instead of directly querying bookings or Stripe independently.
+
+Requirements
+
+Do NOT rewrite the system yet.
+
+First create a unified aggregation service.
+
+Create:
+
+server/financial-metrics.ts
+
+This file becomes the ONLY place responsible for computing financial metrics.
+
+It should aggregate data from ALL payment sources:
+
+PAYMENT SOURCES
+- Stripe payments
+- Wallet transactions
+- Cash payments
+- Venmo payments
+- Future payment providers
+- revenue_ledger_events
+
+SERVICE DELIVERY SOURCES
+- redemptions
+- completed bookings
+- attendance where appropriate
+- sessions_remaining
+
+Return a strongly typed object such as:
+
+{
+  cashCollected,
+  stripeCollected,
+  cashCollectedOffline,
+  walletCollected,
+  totalCollected,
+
+  recognizedRevenue,
+
+  deferredRevenue,
+
+  pipelineRevenue,
+
+  sessionsDelivered,
+
+  sessionsRedeemed,
+
+  sessionsRemaining,
+
+  outstandingPackageLiability,
+
+  refunds,
+
+  outstandingBalance,
+
+  paymentBreakdown,
+
+  revenueBySource,
+
+  lastUpdated
+}
+
+Important
+
+Revenue is NOT bookings.priceCents.
+
+Revenue should be computed from:
+
+1. payment events
+2. redemption/service delivery
+3. revenue_ledger_events
+
+Bookings are scheduling data only.
+
+Audit all existing dashboards and identify where they currently compute revenue themselves.
+
+Replace those calculations with calls into the unified financial metrics service.
+
+Do not change UI yet.
+
+Do not change business logic yet.
+
+Just centralize the source of truth.
+
+Requirements
+
+- Preserve existing APIs where possible.
+- Keep all auth unchanged.
+- No breaking schema changes.
+- No destructive migrations.
+- Continue supporting Stripe, cash, Venmo, wallet, and future payment providers.
+- CEO Agent orchestration should consume this unified financial summary instead of buildCommandCenterContextString revenue values.
+
+Expected output
+
+- financial-metrics.ts created
+- List of dashboards migrated
+- Remaining dashboards still using legacy revenue logic
+- Any schema improvements recommended
+- TypeScript clean

@@ -26,6 +26,7 @@ import {
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { computeChurnRisks, computeSessionPackageAlerts } from "./revenue-intelligence";
 import { buildScoredDailyActionQueue } from "./action-tracking";
+import { computeMonthlyFinancialMetrics, computeTodayFinancialMetrics, buildFinancialContextString } from "./financial-metrics";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -278,9 +279,35 @@ export async function computeCommandCenter(orgId: string): Promise<CommandCenter
       .orderBy(bookings.startAt);
   }
 
-  const todayRevenueCents = todayBookingsRaw
+  // ─── Today & month revenue — from unified financial metrics (ledger-based) ──
+  // NOTE: todayBookingsRaw is still used for the schedule display (times/names),
+  // but the revenue figure now comes from the ledger instead of summing priceCents.
+  const [todayUnified, monthUnified] = await Promise.all([
+    computeTodayFinancialMetrics(orgId),
+    computeMonthlyFinancialMetrics(orgId),
+  ]);
+
+  // Prefer ledger-based recognized revenue; fall back to booking estimate if ledger is empty
+  const bookingTodayEstimate = todayBookingsRaw
     .filter((b) => b.serviceCountsRevenue !== false)
     .reduce((sum, b) => sum + (b.servicePriceCents || 0), 0);
+  const bookingMonthEstimate = (() => {
+    // Inline booking estimate for the month (fallback only)
+    let est = 0;
+    if (coachIds.length > 0) {
+      // We already loaded today bookings; month estimate comes from unified.pipelineRevenue + recognized
+      est = monthUnified.recognizedRevenue + monthUnified.pipelineRevenue;
+    }
+    return est;
+  })();
+
+  const todayRevenueCents = todayUnified.ledgerCoverage !== "none"
+    ? todayUnified.recognizedRevenue
+    : bookingTodayEstimate;
+
+  const monthRevenueCents = monthUnified.ledgerCoverage !== "none"
+    ? monthUnified.recognizedRevenue
+    : (monthUnified.pipelineRevenue > 0 ? monthUnified.pipelineRevenue : bookingMonthEstimate);
 
   const todaySchedule = todayBookingsRaw.map((b) => ({
     time: format(toZonedTime(new Date(b.startAt), timezone), "h:mm a"),
@@ -288,29 +315,6 @@ export async function computeCommandCenter(orgId: string): Promise<CommandCenter
     service: b.serviceName || "Session",
     status: b.status,
   }));
-
-  // ─── Month revenue ──────────────────────────────────────────────────────────
-  let monthBookingsRaw: any[] = [];
-  if (coachIds.length > 0) {
-    monthBookingsRaw = await db
-      .select({
-        servicePriceCents: services.priceCents,
-        serviceCountsRevenue: services.countsTowardRevenue,
-      })
-      .from(bookings)
-      .leftJoin(services, eq(bookings.serviceId, services.id))
-      .where(
-        and(
-          inArray(bookings.coachId, coachIds),
-          gte(bookings.startAt, fromZonedTime(monthStart, timezone)),
-          lte(bookings.startAt, fromZonedTime(monthEnd, timezone)),
-          ne(bookings.status, "CANCELLED")
-        )
-      );
-  }
-  const monthRevenueCents = monthBookingsRaw
-    .filter((b) => b.serviceCountsRevenue !== false)
-    .reduce((sum, b) => sum + (b.servicePriceCents || 0), 0);
 
   const dailyRunRate = daysElapsed > 0 ? monthRevenueCents / daysElapsed : 0;
   const projectedMonthRevenueCents = Math.round(dailyRunRate * daysInMonth);
@@ -697,16 +701,25 @@ export async function buildCommandCenterContextString(orgId: string): Promise<st
       triggerAlertsLine = buildTriggerAlertsContextString(alertsResult);
     } catch {}
 
+    // ── Unified financial metrics — source of truth for revenue context ────────
+    let unifiedFinancialLine = "";
+    try {
+      const { computeUnifiedFinancialMetrics, buildFinancialContextString } = await import("./financial-metrics");
+      const unifiedMetrics = await computeUnifiedFinancialMetrics(orgId);
+      unifiedFinancialLine = "\n\n" + buildFinancialContextString(unifiedMetrics, "All time");
+    } catch {}
+
     return `
 ## Today's Business Command Center Context (as of ${format(new Date(), "MMM d, yyyy h:mm a")})
 
-Revenue today: $${(data.todayRevenueCents / 100).toFixed(0)} booked | Month to date: $${(data.monthRevenueCents / 100).toFixed(0)} | Projected month-end: $${(data.projectedMonthRevenueCents / 100).toFixed(0)}
+Revenue today: $${(data.todayRevenueCents / 100).toFixed(0)} earned | Month to date: $${(data.monthRevenueCents / 100).toFixed(0)} earned | Projected month-end: $${(data.projectedMonthRevenueCents / 100).toFixed(0)}
+NOTE: Revenue figures are ledger-based (recognized upon session delivery), not booking totals.
 ${goalLine}
 ${slotsLine}
 ${bestLine}
 
 Client opportunities: ${churnCount} churn risks, ${renewalCount} renewals due, ${shouldBookCount} clients who should book.
-${teamLine}${dealLine}${intelligenceLine}${globalPriorityLine}${autoExecLine}${revenueLine}${triggerAlertsLine}
+${teamLine}${dealLine}${intelligenceLine}${globalPriorityLine}${autoExecLine}${revenueLine}${triggerAlertsLine}${unifiedFinancialLine}
 
 When the coach asks "What should I do today?" or similar, always lead with the GLOBAL PRIORITY top action first, then provide additional context from this command center data. If CRITICAL trigger alerts are active, surface them immediately before any outreach recommendations.
 `.trim();

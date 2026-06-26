@@ -15,6 +15,7 @@ import {
 } from "@shared/schema";
 import { eq, and, inArray, gte, lte, sql, desc } from "drizzle-orm";
 import { getEligibleClientIds } from "./client-eligibility";
+import { computeUnifiedFinancialMetrics, computeRolling30DayMetrics } from "./financial-metrics";
 
 export interface ClientLTV {
   clientId: string;
@@ -89,8 +90,11 @@ export interface SessionPackageAlert {
 export interface RevenueSummary {
   generatedAt: string;
   periodLabel: string;
+  /** @deprecated Use earnedRevenueCents (recognized, ledger-based) or pipelineRevenueCents (future bookings). */
   totalRevenueCents: number;
+  /** @deprecated Use earnedRevenueCents. */
   last30dRevenueCents: number;
+  /** @deprecated Use prior30dEarnedRevenueCents. */
   prior30dRevenueCents: number;
   revenueGrowthPct: number;
   mrr: number;
@@ -115,6 +119,29 @@ export interface RevenueSummary {
   totalPipelineRevenueCents: number;
   unclassifiedLeadsCount: number;
   revenueSummaryDegraded: boolean;
+  // ── Unified financial metrics (source of truth) ───────────────────────────
+  /** Revenue recognized (service delivered) from revenue_ledger_events. */
+  earnedRevenueCents: number;
+  /** Last 30d recognized revenue from ledger. */
+  last30dEarnedRevenueCents: number;
+  /** Prior 30d recognized revenue from ledger (for growth calc). */
+  prior30dEarnedRevenueCents: number;
+  /** CONFIRMED future bookings × priceCents. Scheduling pipeline, NOT earned revenue. */
+  pipelineRevenueCents: number;
+  /** Cash actually collected from all sources (payment_received ledger events). */
+  cashCollectedCents: number;
+  /** Sessions delivered (COMPLETED bookings). */
+  sessionsDelivered: number;
+  /** Sessions redeemed (redemption rows). */
+  sessionsRedeemed: number;
+  /** Remaining session credits across all active subscriptions. */
+  sessionsRemaining: number;
+  /** Prepaid but undelivered session liability (deferred revenue). */
+  deferredRevenueCents: number;
+  /** Refunds issued (ledger). */
+  refundsCents: number;
+  /** Whether revenue_ledger_events has meaningful coverage for this org. */
+  ledgerCoverage: "full" | "partial" | "none";
 }
 
 async function getOrgCoachIds(orgId: string): Promise<string[]> {
@@ -170,7 +197,10 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
   const orgRow = await db.select({ timezone: organizations.timezone }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
   const orgTimezone = orgRow[0]?.timezone ?? "America/New_York";
 
-  const [allBookings, coachRows, userSubs, subPlans, eligibleClientIds] = await Promise.all([
+  // ── Unified financial metrics — source of truth for all money figures ───────
+  const [unifiedAll, rolling30d, unifiedBookings, coachRows, userSubs, subPlans, eligibleClientIds] = await Promise.all([
+    computeUnifiedFinancialMetrics(orgId),
+    computeRolling30DayMetrics(orgId),
     getOrgBookingsWithService(orgId),
     db.select({
       id: coachProfiles.id,
@@ -190,19 +220,33 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     getEligibleClientIds(orgId),
   ]);
 
+  const allBookings = unifiedBookings;
   const coachMap = new Map(coachRows.map(c => [c.id, `${c.firstName ?? ""} ${c.lastName ?? ""}`.trim()]));
 
-  // Only include revenue-generating bookings in financial calculations
+  // ── Booking-based scheduling data (time blocks, top-client analysis) ──────
+  // NOTE: for all MONEY figures use the unified financial metrics below, NOT these booking sums.
   const revenueBookings = allBookings.filter(b => b.countsTowardRevenue !== false && (b.priceCents ?? 0) > 0);
-  const last30d = revenueBookings.filter(b => new Date(b.startAt) >= thirtyDaysAgo);
-  const prior30d = revenueBookings.filter(b => new Date(b.startAt) >= sixtyDaysAgo && new Date(b.startAt) < thirtyDaysAgo);
+  const last30dBookings  = revenueBookings.filter(b => new Date(b.startAt) >= thirtyDaysAgo);
+  const prior30dBookings = revenueBookings.filter(b => new Date(b.startAt) >= sixtyDaysAgo && new Date(b.startAt) < thirtyDaysAgo);
 
-  const totalRevenueCents = revenueBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
-  const last30dRevenueCents = last30d.reduce((s, b) => s + (b.priceCents ?? 0), 0);
-  const prior30dRevenueCents = prior30d.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+  // ── Revenue figures — sourced from unified financial metrics (ledger-based) ─
+  // Falls back to booking estimate if ledger has no coverage (pre-ledger data).
+  const bookingTotalEstimate    = revenueBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+  const bookingLast30dEstimate  = last30dBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+  const bookingPrior30dEstimate = prior30dBookings.reduce((s, b) => s + (b.priceCents ?? 0), 0);
+
+  const earnedRevenueCents         = unifiedAll.ledgerCoverage !== "none" ? unifiedAll.recognizedRevenue   : bookingTotalEstimate;
+  const last30dEarnedRevenueCents  = rolling30d.last30d.ledgerCoverage  !== "none" ? rolling30d.last30d.recognizedRevenue  : bookingLast30dEstimate;
+  const prior30dEarnedRevenueCents = rolling30d.prior30d.ledgerCoverage !== "none" ? rolling30d.prior30d.recognizedRevenue : bookingPrior30dEstimate;
+
+  // Legacy aliases — keep for code that reads these locals but not yet migrated
+  const totalRevenueCents    = earnedRevenueCents;
+  const last30dRevenueCents  = last30dEarnedRevenueCents;
+  const prior30dRevenueCents = prior30dEarnedRevenueCents;
+
   const revenueGrowthPct = prior30dRevenueCents > 0
     ? Math.round(((last30dRevenueCents - prior30dRevenueCents) / prior30dRevenueCents) * 100)
-    : 0;
+    : rolling30d.growthPct;
 
   // MRR from subscriptions
   const planMap = new Map(subPlans.map(p => [p.id, p]));
@@ -422,7 +466,7 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     avgLtvCents,
     avgRevenuePerSessionCents: revenueSessions > 0 ? Math.round(totalRevenueCents / revenueSessions) : 0,
     totalSessions,
-    sessionsLast30d: last30d.length,
+    sessionsLast30d: last30dBookings.length,
     churnRiskCount: churnRisks.length,
     sessionPackageAlertCount: packageAlerts.length,
     upsellOpportunityCount: upsellOpportunities.length,
@@ -439,6 +483,18 @@ export async function computeRevenueSummary(orgId: string): Promise<RevenueSumma
     totalPipelineRevenueCents,
     unclassifiedLeadsCount,
     revenueSummaryDegraded: false,
+    // ── Unified financial metrics (source of truth) ─────────────────────────
+    earnedRevenueCents,
+    last30dEarnedRevenueCents,
+    prior30dEarnedRevenueCents,
+    pipelineRevenueCents: unifiedAll.pipelineRevenue,
+    cashCollectedCents: unifiedAll.cashCollected,
+    sessionsDelivered: unifiedAll.sessionsDelivered,
+    sessionsRedeemed: unifiedAll.sessionsRedeemed,
+    sessionsRemaining: unifiedAll.sessionsRemaining,
+    deferredRevenueCents: unifiedAll.deferredRevenue,
+    refundsCents: unifiedAll.refunds,
+    ledgerCoverage: unifiedAll.ledgerCoverage,
   };
 }
 

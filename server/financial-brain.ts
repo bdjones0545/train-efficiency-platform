@@ -19,6 +19,7 @@
 
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { computeUnifiedFinancialMetrics, buildFinancialContextString } from "./financial-metrics";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
