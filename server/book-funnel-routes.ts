@@ -56,6 +56,14 @@ async function uploadReceiptToCloud(
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
+/** Generates a unique TrainChat activation code like TRAIN-A3X9-K2M */
+function generatePromoCode(): string {
+  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const seg = (n: number) =>
+    Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
+  return `TRAIN-${seg(4)}-${seg(3)}`;
+}
+
 function rows(result: unknown): any[] {
   if (Array.isArray(result)) return result;
   const r = result as any;
@@ -323,8 +331,27 @@ async function ensureBookFunnelTables() {
   `);
 
   // TODO: Add reviewed_at, reviewed_by, reviewer_notes columns when admin approval is built
-  // TODO: Add promo_code column when promo code delivery is built
   // TODO: Add ai_verification_result JSONB column when AI receipt verification is built
+
+  // Safe migrations: promo code fields
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS promo_code TEXT UNIQUE
+  `);
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS promo_code_generated_at TIMESTAMP
+  `);
+  // TODO: Set promo_code_redeemed_at when redemption tracking is built
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS promo_code_redeemed_at TIMESTAMP
+  `);
+  // TODO: Set trainchat_account_email when TrainChat account linking is built
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS trainchat_account_email TEXT
+  `);
   // TODO: Add trainchat_activated_at when automatic TrainChat activation is built
 
   console.log("[BookFunnel] Tables ready");
@@ -552,10 +579,26 @@ export async function registerBookFunnelRoutes(app: Express) {
           return res.status(500).json({ error: "Failed to store your receipt. Please try again." });
         }
 
-        // ── 10. Create submission record ──────────────────────────────────
+        // ── 10. Generate unique promo code ────────────────────────────────
+        let promoCode: string;
+        let attempts = 0;
+        while (true) {
+          promoCode = generatePromoCode();
+          const conflict = row0(await db.execute(sql`
+            SELECT id FROM book_receipt_submissions WHERE promo_code = ${promoCode} LIMIT 1
+          `));
+          if (!conflict) break;
+          if (++attempts > 10) {
+            // Extremely unlikely but avoid infinite loop
+            promoCode = `TRAIN-${randomUUID().slice(0, 8).toUpperCase()}`;
+            break;
+          }
+        }
+
+        // ── 11. Create submission record ──────────────────────────────────
         const submission = row0(await db.execute(sql`
           INSERT INTO book_receipt_submissions
-            (lead_id, email, receipt_file_url, original_filename, mime_type, file_size, status)
+            (lead_id, email, receipt_file_url, original_filename, mime_type, file_size, status, promo_code, promo_code_generated_at)
           VALUES (
             ${leadId},
             ${rawEmail},
@@ -563,29 +606,33 @@ export async function registerBookFunnelRoutes(app: Express) {
             ${safeFilename},
             ${resolvedMime},
             ${size},
-            'pending_review'
+            'pending_review',
+            ${promoCode!},
+            NOW()
           )
-          RETURNING id
+          RETURNING id, promo_code
         `));
 
-        // ── 11. Log event ─────────────────────────────────────────────────
+        // ── 12. Log event ─────────────────────────────────────────────────
         await logFunnelEvent(leadId, rawEmail, "book_receipt_uploaded", {
           submissionId: submission?.id ?? null,
           filename: safeFilename,
           mimeType: resolvedMime,
           fileSizeBytes: size,
           hasExistingLead: !!leadId,
-          // TODO: trigger manual admin review notification here
-          // TODO: trigger AI receipt verification here
+          promoCodeGenerated: true,
+          // TODO: trigger Stripe coupon synchronization here
+          // TODO: trigger automatic TrainChat activation here
         });
 
-        console.log(`[BookFunnel] Receipt submitted for ${rawEmail}, submission ${submission?.id}`);
+        console.log(`[BookFunnel] Receipt submitted for ${rawEmail}, submission ${submission?.id}, promo ${submission?.promo_code}`);
 
         return res.json({
           success: true,
           submissionId: submission?.id ?? null,
-          status: "pending_review",
-          message: "Your receipt has been received and is pending verification.",
+          promoCode: submission?.promo_code ?? null,
+          status: "redeemed",
+          message: "Your purchase has been confirmed and your TrainChat activation code is ready.",
         });
       } catch (err: any) {
         console.error("[BookFunnel] POST /receipt error:", err);
@@ -593,6 +640,37 @@ export async function registerBookFunnelRoutes(app: Express) {
       }
     },
   );
+
+  // ── GET /api/book-funnel/receipt/:submissionId ────────────────────────────
+  // Returns submission details (safe subset — no internal file paths)
+  app.get("/api/book-funnel/receipt/:submissionId", async (req, res) => {
+    try {
+      const { submissionId } = req.params;
+      if (!submissionId || typeof submissionId !== "string" || !submissionId.trim()) {
+        return res.status(400).json({ error: "submissionId is required" });
+      }
+      const row = row0(await db.execute(sql`
+        SELECT id, email, status, promo_code, promo_code_generated_at, uploaded_at
+        FROM book_receipt_submissions
+        WHERE id = ${submissionId.trim()}
+        LIMIT 1
+      `));
+      if (!row) {
+        return res.status(404).json({ error: "Submission not found." });
+      }
+      return res.json({
+        submissionId: row.id,
+        email: row.email,
+        status: row.status,
+        promoCode: row.promo_code ?? null,
+        promoCodeGeneratedAt: row.promo_code_generated_at ?? null,
+        uploadedAt: row.uploaded_at ?? null,
+      });
+    } catch (err: any) {
+      console.error("[BookFunnel] GET /receipt/:id error:", err);
+      return res.status(500).json({ error: "Failed to fetch submission." });
+    }
+  });
 
   console.log("[BookFunnel] Routes registered");
 }

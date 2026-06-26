@@ -225,9 +225,14 @@ export default function BookRedeemPage() {
 
       if (result.ok) {
         setUploadState("success");
+        const data = result.data as any;
         trackEvent("book_receipt_uploaded", { email });
         logFunnelEvent("book_receipt_uploaded", email || undefined, { filename: file.name });
-        setTimeout(() => navigate("/book/redeem/success"), 800);
+        const params = new URLSearchParams();
+        if (data?.submissionId) params.set("submissionId", data.submissionId);
+        if (email) params.set("email", encodeURIComponent(email.trim().toLowerCase()));
+        if (data?.promoCode) params.set("promoCode", data.promoCode);
+        setTimeout(() => navigate(`/book/redeem/success?${params.toString()}`), 800);
       } else {
         const errMsg = (result.data as any)?.error ?? "Upload failed. Please try again.";
         setServerError(errMsg);
