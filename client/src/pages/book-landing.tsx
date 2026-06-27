@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import bookHeroImg from "@assets/B44D7E27-9E35-4B28-9E5F-4B0A73EAA972_1782438528568.PNG";
 import { apiRequest } from "@/lib/queryClient";
+import { trackViewContent, trackLead } from "@/lib/meta-pixel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -134,7 +135,10 @@ export default function BookLandingPage() {
         metadata: { source: "book_landing" },
       });
 
-      // 3. Navigate to thank-you page (handles Amazon redirect from there)
+      // 3. Fire Meta Pixel Lead event (form submitted — purchase is on Amazon)
+      trackLead({ content_name: "Train Efficiency Book" });
+
+      // 4. Navigate to thank-you page (handles Amazon redirect from there)
       setCtaModalOpen(false);
       navigate(`/book/thank-you?email=${encodeURIComponent(form.email.trim())}`);
     } catch (err: unknown) {
@@ -151,6 +155,7 @@ export default function BookLandingPage() {
 
   useEffect(() => {
     trackEvent("book_page_view");
+    trackViewContent({ content_name: "Train Efficiency Book", content_category: "book" });
   }, []);
 
   return (

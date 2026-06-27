@@ -4,6 +4,7 @@ import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ShoppingCart, ArrowLeft, Loader2 } from "lucide-react";
+import { trackInitiateCheckout } from "@/lib/meta-pixel";
 
 const AMAZON_BOOK_URL = "https://www.amazon.com/dp/B0H6CDZ85W";
 
@@ -80,6 +81,7 @@ export default function BookThankYouPage() {
         hasTrackedRedirect.current = true;
         trackEvent("book_amazon_auto_redirected", { email });
         logFunnelEvent("book_amazon_auto_redirected", email || undefined);
+        trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "auto_redirect" });
       }
       setRedirected(true);
       window.location.href = AMAZON_BOOK_URL;
@@ -95,6 +97,7 @@ export default function BookThankYouPage() {
     if (!IS_AMAZON_CONFIGURED) return;
     trackEvent("book_amazon_manual_clicked", { email });
     logFunnelEvent("book_amazon_manual_clicked", email || undefined);
+    trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "manual_click" });
     window.location.href = AMAZON_BOOK_URL;
   }
 

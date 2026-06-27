@@ -1,5 +1,6 @@
 import { Component, useEffect } from "react";
 import { Switch, Route, useLocation } from "wouter";
+import { initPixel, trackPageView } from "@/lib/meta-pixel";
 import { PageErrorBoundary } from "@/components/page-error-boundary";
 import { queryClient } from "./lib/queryClient";
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
@@ -728,6 +729,15 @@ function OpenSessionsPublicPage() {
   );
 }
 
+function MetaPixelTracker() {
+  const [location] = useLocation();
+  useEffect(() => {
+    initPixel();
+    trackPageView(location);
+  }, [location]);
+  return null;
+}
+
 function AppContent() {
   const { user, isLoading } = useAuth();
 
@@ -757,6 +767,7 @@ function App() {
         <TooltipProvider>
           <Toaster />
           <AppErrorBoundary>
+            <MetaPixelTracker />
             <AppContent />
           </AppErrorBoundary>
         </TooltipProvider>
