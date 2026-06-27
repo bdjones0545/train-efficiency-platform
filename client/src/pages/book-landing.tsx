@@ -153,7 +153,10 @@ export default function BookLandingPage() {
     }
   }
 
+  const hasTrackedViewContent = useRef(false);
   useEffect(() => {
+    if (hasTrackedViewContent.current) return;
+    hasTrackedViewContent.current = true;
     trackEvent("book_page_view");
     trackViewContent({ content_name: "Train Efficiency Book", content_category: "book" });
   }, []);

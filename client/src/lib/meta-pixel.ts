@@ -7,8 +7,18 @@ declare global {
   }
 }
 
+const isDev = import.meta.env.DEV;
+
 let initialized = false;
-let lastTrackedPath = "";
+
+function debug(event: string, params?: Record<string, unknown>): void {
+  if (!isDev) return;
+  console.debug(
+    `%c[MetaPixel:${PIXEL_ID}] ${event}`,
+    "color:#4267B2;font-weight:bold",
+    params ?? {},
+  );
+}
 
 export function initPixel(): void {
   if (initialized || typeof window === "undefined") return;
@@ -47,27 +57,29 @@ export function initPixel(): void {
   }
 
   window.fbq("init", PIXEL_ID);
+  debug("init");
 }
 
-export function trackPageView(path?: string): void {
+export function trackPageView(path: string): void {
   if (typeof window === "undefined" || !window.fbq) return;
-  const currentPath = path ?? window.location.pathname;
-  if (currentPath === lastTrackedPath) return;
-  lastTrackedPath = currentPath;
   window.fbq("track", "PageView");
+  debug("PageView", { path });
 }
 
 export function trackViewContent(params?: Record<string, unknown>): void {
   if (typeof window === "undefined" || !window.fbq) return;
   window.fbq("track", "ViewContent", params ?? {});
+  debug("ViewContent", params);
 }
 
 export function trackLead(params?: Record<string, unknown>): void {
   if (typeof window === "undefined" || !window.fbq) return;
   window.fbq("track", "Lead", params ?? {});
+  debug("Lead", params);
 }
 
 export function trackInitiateCheckout(params?: Record<string, unknown>): void {
   if (typeof window === "undefined" || !window.fbq) return;
   window.fbq("track", "InitiateCheckout", params ?? {});
+  debug("InitiateCheckout", params);
 }

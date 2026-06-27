@@ -1,4 +1,4 @@
-import { Component, useEffect } from "react";
+import { Component, useEffect, useRef } from "react";
 import { Switch, Route, useLocation } from "wouter";
 import { initPixel, trackPageView } from "@/lib/meta-pixel";
 import { PageErrorBoundary } from "@/components/page-error-boundary";
@@ -734,8 +734,19 @@ const BOOK_FUNNEL_PREFIX = "/book";
 function MetaPixelTracker() {
   const [location] = useLocation();
   const isBookRoute = location === BOOK_FUNNEL_PREFIX || location.startsWith(BOOK_FUNNEL_PREFIX + "/");
+  // Per-component ref tracks last path we fired PageView for.
+  // This prevents StrictMode double-fires while still allowing
+  // re-fires when the user returns to a book route after leaving.
+  const lastFiredPath = useRef<string>("");
+
   useEffect(() => {
-    if (!isBookRoute) return;
+    if (!isBookRoute) {
+      // Reset so a return visit to a book route fires again.
+      lastFiredPath.current = "";
+      return;
+    }
+    if (location === lastFiredPath.current) return;
+    lastFiredPath.current = location;
     initPixel();
     trackPageView(location);
   }, [location, isBookRoute]);

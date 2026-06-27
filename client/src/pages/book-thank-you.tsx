@@ -43,7 +43,12 @@ export default function BookThankYouPage() {
   const [countdown, setCountdown] = useState(REDIRECT_DELAY_MS / 1000);
   const [redirected, setRedirected] = useState(false);
   const hasTrackedView = useRef(false);
-  const hasTrackedRedirect = useRef(false);
+  // Shared guard for InitiateCheckout — prevents both auto-redirect and manual
+  // click from each firing when the user acts before the countdown ends.
+  const hasTrackedCheckout = useRef(false);
+  // Keep the auto-redirect timer in a ref so handleContinueToAmazon can cancel it.
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const steps: Step[] = [
     { label: "Email Saved", done: true, active: false },
@@ -66,38 +71,49 @@ export default function BookThankYouPage() {
       return;
     }
 
-    const interval = setInterval(() => {
+    countdownIntervalRef.current = setInterval(() => {
       setCountdown((prev) => {
         if (prev <= 1) {
-          clearInterval(interval);
+          clearInterval(countdownIntervalRef.current!);
           return 0;
         }
         return prev - 1;
       });
     }, 1000);
 
-    const timer = setTimeout(() => {
-      if (!hasTrackedRedirect.current) {
-        hasTrackedRedirect.current = true;
-        trackEvent("book_amazon_auto_redirected", { email });
-        logFunnelEvent("book_amazon_auto_redirected", email || undefined);
-        trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "auto_redirect" });
+    redirectTimerRef.current = setTimeout(() => {
+      // If the user manually clicked before this fired, skip.
+      if (hasTrackedCheckout.current) {
+        setRedirected(true);
+        window.location.href = AMAZON_BOOK_URL;
+        return;
       }
+      hasTrackedCheckout.current = true;
+      trackEvent("book_amazon_auto_redirected", { email });
+      logFunnelEvent("book_amazon_auto_redirected", email || undefined);
+      trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "auto_redirect" });
       setRedirected(true);
       window.location.href = AMAZON_BOOK_URL;
     }, REDIRECT_DELAY_MS);
 
     return () => {
-      clearInterval(interval);
-      clearTimeout(timer);
+      clearInterval(countdownIntervalRef.current!);
+      clearTimeout(redirectTimerRef.current!);
     };
   }, [email]);
 
   function handleContinueToAmazon() {
     if (!IS_AMAZON_CONFIGURED) return;
+    // Cancel the auto-redirect timer so it cannot double-fire InitiateCheckout.
+    clearTimeout(redirectTimerRef.current!);
+    clearInterval(countdownIntervalRef.current!);
     trackEvent("book_amazon_manual_clicked", { email });
     logFunnelEvent("book_amazon_manual_clicked", email || undefined);
-    trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "manual_click" });
+    // Only fire if not already fired by the auto-redirect path (belt-and-suspenders).
+    if (!hasTrackedCheckout.current) {
+      hasTrackedCheckout.current = true;
+      trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "manual_click" });
+    }
     window.location.href = AMAZON_BOOK_URL;
   }
 
