@@ -1,6 +1,5 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "wouter";
-import { trackLead } from "@/lib/meta-pixel";
 import { LeadCaptureLaserEffects, LaserBorderSweep, LaserUrgencyGlow, getDefaultLaserPreset } from "@/components/lead-capture-laser-effects";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -226,6 +225,23 @@ export default function LeadCaptureLanding() {
     if (data) trackFunnelEvent("page_view");
   }, [data?.program?.id]);
 
+  // Inject per-program Meta Pixel if configured in the program's DB config
+  useEffect(() => {
+    if (!data?.config?.metaPixelId) return;
+    const pixelId = data.config.metaPixelId;
+    if (document.getElementById("meta-pixel-script")) return;
+    const script = document.createElement("script");
+    script.id = "meta-pixel-script";
+    script.innerHTML = `
+      !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;
+      n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,
+      document,'script','https://connect.facebook.net/en_US/fbevents.js');
+      fbq('init','${pixelId}');fbq('track','PageView');
+    `;
+    document.head.appendChild(script);
+  }, [data?.config?.metaPixelId]);
 
   // Inject Google Ads tracking if configured
   useEffect(() => {
@@ -279,8 +295,10 @@ export default function LeadCaptureLanding() {
           bookingType: res.bookingType,
         }));
       } catch (_) {}
-      // Fire Meta Pixel Lead event
-      trackLead({ content_name: "Lead Capture Form" });
+      // Fire Meta Pixel Lead event (uses per-program pixel if configured)
+      if (data?.config?.metaPixelId && (window as any).fbq) {
+        (window as any).fbq("track", "Lead");
+      }
       // Fire Google Ads conversion
       if (data?.config?.googleAdsConversionId && data?.config?.googleAdsConversionLabel && (window as any).gtag) {
         (window as any).gtag("event", "conversion", {

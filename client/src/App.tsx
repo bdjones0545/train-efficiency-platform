@@ -729,12 +729,16 @@ function OpenSessionsPublicPage() {
   );
 }
 
+const BOOK_FUNNEL_PREFIX = "/book";
+
 function MetaPixelTracker() {
   const [location] = useLocation();
+  const isBookRoute = location === BOOK_FUNNEL_PREFIX || location.startsWith(BOOK_FUNNEL_PREFIX + "/");
   useEffect(() => {
+    if (!isBookRoute) return;
     initPixel();
     trackPageView(location);
-  }, [location]);
+  }, [location, isBookRoute]);
   return null;
 }
 
