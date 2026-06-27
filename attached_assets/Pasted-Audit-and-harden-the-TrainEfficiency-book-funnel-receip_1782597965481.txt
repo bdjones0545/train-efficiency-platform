@@ -1,0 +1,114 @@
+Audit and harden the TrainEfficiency book funnel receipt upload flow from end to end.
+
+Goal:
+Verify that every valid customer who uploads an Amazon receipt successfully receives the book access and the TRAINCHAT activation code.
+
+Audit the entire flow:
+
+1. Frontend
+
+* Verify the receipt upload page works on desktop and mobile.
+* Verify drag-and-drop and file picker both work.
+* Confirm accepted file types (jpg, jpeg, png, pdf if supported).
+* Confirm maximum file size is enforced.
+* Display clear loading, success, and error states.
+* Prevent duplicate submissions while uploading.
+
+2. API
+
+* Audit POST /api/book-funnel/receipt.
+* Verify validation of:
+
+  * required fields
+  * email
+  * uploaded file
+* Confirm malformed requests return proper 4xx responses.
+* Confirm server errors return 5xx without crashing.
+
+3. Storage
+
+* Verify receipts are actually stored.
+* Confirm storage failures are handled gracefully.
+* Ensure uploaded files cannot overwrite another user's receipt.
+* Verify unique storage paths if applicable.
+
+4. Database
+
+* Verify a lead record is created or updated correctly.
+* Confirm attribution data is preserved:
+
+  * email
+  * lead id
+  * campaign
+  * UTM values
+  * fbp/fbc
+  * upload timestamp
+* Confirm TRAINCHAT is assigned as the activation code.
+
+5. Email delivery
+
+* Verify HTML and plain-text emails are sent.
+* Confirm they contain:
+
+  * book access
+  * TRAINCHAT activation code
+  * correct branding
+* Confirm email failures are logged and handled.
+
+6. Security
+
+* Reject unsupported file types.
+* Reject oversized files.
+* Prevent path traversal.
+* Sanitize filenames.
+* Prevent duplicate receipt abuse where appropriate.
+* Verify rate limiting if implemented.
+
+7. Edge cases
+   Test:
+
+* valid image
+* valid PDF (if supported)
+* empty upload
+* corrupted file
+* oversized file
+* duplicate upload
+* invalid email
+* network interruption
+* retry after failure
+* browser refresh during upload
+
+8. Logging
+   Verify logs include:
+
+* upload received
+* validation result
+* storage success
+* database write
+* email sent
+* response time
+  without logging sensitive user information.
+
+9. Regression tests
+   Add or update automated tests covering:
+
+* successful upload
+* validation failures
+* duplicate upload
+* storage failure
+* email failure
+* activation code equals TRAINCHAT
+* attribution preserved
+
+10. Final report
+    Return:
+
+* files inspected
+* files changed
+* tests added
+* tests run
+* pass/fail summary
+* remaining risks
+* any production concerns before launching Meta ads.
+
+Do not modify unrelated book funnel, billing, Stripe, or TrainChat logic. Focus only on receipt upload reliability and launch readiness.
