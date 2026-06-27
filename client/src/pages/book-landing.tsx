@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useLocation } from "wouter";
 import bookHeroImg from "@assets/B44D7E27-9E35-4B28-9E5F-4B0A73EAA972_1782438528568.PNG";
 import { apiRequest } from "@/lib/queryClient";
-import { trackViewContent, trackLead } from "@/lib/meta-pixel";
+import { trackViewContent, trackLead, generateEventId, getMetaCookies } from "@/lib/meta-pixel";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -115,18 +115,28 @@ export default function BookLandingPage() {
     try {
       const isPlaceholderUrl = AMAZON_BOOK_URL.includes("TODO");
 
-      // 1. Persist lead (create or update by email)
+      // 1. Generate a unique event ID for this Lead action.
+      //    The same ID is sent to both fbq (browser pixel) and the server-side
+      //    CAPI call so Meta deduplicates them — only one Lead is counted.
+      const leadEventId = generateEventId();
+      const metaCookies = getMetaCookies();
+
+      // 2. Persist lead (create or update by email) — includes eventId and
+      //    fbp/fbc cookies so the server-side CAPI call is fully enriched.
       const leadRes = await apiRequest("POST", "/api/book-funnel/leads", {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim() || undefined,
         email: form.email.trim(),
         source: "book_landing",
         amazonClicked: !isPlaceholderUrl,
+        eventId: leadEventId,
+        fbp: metaCookies.fbp,
+        fbc: metaCookies.fbc,
       });
       const leadData = await leadRes.json();
       const leadId: string | undefined = leadData?.leadId;
 
-      // 2. Log book_email_submitted event
+      // 3. Log book_email_submitted event
       trackEvent("book_email_submitted", { email: form.email });
       await apiRequest("POST", "/api/book-funnel/events", {
         leadId,
@@ -135,8 +145,9 @@ export default function BookLandingPage() {
         metadata: { source: "book_landing" },
       });
 
-      // 3. Fire Meta Pixel Lead event (form submitted — purchase is on Amazon)
-      trackLead({ content_name: "Train Efficiency Book" });
+      // 4. Fire Meta Pixel Lead event (browser-side).
+      //    event_id matches the server CAPI event so Meta deduplicates them.
+      trackLead({ content_name: "Train Efficiency Book" }, leadEventId);
 
       // 4. Navigate to thank-you page (handles Amazon redirect from there)
       setCtaModalOpen(false);

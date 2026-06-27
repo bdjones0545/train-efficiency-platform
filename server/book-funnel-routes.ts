@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import type { Express, Request } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { getUncachableSendGridClient } from "./email";
@@ -6,6 +6,7 @@ import multer from "multer";
 import path from "path";
 import { randomUUID } from "crypto";
 import { Storage } from "@google-cloud/storage";
+import { sendBookCapiEvent } from "./meta-book-capi";
 
 // ─── GCS client (same credentials pattern as mediaStorage.ts) ───────────────
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
@@ -374,7 +375,7 @@ export async function registerBookFunnelRoutes(app: Express) {
   // ── POST /api/book-funnel/leads ───────────────────────────────────────────
   app.post("/api/book-funnel/leads", async (req, res) => {
     try {
-      const { firstName, lastName, email, source, amazonClicked } = req.body ?? {};
+      const { firstName, lastName, email, source, amazonClicked, eventId, fbp, fbc } = req.body ?? {};
 
       const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
 
@@ -456,6 +457,22 @@ export async function registerBookFunnelRoutes(app: Express) {
           });
         }
       }
+
+      // Fire server-side CAPI Lead — non-blocking, must never break the funnel
+      const capiEventId = (typeof eventId === "string" && eventId.trim()) ? eventId.trim() : `lead-${leadId}`;
+      const clientIp = ((req.headers["x-forwarded-for"] as string) ?? "").split(",")[0]?.trim() || req.socket?.remoteAddress || "";
+      const clientUa = (req.headers["user-agent"] as string) || "";
+      sendBookCapiEvent({
+        eventName: "Lead",
+        eventId: capiEventId,
+        email: normalizedEmail,
+        eventSourceUrl: (req.headers["referer"] as string) || "https://trainingefficiency.com/book",
+        clientIpAddress: clientIp,
+        clientUserAgent: clientUa,
+        fbp: typeof fbp === "string" ? fbp : undefined,
+        fbc: typeof fbc === "string" ? fbc : undefined,
+        customData: { content_name: "Train Efficiency Book" },
+      }).catch((err: any) => console.error("[BookFunnel] CAPI Lead fire error:", err?.message ?? err));
 
       return res.json({ success: true, leadId, email: normalizedEmail, emailSent, emailAlreadySent });
     } catch (err: any) {
@@ -678,6 +695,34 @@ export async function registerBookFunnelRoutes(app: Express) {
     } catch (err: any) {
       console.error("[BookFunnel] GET /receipt/:id error:", err);
       return res.status(500).json({ error: "Failed to fetch submission." });
+    }
+  });
+
+  // ── POST /api/book-funnel/initiate-checkout ───────────────────────────────
+  // Called by the client immediately before navigating to Amazon.
+  // Sends a server-side InitiateCheckout CAPI event matched to the browser pixel
+  // event via event_id so Meta deduplicates them.
+  app.post("/api/book-funnel/initiate-checkout", async (req, res) => {
+    // Respond immediately — client is about to navigate away and we must not block it.
+    res.json({ success: true });
+    try {
+      const { eventId, email, fbp, fbc } = req.body ?? {};
+      const capiEventId = (typeof eventId === "string" && eventId.trim()) ? eventId.trim() : `checkout-${Date.now()}`;
+      const clientIp = ((req.headers["x-forwarded-for"] as string) ?? "").split(",")[0]?.trim() || req.socket?.remoteAddress || "";
+      const clientUa = (req.headers["user-agent"] as string) || "";
+      await sendBookCapiEvent({
+        eventName: "InitiateCheckout",
+        eventId: capiEventId,
+        email: typeof email === "string" ? email.trim().toLowerCase() : undefined,
+        eventSourceUrl: (req.headers["referer"] as string) || "https://trainingefficiency.com/book/thank-you",
+        clientIpAddress: clientIp,
+        clientUserAgent: clientUa,
+        fbp: typeof fbp === "string" ? fbp : undefined,
+        fbc: typeof fbc === "string" ? fbc : undefined,
+        customData: { content_name: "Train Efficiency Book" },
+      });
+    } catch (err: any) {
+      console.error("[BookFunnel] CAPI InitiateCheckout error:", err?.message ?? err);
     }
   });
 

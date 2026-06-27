@@ -4,7 +4,7 @@ import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { CheckCircle2, ShoppingCart, ArrowLeft, Loader2 } from "lucide-react";
-import { trackInitiateCheckout } from "@/lib/meta-pixel";
+import { trackInitiateCheckout, generateEventId, getMetaCookies } from "@/lib/meta-pixel";
 
 const AMAZON_BOOK_URL = "https://www.amazon.com/dp/B0H6CDZ85W";
 
@@ -49,6 +49,9 @@ export default function BookThankYouPage() {
   // Keep the auto-redirect timer in a ref so handleContinueToAmazon can cancel it.
   const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const countdownIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // One stable event ID per page view — shared between browser pixel and CAPI
+  // so Meta can deduplicate the two InitiateCheckout signals.
+  const checkoutEventIdRef = useRef<string>(generateEventId());
 
   const steps: Step[] = [
     { label: "Email Saved", done: true, active: false },
@@ -91,7 +94,17 @@ export default function BookThankYouPage() {
       hasTrackedCheckout.current = true;
       trackEvent("book_amazon_auto_redirected", { email });
       logFunnelEvent("book_amazon_auto_redirected", email || undefined);
-      trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "auto_redirect" });
+      const checkoutEventId = checkoutEventIdRef.current;
+      // Browser pixel — includes eventID for Meta deduplication
+      trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "auto_redirect" }, checkoutEventId);
+      // Server-side CAPI — keepalive so the request survives navigation
+      const { fbp, fbc } = getMetaCookies();
+      fetch("/api/book-funnel/initiate-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: checkoutEventId, email: email || undefined, fbp, fbc }),
+        keepalive: true,
+      }).catch(() => {});
       setRedirected(true);
       window.location.href = AMAZON_BOOK_URL;
     }, REDIRECT_DELAY_MS);
@@ -112,7 +125,17 @@ export default function BookThankYouPage() {
     // Only fire if not already fired by the auto-redirect path (belt-and-suspenders).
     if (!hasTrackedCheckout.current) {
       hasTrackedCheckout.current = true;
-      trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "manual_click" });
+      const checkoutEventId = checkoutEventIdRef.current;
+      // Browser pixel — includes eventID for Meta deduplication
+      trackInitiateCheckout({ content_name: "Train Efficiency Book", method: "manual_click" }, checkoutEventId);
+      // Server-side CAPI — keepalive so the request survives navigation
+      const { fbp, fbc } = getMetaCookies();
+      fetch("/api/book-funnel/initiate-checkout", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ eventId: checkoutEventId, email: email || undefined, fbp, fbc }),
+        keepalive: true,
+      }).catch(() => {});
     }
     window.location.href = AMAZON_BOOK_URL;
   }

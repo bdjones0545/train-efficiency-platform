@@ -1,0 +1,72 @@
+Create a separate Meta Conversions API integration for the book funnel pixel.
+
+Book Pixel ID:
+1017450327750475
+
+Use these Replit Secrets:
+META_BOOK_PIXEL_ID=1017450327750475
+META_BOOK_ACCESS_TOKEN=<existing token in Replit secrets>
+
+Important:
+Do NOT modify or break the existing TrainEfficiency pixel/CAPI setup:
+- Pixel 1707062324050326
+- Existing server/meta-capi.ts behavior
+
+Requirements:
+1. Create a new server utility, preferably:
+   server/meta-book-capi.ts
+
+2. It should send server-side events to Meta Graph API for pixel:
+   1017450327750475
+
+3. Supported events:
+   - ViewContent
+   - Lead
+   - InitiateCheckout
+
+4. Do NOT send Purchase events because purchases happen on Amazon.
+
+5. Use Meta CAPI best practices:
+   - event_name
+   - event_time
+   - event_source_url
+   - action_source: "website"
+   - event_id for deduplication with browser pixel events
+   - user_data with hashed email when available
+   - client_ip_address when available
+   - client_user_agent when available
+   - fbp and fbc cookies when available
+
+6. Add backend endpoints or hook into existing book funnel API flow:
+   - On successful book lead form submission, send server-side Lead
+   - On thank-you page / Amazon redirect intent, send server-side InitiateCheckout if backend has a route for it
+   - Optional: send ViewContent only if there is already a backend page-view endpoint; otherwise keep ViewContent browser-only
+
+7. Implement event_id deduplication:
+   - Browser pixel should include the same event_id when firing Lead and InitiateCheckout
+   - Server CAPI should send the matching event_id for the same action
+   - Do not dedupe PageView unless already supported cleanly
+
+8. Update client/src/lib/meta-pixel.ts so Lead and InitiateCheckout can accept event_id and pass it to fbq:
+   fbq("track", "Lead", params, { eventID: eventId })
+   fbq("track", "InitiateCheckout", params, { eventID: eventId })
+
+9. Generate event_id in the client at the moment of the action and send it to the backend with the form/redirect request.
+
+10. Add development logs only:
+   [MetaBookCAPI] Lead sent
+   [MetaBookCAPI] InitiateCheckout sent
+   [MetaBookCAPI] skipped because secrets missing
+
+11. Add error handling:
+   - CAPI failures should never break the user funnel
+   - Log the error server-side
+   - Continue normal form submission and redirect behavior
+
+12. After implementation, report:
+   - Files changed
+   - Secrets required
+   - Which events are browser-only
+   - Which events are browser + CAPI
+   - How event deduplication works
+   - Exact test steps in Meta Events Manager for Website and Server events

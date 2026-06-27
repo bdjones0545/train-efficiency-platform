@@ -72,14 +72,37 @@ export function trackViewContent(params?: Record<string, unknown>): void {
   debug("ViewContent", params);
 }
 
-export function trackLead(params?: Record<string, unknown>): void {
+export function trackLead(params?: Record<string, unknown>, eventId?: string): void {
   if (typeof window === "undefined" || !window.fbq) return;
-  window.fbq("track", "Lead", params ?? {});
-  debug("Lead", params);
+  window.fbq("track", "Lead", params ?? {}, eventId ? { eventID: eventId } : undefined);
+  debug("Lead", { ...params, eventId });
 }
 
-export function trackInitiateCheckout(params?: Record<string, unknown>): void {
+export function trackInitiateCheckout(params?: Record<string, unknown>, eventId?: string): void {
   if (typeof window === "undefined" || !window.fbq) return;
-  window.fbq("track", "InitiateCheckout", params ?? {});
-  debug("InitiateCheckout", params);
+  window.fbq("track", "InitiateCheckout", params ?? {}, eventId ? { eventID: eventId } : undefined);
+  debug("InitiateCheckout", { ...params, eventId });
+}
+
+export function generateEventId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function getMetaCookies(): { fbp?: string; fbc?: string } {
+  if (typeof document === "undefined") return {};
+  const map: Record<string, string> = {};
+  document.cookie.split(";").forEach((c) => {
+    const eq = c.indexOf("=");
+    if (eq < 0) return;
+    const k = c.slice(0, eq).trim();
+    const v = c.slice(eq + 1).trim();
+    map[k] = v;
+  });
+  return {
+    fbp: map["_fbp"] || undefined,
+    fbc: map["_fbc"] || undefined,
+  };
 }
