@@ -57,13 +57,8 @@ async function uploadReceiptToCloud(
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
-/** Generates a unique TrainChat activation code like TRAIN-A3X9-K2M */
-function generatePromoCode(): string {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const seg = (n: number) =>
-    Array.from({ length: n }, () => chars[Math.floor(Math.random() * chars.length)]).join("");
-  return `TRAIN-${seg(4)}-${seg(3)}`;
-}
+/** Static TrainChat activation code — every book lead receives this same code. */
+const STATIC_PROMO_CODE = "TRAINCHAT";
 
 function rows(result: unknown): any[] {
   if (Array.isArray(result)) return result;
@@ -205,10 +200,14 @@ function buildBonusEmailHtml(firstName: string): string {
           <div class="step-num">3</div>
           <div class="step-text">
             <strong>Upload your receipt to redeem your free month of TrainChat.</strong><br/>
-            Once verified, your access is activated automatically.
+            Once verified, enter your activation code during TrainChat checkout.
           </div>
         </li>
       </ul>
+      <div style="background:#111;border:1px solid rgba(255,210,116,0.3);border-radius:12px;padding:20px 24px;margin:0 0 24px;text-align:center;">
+        <p style="margin:0 0 6px;font-size:11px;font-weight:800;letter-spacing:0.12em;text-transform:uppercase;color:#ffd274;">Your TrainChat Activation Code</p>
+        <p style="margin:0;font-size:28px;font-weight:900;letter-spacing:0.18em;color:#e5e2e1;font-family:monospace;">${STATIC_PROMO_CODE}</p>
+      </div>
 
       <div class="cta-wrap">
         <a href="${esc(BOOK_RECEIPT_UPLOAD_URL)}" class="cta">Upload Receipt</a>
@@ -233,6 +232,10 @@ function buildBonusEmailText(firstName: string): string {
 
 Hi ${firstName}, thanks for claiming your TrainChat bonus with The Structure of Training for Strength and Speed for Youth Athletes.
 
+Your TrainChat activation code is: ${STATIC_PROMO_CODE}
+
+Use this code during TrainChat checkout to receive your first month free.
+
 Next steps:
 
 1. Complete your book purchase on Amazon.
@@ -241,10 +244,11 @@ Next steps:
 2. Save or screenshot your Amazon receipt.
    Keep a copy of your order confirmation email or receipt page.
 
-3. Upload your receipt to redeem your free month of TrainChat.
+3. Upload your receipt to verify your purchase.
    ${BOOK_RECEIPT_UPLOAD_URL}
 
-Once verified, your TrainChat access is activated automatically.
+4. Activate TrainChat at https://www.trainchat.ai and enter your activation code:
+   ${STATIC_PROMO_CODE}
 
 ---
 If you haven't purchased the book yet, complete your purchase on Amazon first, then return to this email to upload your receipt.
@@ -344,9 +348,15 @@ async function ensureBookFunnelTables() {
   // TODO: Add ai_verification_result JSONB column when AI receipt verification is built
 
   // Safe migrations: promo code fields
+  // Note: promo_code is NOT unique — all leads receive the same static code TRAINCHAT.
   await db.execute(sql`
     ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS promo_code TEXT UNIQUE
+    ADD COLUMN IF NOT EXISTS promo_code TEXT
+  `);
+  // Drop unique constraint if it was previously applied (migration to static code)
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    DROP CONSTRAINT IF EXISTS book_receipt_submissions_promo_code_key
   `);
   await db.execute(sql`
     ALTER TABLE book_receipt_submissions
@@ -605,21 +615,10 @@ export async function registerBookFunnelRoutes(app: Express) {
           return res.status(500).json({ error: "Failed to store your receipt. Please try again." });
         }
 
-        // ── 10. Generate unique promo code ────────────────────────────────
-        let promoCode: string;
-        let attempts = 0;
-        while (true) {
-          promoCode = generatePromoCode();
-          const conflict = row0(await db.execute(sql`
-            SELECT id FROM book_receipt_submissions WHERE promo_code = ${promoCode} LIMIT 1
-          `));
-          if (!conflict) break;
-          if (++attempts > 10) {
-            // Extremely unlikely but avoid infinite loop
-            promoCode = `TRAIN-${randomUUID().slice(0, 8).toUpperCase()}`;
-            break;
-          }
-        }
+        // ── 10. Use static activation code ────────────────────────────────
+        // Every book lead receives the same static code. Attribution is tracked
+        // via lead_id / email, not the code itself.
+        const promoCode: string = STATIC_PROMO_CODE;
 
         // ── 11. Create submission record ──────────────────────────────────
         const submission = row0(await db.execute(sql`
@@ -651,7 +650,7 @@ export async function registerBookFunnelRoutes(app: Express) {
           // TODO: trigger automatic TrainChat activation here
         });
 
-        console.log(`[BookFunnel] Receipt submitted for ${rawEmail}, submission ${submission?.id}, promo ${submission?.promo_code}`);
+        console.log(`[BookFunnel] Receipt submitted for ${rawEmail}, submission ${submission?.id}, code=${STATIC_PROMO_CODE}`);
 
         return res.json({
           success: true,
@@ -688,7 +687,7 @@ export async function registerBookFunnelRoutes(app: Express) {
         submissionId: row.id,
         email: row.email,
         status: row.status,
-        promoCode: row.promo_code ?? null,
+        promoCode: STATIC_PROMO_CODE,
         promoCodeGeneratedAt: row.promo_code_generated_at ?? null,
         uploadedAt: row.uploaded_at ?? null,
       });

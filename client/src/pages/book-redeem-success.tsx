@@ -144,33 +144,13 @@ export default function BookRedeemSuccessPage() {
   const submissionId = searchParams.get("submissionId") ?? "";
   const emailRaw = searchParams.get("email") ?? "";
   const email = emailRaw ? decodeURIComponent(emailRaw) : "";
-  const promoFromUrl = searchParams.get("promoCode") ?? "";
-
-  const [promoCode, setPromoCode] = useState(promoFromUrl);
-  const [loadingCode, setLoadingCode] = useState(!promoFromUrl && !!submissionId);
+  // Every book lead receives the same static activation code.
+  // promoCode from the URL is ignored — the code is always TRAINCHAT.
+  const ACTIVATION_CODE = "TRAINCHAT";
+  const [promoCode] = useState(ACTIVATION_CODE);
+  const loadingCode = false;
 
   const hasTrackedView = useRef(false);
-
-  // Fetch submission if we have submissionId but no promo code in URL
-  useEffect(() => {
-    if (promoFromUrl || !submissionId) {
-      setLoadingCode(false);
-      return;
-    }
-    (async () => {
-      try {
-        const res = await fetch(`/api/book-funnel/receipt/${encodeURIComponent(submissionId)}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (data.promoCode) setPromoCode(data.promoCode);
-        }
-      } catch {
-        // non-blocking — fallback placeholder shown below
-      } finally {
-        setLoadingCode(false);
-      }
-    })();
-  }, [submissionId, promoFromUrl]);
 
   // Track page view once
   useEffect(() => {
@@ -180,7 +160,7 @@ export default function BookRedeemSuccessPage() {
     logFunnelEvent("book_bonus_unlocked_viewed", email || undefined, { submissionId });
   }, [email, submissionId]);
 
-  const displayCode = promoCode || "TRAIN-????-???";
+  const displayCode = promoCode || "TRAINCHAT";
 
   return (
     <div
