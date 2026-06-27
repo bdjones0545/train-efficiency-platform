@@ -433,7 +433,7 @@ export default function BookLandingPage() {
                     icon: (
                       <MessageSquare className="h-4 w-4 text-[#ffd274]" />
                     ),
-                    text: "Your first month of TrainChat is activated automatically",
+                    text: "Enter code TRAINCHAT at TrainChat checkout — your first month is free",
                   },
                 ].map((step, i) => (
                   <div key={i} className="flex items-start gap-3">
@@ -442,6 +442,27 @@ export default function BookLandingPage() {
                   </div>
                 ))}
               </div>
+              {/* Activation code display */}
+              <div className="mt-2 flex items-center gap-4 bg-black/40 border border-[#ffd274]/20 rounded-lg px-5 py-4">
+                <div className="flex-1">
+                  <p className="text-[10px] font-bold tracking-widest uppercase text-[#ffd274] mb-1">
+                    Your Activation Code
+                  </p>
+                  <p className="text-xl font-black tracking-[0.18em] text-[#e5e2e1]" style={{ fontFamily: "monospace" }}>
+                    TRAINCHAT
+                  </p>
+                </div>
+                <a
+                  href="https://www.trainchat.ai?code=TRAINCHAT"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="shrink-0 bg-[#ffd274] text-[#402d00] text-[10px] font-extrabold tracking-widest uppercase px-4 py-2 rounded-full hover:brightness-110 transition-all"
+                  data-testid="link-trainchat-landing-cta"
+                >
+                  Activate →
+                </a>
+              </div>
+
               <a
                 href="/book/redeem"
                 className="inline-flex items-center gap-1 text-xs font-bold tracking-widest uppercase text-[#ffd274] hover:underline pt-2"
@@ -1030,7 +1051,7 @@ const faqs = [
   {
     question: "How does the TrainChat bonus work?",
     answer:
-      "After purchasing the book on Amazon, you'll upload your receipt at trainingefficiency.com/book/redeem to verify your purchase. Once verified, your first month of TrainChat — our AI-powered coaching assistant — is activated at no cost.",
+      "After purchasing the book on Amazon, you'll upload your receipt at trainingefficiency.com/book/redeem to verify your purchase. Once verified, you'll receive the activation code TRAINCHAT — enter it at trainchat.ai to start your first month free.",
   },
   {
     question: "Does the book purchase happen through Amazon?",

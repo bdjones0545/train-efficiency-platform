@@ -221,3 +221,57 @@ describe("Frontend success page always shows TRAINCHAT", () => {
     );
   });
 });
+
+// ─── CTA URL coverage ─────────────────────────────────────────────────────────
+
+describe("TrainChat CTAs pass ?code=TRAINCHAT in the URL", () => {
+  it("book-redeem-success.tsx Activate TrainChat link includes ?code=TRAINCHAT", async () => {
+    const src = await readSuccessPage();
+    assert.ok(
+      src.includes("https://www.trainchat.ai?code=TRAINCHAT"),
+      "Activate TrainChat CTA must point to https://www.trainchat.ai?code=TRAINCHAT",
+    );
+    // Must NOT be a bare URL without the code param
+    assert.ok(
+      !src.includes('href="https://www.trainchat.ai"'),
+      "Bare trainchat.ai URL without ?code param must be removed",
+    );
+  });
+
+  it("book-landing.tsx 'How to Redeem' step 3 mentions the TRAINCHAT code", async () => {
+    const src = await import("fs/promises").then((fs) =>
+      fs.readFile("client/src/pages/book-landing.tsx", "utf8"),
+    );
+    assert.ok(
+      src.includes("TRAINCHAT"),
+      "book-landing.tsx must mention the TRAINCHAT activation code",
+    );
+    assert.ok(
+      !src.includes("activated automatically"),
+      "Misleading 'activated automatically' copy must be removed from How to Redeem steps",
+    );
+  });
+
+  it("book-landing.tsx activation code badge links to trainchat.ai?code=TRAINCHAT", async () => {
+    const src = await import("fs/promises").then((fs) =>
+      fs.readFile("client/src/pages/book-landing.tsx", "utf8"),
+    );
+    assert.ok(
+      src.includes("https://www.trainchat.ai?code=TRAINCHAT"),
+      "Landing page activation badge must link to trainchat.ai?code=TRAINCHAT",
+    );
+  });
+
+  it("book-landing.tsx FAQ answer mentions the TRAINCHAT code", async () => {
+    const src = await import("fs/promises").then((fs) =>
+      fs.readFile("client/src/pages/book-landing.tsx", "utf8"),
+    );
+    const faqIdx = src.indexOf("How does the TrainChat bonus work");
+    assert.ok(faqIdx !== -1, "FAQ entry must exist");
+    const faqAnswer = src.slice(faqIdx, faqIdx + 500);
+    assert.ok(
+      faqAnswer.includes("TRAINCHAT"),
+      "FAQ answer for 'How does the TrainChat bonus work?' must mention the TRAINCHAT code",
+    );
+  });
+});

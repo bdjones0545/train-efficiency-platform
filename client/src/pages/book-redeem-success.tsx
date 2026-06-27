@@ -112,7 +112,7 @@ function ActivationCodeCard({ code }: { code: string }) {
         {/* Primary CTA */}
         <div className="space-y-3">
           <a
-            href="https://www.trainchat.ai"
+            href="https://www.trainchat.ai?code=TRAINCHAT"
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => {
