@@ -55,6 +55,41 @@ async function uploadReceiptToCloud(
   return { storedPath: objectPath };
 }
 
+// ─── In-memory rate limiter ──────────────────────────────────────────────────
+// Simple sliding-window counter. No external package required.
+// Production deployments with multiple instances should replace this with a
+// Redis-backed limiter, but for a single-instance deployment this is sufficient.
+const _rateLimitWindows = new Map<string, { count: number; windowStart: number }>();
+
+function checkRateLimit(
+  key: string,
+  maxRequests: number,
+  windowMs: number,
+): boolean {
+  const now = Date.now();
+  const window = _rateLimitWindows.get(key);
+
+  if (!window || now - window.windowStart > windowMs) {
+    _rateLimitWindows.set(key, { count: 1, windowStart: now });
+    return true; // allowed
+  }
+
+  if (window.count >= maxRequests) {
+    return false; // rate limited
+  }
+
+  window.count += 1;
+  return true; // allowed
+}
+
+// Cleanup stale entries every 5 minutes to avoid memory leaks
+setInterval(() => {
+  const cutoff = Date.now() - 10 * 60 * 1000;
+  for (const [key, val] of _rateLimitWindows.entries()) {
+    if (val.windowStart < cutoff) _rateLimitWindows.delete(key);
+  }
+}, 5 * 60 * 1000).unref();
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /** Static TrainChat activation code — every book lead receives this same code. */
@@ -88,6 +123,7 @@ const BOOK_RECEIPT_UPLOAD_URL = APP_BASE_URL
   ? `${APP_BASE_URL.replace(/\/$/, "")}${BOOK_RECEIPT_UPLOAD_PATH}`
   : BOOK_RECEIPT_UPLOAD_PATH;
 
+const TRAINCHAT_ACTIVATE_URL = "https://www.trainchat.ai?code=TRAINCHAT";
 const AMAZON_BOOK_URL = "https://www.amazon.com/dp/B0H6CDZ85W";
 
 // ─── MIME type allow-list (server-side validation, never trust client MIME) ──
@@ -257,6 +293,91 @@ If you haven't purchased the book yet, complete your purchase on Amazon first, t
 Bryan Jones, MS, CSCS, PES, EP-C`;
 }
 
+// ─── Receipt confirmation email (sent after successful upload) ───────────────
+
+function buildReceiptConfirmationEmailHtml(firstName: string): string {
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Receipt Received — Activate TrainChat Now</title>
+  <style>
+    body { margin:0; padding:0; background:#0e0e0e; font-family:'Helvetica Neue',Helvetica,Arial,sans-serif; color:#e5e2e1; }
+    .wrapper { max-width:600px; margin:0 auto; padding:40px 24px; }
+    .logo { font-size:20px; font-weight:800; color:#ffd274; letter-spacing:-0.02em; margin-bottom:40px; }
+    .card { background:#1c1b1b; border:1px solid rgba(255,255,255,0.07); border-radius:16px; padding:40px 36px; }
+    h1 { font-size:28px; font-weight:800; color:#e5e2e1; margin:0 0 12px; line-height:1.2; letter-spacing:-0.02em; }
+    .subtitle { font-size:16px; color:#d3c5ae; margin:0 0 32px; line-height:1.6; }
+    .code-box { background:#111; border:1px solid rgba(255,210,116,0.3); border-radius:12px; padding:24px; margin:0 0 32px; text-align:center; }
+    .code-label { font-size:11px; font-weight:800; letter-spacing:0.12em; text-transform:uppercase; color:#ffd274; margin:0 0 8px; }
+    .code-value { font-size:32px; font-weight:900; letter-spacing:0.18em; color:#e5e2e1; font-family:monospace; margin:0; }
+    .cta-wrap { text-align:center; margin:32px 0; }
+    .cta { display:inline-block; background:#ffd274; color:#402d00; font-size:15px; font-weight:800; text-decoration:none; padding:16px 36px; border-radius:9999px; letter-spacing:0.04em; text-transform:uppercase; }
+    .footer-note { font-size:13px; color:#9c8f7a; line-height:1.6; margin-top:32px; padding-top:24px; border-top:1px solid rgba(255,255,255,0.06); }
+    .footer { margin-top:40px; font-size:12px; color:#4f4634; text-align:center; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="logo">TrainEfficiency</div>
+    <div class="card">
+      <h1>Receipt Received ✓</h1>
+      <p class="subtitle">
+        Hi ${esc(firstName)}, we've received your Amazon purchase confirmation for
+        <em>The Structure of Training for Strength and Speed for Youth Athletes</em>.
+        Your complimentary month of TrainChat is ready to activate right now.
+      </p>
+
+      <div class="code-box">
+        <p class="code-label">Your TrainChat Activation Code</p>
+        <p class="code-value">${STATIC_PROMO_CODE}</p>
+      </div>
+
+      <div class="cta-wrap">
+        <a href="${esc(TRAINCHAT_ACTIVATE_URL)}" class="cta">Activate TrainChat Now</a>
+      </div>
+
+      <p style="font-size:14px;color:#d3c5ae;line-height:1.6;margin:0 0 16px;">
+        Enter the code <strong style="color:#ffd274;">${STATIC_PROMO_CODE}</strong> during checkout
+        at <a href="${esc(TRAINCHAT_ACTIVATE_URL)}" style="color:#ffd274;">trainchat.ai</a>
+        to unlock your first 30 days free — no credit card required.
+      </p>
+
+      <p class="footer-note">
+        Keep this email as your record. If you have any trouble activating, reply to this email and we'll sort it out.
+      </p>
+    </div>
+    <div class="footer">
+      © ${new Date().getFullYear()} TrainEfficiency. Evidence-Based Performance.<br/>
+      Bryan Jones, MS, CSCS, PES, EP-C
+    </div>
+  </div>
+</body>
+</html>`;
+}
+
+function buildReceiptConfirmationEmailText(firstName: string): string {
+  return `Receipt Received — Activate TrainChat Now
+
+Hi ${firstName}, we've received your Amazon purchase confirmation for The Structure of Training for Strength and Speed for Youth Athletes.
+
+Your complimentary month of TrainChat is ready to activate right now.
+
+YOUR TRAINCHAT ACTIVATION CODE: ${STATIC_PROMO_CODE}
+
+Activate now:
+${TRAINCHAT_ACTIVATE_URL}
+
+Enter the code ${STATIC_PROMO_CODE} during checkout at trainchat.ai to unlock your first 30 days free — no credit card required.
+
+Keep this email as your record. If you have any trouble activating, reply to this email and we'll sort it out.
+
+---
+© ${new Date().getFullYear()} TrainEfficiency. Evidence-Based Performance.
+Bryan Jones, MS, CSCS, PES, EP-C`;
+}
+
 async function sendBookBonusEmail(
   toEmail: string,
   firstName: string,
@@ -268,6 +389,20 @@ async function sendBookBonusEmail(
     subject: "Your TrainChat Bonus Is Waiting",
     html: buildBonusEmailHtml(firstName),
     text: buildBonusEmailText(firstName),
+  });
+}
+
+async function sendReceiptConfirmationEmail(
+  toEmail: string,
+  firstName: string,
+): Promise<void> {
+  const { client, fromEmail } = await getUncachableSendGridClient();
+  await client.send({
+    to: toEmail,
+    from: { email: fromEmail, name: "TrainEfficiency" },
+    subject: `Receipt Received — Activate TrainChat with code ${STATIC_PROMO_CODE}`,
+    html: buildReceiptConfirmationEmailHtml(firstName),
+    text: buildReceiptConfirmationEmailText(firstName),
   });
 }
 
@@ -372,6 +507,46 @@ async function ensureBookFunnelTables() {
     ALTER TABLE book_receipt_submissions
     ADD COLUMN IF NOT EXISTS trainchat_account_email TEXT
   `);
+
+  // ── Attribution columns (UTM + Meta pixel) ────────────────────────────────
+  // Added to preserve campaign attribution from Meta ads through the upload step.
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS utm_source TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS utm_medium TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS utm_campaign TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS utm_content TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS utm_term TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS fbp TEXT
+  `);
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS fbc TEXT
+  `);
+
+  // ── Confirmation email tracking ────────────────────────────────────────────
+  // Tracks when the receipt confirmation email (with TRAINCHAT code) was sent
+  // so we can avoid sending it twice.
+  await db.execute(sql`
+    ALTER TABLE book_receipt_submissions
+    ADD COLUMN IF NOT EXISTS confirmation_email_sent_at TIMESTAMP
+  `);
+
   // TODO: Add trainchat_activated_at when automatic TrainChat activation is built
 
   console.log("[BookFunnel] Tables ready");
@@ -385,6 +560,12 @@ export async function registerBookFunnelRoutes(app: Express) {
   // ── POST /api/book-funnel/leads ───────────────────────────────────────────
   app.post("/api/book-funnel/leads", async (req, res) => {
     try {
+      // Rate limit: 5 lead submissions per IP per 10 minutes
+      const clientIpForLeads = ((req.headers["x-forwarded-for"] as string) ?? "").split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
+      if (!checkRateLimit(`leads:${clientIpForLeads}`, 5, 10 * 60 * 1000)) {
+        return res.status(429).json({ error: "Too many requests. Please try again in a few minutes." });
+      }
+
       const { firstName, lastName, email, source, amazonClicked, eventId, fbp, fbc } = req.body ?? {};
 
       const normalizedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
@@ -522,9 +703,26 @@ export async function registerBookFunnelRoutes(app: Express) {
   });
 
   // ── POST /api/book-funnel/receipt ─────────────────────────────────────────
-  // Accepts multipart/form-data: { email: string, receipt: File }
+  // Accepts multipart/form-data:
+  //   email       string    (required)
+  //   receipt     File      (required)
+  //   utm_source  string    (optional — forwarded from landing page URL)
+  //   utm_medium  string    (optional)
+  //   utm_campaign string   (optional)
+  //   utm_content string    (optional)
+  //   utm_term    string    (optional)
+  //   fbp         string    (optional — Meta _fbp cookie)
+  //   fbc         string    (optional — Meta _fbc cookie)
   app.post(
     "/api/book-funnel/receipt",
+    (req, res, next) => {
+      // Rate limit: 3 receipt uploads per IP per 15 minutes
+      const clientIpRl = ((req.headers["x-forwarded-for"] as string) ?? "").split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
+      if (!checkRateLimit(`receipt:${clientIpRl}`, 3, 15 * 60 * 1000)) {
+        return res.status(429).json({ error: "Too many upload attempts. Please try again in a few minutes." });
+      }
+      next();
+    },
     (req, res, next) => {
       receiptUpload.single("receipt")(req, res, (err) => {
         if (err instanceof multer.MulterError && err.code === "LIMIT_FILE_SIZE") {
@@ -537,18 +735,23 @@ export async function registerBookFunnelRoutes(app: Express) {
       });
     },
     async (req: any, res) => {
+      const startedAt = Date.now();
       try {
         // ── 1. Validate email ──────────────────────────────────────────────
         const rawEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
         if (!rawEmail) {
+          console.log("[BookFunnel] Receipt rejected: missing email");
           return res.status(400).json({ error: "Email address is required." });
         }
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail)) {
+          console.log("[BookFunnel] Receipt rejected: invalid email format");
           return res.status(400).json({ error: "Please enter a valid email address." });
         }
 
         // ── 2. Validate file present ───────────────────────────────────────
+        console.log(`[BookFunnel] Receipt upload received for ${rawEmail}`);
         if (!req.file) {
+          console.log("[BookFunnel] Receipt rejected: no file provided");
           return res.status(400).json({ error: "Please select a file to upload." });
         }
 
@@ -557,6 +760,7 @@ export async function registerBookFunnelRoutes(app: Express) {
 
         // ── 3. Server-side extension check ────────────────────────────────
         if (!ALLOWED_EXTENSIONS.has(ext)) {
+          console.log(`[BookFunnel] Receipt rejected: unsupported extension ${ext}`);
           return res.status(400).json({ error: "Unsupported file type. Please upload a JPG, PNG, PDF, or HEIC file." });
         }
 
@@ -569,6 +773,7 @@ export async function registerBookFunnelRoutes(app: Express) {
           (detectedMime === null && ALLOWED_MIMES.has(mimetype) && ALLOWED_EXTENSIONS.has(ext));
 
         if (!mimeOk) {
+          console.log(`[BookFunnel] Receipt rejected: magic-byte mismatch (ext=${ext}, claimed=${mimetype}, detected=${detectedMime})`);
           return res.status(400).json({ error: "File content does not match a supported type (JPG, PNG, PDF, HEIC)." });
         }
 
@@ -576,6 +781,7 @@ export async function registerBookFunnelRoutes(app: Express) {
 
         // ── 5. File size (already enforced by multer, but double-check) ───
         if (size > 10 * 1024 * 1024) {
+          console.log(`[BookFunnel] Receipt rejected: file too large (${size} bytes)`);
           return res.status(400).json({ error: "File is too large. Maximum size is 10 MB." });
         }
 
@@ -590,6 +796,7 @@ export async function registerBookFunnelRoutes(app: Express) {
         `));
 
         if (existingSubmission?.id) {
+          console.log(`[BookFunnel] Duplicate receipt blocked for ${rawEmail}`);
           return res.status(409).json({
             error: "A receipt from this email is already pending review. We'll be in touch soon!",
           });
@@ -597,15 +804,30 @@ export async function registerBookFunnelRoutes(app: Express) {
 
         // ── 8. Look up existing lead by email ────────────────────────────
         const lead = row0(await db.execute(sql`
-          SELECT id FROM book_funnel_leads WHERE email = ${rawEmail}
+          SELECT id, first_name FROM book_funnel_leads WHERE email = ${rawEmail}
         `));
         const leadId: string | null = lead?.id ?? null;
+        // Use the stored first_name for the confirmation email, fall back to "there"
+        const firstName: string = lead?.first_name ?? "there";
 
-        // ── 9. Upload file to private cloud storage ───────────────────────
+        // ── 9. Collect attribution fields ─────────────────────────────────
+        function strOrNull(v: unknown): string | null {
+          return typeof v === "string" && v.trim() ? v.trim() : null;
+        }
+        const utmSource   = strOrNull(req.body?.utm_source);
+        const utmMedium   = strOrNull(req.body?.utm_medium);
+        const utmCampaign = strOrNull(req.body?.utm_campaign);
+        const utmContent  = strOrNull(req.body?.utm_content);
+        const utmTerm     = strOrNull(req.body?.utm_term);
+        const fbp         = strOrNull(req.body?.fbp);
+        const fbc         = strOrNull(req.body?.fbc);
+
+        // ── 10. Upload file to private cloud storage ───────────────────────
         let storedPath: string;
         try {
           const upload = await uploadReceiptToCloud(buffer, safeFilename, resolvedMime);
           storedPath = upload.storedPath;
+          console.log(`[BookFunnel] Receipt stored at ${storedPath} for ${rawEmail}`);
         } catch (uploadErr: any) {
           console.error("[BookFunnel] Receipt upload to storage failed:", uploadErr?.message);
           await logFunnelEvent(leadId, rawEmail, "book_receipt_upload_failed", {
@@ -615,15 +837,17 @@ export async function registerBookFunnelRoutes(app: Express) {
           return res.status(500).json({ error: "Failed to store your receipt. Please try again." });
         }
 
-        // ── 10. Use static activation code ────────────────────────────────
+        // ── 11. Use static activation code ────────────────────────────────
         // Every book lead receives the same static code. Attribution is tracked
         // via lead_id / email, not the code itself.
         const promoCode: string = STATIC_PROMO_CODE;
 
-        // ── 11. Create submission record ──────────────────────────────────
+        // ── 12. Create submission record ──────────────────────────────────
         const submission = row0(await db.execute(sql`
           INSERT INTO book_receipt_submissions
-            (lead_id, email, receipt_file_url, original_filename, mime_type, file_size, status, promo_code, promo_code_generated_at)
+            (lead_id, email, receipt_file_url, original_filename, mime_type, file_size, status,
+             promo_code, promo_code_generated_at,
+             utm_source, utm_medium, utm_campaign, utm_content, utm_term, fbp, fbc)
           VALUES (
             ${leadId},
             ${rawEmail},
@@ -633,31 +857,78 @@ export async function registerBookFunnelRoutes(app: Express) {
             ${size},
             'pending_review',
             ${promoCode!},
-            NOW()
+            NOW(),
+            ${utmSource},
+            ${utmMedium},
+            ${utmCampaign},
+            ${utmContent},
+            ${utmTerm},
+            ${fbp},
+            ${fbc}
           )
           RETURNING id, promo_code
         `));
 
-        // ── 12. Log event ─────────────────────────────────────────────────
+        console.log(`[BookFunnel] Submission record created: ${submission?.id} for ${rawEmail}`);
+
+        // ── 13. Send receipt confirmation email ───────────────────────────
+        // This is the primary delivery of the TRAINCHAT code. The lead-capture
+        // email sends it at sign-up, but the user may have uploaded the receipt
+        // days later or skipped the sign-up flow entirely.
+        let confirmationEmailSent = false;
+        try {
+          await sendReceiptConfirmationEmail(rawEmail, firstName);
+          confirmationEmailSent = true;
+          await db.execute(sql`
+            UPDATE book_receipt_submissions
+            SET confirmation_email_sent_at = NOW()
+            WHERE id = ${submission?.id}
+          `);
+          console.log(`[BookFunnel] Confirmation email sent to ${rawEmail}`);
+          await logFunnelEvent(leadId, rawEmail, "book_receipt_confirmation_email_sent", {
+            provider: "sendgrid",
+            submissionId: submission?.id ?? null,
+            subject: `Receipt Received — Activate TrainChat with code ${STATIC_PROMO_CODE}`,
+          });
+        } catch (emailErr: any) {
+          console.error("[BookFunnel] Failed to send receipt confirmation email:", emailErr?.message ?? emailErr);
+          await logFunnelEvent(leadId, rawEmail, "book_receipt_confirmation_email_failed", {
+            provider: "sendgrid",
+            submissionId: submission?.id ?? null,
+            error: emailErr?.message ?? "unknown",
+          });
+          // Email failure is non-fatal — the user already sees the code on the success page.
+          // We log but do not fail the HTTP response.
+        }
+
+        // ── 14. Log successful upload event ───────────────────────────────
         await logFunnelEvent(leadId, rawEmail, "book_receipt_uploaded", {
           submissionId: submission?.id ?? null,
           filename: safeFilename,
           mimeType: resolvedMime,
           fileSizeBytes: size,
           hasExistingLead: !!leadId,
-          promoCodeGenerated: true,
+          confirmationEmailSent,
+          attributionPresent: !!(utmSource || fbp || fbc),
+          responseTimeMs: Date.now() - startedAt,
           // TODO: trigger Stripe coupon synchronization here
           // TODO: trigger automatic TrainChat activation here
         });
 
-        console.log(`[BookFunnel] Receipt submitted for ${rawEmail}, submission ${submission?.id}, code=${STATIC_PROMO_CODE}`);
+        console.log(
+          `[BookFunnel] Receipt submitted for ${rawEmail}, submission ${submission?.id}, ` +
+          `code=${STATIC_PROMO_CODE}, emailSent=${confirmationEmailSent}, ` +
+          `responseTimeMs=${Date.now() - startedAt}`,
+        );
 
         return res.json({
           success: true,
           submissionId: submission?.id ?? null,
-          promoCode: submission?.promo_code ?? null,
-          status: "redeemed",
-          message: "Your purchase has been confirmed and your TrainChat activation code is ready.",
+          promoCode: submission?.promo_code ?? STATIC_PROMO_CODE,
+          // status reflects the DB value — pending manual review before TrainChat is auto-activated
+          status: "pending_review",
+          confirmationEmailSent,
+          message: "Receipt received. Your TrainChat activation code has been emailed to you.",
         });
       } catch (err: any) {
         console.error("[BookFunnel] POST /receipt error:", err);

@@ -88,10 +88,31 @@ function ProgressStepper() {
   );
 }
 
+// ── Read attribution params from URL (set by landing page / Meta ads) ──────
+function readAttributionFromUrl(): Record<string, string> {
+  const p = new URLSearchParams(window.location.search);
+  const attrs: Record<string, string> = {};
+  for (const key of ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term", "fbp", "fbc"]) {
+    const val = p.get(key);
+    if (val) attrs[key] = val;
+  }
+  // Also try Meta _fbp/_fbc cookies if not in URL
+  if (!attrs.fbp) {
+    const fbpCookie = document.cookie.split(";").find((c) => c.trim().startsWith("_fbp="));
+    if (fbpCookie) attrs.fbp = fbpCookie.trim().slice(5);
+  }
+  if (!attrs.fbc) {
+    const fbcCookie = document.cookie.split(";").find((c) => c.trim().startsWith("_fbc="));
+    if (fbcCookie) attrs.fbc = fbcCookie.trim().slice(5);
+  }
+  return attrs;
+}
+
 export default function BookRedeemPage() {
   const [, navigate] = useLocation();
 
-  const emailFromUrl = new URLSearchParams(window.location.search).get("email") ?? "";
+  const urlParams = new URLSearchParams(window.location.search);
+  const emailFromUrl = urlParams.get("email") ?? "";
   const [email, setEmail] = useState(emailFromUrl ? decodeURIComponent(emailFromUrl) : "");
   const [emailError, setEmailError] = useState("");
 
@@ -201,6 +222,12 @@ export default function BookRedeemPage() {
       const formData = new FormData();
       formData.append("email", email.trim().toLowerCase());
       formData.append("receipt", file);
+
+      // Forward attribution data so the API can store it for Meta ad reporting
+      const attribution = readAttributionFromUrl();
+      for (const [key, val] of Object.entries(attribution)) {
+        formData.append(key, val);
+      }
 
       const xhr = new XMLHttpRequest();
       xhr.open("POST", "/api/book-funnel/receipt");
