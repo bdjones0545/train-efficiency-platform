@@ -56,7 +56,7 @@ export function initPixel(): void {
     );
   }
 
-  window.fbq("init", PIXEL_ID);
+  window.fbq?.("init", PIXEL_ID);
   debug("init");
 }
 
