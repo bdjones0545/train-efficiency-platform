@@ -25,16 +25,25 @@ Version 1 is complete: the documentation framework, governance model, engineerin
 handbook, and architectural documentation (`CLAUDE.md` and the governance docs in
 `/docs`) now exist inside the repository.
 
-Version 2 is in progress.
+Version 2 is **complete**. All six implementation/operations documents have been
+generated from repository source, each with the standardized Architecture
+Discrepancies, Recommended CLAUDE.md Updates, Files Reviewed, and Confidence
+Assessment sections, and discrepancies reconciled into `CLAUDE.md` as they were found.
 
-| Document | Status | Completed |
-|----------|--------|-----------|
-| `docs/schema.md` | ✅ Complete | 2026-06-28 |
-| `docs/core-services.md` | ✅ Complete | 2026-06-28 |
-| `docs/agent-catalog.md` | ⬜ Not started | — |
-| `docs/integrations.md` | ⬜ Not started | — |
-| `docs/api-conventions.md` | ⬜ Not started | — |
-| `docs/runbooks.md` | ⬜ Not started | — |
+| Document | Status | Completed | Verification Status |
+|----------|--------|-----------|---------------------|
+| `docs/schema.md` | ✅ Complete | 2026-06-28 | Verified Against Source |
+| `docs/core-services.md` | ✅ Complete | 2026-06-28 | Verified Against Source |
+| `docs/agent-catalog.md` | ✅ Complete | 2026-06-28 | Verified Against Source |
+| `docs/integrations.md` | ✅ Complete | 2026-06-28 | Verified Against Source |
+| `docs/api-conventions.md` | ✅ Complete | 2026-06-28 | Verified Against Source |
+| `docs/runbooks.md` | ✅ Complete | 2026-06-28 | Partially Verified (Operations — production items flagged) |
+
+**Note on `runbooks.md`:** as an Operations document it cannot reach `Verified Against
+Source` for production-only behavior. It is `Partially Verified`: source-verified where
+possible, with deploy/backup/monitoring/incident items explicitly marked **Requires
+Production Validation**. Promoting it to `Verified Against Production` is a Version 3
+activity requiring live-environment confirmation.
 
 ---
 

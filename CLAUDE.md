@@ -547,18 +547,27 @@ Governance rules should be enforced consistently across all AI systems.
 
 Responsible for:
 
-- Stripe
-- Gmail
-- Slack
-- Google Calendar
-- GitHub
-- Meta
-- OpenAI
+- Stripe (payments; per-org Stripe Connect, idempotent webhooks)
+- OpenAI and OpenRouter (LLM providers)
+- Gmail and Google Calendar (Google APIs)
+- SendGrid (transactional email) and AgentMail (agent inboxes)
+- Twilio (SMS)
+- Meta Pixel / Conversions API (marketing attribution)
+- Obsidian (organizational memory) and TrainChat (program generation)
+- Replit platform (OIDC auth, Connectors, object storage / Google Cloud Storage)
+- Composio (governed tool-calling over connected accounts — Slack, GitHub, Google
+  Sheets, Gmail/Calendar drafts)
 - Third-party APIs
+
+Slack and GitHub are **not** standalone integrations: agent-initiated Slack messaging
+and all GitHub access are mediated through Composio's approval-gated tool registry.
+(GitHub also appears under Source Control as the development VCS, which is distinct.)
 
 Integrations should remain isolated behind service abstractions whenever practical.
 
-Business logic should not depend directly on vendor-specific implementations.
+Business logic should not depend directly on vendor-specific implementations. The
+verified inventory, credential model, and webhook surface are documented in
+`docs/integrations.md`.
 
 ### Analytics & Reporting
 
@@ -660,7 +669,8 @@ AI capabilities are foundational to the platform.
 
 Current AI ecosystem includes:
 
-- OpenAI
+- OpenAI (primary LLM provider)
+- OpenRouter (multi-model routing with cost tiers and cross-provider fallback)
 - Internal AI orchestration
 - Multi-agent workflows
 - Organizational memory
@@ -669,6 +679,14 @@ Current AI ecosystem includes:
 - Knowledge retrieval
 
 AI services should remain modular and reusable.
+
+Anthropic Claude models are reached **exclusively through OpenRouter** as fallback
+models — there is no direct Anthropic SDK in the codebase. (`@anthropic-ai/claude-code`
+in `package.json` is a development CLI, not a runtime integration.) The
+`IntegrationType` union in `server/integration-runtime.ts` is forward-declared: members
+such as `claude`, `hubspot`, `discord`, `meta_ads`, and `custom_webhook` are
+placeholders without executing client code. See `docs/integrations.md` for the
+verified provider inventory.
 
 Prompts should be treated as versioned application assets rather than inline strings
 whenever practical.
@@ -695,13 +713,19 @@ Financial correctness always takes priority over convenience.
 
 Supported communication systems include:
 
-- Gmail
+- Gmail (Google API, per-org OAuth)
+- SendGrid (transactional email)
+- AgentMail (AI agent inboxes; inbound-only in the current v0 API)
+- Twilio (SMS, with consent management and STOP/START handling)
 - Email automation
-- Slack
+- Slack (mediated through Composio; see External Integrations)
 - Notifications
 - In-app messaging
 
 Communication providers should remain replaceable behind service abstractions.
+
+Implementation detail for each provider lives in `docs/core-services.md` (email
+delivery, AgentMail) and `docs/integrations.md` (transport, credentials, webhooks).
 
 ### Calendar & Scheduling
 
@@ -779,6 +803,25 @@ Critical business workflows should degrade gracefully whenever practical.
 
 External APIs should enhance TrainEfficiency, not become the platform's source of
 truth.
+
+### Integration Framework
+
+The abstraction called for by ADR-008 is implemented by three shared modules. New
+governed integrations should route through them rather than calling vendors directly:
+
+- `server/integration-runtime.ts` — central execution wrapper providing governance
+  checks, idempotency, error classification, health tracking, and an immutable audit
+  log (`integration_execution_log`).
+- `server/credentials-vault.ts` — at-rest encryption of per-org credentials.
+  AES-256-GCM (keyed on `CREDENTIAL_ENCRYPTION_KEY`) is the canonical standard;
+  TrainChat currently uses a separate AES-256-CBC path pending unification.
+- `server/services/integration-status-service.ts` — resolves effective connection
+  status (DB-first, environment-variable fallback) and excludes internal
+  infrastructure services (`hermes`, `agentmail`, `obsidian`).
+
+Credentials resolve in a consistent order: Replit Connectors (SendGrid, Stripe) →
+per-org encrypted credentials in `external_integrations` → environment variables →
+graceful "not configured." See `docs/integrations.md`.
 
 ---
 
@@ -1754,6 +1797,11 @@ Business logic should remain independent of individual providers.
 - Better testing
 - Improved resilience
 
+This decision is realized concretely by the integration framework
+(`integration-runtime.ts`, `credentials-vault.ts`, `integration-status-service.ts`)
+described under External Integration Philosophy and catalogued in
+`docs/integrations.md`.
+
 ### ADR-009 — Production Safety Takes Priority
 
 **Decision**
@@ -2706,6 +2754,43 @@ Avoid creating overlapping responsibilities between agents.
 
 When implementing new AI functionality, determine whether it belongs within an
 existing agent before creating a new one.
+
+### Canonical Agent Identities
+
+The identity registry (`server/agent-identities.ts`) defines nine canonical agent
+identities. Every agent action logged to `unified_agent_action_log` must use one of
+these `agentId` values — no other identifiers are recognized by the logging layer:
+
+| `agentId` | Display Name | Domain |
+|---|---|---|
+| `executive_agent` | Atlas | Business intelligence orchestrator |
+| `retention_agent` | Pulse | Client retention and engagement |
+| `growth_agent` | Apex | Business growth and lead generation |
+| `scheduling_agent` | Tempo | Scheduling and calendar management |
+| `finance_agent` | Ledger | Financial tracking and analysis |
+| `communication_agent` | Relay | Communication and outreach management |
+| `research_agent` | Vector | Market research and intelligence |
+| `workflow_agent` | Nexus | Workflow automation and optimization |
+| `system_agent` | Core | System monitoring and maintenance |
+
+The admin-chat orchestrator (`server/ceo-agent-orchestrator.ts`, named **Atlas** in
+the UI) classifies intent and routes to specialized agents. The full agent catalog,
+including v1→v2 adapters, is documented in `docs/agent-catalog.md`.
+
+### Agent Implementation Conventions
+
+These conventions are verified against source and must be preserved by new agent code:
+
+- **Fail-closed sends.** Every automated send path evaluates policy and defaults to
+  approval on error: `evaluatePolicy().catch(() => ({ decision: "approval_required" }))`.
+  An agent never auto-executes when policy evaluation fails.
+- **Raw-SQL agent tables.** Some agent tables (`apex_recommendations`,
+  `pulse_recommendations`) are created outside the Drizzle schema and self-provision via
+  an `ensureTable()` call on startup; that initialization must run before the first CEO
+  Heartbeat cycle queries them.
+- **`requireRole` is not exported.** It is defined only in `server/routes.ts`; external
+  route files (e.g. `apex-agent-routes.ts`) must define a local `requireAdmin` helper
+  rather than importing it.
 
 ### Executive Agent
 
