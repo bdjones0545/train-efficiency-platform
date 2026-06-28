@@ -30,7 +30,7 @@ Version 2 is in progress.
 | Document | Status | Completed |
 |----------|--------|-----------|
 | `docs/schema.md` | ✅ Complete | 2026-06-28 |
-| `docs/core-services.md` | ⬜ Not started | — |
+| `docs/core-services.md` | ✅ Complete | 2026-06-28 |
 | `docs/agent-catalog.md` | ⬜ Not started | — |
 | `docs/integrations.md` | ⬜ Not started | — |
 | `docs/api-conventions.md` | ⬜ Not started | — |
