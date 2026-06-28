@@ -55,7 +55,7 @@ externalPort = 80
   args = "npx tsc --noEmit -p tsconfig.client.json 2>&1 | grep -E 'TS2304|TS2552' && echo 'UNDEFINED_NAME_ERRORS_FOUND' && exit 1 || echo 'No undefined-name errors'"
 
   [agent]
-  integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_database:1.0.0", "javascript_openai_ai_integrations:2.0.0", "sendgrid:1.0.0", "stripe:2.0.0", "javascript_stripe:1.0.0", "javascript_object_storage:2.0.0"]
+integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_database:1.0.0", "javascript_openai_ai_integrations:2.0.0", "sendgrid:1.0.0", "stripe:2.0.0", "javascript_stripe:1.0.0", "javascript_object_storage:2.0.0", "github:1.0.0"]
 
   [[mcp.servers]]
   url = "https://trainefficiency.ngrok.app/mcp/"
