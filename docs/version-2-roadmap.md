@@ -25,8 +25,16 @@ Version 1 is complete: the documentation framework, governance model, engineerin
 handbook, and architectural documentation (`CLAUDE.md` and the governance docs in
 `/docs`) now exist inside the repository.
 
-No implementation-level documentation has been generated yet. Version 2 begins
-here.
+Version 2 is in progress.
+
+| Document | Status | Completed |
+|----------|--------|-----------|
+| `docs/schema.md` | ✅ Complete | 2026-06-28 |
+| `docs/core-services.md` | ⬜ Not started | — |
+| `docs/agent-catalog.md` | ⬜ Not started | — |
+| `docs/integrations.md` | ⬜ Not started | — |
+| `docs/api-conventions.md` | ⬜ Not started | — |
+| `docs/runbooks.md` | ⬜ Not started | — |
 
 ---
 

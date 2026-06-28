@@ -69,3 +69,4 @@
 - [Composio Google Calendar Phase 2D](composio-calendar-phase2d.md) — correct v3.1 slugs, approval-gated write flow, 12/12 E2E validated.
 - [CEO Agent Orchestrator](ceo-agent-orchestrator.md) — intent classifier + multi-agent router at server/ceo-agent-orchestrator.ts; export must be non-async (returns AsyncGenerator directly); RecordDecisionInput fields are agent/sourceType/source/decision (not madeBy/decisionText); project tsconfig uses moduleResolution:bundler so no .js extensions needed.
 - [Unified Financial Metrics Service](unified-financial-metrics.md) — server/financial-metrics.ts is the single source of truth for all revenue; callers must NOT sum bookings.priceCents for money figures; ledgerCoverage flag signals fallback path.
+- [V2 Knowledge Base Progress](v2-kb-progress.md) — docs/schema.md complete (2874 lines, 208 Drizzle tables + ~20 raw-SQL tables); schema lives at shared/schema.ts not server/db/schema.ts; next doc is docs/core-services.md.
