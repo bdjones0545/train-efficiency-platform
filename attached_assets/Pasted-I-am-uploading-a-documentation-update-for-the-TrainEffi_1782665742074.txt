@@ -1,0 +1,80 @@
+I am uploading a documentation update for the TrainEfficiency Engineering Knowledge Base.
+
+This is **Version 1.1** of the documentation system.
+
+This upload contains **one new governance document only**.
+
+## File to Add
+
+```text
+docs/version-2-roadmap.md
+```
+
+## Before Making Changes
+
+Verify that the following already exist in the repository:
+
+* `CLAUDE.md`
+* `docs/`
+* `docs/_template.md`
+* `docs/documentation-map.md`
+* `docs/documentation-generation-workflow.md`
+* `docs/documentation-governance.md`
+* `docs/documentation-maturity-model.md`
+* `docs/documentation-status-legend.md`
+
+If they exist, **do not overwrite or regenerate them**.
+
+## Task
+
+1. Add `docs/version-2-roadmap.md` to the existing `docs/` directory.
+2. Preserve the document exactly as uploaded, including:
+
+   * Metadata/frontmatter
+   * Headings
+   * Formatting
+   * Wording
+3. Do not edit existing documentation unless required to resolve a file conflict.
+4. Do not modify any application source code.
+5. Do not modify database schema.
+6. Do not change configuration files.
+7. This is a documentation-only update.
+
+## Verification
+
+After the file has been added:
+
+* Confirm `docs/version-2-roadmap.md` exists.
+* Confirm the metadata/frontmatter was preserved.
+* Confirm the existing documentation set remains unchanged.
+* Confirm no files under `server/`, `client/`, `shared/`, or configuration files were modified.
+
+## Git
+
+If version control is available:
+
+Create a documentation-only commit with the message:
+
+```text
+docs: add Version 2 implementation roadmap
+```
+
+## Repository Status
+
+After this migration, the TrainEfficiency Engineering Knowledge Base should contain:
+
+### Architecture
+
+* `CLAUDE.md`
+
+### Governance
+
+* `docs/_template.md`
+* `docs/documentation-map.md`
+* `docs/documentation-generation-workflow.md`
+* `docs/documentation-governance.md`
+* `docs/documentation-maturity-model.md`
+* `docs/documentation-status-legend.md`
+* `docs/version-2-roadmap.md`
+
+The repository should then be ready to begin **Version 2**, where implementation documentation (`schema.md`, `core-services.md`, `agent-catalog.md`, `integrations.md`, `api-conventions.md`, and `runbooks.md`) will be generated directly from the source code and verified against the implementation.
