@@ -7,6 +7,7 @@
  */
 
 import type { Express } from "express";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import {
@@ -18,8 +19,11 @@ import {
   TRUST_TIERS,
 } from "./services/agent-quality-service";
 
-function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? req.query.orgId ?? null;
+async function getOrgId(req: any): Promise<string> {
+  // Trusted server-side org resolution ONLY — never from client query/body/params.
+  // Throws OrgResolutionError (converted to 403 by orgErrorMiddleware) when the
+  // org cannot be determined from the authenticated session — fail closed.
+  return await resolveOrgIdOrThrow(req);
 }
 
 export async function registerAgentQualityRoutes(
@@ -34,7 +38,7 @@ export async function registerAgentQualityRoutes(
   // 30-day aggregate scores for all agents in this org.
   app.get("/api/admin/agent-quality/scores", ...guard, async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const report = await getAgentQualityReport(orgId);
       res.json(report);
@@ -45,7 +49,7 @@ export async function registerAgentQualityRoutes(
   // All windows + domains for one agent.
   app.get("/api/admin/agent-quality/scores/:agentName", ...guard, async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const scores = await getAgentWindowScores(orgId, req.params.agentName);
       res.json(scores);
@@ -56,7 +60,7 @@ export async function registerAgentQualityRoutes(
   // Trigger a full recompute for this org.
   app.post("/api/admin/agent-quality/compute", ...guard, async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const result = await computeAgentQualityScores(orgId);
       res.json({ ok: true, ...result });
@@ -67,7 +71,7 @@ export async function registerAgentQualityRoutes(
   // CEO Heartbeat risk signals.
   app.get("/api/admin/agent-quality/risks", ...guard, async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       res.json(await getAgentQualityRisks(orgId));
     } catch (e: any) { res.status(500).json({ message: e.message }); }
@@ -77,7 +81,7 @@ export async function registerAgentQualityRoutes(
   // Effective trust tier for every known agent.
   app.get("/api/admin/agent-quality/tiers", ...guard, async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const report = await getAgentQualityReport(orgId);
       res.json(report.map((r) => ({
@@ -95,7 +99,7 @@ export async function registerAgentQualityRoutes(
   // Set a manual trust tier override for an agent.
   app.post("/api/admin/agent-quality/overrides", ...guard, async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { agentName, communicationDomain = "all", overrideTier, reason } = req.body;
       if (!agentName || !overrideTier) return res.status(400).json({ message: "agentName and overrideTier required" });
@@ -119,7 +123,7 @@ export async function registerAgentQualityRoutes(
   // Remove a manual override — computed tier takes effect again.
   app.delete("/api/admin/agent-quality/overrides/:agentName", ...guard, async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { communicationDomain = "all" } = req.query as Record<string, string>;
       await db.execute(sql`

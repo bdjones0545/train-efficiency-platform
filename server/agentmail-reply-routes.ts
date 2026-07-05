@@ -5,6 +5,7 @@
  */
 
 import type { Express } from "express";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { sendAgentEmail, replyFromAgentInbox, type AgentInbox } from "./services/agentmail-service";
@@ -20,8 +21,11 @@ function rows(r: unknown): any[] {
 }
 function row0(r: unknown): any { return rows(r)[0] ?? null; }
 
-function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? req.query.orgId ?? null;
+async function getOrgId(req: any): Promise<string> {
+  // Trusted server-side org resolution ONLY — never from client query/body/params.
+  // Throws OrgResolutionError (converted to 403 by orgErrorMiddleware) when the
+  // org cannot be determined from the authenticated session — fail closed.
+  return await resolveOrgIdOrThrow(req);
 }
 
 // ─── Classifications that support auto-drafts ────────────────────────────────
@@ -327,7 +331,7 @@ export async function registerAgentMailReplyRoutes(
   // ── GET /api/agentmail/replies ─────────────────────────────────────────────
   app.get("/api/agentmail/replies", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const {
@@ -369,7 +373,7 @@ export async function registerAgentMailReplyRoutes(
   // ── GET /api/agentmail/replies/:id ────────────────────────────────────────
   app.get("/api/agentmail/replies/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { id } = req.params;
@@ -406,7 +410,7 @@ export async function registerAgentMailReplyRoutes(
   // ── PATCH /api/agentmail/replies/:id ─────────────────────────────────────
   app.patch("/api/agentmail/replies/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { id } = req.params;
@@ -429,7 +433,7 @@ export async function registerAgentMailReplyRoutes(
   // ── POST /api/agentmail/replies/:id/approve ───────────────────────────────
   app.post("/api/agentmail/replies/:id/approve", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { id } = req.params;
@@ -504,7 +508,7 @@ export async function registerAgentMailReplyRoutes(
   // ── POST /api/agentmail/replies/:id/reject ────────────────────────────────
   app.post("/api/agentmail/replies/:id/reject", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { id } = req.params;
@@ -581,7 +585,7 @@ export async function registerAgentMailReplyRoutes(
   // ── POST /api/agentmail/replies/:id/send ─────────────────────────────────
   app.post("/api/agentmail/replies/:id/send", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { id } = req.params;
@@ -714,7 +718,7 @@ export async function registerAgentMailReplyRoutes(
   // ── GET /api/agentmail/analytics ──────────────────────────────────────────
   app.get("/api/agentmail/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       // Per-agent metrics

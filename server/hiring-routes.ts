@@ -5,6 +5,7 @@
  */
 
 import type { Express } from "express";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { assessCandidate, getAssessmentsForOrg } from "./services/hiring-assessment-agent";
@@ -22,8 +23,11 @@ function rows(r: any): any[] {
 }
 function n(v: any): number { return Number(v ?? 0); }
 
-function getOrgId(req: any): string {
-  return req.user?.claims?.org_id ?? req.user?.orgId ?? "demo-org";
+async function getOrgId(req: any): Promise<string> {
+  // Trusted server-side org resolution ONLY — never from client query/body/params.
+  // Throws OrgResolutionError (converted to 403 by orgErrorMiddleware) when the
+  // org cannot be determined from the authenticated session — fail closed.
+  return await resolveOrgIdOrThrow(req);
 }
 
 export function registerHiringRoutes(
@@ -37,7 +41,7 @@ export function registerHiringRoutes(
   // GET /api/hiring/candidates
   app.get("/api/hiring/candidates", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId  = await getOrgId(req);
       const result = await db.execute(sql`
         SELECT * FROM hiring_candidates
         WHERE org_id = ${orgId}
@@ -53,7 +57,7 @@ export function registerHiringRoutes(
   // POST /api/hiring/candidates
   app.post("/api/hiring/candidates", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const {
         firstName, lastName, email, phone, location,
         position, source, experienceLevel, resumeUrl, notes,
@@ -83,7 +87,7 @@ export function registerHiringRoutes(
   // PATCH /api/hiring/candidates/:id/status
   app.patch("/api/hiring/candidates/:id/status", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const { id } = req.params;
       const { status } = req.body;
       const validStatuses = ["new","qualified","outreach_ready","contacted","interested","interview","offer","hired","rejected"];
@@ -103,7 +107,7 @@ export function registerHiringRoutes(
   // DELETE /api/hiring/candidates/:id
   app.delete("/api/hiring/candidates/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await db.execute(sql`
         DELETE FROM hiring_candidates WHERE id = ${req.params.id} AND org_id = ${orgId}
       `);
@@ -118,7 +122,7 @@ export function registerHiringRoutes(
   // POST /api/hiring/candidates/:id/assess
   app.post("/api/hiring/candidates/:id/assess", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const result = await assessCandidate(orgId, req.params.id);
       res.json(result);
     } catch (err: any) {
@@ -129,7 +133,7 @@ export function registerHiringRoutes(
   // GET /api/hiring/assessments
   app.get("/api/hiring/assessments", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const result = await getAssessmentsForOrg(orgId);
       res.json(result);
     } catch (err: any) {
@@ -142,7 +146,7 @@ export function registerHiringRoutes(
   // POST /api/hiring/candidates/:id/outreach
   app.post("/api/hiring/candidates/:id/outreach", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const { outreachType } = req.body;
       const result = await generateOutreachDraft(orgId, req.params.id, outreachType ?? "interview_invitation");
       res.json(result);
@@ -154,7 +158,7 @@ export function registerHiringRoutes(
   // GET /api/hiring/outreach
   app.get("/api/hiring/outreach", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const result = await getOutreachDraftsForOrg(orgId);
       res.json(result);
     } catch (err: any) {
@@ -167,7 +171,7 @@ export function registerHiringRoutes(
   // GET /api/hiring/pipeline
   app.get("/api/hiring/pipeline", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const result = await db.execute(sql`
         SELECT * FROM hiring_candidates
         WHERE org_id = ${orgId}
@@ -195,7 +199,7 @@ export function registerHiringRoutes(
   // POST /api/hiring/candidates/:id/interview
   app.post("/api/hiring/candidates/:id/interview", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const { scheduledAt, notes } = req.body;
       const result = await db.execute(sql`
         INSERT INTO hiring_interviews (org_id, candidate_id, scheduled_at, notes)
@@ -218,7 +222,7 @@ export function registerHiringRoutes(
   // GET /api/hiring/learning
   app.get("/api/hiring/learning", isAuthenticated, async (req, res) => {
     try {
-      const orgId   = getOrgId(req);
+      const orgId   = await getOrgId(req);
       const [metrics, insights] = await Promise.all([
         computeHiringLearningMetrics(orgId),
         generateHiringInsights(orgId),
@@ -234,7 +238,7 @@ export function registerHiringRoutes(
   // GET /api/hiring/executive
   app.get("/api/hiring/executive", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const [briefs, recs, bestAction] = await Promise.all([
         db.execute(sql`
           SELECT * FROM hiring_executive_briefs WHERE org_id = ${orgId}
@@ -255,7 +259,7 @@ export function registerHiringRoutes(
   // POST /api/hiring/executive/run
   app.post("/api/hiring/executive/run", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId  = await getOrgId(req);
       const result = await runHiringExecutiveAnalysis(orgId);
       res.json(result);
     } catch (err: any) {
@@ -266,7 +270,7 @@ export function registerHiringRoutes(
   // GET /api/hiring/recommendations
   app.get("/api/hiring/recommendations", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const result = await db.execute(sql`
         SELECT * FROM hiring_recommendations WHERE org_id = ${orgId}
         ORDER BY created_at DESC LIMIT 50
@@ -280,7 +284,7 @@ export function registerHiringRoutes(
   // PATCH /api/hiring/recommendations/:id
   app.patch("/api/hiring/recommendations/:id", isAuthenticated, async (req, res) => {
     try {
-      const orgId  = getOrgId(req);
+      const orgId  = await getOrgId(req);
       const { status } = req.body;
       await db.execute(sql`
         UPDATE hiring_recommendations
@@ -296,7 +300,7 @@ export function registerHiringRoutes(
   // GET /api/hiring/heartbeat-summary
   app.get("/api/hiring/heartbeat-summary", isAuthenticated, async (req, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const { hiringDepartmentCoordinator } = await import("./services/hiring-department-coordinator");
       const summary = await hiringDepartmentCoordinator.generateSummary(orgId);
       res.json(summary);

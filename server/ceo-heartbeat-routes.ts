@@ -1,4 +1,5 @@
 import { Express } from "express";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { eq, and, desc, gte, lt, like, or, sql } from "drizzle-orm";
 import {
@@ -21,7 +22,6 @@ import {
   writeTimeline,
   runLedgerDriftCheck,
 } from "./services/ceo-heartbeat-service";
-import { resolveOrgSession } from "./org-auth";
 import { isAuthenticated } from "./replit_integrations/auth";
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
@@ -45,17 +45,11 @@ async function requireAdminOrCoach(req: any, res: any, next: any) {
   }
 }
 
-async function getOrgId(req: any): Promise<string | null> {
-  // 1. Explicit query param (takes priority — allows org-switching in debug)
-  if (req.query.orgId) return req.query.orgId as string;
-  // 2. Full 3-path resolver: X-Org-Auth-Token → OIDC req.user → Bearer token
-  try {
-    const orgSession = await resolveOrgSession(req);
-    if (orgSession?.orgId) return orgSession.orgId;
-  } catch {
-    // fall through
-  }
-  return null;
+async function getOrgId(req: any): Promise<string> {
+  // Trusted server-side org resolution ONLY — never from client query/body/params.
+  // Throws OrgResolutionError (converted to 403 by orgErrorMiddleware) when the
+  // org cannot be determined from the authenticated session — fail closed.
+  return await resolveOrgIdOrThrow(req);
 }
 
 function getAdminId(req: any): string {
