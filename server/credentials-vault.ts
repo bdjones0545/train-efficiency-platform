@@ -1,17 +1,17 @@
 import crypto from "crypto";
+import { getCredentialEncryptionKey } from "./lib/secrets";
 
 const ALGORITHM = "aes-256-gcm";
 
 /**
- * Derives a 256-bit key from SESSION_SECRET (or a dev fallback).
- * In production, set SESSION_SECRET to a long random string.
+ * Derives the 256-bit AES key for the credentials vault.
+ *
+ * Sourced exclusively from CREDENTIAL_ENCRYPTION_KEY via the central secrets
+ * module — decoupled from SESSION_SECRET, and fail-closed in production (no
+ * committed fallback key). See server/lib/secrets.ts.
  */
 function getDerivedKey(): Buffer {
-  const secret =
-    process.env.CREDENTIAL_ENCRYPTION_KEY ||
-    process.env.SESSION_SECRET ||
-    "dev-fallback-key-not-for-production!!";
-  return crypto.createHash("sha256").update(String(secret)).digest();
+  return getCredentialEncryptionKey();
 }
 
 /**

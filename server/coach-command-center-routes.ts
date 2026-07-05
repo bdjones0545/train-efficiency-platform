@@ -19,6 +19,7 @@ import {
   coachProfiles,
 } from "@shared/schema";
 import { eq, and, desc, gte, sql as drizzleSql, lt, count } from "drizzle-orm";
+import { hashAuthToken } from "./lib/auth-token";
 import OpenAI from "openai";
 import { buildPrioritizedInterventionQueue } from "./services/intervention-priority-engine";
 import { buildOrgLearningInsights } from "./services/intervention-learning-engine";
@@ -77,7 +78,7 @@ async function resolveOrgSession(req: any) {
     try {
       const bearerToken = authHeader.slice(7);
       const tokenResult = await db.execute(
-        drizzleSql`SELECT user_id FROM auth_tokens WHERE token = ${bearerToken} AND expires_at > NOW() LIMIT 1`
+        drizzleSql`SELECT user_id FROM auth_tokens WHERE token = ${hashAuthToken(bearerToken)} AND expires_at > NOW() LIMIT 1`
       );
       if ((tokenResult as any).rows?.length) {
         const mainUserId = ((tokenResult as any).rows[0] as any).user_id as string;

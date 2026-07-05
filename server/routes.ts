@@ -5,6 +5,8 @@ import { publicRateLimiter } from "./middleware/public-rate-limiter";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
+import { hashAuthToken } from "./lib/auth-token";
+import { getSessionSecret } from "./lib/secrets";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -3969,7 +3971,7 @@ export async function registerRoutes(
           const token = authHeader.slice(7);
           const { db: dbRef } = await import("./db");
           const { sql: sqlRef } = await import("drizzle-orm");
-          const tokenResult = await dbRef.execute(sqlRef`SELECT user_id FROM auth_tokens WHERE token = ${token} AND expires_at > NOW()`);
+          const tokenResult = await dbRef.execute(sqlRef`SELECT user_id FROM auth_tokens WHERE token = ${hashAuthToken(token)} AND expires_at > NOW()`);
           if (tokenResult.rows.length > 0) {
             userId = (tokenResult.rows[0] as any).user_id;
           }
@@ -18017,7 +18019,7 @@ Respond with this exact JSON structure:
     const payload: Record<string, string> = { orgId, nonce, ts };
     if (returnTo) payload.returnTo = sanitizeReturnTo(returnTo);
     const raw = JSON.stringify(payload);
-    const sig = createHmac("sha256", process.env.SESSION_SECRET ?? "dev-secret")
+    const sig = createHmac("sha256", getSessionSecret())
       .update(raw)
       .digest("hex");
     return Buffer.from(JSON.stringify({ ...payload, sig })).toString("base64url");
@@ -18029,7 +18031,7 @@ Respond with this exact JSON structure:
       const obj = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
       const { sig, ...payload } = obj;
       const raw = JSON.stringify(payload);
-      const expected = createHmac("sha256", process.env.SESSION_SECRET ?? "dev-secret")
+      const expected = createHmac("sha256", getSessionSecret())
         .update(raw)
         .digest("hex");
       if (sig !== expected) return null;

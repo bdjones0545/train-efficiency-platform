@@ -24,6 +24,7 @@ import {
   users,
 } from "@shared/schema";
 import { eq, and, desc, asc, inArray, gt, sql } from "drizzle-orm";
+import { hashAuthToken } from "./lib/auth-token";
 import { z } from "zod";
 import { trainChatClient, getConnectionStatus } from "./services/trainchat-client";
 import { triggerNotificationEvent } from "./services/notification-automation";
@@ -85,7 +86,7 @@ async function acceptOrgOrMainAuth(req: any, res: any, next: any) {
       const bearerToken = authHeader.slice(7);
       try {
         const tokenResult = await db.execute(
-          sql`SELECT user_id FROM auth_tokens WHERE token = ${bearerToken} AND expires_at > NOW() LIMIT 1`
+          sql`SELECT user_id FROM auth_tokens WHERE token = ${hashAuthToken(bearerToken)} AND expires_at > NOW() LIMIT 1`
         );
         if (tokenResult.rows.length) {
           const mainUserId = (tokenResult.rows[0] as any).user_id as string;

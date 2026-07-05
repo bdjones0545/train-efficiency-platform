@@ -63,7 +63,8 @@ integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_database:1.0.
   [userenv]
 
   [userenv.shared]
-  ADMIN_REPAIR_KEY = "a02e9df687ecaec69a5de09bd63309ffe50093148009b6a75eeb9e32d3561656"
+  # ADMIN_REPAIR_KEY is a secret and must NOT be committed here.
+  # Set it (rotated) in Replit Secrets / the deployment environment instead.
   AGENTMAIL_ORG_DOMAIN = "trainefficiency.com"
 GOOGLE_CLIENT_ID = "314571901016-72muc79kiniis3cksinr6e7ltud4636d.apps.googleusercontent.com"
 META_BOOK_PIXEL_ID = "1017450327750475"
