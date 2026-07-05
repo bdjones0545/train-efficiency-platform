@@ -9,6 +9,7 @@
 import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import {
   executeAction,
   listExecutionEvents,
@@ -32,8 +33,9 @@ import {
   getHermesStats,
 } from "./services/hermes-recommendation-engine";
 
-function getOrgId(req: any): string {
-  return req.user?.orgId as string;
+async function getOrgId(req: any): Promise<string> {
+  // Trusted server-side org resolution — never req.user.orgId (never populated) or client input.
+  return await resolveOrgIdOrThrow(req);
 }
 
 function requireAdmin(req: Request, res: Response): boolean {
@@ -223,7 +225,7 @@ export function registerExecutionRoutes(app: Express): void {
   app.post("/api/actions/approve", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const { actionId, sourceSystem, templateKey, notes } = req.body;
       if (!actionId || !sourceSystem) {
         return res.status(400).json({ message: "actionId and sourceSystem are required" });
@@ -256,7 +258,7 @@ export function registerExecutionRoutes(app: Express): void {
   app.post("/api/actions/reject", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const { actionId, sourceSystem, reason = "Rejected by admin" } = req.body;
       if (!actionId || !sourceSystem) {
         return res.status(400).json({ message: "actionId and sourceSystem are required" });
@@ -273,7 +275,7 @@ export function registerExecutionRoutes(app: Express): void {
   app.post("/api/actions/escalate", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const { actionId, sourceSystem, reason = "Escalated for review", title = "Action Escalated" } = req.body;
       const userId = req.user?.id ?? "admin";
       const payload: ActionPayload = {
@@ -296,7 +298,7 @@ export function registerExecutionRoutes(app: Express): void {
   app.post("/api/actions/execute", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const { actionId = crypto.randomUUID(), actionType, templateKey, ...rest } = req.body;
       const payload: ActionPayload = {
         orgId,
@@ -317,7 +319,7 @@ export function registerExecutionRoutes(app: Express): void {
   app.get("/api/executions", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const limit = parseInt((req.query.limit as string) ?? "50", 10);
       await ensureExecutionTables();
       const events = await listExecutionEvents(orgId, limit);
@@ -331,7 +333,7 @@ export function registerExecutionRoutes(app: Express): void {
   app.get("/api/executions/metrics", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       const metrics = await getExecutionMetrics(orgId);
       res.json({ ...metrics, generatedAt: new Date().toISOString() });
     } catch (e: any) {
@@ -356,7 +358,7 @@ export function registerExecutionRoutes(app: Express): void {
   app.get("/api/coordination/stats", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await ensureCoordinationTables();
       const stats = await getCoordinationStats(orgId);
       res.json({ ...stats, generatedAt: new Date().toISOString() });
@@ -370,7 +372,7 @@ export function registerExecutionRoutes(app: Express): void {
   app.get("/api/conflicts", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await ensureConflictTables();
       const [conflicts, stats] = await Promise.all([
         getOpenConflicts(orgId),
@@ -400,7 +402,7 @@ export function registerExecutionRoutes(app: Express): void {
   app.get("/api/action-center/summary", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       await Promise.all([
         ensureExecutionTables(),
         ensureConflictTables(),

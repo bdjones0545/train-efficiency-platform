@@ -29,7 +29,8 @@ async function getAdminOrgId(req: any): Promise<string | null> {
     .where(eq(orgUsers.userId, userId))
     .limit(1)
     .catch(() => []);
-  return row?.orgId ?? (req.query.orgId as string) ?? null;
+  // Trusted org from the authenticated user's org membership only — never client-supplied.
+  return row?.orgId ?? null;
 }
 
 export async function registerAthleteIntelligenceRoutes(app: Express) {
