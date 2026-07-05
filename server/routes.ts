@@ -21813,9 +21813,9 @@ Respond with this exact JSON structure:
   // ─── Phase 3: Outcome Attribution & Business Impact ────────────────────────
 
   // Revenue Attribution
-  app.get("/api/workforce/revenue-attribution", async (req, res) => {
+  app.get("/api/workforce/revenue-attribution", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const period = (req.query.period as string) ?? "7d";
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
@@ -21846,9 +21846,9 @@ Respond with this exact JSON structure:
   });
 
   // ROI Dashboard
-  app.get("/api/workforce/roi", async (req, res) => {
+  app.get("/api/workforce/roi", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const period = (req.query.period as string) ?? "30d";
       const { computeOrgAttribution, HOURLY_RATE_USD } = await import("./workforce-attribution-engine");
@@ -21880,9 +21880,9 @@ Respond with this exact JSON structure:
   });
 
   // Time Savings
-  app.get("/api/workforce/time-savings", async (req, res) => {
+  app.get("/api/workforce/time-savings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeOrgAttribution, TIME_BENCHMARKS, HOURLY_RATE_USD } = await import("./workforce-attribution-engine");
       const [today, month, allTime] = await Promise.all([
@@ -21910,9 +21910,9 @@ Respond with this exact JSON structure:
   });
 
   // Leaderboard
-  app.get("/api/workforce/leaderboard", async (req, res) => {
+  app.get("/api/workforce/leaderboard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const period = (req.query.period as string) ?? "30d";
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
@@ -21977,9 +21977,9 @@ Respond with this exact JSON structure:
   });
 
   // Opportunities — list
-  app.get("/api/workforce/opportunities", async (req, res) => {
+  app.get("/api/workforce/opportunities", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { orgAiOpportunities } = await import("@shared/schema");
       const statusFilter = req.query.status as string | undefined;
@@ -21994,11 +21994,11 @@ Respond with this exact JSON structure:
   });
 
   // Opportunities — update status
-  app.patch("/api/workforce/opportunities/:id", async (req, res) => {
+  app.patch("/api/workforce/opportunities/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { status } = req.body;
       const validStatuses = ["open", "in_progress", "resolved", "expired"];
       if (!validStatuses.includes(status)) return res.status(400).json({ message: "Invalid status" });
@@ -22017,9 +22017,9 @@ Respond with this exact JSON structure:
   });
 
   // Opportunities — refresh (generate fresh from live data + persist)
-  app.post("/api/workforce/opportunities/refresh", async (req, res) => {
+  app.post("/api/workforce/opportunities/refresh", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { generateOpportunities } = await import("./workforce-attribution-engine");
       const { orgAiOpportunities } = await import("@shared/schema");
@@ -22058,9 +22058,9 @@ Respond with this exact JSON structure:
   });
 
   // Executive Summary
-  app.get("/api/workforce/executive-summary", async (req, res) => {
+  app.get("/api/workforce/executive-summary", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const { orgAiOpportunities, attentionItems: attentionItemsTable } = await import("@shared/schema");
@@ -22924,11 +22924,11 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Outcome Evidence — single outcome detail
-  app.get("/api/workforce/outcomes/:outcomeId", async (req, res) => {
+  app.get("/api/workforce/outcomes/:outcomeId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
-      const { outcomeId } = req.params;
+      const outcomeId = req.params.outcomeId as string;
       const { orgAiWorkforceOutcomes } = await import("@shared/schema");
       const [outcome] = await db.select().from(orgAiWorkforceOutcomes).where(
         and(eq(orgAiWorkforceOutcomes.id, outcomeId), eq(orgAiWorkforceOutcomes.orgId, orgId))
@@ -22941,9 +22941,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Benchmarks — period comparison
-  app.get("/api/workforce/benchmarks", async (req, res) => {
+  app.get("/api/workforce/benchmarks", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const [current, previous, quarter, year] = await Promise.all([
@@ -22993,9 +22993,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Workforce Report (text)
-  app.get("/api/workforce/report", async (req, res) => {
+  app.get("/api/workforce/report", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeOrgAttribution } = await import("./workforce-attribution-engine");
       const { orgAiOpportunities } = await import("@shared/schema");
@@ -23075,9 +23075,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Get runtimes for org
-  app.get("/api/marketplace/runtimes", async (req, res) => {
+  app.get("/api/marketplace/runtimes", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { getOrgRuntimes } = await import("./agent-telemetry-sdk");
       res.json(await getOrgRuntimes(orgId));
@@ -23085,12 +23085,12 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Get agent memory for org
-  app.get("/api/marketplace/memory/:agentId", async (req, res) => {
+  app.get("/api/marketplace/memory/:agentId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const { agentMemories } = await import("@shared/schema");
       const mem = await db.select().from(agentMemories).where(
-        and(eq(agentMemories.agentId, req.params.agentId), eq(agentMemories.orgId, orgId ?? ""))
+        and(eq(agentMemories.agentId, (req.params.agentId as string)), eq(agentMemories.orgId, orgId ?? ""))
       ).catch(() => []);
       res.json(mem[0] ?? null);
     } catch (e: any) { res.status(500).json({ message: "Failed to fetch memory" }); }
@@ -23106,9 +23106,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Developer billing statement
-  app.get("/api/marketplace/billing/statement", async (req, res) => {
+  app.get("/api/marketplace/billing/statement", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const period = req.query.period as string;
       const { developerAccounts } = await import("@shared/schema");
       const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId ?? "")).catch(() => []);
@@ -23203,9 +23203,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     } catch (e: any) { res.status(500).json({ message: "Failed to fetch case studies" }); }
   });
 
-  app.post("/api/marketplace/case-studies", async (req, res) => {
+  app.post("/api/marketplace/case-studies", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { agentId, orgType, problem, solution, outcome, revenueImpact, timeSaved, trustScore } = req.body;
       if (!agentId || !problem || !solution || !outcome) return res.status(400).json({ message: "agentId, problem, solution, outcome required" });
@@ -23216,9 +23216,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Agent trials
-  app.get("/api/marketplace/trials", async (req, res) => {
+  app.get("/api/marketplace/trials", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { agentTrials } = await import("@shared/schema");
       const trials = await db.select().from(agentTrials).where(eq(agentTrials.orgId, orgId)).catch(() => []);
@@ -23241,9 +23241,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Agent upgrade paths
-  app.get("/api/marketplace/upgrade-paths", async (req, res) => {
+  app.get("/api/marketplace/upgrade-paths", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { agentUpgradePaths } = await import("@shared/schema");
       const paths = await db.select().from(agentUpgradePaths).where(eq(agentUpgradePaths.orgId, orgId)).catch(() => []);
@@ -23252,9 +23252,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Adoption analytics
-  app.get("/api/marketplace/adoption", async (req, res) => {
+  app.get("/api/marketplace/adoption", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const { orgInstalledAgents, agentTrials, agentLifecycleEvents } = await import("@shared/schema");
       const [installs, trials, events] = await Promise.all([
         db.select().from(orgInstalledAgents).where(eq(orgInstalledAgents.status, "active")).catch(() => []),
@@ -23381,9 +23381,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Bundle recommendations (Part 13)
-  app.get("/api/marketplace/recommendation-bundles", async (req, res) => {
+  app.get("/api/marketplace/recommendation-bundles", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const { generateMarketplaceProfiles } = await import("./agent-benchmark-engine");
       await generateMarketplaceProfiles().catch(() => {});
       const bundles = [
@@ -23708,9 +23708,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // ─── Phase 7: Developer Platform, Publishing System & Agent Economy ─────────
 
   // Developer profile — auto-create on first access
-  app.get("/api/developer/profile", async (req, res) => {
+  app.get("/api/developer/profile", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { developerAccounts } = await import("@shared/schema");
       const existing = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
@@ -23726,9 +23726,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Register developer account
-  app.post("/api/developer/register", async (req, res) => {
+  app.post("/api/developer/register", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { displayName, email, bio } = req.body;
       if (!displayName) return res.status(400).json({ message: "displayName required" });
@@ -23746,9 +23746,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // List developer submissions
-  app.get("/api/developer/submissions", async (req, res) => {
+  app.get("/api/developer/submissions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { agentSubmissions, developerAccounts } = await import("@shared/schema");
       const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
@@ -23762,9 +23762,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Submit agent definition
-  app.post("/api/developer/submit", async (req, res) => {
+  app.post("/api/developer/submit", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const def = req.body;
       if (!def?.name?.trim()) return res.status(400).json({ message: "Agent name is required" });
@@ -23798,9 +23798,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Developer analytics
-  app.get("/api/developer/analytics", async (req, res) => {
+  app.get("/api/developer/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { developerAccounts, agentSubmissions, agentReviews: agentReviewsTable } = await import("@shared/schema");
       const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
@@ -23827,9 +23827,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Developer revenue
-  app.get("/api/developer/revenue", async (req, res) => {
+  app.get("/api/developer/revenue", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { developerAccounts, agentRevenueEvents: agentRevTable, developerPayouts } = await import("@shared/schema");
       const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.orgId, orgId)).catch(() => []);
@@ -24509,9 +24509,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Lifecycle events for org
-  app.get("/api/marketplace/lifecycle", async (req, res) => {
+  app.get("/api/marketplace/lifecycle", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { agentLifecycleEvents } = await import("@shared/schema");
       const events = await db.select().from(agentLifecycleEvents).where(eq(agentLifecycleEvents.orgId, orgId)).orderBy(agentLifecycleEvents.createdAt).catch(() => []);
@@ -24522,9 +24522,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // White label agents for org
-  app.get("/api/marketplace/white-label", async (req, res) => {
+  app.get("/api/marketplace/white-label", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { whiteLabelAgents } = await import("@shared/schema");
       const agents = await db.select().from(whiteLabelAgents).where(
@@ -24606,9 +24606,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // GET agent discovery recommendations for org
-  app.get("/api/marketplace/recommendations", async (req, res) => {
+  app.get("/api/marketplace/recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { discoverAgentsForOrg } = await import("./agent-benchmark-engine");
       const recs = await discoverAgentsForOrg(orgId);
@@ -24756,9 +24756,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // ─── Phase 5: Autonomous Execution & Closed-Loop Optimization ───────────────
 
   // List execution plans
-  app.get("/api/workforce/executions", async (req, res) => {
+  app.get("/api/workforce/executions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { orgAiExecutionPlans } = await import("@shared/schema");
       const plans = await db.select().from(orgAiExecutionPlans).where(
@@ -24771,9 +24771,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Create execution plan from recommendation
-  app.post("/api/workforce/executions", async (req, res) => {
+  app.post("/api/workforce/executions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const rec = req.body;
       if (!rec.title && !rec.id) return res.status(400).json({ message: "Recommendation data required" });
@@ -24798,11 +24798,11 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Approve or reject execution plan
-  app.patch("/api/workforce/executions/:id", async (req, res) => {
+  app.patch("/api/workforce/executions/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { action, notes } = req.body;
       if (!action) return res.status(400).json({ message: "action required (approve|reject)" });
       const { approveExecutionPlan } = await import("./workforce-execution-engine");
@@ -24815,11 +24815,11 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Execute an approved plan
-  app.post("/api/workforce/executions/:id/run", async (req, res) => {
+  app.post("/api/workforce/executions/:id/run", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { executeApprovedPlan } = await import("./workforce-execution-engine");
       const plan = await executeApprovedPlan(id, orgId);
       res.json(plan);
@@ -24829,9 +24829,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Simulate execution (dry run — no real actions)
-  app.post("/api/workforce/simulate", async (req, res) => {
+  app.post("/api/workforce/simulate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const rec = req.body;
       const { simulateExecution } = await import("./workforce-execution-engine");
@@ -24854,9 +24854,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Trust Score
-  app.get("/api/workforce/trust", async (req, res) => {
+  app.get("/api/workforce/trust", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeTrustScore } = await import("./workforce-execution-engine");
       const trust = await computeTrustScore(orgId);
@@ -24867,9 +24867,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Agent Performance Reviews
-  app.get("/api/workforce/performance-reviews", async (req, res) => {
+  app.get("/api/workforce/performance-reviews", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computePerformanceReviews } = await import("./workforce-execution-engine");
       const reviews = await computePerformanceReviews(orgId);
@@ -24880,9 +24880,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // COO Dashboard
-  app.get("/api/workforce/coo-dashboard", async (req, res) => {
+  app.get("/api/workforce/coo-dashboard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeCOODashboard } = await import("./workforce-execution-engine");
       const dashboard = await computeCOODashboard(orgId);
@@ -24893,9 +24893,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Approval Rules — GET
-  app.get("/api/workforce/approval-rules", async (req, res) => {
+  app.get("/api/workforce/approval-rules", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { orgAiApprovalRules } = await import("@shared/schema");
       const { seedDefaultApprovalRules } = await import("./workforce-execution-engine");
@@ -24910,11 +24910,11 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Approval Rules — PUT (update a rule)
-  app.put("/api/workforce/approval-rules/:id", async (req, res) => {
+  app.put("/api/workforce/approval-rules/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { requiresApproval, autoApprove, approvalThreshold } = req.body;
       const { orgAiApprovalRules } = await import("@shared/schema");
       const [updated] = await db.update(orgAiApprovalRules).set({
@@ -24927,9 +24927,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Experiments — GET
-  app.get("/api/workforce/experiments", async (req, res) => {
+  app.get("/api/workforce/experiments", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { orgAiExperiments } = await import("@shared/schema");
       const experiments = await db.select().from(orgAiExperiments).where(
@@ -24942,9 +24942,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Experiments — POST
-  app.post("/api/workforce/experiments", async (req, res) => {
+  app.post("/api/workforce/experiments", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { name, description, agentId, workflowId, experimentType, variantA, variantB } = req.body;
       if (!name || !experimentType) return res.status(400).json({ message: "name and experimentType required" });
@@ -24960,9 +24960,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Workflow Optimization Recommendations — GET
-  app.get("/api/workforce/workflow-optimization", async (req, res) => {
+  app.get("/api/workforce/workflow-optimization", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { workflowOptimizationRecs } = await import("@shared/schema");
       const { analyzeExecutionHistory } = await import("./workforce-learning-engine");
@@ -24977,9 +24977,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Learning Improvements (self-improvement loop)
-  app.get("/api/workforce/learning-improvements", async (req, res) => {
+  app.get("/api/workforce/learning-improvements", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { analyzeExecutionHistory, computeLearningInsights } = await import("./workforce-learning-engine");
       const [opportunities, insights] = await Promise.all([
@@ -24993,9 +24993,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Governance recommendations (based on trust)
-  app.get("/api/workforce/governance-recommendations", async (req, res) => {
+  app.get("/api/workforce/governance-recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeTrustScore } = await import("./workforce-execution-engine");
       const { generateGovernanceRecommendations } = await import("./workforce-learning-engine");
@@ -25010,9 +25010,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // ─── Phase 4: Intelligence, Optimization & Self-Improvement ──────────────────
 
   // Optimization Recommendations
-  app.get("/api/workforce/optimization-recommendations", async (req, res) => {
+  app.get("/api/workforce/optimization-recommendations", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { generateOptimizationRecommendations } = await import("./workforce-intelligence-engine");
       const recs = await generateOptimizationRecommendations(orgId);
@@ -25024,9 +25024,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Business Health Score
-  app.get("/api/workforce/business-health", async (req, res) => {
+  app.get("/api/workforce/business-health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeBusinessHealth } = await import("./workforce-intelligence-engine");
       const health = await computeBusinessHealth(orgId);
@@ -25038,9 +25038,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Forecasts
-  app.get("/api/workforce/forecast", async (req, res) => {
+  app.get("/api/workforce/forecast", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const window = (req.query.window as string) ?? "7d";
       const { computeForecast } = await import("./workforce-intelligence-engine");
@@ -25053,9 +25053,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Workflow Effectiveness
-  app.get("/api/workforce/workflow-effectiveness", async (req, res) => {
+  app.get("/api/workforce/workflow-effectiveness", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeWorkflowEffectiveness } = await import("./workforce-intelligence-engine");
       const effectiveness = await computeWorkflowEffectiveness(orgId);
@@ -25067,9 +25067,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Executive Insights (Atlas)
-  app.get("/api/workforce/executive-insights", async (req, res) => {
+  app.get("/api/workforce/executive-insights", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { generateExecutiveInsights } = await import("./workforce-intelligence-engine");
       const insights = await generateExecutiveInsights(orgId);
@@ -25081,9 +25081,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Intelligence Scorecard
-  app.get("/api/workforce/intelligence-scorecard", async (req, res) => {
+  app.get("/api/workforce/intelligence-scorecard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { computeIntelligenceScorecard } = await import("./workforce-intelligence-engine");
       const scorecard = await computeIntelligenceScorecard(orgId);
@@ -25095,9 +25095,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Workforce Memory — GET (list)
-  app.get("/api/workforce/memory", async (req, res) => {
+  app.get("/api/workforce/memory", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { orgAiWorkforceMemory } = await import("@shared/schema");
       const rows = await db.select().from(orgAiWorkforceMemory).where(
@@ -25111,9 +25111,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Workforce Memory — POST (upsert)
-  app.post("/api/workforce/memory", async (req, res) => {
+  app.post("/api/workforce/memory", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { memoryType, key, title, summary, outcome, value, context } = req.body;
       if (!memoryType || !key || !title) return res.status(400).json({ message: "memoryType, key, title required" });
@@ -25156,9 +25156,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Learning Events — POST (record)
-  app.post("/api/workforce/learning-events", async (req, res) => {
+  app.post("/api/workforce/learning-events", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { agentId, workflowId, eventType, outcome, score, context } = req.body;
       if (!eventType) return res.status(400).json({ message: "eventType required" });
@@ -25174,9 +25174,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Learning Events — GET (list recent)
-  app.get("/api/workforce/learning-events", async (req, res) => {
+  app.get("/api/workforce/learning-events", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const { orgAiLearningEvents } = await import("@shared/schema");
       const { getPeriodStart } = await import("./workforce-attribution-engine");

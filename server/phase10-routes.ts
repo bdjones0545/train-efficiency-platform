@@ -18,6 +18,7 @@ import type { Express } from "express";
 import { db } from "./db";
 import { eq, and, desc, sql, gte } from "drizzle-orm";
 import { isAuthenticated } from "./replit_integrations/auth";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 
 // ─── Route registration ───────────────────────────────────────────────────────
 
@@ -443,9 +444,9 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Part 8: Developer Success Dashboard ──────────────────────────────────────
 
-  app.get("/api/developer/success", async (req, res) => {
+  app.get("/api/developer/success", isAuthenticated, async (req, res) => {
     try {
-      const orgId = (req as any).user?.orgId ?? req.query.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { developerAccounts, agentTemplates, agentReviews, royaltyDistributions, orgInstalledAgents, agentReputation } = await import("@shared/schema");
