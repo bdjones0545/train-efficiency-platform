@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { buildPublicAppUrl } from "./utils/url";
 import { publicRateLimiter } from "./middleware/public-rate-limiter";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
+import { requireRole, getUserRole } from "./lib/require-role";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
 import { hashAuthToken } from "./lib/auth-token";
@@ -100,11 +101,6 @@ async function getOwnerUserId(): Promise<string | null> {
   return user?.id || null;
 }
 
-async function getUserRole(userId: string): Promise<string> {
-  const profile = await storage.getUserProfile(userId);
-  return profile?.role || "CLIENT";
-}
-
 async function getCoachId(userId: string): Promise<string | null> {
   const profile = await storage.getCoachProfileByUserId(userId);
   return profile?.id || null;
@@ -157,16 +153,6 @@ async function getAdminAuthContext(req: any): Promise<{
   } catch {
     return null;
   }
-}
-
-function requireRole(...roles: string[]) {
-  return async (req: any, res: any, next: any) => {
-    const userId = req.user?.claims?.sub ?? req.user?.id;
-    if (!userId) return res.status(401).json({ message: "Unauthorized" });
-    const role = await getUserRole(userId);
-    if (!roles.includes(role)) return res.status(403).json({ message: "Forbidden" });
-    next();
-  };
 }
 
 function generateTimeSlots(
