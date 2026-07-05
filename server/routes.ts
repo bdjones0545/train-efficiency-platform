@@ -10506,8 +10506,8 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!user) return res.status(404).json({ message: "User not found" });
 
       const profile = await storage.getUserProfile(userId);
-      // Accept explicit orgId from query param; fall back to profile's org
-      const orgId = (req.query.orgId as string | undefined) || profile?.organizationId || null;
+      // Org scope from the authenticated user's profile only — never client-supplied.
+      const orgId = profile?.organizationId || null;
       console.log(`[Preferences] orgId=${orgId ?? 'none'}`);
 
       const token = await storage.ensureUnsubscribeToken(userId);
@@ -28614,7 +28614,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/command-center/summary
   app.get("/api/command-center/summary", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const data = await getCommandCenterSummary(orgId);
       res.json(data);
     } catch (e: any) { res.status(500).json({ message: "Failed to load command center summary" }); }
@@ -28622,7 +28622,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/command-center/briefing
   app.get("/api/command-center/briefing", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const data = await getCommandCenterBriefing(orgId);
       res.json(data);
     } catch (e: any) { res.status(500).json({ message: "Failed to load briefing" }); }
@@ -28630,7 +28630,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/command-center/action-queue
   app.get("/api/command-center/action-queue", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const data = await getCommandCenterActionQueue(orgId);
       res.json(data);
     } catch (e: any) { res.status(500).json({ message: "Failed to load action queue" }); }
@@ -28638,7 +28638,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/command-center/notifications
   app.get("/api/command-center/notifications", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const data = await getCommandCenterNotifications(orgId);
       res.json(data);
     } catch (e: any) { res.status(500).json({ message: "Failed to load notifications" }); }
@@ -28646,7 +28646,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/command-center/approvals
   app.get("/api/command-center/approvals", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const data = await getCommandCenterApprovals(orgId);
       res.json(data);
     } catch (e: any) { res.status(500).json({ message: "Failed to load approvals" }); }
@@ -28654,7 +28654,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/command-center/system-health
   app.get("/api/command-center/system-health", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const now = new Date();
 
       const { orgAiGovernanceSettings: govTable, orgAutomationSettings: autoTable } = await import("@shared/schema");
@@ -28904,7 +28904,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // GET /api/customer-success/activation
   app.get("/api/customer-success/activation", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = req.user?.orgId as string;
+      const orgId = await resolveOrgIdOrThrow(req);
       const steps = [
         { id: "workforce",   label: "Workforce Configured",       completed: true,  completedAt: new Date(Date.now() - 60 * 86400000).toISOString() },
         { id: "integrations",label: "Integrations Connected",     completed: true,  completedAt: new Date(Date.now() - 55 * 86400000).toISOString() },
