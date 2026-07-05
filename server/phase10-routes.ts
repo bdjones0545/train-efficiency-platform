@@ -15,6 +15,7 @@
  */
 
 import type { Express } from "express";
+import { requireRole } from "./lib/require-role";
 import { db } from "./db";
 import { eq, and, desc, sql, gte } from "drizzle-orm";
 import { isAuthenticated } from "./replit_integrations/auth";
@@ -26,7 +27,7 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Part 1: Security Audit ──────────────────────────────────────────────────
 
-  app.get("/api/security/audit", async (req, res) => {
+  app.get("/api/security/audit", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       // Static manifest of Phase 4-9 routes and their auth status
       const routeAudit = [
@@ -116,7 +117,7 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Part 2: Zod Validation Coverage ─────────────────────────────────────────
 
-  app.get("/api/security/validation-coverage", async (req, res) => {
+  app.get("/api/security/validation-coverage", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const validationInventory = [
         // Phase 9 — added in this phase
@@ -158,7 +159,7 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Part 3: Query Performance & Pagination Audit ─────────────────────────────
 
-  app.get("/api/performance/query-audit", async (req, res) => {
+  app.get("/api/performance/query-audit", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const endpointAudit = [
         { endpoint: "GET /api/marketplace/agents",          hasPagination: false, estimatedRowCount: "9-1000",    priority: "medium" },
@@ -210,7 +211,7 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Part 5: Load Test Estimates ──────────────────────────────────────────────
 
-  app.get("/api/performance/load-test", async (req, res) => {
+  app.get("/api/performance/load-test", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       // Query actual data volumes to inform estimates
       const { agentTemplates, orgInstalledAgents, agentReviews, orgAiExecutionPlans } = await import("@shared/schema");

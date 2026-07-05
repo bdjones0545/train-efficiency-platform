@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { requireRole } from "./lib/require-role";
+import { isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -596,7 +598,7 @@ export async function registerReliabilityRoutes(app: Express) {
   }, 8000);
 
   // POST /api/reliability/query-failures — from QueryCache onError
-  app.post("/api/reliability/query-failures", async (req, res) => {
+  app.post("/api/reliability/query-failures", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { route, queryKey, statusCode, message } = req.body ?? {};
       await persistQueryFailure({ route, queryKey, statusCode, message });
@@ -605,7 +607,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // GET /api/reliability/dashboard — aggregated stats
-  app.get("/api/reliability/dashboard", async (_req, res) => {
+  app.get("/api/reliability/dashboard", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const [ceHourly, qfHourly, hcSummary, hcLatest, activeAlerts, logsByService,
              recentClientErrors, recentQueryFailures, topFailingRoutes, dlq,
@@ -695,7 +697,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // GET /api/reliability/slos
-  app.get("/api/reliability/slos", async (_req, res) => {
+  app.get("/api/reliability/slos", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const slos = await calculateSLOs();
       res.json(slos);
@@ -705,7 +707,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // GET /api/reliability/health-checks
-  app.get("/api/reliability/health-checks", async (_req, res) => {
+  app.get("/api/reliability/health-checks", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const results = await db.execute(sql`
         SELECT id, created_at, check_name, status, response_time_ms, details
@@ -718,7 +720,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // GET /api/reliability/alerts
-  app.get("/api/reliability/alerts", async (_req, res) => {
+  app.get("/api/reliability/alerts", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const alerts = await db.execute(sql`
         SELECT id, created_at, severity, title, description, resolved_at
@@ -731,7 +733,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // POST /api/reliability/alerts/:id/resolve
-  app.post("/api/reliability/alerts/:id/resolve", async (req, res) => {
+  app.post("/api/reliability/alerts/:id/resolve", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       await db.execute(sql`UPDATE system_alerts SET resolved_at = NOW() WHERE id = ${req.params.id}`);
       res.json({ ok: true });
@@ -741,7 +743,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // POST /api/reliability/run-health-checks
-  app.post("/api/reliability/run-health-checks", async (_req, res) => {
+  app.post("/api/reliability/run-health-checks", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const results = await runHealthChecks();
       res.json({ results });
@@ -751,7 +753,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // POST /api/reliability/run-alert-engine — manual trigger for testing
-  app.post("/api/reliability/run-alert-engine", async (_req, res) => {
+  app.post("/api/reliability/run-alert-engine", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       await runAlertEngine();
       const alertsRes = await db.execute(sql`
@@ -768,7 +770,7 @@ export async function registerReliabilityRoutes(app: Express) {
 
   // POST /api/reliability/resolve-all-alerts — bulk-resolve all unresolved alerts
   // Useful for clearing a production backlog that accumulated before the 48h auto-resolve was in place.
-  app.post("/api/reliability/resolve-all-alerts", async (_req, res) => {
+  app.post("/api/reliability/resolve-all-alerts", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const result = await db.execute(sql`
         UPDATE system_alerts SET resolved_at = NOW()
@@ -782,7 +784,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // POST /api/reliability/run-retention — manual trigger for testing
-  app.post("/api/reliability/run-retention", async (_req, res) => {
+  app.post("/api/reliability/run-retention", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       await runLogRetention();
       res.json({ ok: true });
@@ -792,7 +794,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // GET /api/reliability/system-logs
-  app.get("/api/reliability/system-logs", async (req, res) => {
+  app.get("/api/reliability/system-logs", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const level   = req.query.level   as string | undefined;
       const service = req.query.service as string | undefined;
@@ -835,7 +837,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // GET /api/reliability/executive-summary — compact card data for CEO / BCC views
-  app.get("/api/reliability/executive-summary", async (_req, res) => {
+  app.get("/api/reliability/executive-summary", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       // Auto-resolve any alert that is older than 48 hours and still unresolved.
       // This prevents stale alerts from perpetually marking the system as critical.
@@ -919,7 +921,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // GET /api/reliability/probe-latency — p50/p95/max for HTTP probes over 24h
-  app.get("/api/reliability/probe-latency", async (_req, res) => {
+  app.get("/api/reliability/probe-latency", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const r = await db.execute(sql`
         SELECT
@@ -943,7 +945,7 @@ export async function registerReliabilityRoutes(app: Express) {
   });
 
   // GET /api/reliability/retention-history — last 10 cleanup runs
-  app.get("/api/reliability/retention-history", async (_req, res) => {
+  app.get("/api/reliability/retention-history", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const r = await db.execute(sql`
         SELECT id, created_at, message, metadata
