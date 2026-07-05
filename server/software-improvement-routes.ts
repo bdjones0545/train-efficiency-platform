@@ -12,6 +12,7 @@
  */
 
 import { Express } from "express";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { eq, and, desc, sql } from "drizzle-orm";
 import { softwareImprovementTasks, agentOperatingTimeline } from "@shared/schema";
@@ -24,8 +25,11 @@ import { requestComposioAction } from "./composio-action-adapter";
 import { executeComposioAction } from "./services/composio-service";
 import { emitComposioHermesEvent } from "./composio-hermes-emitter";
 
-function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? req.query.orgId ?? null;
+async function getOrgId(req: any): Promise<string> {
+  // Trusted server-side org resolution ONLY — never from client query/body/params.
+  // Throws OrgResolutionError (converted to 403 by orgErrorMiddleware) when the
+  // org cannot be determined from the authenticated session — fail closed.
+  return await resolveOrgIdOrThrow(req);
 }
 
 // ─── GitHub Issue column bootstrap ───────────────────────────────────────────
@@ -117,7 +121,7 @@ export async function registerSoftwareImprovementRoutes(
   // ─── GET /api/software-improvement/tasks ────────────────────────────────────
   app.get("/api/software-improvement/tasks", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { severity, status, sourceAgent, limit = "50", offset = "0" } = req.query as Record<string, string>;
@@ -162,7 +166,7 @@ export async function registerSoftwareImprovementRoutes(
   // ─── GET /api/software-improvement/tasks/:id ────────────────────────────────
   app.get("/api/software-improvement/tasks/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const [task] = await db
@@ -187,7 +191,7 @@ export async function registerSoftwareImprovementRoutes(
   // ─── POST /api/software-improvement/tasks ───────────────────────────────────
   app.post("/api/software-improvement/tasks", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const {
@@ -246,7 +250,7 @@ export async function registerSoftwareImprovementRoutes(
   // ─── PATCH /api/software-improvement/tasks/:id ──────────────────────────────
   app.patch("/api/software-improvement/tasks/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const allowed = [
@@ -283,7 +287,7 @@ export async function registerSoftwareImprovementRoutes(
   // ─── POST /api/software-improvement/tasks/:id/prepare-codex ────────────────
   app.post("/api/software-improvement/tasks/:id/prepare-codex", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const [existing] = await db
@@ -330,7 +334,7 @@ export async function registerSoftwareImprovementRoutes(
   // ─── POST /api/software-improvement/tasks/:id/mark-sent ─────────────────────
   app.post("/api/software-improvement/tasks/:id/mark-sent", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { codexBranch } = req.body;
@@ -360,7 +364,7 @@ export async function registerSoftwareImprovementRoutes(
   // ─── POST /api/software-improvement/tasks/:id/mark-review ───────────────────
   app.post("/api/software-improvement/tasks/:id/mark-review", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { codexPrUrl } = req.body;
@@ -390,7 +394,7 @@ export async function registerSoftwareImprovementRoutes(
   // ─── POST /api/software-improvement/tasks/:id/archive ───────────────────────
   app.post("/api/software-improvement/tasks/:id/archive", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const [updated] = await db
@@ -414,7 +418,7 @@ export async function registerSoftwareImprovementRoutes(
   // ─── POST /api/software-improvement/run ─────────────────────────────────────
   app.post("/api/software-improvement/run", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       if (!canRunSoftwareImprovementAgent(orgId)) {
@@ -443,7 +447,7 @@ export async function registerSoftwareImprovementRoutes(
     requireRole("COACH", "ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
+        const orgId = await getOrgId(req);
         if (!orgId) return res.status(400).json({ message: "orgId required" });
 
         const [task] = await db
@@ -472,7 +476,7 @@ export async function registerSoftwareImprovementRoutes(
     requireRole("COACH", "ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
+        const orgId = await getOrgId(req);
         if (!orgId) return res.status(400).json({ message: "orgId required" });
 
         const [task] = await db
@@ -619,7 +623,7 @@ export async function registerSoftwareImprovementRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        const orgId = getOrgId(req);
+        const orgId = await getOrgId(req);
         if (!orgId) return res.status(400).json({ message: "orgId required" });
 
         const [task] = await db

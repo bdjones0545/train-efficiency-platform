@@ -12,6 +12,7 @@
  */
 
 import type { Express, Request, Response } from "express";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import {
@@ -24,17 +25,12 @@ import {
   getUnifiedActionQueue,
   getActionContext,
 } from "./services/unified-action-queue";
-import { resolveOrgSession } from "./org-auth";
 
-async function getOrgId(req: any): Promise<string | null> {
-  if (req.query?.orgId) return req.query.orgId as string;
-  try {
-    const session = await resolveOrgSession(req);
-    if (session?.orgId) return session.orgId;
-  } catch {
-    // fall through
-  }
-  return req.user?.orgId ?? null;
+async function getOrgId(req: any): Promise<string> {
+  // Trusted server-side org resolution ONLY — never from client query/body/params.
+  // Throws OrgResolutionError (converted to 403 by orgErrorMiddleware) when the
+  // org cannot be determined from the authenticated session — fail closed.
+  return await resolveOrgIdOrThrow(req);
 }
 
 function requireAdmin(req: Request, res: Response): boolean {
