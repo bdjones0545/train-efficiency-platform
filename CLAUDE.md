@@ -1,7 +1,7 @@
 ---
 Document Type: Architecture
 Verification Status: Architecture Specification
-Last Reviewed: 2026-06-28
+Last Reviewed: 2026-06-29
 Owner: Engineering
 ---
 
@@ -229,6 +229,10 @@ Examples:
 - Utility models
 
 Anything duplicated between client and server should be evaluated for inclusion here.
+
+The Drizzle database schema is defined here in `shared/schema.ts` (which re-exports the
+auth and chat sub-models under `shared/models/`), not under `server/`. See
+`docs/schema.md`.
 
 ### Request Lifecycle
 
@@ -472,6 +476,9 @@ Responsible for:
 - Payment history
 
 Financial data must always prioritize correctness over convenience.
+
+`server/financial-metrics.ts` is the single source of truth for all financial metrics;
+callers must not compute revenue independently. See `docs/core-services.md`.
 
 ### Communications
 
@@ -891,6 +898,10 @@ Frontend permission checks exist only to improve user experience.
 
 The backend remains the authoritative enforcement layer.
 
+Authorization guards (`privilegedOnly`, role checks) read `role` and `organization_id`
+from the `user_profiles` table, not from `users` (which has no `organization_id`
+column). See `docs/schema.md`.
+
 ### Administrative Operations
 
 Administrative endpoints should require explicit verification.
@@ -941,6 +952,15 @@ Protected routes should generally follow this lifecycle:
 
 Maintaining a consistent request lifecycle improves maintainability and reduces
 authorization bugs.
+
+In source, that lifecycle is implemented as the chain
+`isAuthenticated → requireRole → resolveOrgIdOrThrow → zod validation → handler`, with
+`server/lib/resolve-org-id.ts` as the canonical organization resolver. De-facto API
+conventions: routes are served flat under `/api/` (no version segment), the standard
+error body is `{ message }`, list endpoints use limit/offset pagination with caps, and
+webhooks verify the payload then return a fast `2xx` before processing. Server-Sent
+Events use `text/event-stream` framing terminated by `[DONE]`. Full detail lives in
+`docs/api-conventions.md`.
 
 ### Background Jobs
 
@@ -1363,6 +1383,17 @@ Database migrations should be:
 Never assume a migration will execute against only one environment.
 
 Production safety should always take priority.
+
+**Current mechanism.** Schema changes are applied with `drizzle-kit push`
+(`npm run db:push`) against `shared/schema.ts`. There is currently no committed
+migration history, and `push` can be destructive, so every schema change requires diff
+review and a backup before it is applied. See `docs/runbooks.md`.
+
+**Tables outside the Drizzle graph.** Roughly twenty tables are created at runtime via
+raw `db.execute(sql\`...\`)` in service files (for example `risk_signals`,
+`hermes_auto_learnings`, `apex_recommendations`, `pulse_recommendations`). These are
+invisible to Drizzle migrations and self-provision on startup. See `docs/schema.md`
+(Appendix A).
 
 ### Performance
 
@@ -1892,6 +1923,10 @@ Examples may include:
 - Incremental migrations
 - Transitional APIs
 - Temporary feature flags
+- Duplicated authorization helpers (`requireRole`, per-file `requireAdmin`,
+  `privilegedOnly`, `requireCoach`/`requireOrgUser`) with inconsistent error bodies —
+  server-side enforcement holds, but the mechanism is not yet centralized
+  (see `docs/api-conventions.md`)
 
 These should be improved incrementally rather than rewritten wholesale.
 
@@ -2476,6 +2511,10 @@ Scheduled jobs and automation should remain:
 
 Background execution should never assume interactive user context.
 
+Crons currently start in-process via `setInterval` at server boot, so multi-instance
+deployment requires DB-lock-guarded jobs to avoid duplicate execution. See
+`docs/runbooks.md`.
+
 ### Shared Infrastructure
 
 Exercise caution when modifying:
@@ -2791,6 +2830,10 @@ These conventions are verified against source and must be preserved by new agent
 - **`requireRole` is not exported.** It is defined only in `server/routes.ts`; external
   route files (e.g. `apex-agent-routes.ts`) must define a local `requireAdmin` helper
   rather than importing it.
+- **Layered send-guard chain.** Automated outbound email passes through a layered guard
+  chain (`autonomy-policy-engine` → `send-guard-service` → `agentmail-send-guard` →
+  `guarded-outbound-email`) before delivery; new send paths must route through it. See
+  `docs/core-services.md`.
 
 ### Executive Agent
 
@@ -2930,6 +2973,12 @@ Responsibilities may include:
 - Organizational messaging
 
 Communication should always remain organization-aware.
+
+The `server/email-agent/` directory is a twelve-module intelligence layer dedicated to
+team-training prospect outreach, distinct from general agent messaging. Related B2B
+acquisition work follows a three-department opportunity-agent pattern — Hiring,
+Sponsorship, and Partnership — implemented under `server/services/`. See
+`docs/core-services.md` and `docs/agent-catalog.md`.
 
 ### Hermes Knowledge System
 

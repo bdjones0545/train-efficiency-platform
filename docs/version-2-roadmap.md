@@ -47,6 +47,54 @@ activity requiring live-environment confirmation.
 
 ---
 
+## Reconciliation Log (Completed 2026-06-29)
+
+The continuous-reconciliation process is now closed out. Reconciliations from
+`agent-catalog.md` and `integrations.md` were applied to `CLAUDE.md` during Version 2
+generation. The remaining four documents' Recommended-Updates were applied in a final
+reconciliation pass on 2026-06-29 — limited to recommendations that are architectural in
+altitude, directly traceable to a verified implementation document, and have a natural
+home in `CLAUDE.md`'s existing structure.
+
+### Applied to `CLAUDE.md`
+
+| CLAUDE.md section | Change | Source document |
+|---|---|---|
+| Repository Structure → `shared/` | Drizzle schema lives in `shared/schema.ts` (re-exporting `shared/models/`), not under `server/` | `schema.md` |
+| Database Architecture → Migrations | Added schema-change mechanism (`drizzle-kit push`, no committed history, can be destructive) and a raw-SQL "tables outside the Drizzle graph" note | `runbooks.md`, `schema.md` |
+| Major Platform Domains → Billing & Commerce | `server/financial-metrics.ts` is the single source of truth for financial metrics | `core-services.md` |
+| Authentication… → Authorization | Auth guards read `role`/`organization_id` from `user_profiles`, not `users` | `schema.md` |
+| Authentication… → Route Design | Canonical chain `isAuthenticated → requireRole → resolveOrgIdOrThrow → zod → handler` + de-facto API conventions | `api-conventions.md` |
+| Known Technical Debt | Acknowledged duplicated authorization helpers (mechanism not yet centralized) | `api-conventions.md` |
+| Critical Systems → Background Jobs | In-process `setInterval` crons; multi-instance requires DB-lock-guarded jobs | `runbooks.md` |
+| Agent Implementation Conventions | Added the layered send-guard chain convention | `core-services.md` |
+| AI Agent Catalog → AgentMail | `server/email-agent/` 12-module outreach layer + 3-department opportunity-agent pattern | `core-services.md`, `agent-catalog.md` |
+
+`CLAUDE.md` frontmatter `Last Reviewed` was bumped to 2026-06-29. `Verification Status`
+remains `Architecture Specification` — only targeted facts were reconciled; the document
+as a whole is still an architecture specification.
+
+### Deliberately not applied (with reasons)
+
+- **`schema.md` schema-path correction** — moot: `CLAUDE.md` never referenced
+  `server/db/schema.ts`; the correct path is now stated positively.
+- **`schema.md` `orgAiRisks` → `risk_signals`** — moot: no `orgAiRisks` reference
+  existed; `risk_signals` is now named in the Migrations note.
+- **`schema.md` `booking_status` uppercase enum** — below `CLAUDE.md`'s architectural
+  altitude; remains documented in `schema.md`.
+- **`core-services.md` `hermes_learnings` → `hermes_auto_learnings`** — no stale
+  reference existed to correct; the correct name is now used.
+- **`core-services.md` add `decision_journal_entries` / `software_kb_entries` to
+  Appendix A** — targets `docs/schema.md`, not `CLAUDE.md`; tracked as a Version 3
+  `schema.md` follow-up.
+- **`runbooks.md` canonical env-var/secret contract** — content belongs in
+  `runbooks.md`; `CLAUDE.md` now points there rather than duplicating the list.
+
+With this pass, **no Recommended-CLAUDE.md-Updates items remain unresolved** — every
+recommendation is either applied or formally closed with a documented reason.
+
+---
+
 ## Objective
 
 Version 2 transitions the documentation system from architectural specification to
