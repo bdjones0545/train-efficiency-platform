@@ -22,6 +22,7 @@ import {
   attentionItems,
 } from "@shared/schema";
 import { eq, and, desc, inArray, gt, lt, sql } from "drizzle-orm";
+import { hashAuthToken } from "./lib/auth-token";
 import { triggerNotificationEvent } from "./services/notification-automation";
 import { createActivityEvent } from "./services/activity-timeline";
 import { storage } from "./storage";
@@ -133,7 +134,7 @@ async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
     const bearerToken = authHeader.slice(7);
     try {
       const tokenResult = await db.execute(
-        sql`SELECT user_id FROM auth_tokens WHERE token = ${bearerToken} AND expires_at > NOW() LIMIT 1`
+        sql`SELECT user_id FROM auth_tokens WHERE token = ${hashAuthToken(bearerToken)} AND expires_at > NOW() LIMIT 1`
       );
       if (tokenResult.rows.length) {
         const mainUserId = (tokenResult.rows[0] as any).user_id as string;
@@ -178,7 +179,7 @@ async function requireOrgAuth(req: any, res: Response, next: NextFunction) {
 
   // ── Path 3: Main-app Bearer token fallback (legacy / API clients) ────────
   const mainAppResult = await db.execute(
-    sql`SELECT user_id FROM auth_tokens WHERE token = ${token} AND expires_at > NOW() LIMIT 1`
+    sql`SELECT user_id FROM auth_tokens WHERE token = ${hashAuthToken(token)} AND expires_at > NOW() LIMIT 1`
   );
   if (!mainAppResult.rows.length) {
     return res.status(401).json({ message: "Session expired. Please log in again." });
@@ -359,7 +360,7 @@ export function registerPrTrackerRoutes(app: Express) {
         try {
           const bearerToken = authHeader.slice(7);
           const tokenResult = await db.execute(
-            sql`SELECT user_id FROM auth_tokens WHERE token = ${bearerToken} AND expires_at > NOW() LIMIT 1`
+            sql`SELECT user_id FROM auth_tokens WHERE token = ${hashAuthToken(bearerToken)} AND expires_at > NOW() LIMIT 1`
           );
           if (tokenResult.rows.length) {
             const mainUserId = (tokenResult.rows[0] as any).user_id as string;

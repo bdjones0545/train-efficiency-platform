@@ -9,9 +9,13 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { validateEmailProvider } from "./email";
 import { orgErrorMiddleware } from "./lib/resolve-org-id";
 import { runStartupOrgAudit } from "./lib/startup-org-audit";
+import { assertRequiredSecrets } from "./lib/secrets";
 
 const app = express();
 const httpServer = createServer(app);
+
+// Fail closed in production if required secrets are missing or misconfigured.
+assertRequiredSecrets();
 
 declare module "http" {
   interface IncomingMessage {

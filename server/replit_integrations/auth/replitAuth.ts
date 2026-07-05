@@ -7,6 +7,8 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { authStorage } from "./storage";
+import { hashAuthToken } from "../../lib/auth-token";
+import { getSessionSecret } from "../../lib/secrets";
 
 const getOidcConfig = memoize(
   async () => {
@@ -28,7 +30,7 @@ export function getSession() {
     tableName: "sessions",
   });
   return session({
-    secret: process.env.SESSION_SECRET!,
+    secret: getSessionSecret(),
     store: sessionStore,
     resave: false,
     saveUninitialized: false,
@@ -143,15 +145,16 @@ const TOKEN_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 export async function createAuthToken(userId: string): Promise<string> {
   const token = crypto.randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + TOKEN_TTL_MS);
+  // Store only the hash; the raw token is returned to the client and never persisted.
   await db.execute(sql`
     INSERT INTO auth_tokens (token, user_id, expires_at)
-    VALUES (${token}, ${userId}, ${expiresAt})
+    VALUES (${hashAuthToken(token)}, ${userId}, ${expiresAt})
   `);
   return token;
 }
 
 export async function deleteAuthToken(token: string): Promise<void> {
-  await db.execute(sql`DELETE FROM auth_tokens WHERE token = ${token}`);
+  await db.execute(sql`DELETE FROM auth_tokens WHERE token = ${hashAuthToken(token)}`);
 }
 
 export async function deleteAllUserAuthTokens(userId: string): Promise<void> {
@@ -161,7 +164,7 @@ export async function deleteAllUserAuthTokens(userId: string): Promise<void> {
 async function getUserIdFromToken(token: string): Promise<string | null> {
   const result = await db.execute(sql`
     SELECT user_id FROM auth_tokens
-    WHERE token = ${token} AND expires_at > NOW()
+    WHERE token = ${hashAuthToken(token)} AND expires_at > NOW()
   `);
   if (result.rows.length === 0) return null;
   return (result.rows[0] as any).user_id;

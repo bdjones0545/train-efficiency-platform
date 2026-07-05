@@ -8,6 +8,7 @@ import {
   prLiftEntries, prLiftTypes,
 } from "@shared/schema";
 import { eq, and, desc, asc, gte, sql as drizzleSql } from "drizzle-orm";
+import { hashAuthToken } from "./lib/auth-token";
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -29,7 +30,7 @@ async function resolveCoachAuth(req: any, res: any, next: any) {
     const authHeader = req.headers.authorization as string | undefined;
     if (authHeader?.startsWith("Bearer ")) {
       try {
-        const result = await db.execute(drizzleSql`SELECT user_id FROM auth_tokens WHERE token = ${authHeader.slice(7)} AND expires_at > NOW() LIMIT 1`);
+        const result = await db.execute(drizzleSql`SELECT user_id FROM auth_tokens WHERE token = ${hashAuthToken(authHeader.slice(7))} AND expires_at > NOW() LIMIT 1`);
         if (result.rows.length > 0) {
           const uid = (result.rows[0] as any).user_id as string;
           const [coach] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, uid)).limit(1);

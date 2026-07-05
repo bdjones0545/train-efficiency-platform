@@ -7,6 +7,7 @@ import {
   coachProfiles,
 } from "@shared/schema";
 import { eq, and, gt, sql as drizzleSql } from "drizzle-orm";
+import { hashAuthToken } from "./lib/auth-token";
 
 export interface OrgAuthContext {
   userId: string;
@@ -80,7 +81,7 @@ export async function resolveOrgSession(req: any): Promise<OrgAuthContext | null
     try {
       const bearerToken = authHeader.slice(7);
       const tokenResult = await db.execute(
-        drizzleSql`SELECT user_id FROM auth_tokens WHERE token = ${bearerToken} AND expires_at > NOW() LIMIT 1`
+        drizzleSql`SELECT user_id FROM auth_tokens WHERE token = ${hashAuthToken(bearerToken)} AND expires_at > NOW() LIMIT 1`
       );
       const rows = (tokenResult as any).rows ?? [];
       if (rows.length) {
