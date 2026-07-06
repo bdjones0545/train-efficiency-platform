@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -126,7 +128,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
   });
 
   // ─── Activation Queue ──────────────────────────────────────────────────────
-  app.get("/api/platform/activation-queue", async (_req, res) => {
+  app.get("/api/platform/activation-queue", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const participants = rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at ASC`));
       const feedback     = rows(await db.execute(sql`SELECT participant_id FROM participant_feedback`));
@@ -183,7 +185,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
   });
 
   // ─── First Revenue Countdown ───────────────────────────────────────────────
-  app.get("/api/platform/first-revenue-countdown", async (_req, res) => {
+  app.get("/api/platform/first-revenue-countdown", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const ra = row0(await db.execute(sql`
         SELECT
@@ -292,7 +294,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
   });
 
   // ─── Founder Actions ───────────────────────────────────────────────────────
-  app.get("/api/platform/founder-actions", async (_req, res) => {
+  app.get("/api/platform/founder-actions", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const participants = rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at ASC`));
       const playbooks    = rows(await db.execute(sql`SELECT * FROM first10_playbooks ORDER BY created_at DESC`));
@@ -378,7 +380,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
   });
 
   // ─── Part 7: Human Validation Scores (per participant) ────────────────────
-  app.get("/api/platform/human-validation-scores", async (_req, res) => {
+  app.get("/api/platform/human-validation-scores", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const participants = rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at ASC`));
       const allFb        = rows(await db.execute(sql`SELECT * FROM participant_feedback`));
@@ -427,7 +429,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
   });
 
   // ─── Part 9+12: Phase Y Scorecard (9 success thresholds + 4-tier verdict) ──
-  app.get("/api/platform/phase-y-scorecard", async (_req, res) => {
+  app.get("/api/platform/phase-y-scorecard", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const participants = rows(await db.execute(sql`SELECT * FROM validation_participants`));
       const allFb        = rows(await db.execute(sql`SELECT * FROM participant_feedback`));

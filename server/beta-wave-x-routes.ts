@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -96,7 +98,7 @@ export async function registerBetaWaveXRoutes(app: Express) {
   });
 
   // ─── Developer Friction Report ─────────────────────────────────────────────
-  app.get("/api/platform/developer-friction-report", async (_req, res) => {
+  app.get("/api/platform/developer-friction-report", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const devs = rows(await db.execute(sql`
         SELECT vp.*, pf.confused_by, pf.expected, pf.loved, pf.almost_quit,
@@ -157,7 +159,7 @@ export async function registerBetaWaveXRoutes(app: Express) {
   });
 
   // ─── Organization Friction Report ──────────────────────────────────────────
-  app.get("/api/platform/org-friction-report", async (_req, res) => {
+  app.get("/api/platform/org-friction-report", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const orgs = rows(await db.execute(sql`
         SELECT vp.*, pf.confused_by, pf.expected, pf.loved, pf.almost_quit,
@@ -215,7 +217,7 @@ export async function registerBetaWaveXRoutes(app: Express) {
   });
 
   // ─── Human Validation Report ───────────────────────────────────────────────
-  app.get("/api/platform/human-validation-report", async (_req, res) => {
+  app.get("/api/platform/human-validation-report", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const allPart = rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at ASC`));
       const allFb   = rows(await db.execute(sql`
@@ -410,7 +412,7 @@ export async function registerBetaWaveXRoutes(app: Express) {
   });
 
   // ─── Wave X Scorecard ─────────────────────────────────────────────────────
-  app.get("/api/platform/wave-x-scorecard", async (_req, res) => {
+  app.get("/api/platform/wave-x-scorecard", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const allPart = rows(await db.execute(sql`SELECT * FROM validation_participants`));
       const devFb   = rows(await db.execute(sql`

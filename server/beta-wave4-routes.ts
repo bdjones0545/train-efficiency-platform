@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -16,7 +18,7 @@ function pct(a: number, b: number): number { return b > 0 ? Math.round((a / b) *
 export async function registerBetaWave4Routes(app: Express) {
 
   // ─── PART 1: Ecosystem Outreach data ──────────────────────────────────────
-  app.get("/api/platform/ecosystem-outreach", async (_req, res) => {
+  app.get("/api/platform/ecosystem-outreach", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -170,7 +172,7 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 5: Marketplace Revenue ──────────────────────────────────────────
-  app.get("/api/platform/marketplace-revenue", async (_req, res) => {
+  app.get("/api/platform/marketplace-revenue", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const totals = row0(await db.execute(sql`
         SELECT
@@ -210,7 +212,7 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 6: Install Activation Engine ────────────────────────────────────
-  app.get("/api/platform/install-activation", async (_req, res) => {
+  app.get("/api/platform/install-activation", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const steps = rows(await db.execute(sql`
         SELECT
@@ -261,7 +263,7 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 7: Friction Analyzer ────────────────────────────────────────────
-  app.get("/api/platform/friction", async (_req, res) => {
+  app.get("/api/platform/friction", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const devDropoff = rows(await db.execute(sql`
         SELECT
@@ -312,7 +314,7 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 8: Referral Growth Engine ───────────────────────────────────────
-  app.get("/api/platform/referral-growth", async (_req, res) => {
+  app.get("/api/platform/referral-growth", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const dr = row0(await db.execute(sql`
         SELECT
@@ -360,7 +362,7 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 10: Marketplace Transactions ────────────────────────────────────
-  app.get("/api/platform/transactions", async (_req, res) => {
+  app.get("/api/platform/transactions", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const installs = rows(await db.execute(sql`
         SELECT oia.id, oia.agent_id, oia.org_id, oia.status, oia.created_at, at2.agent_name
@@ -407,7 +409,7 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 11: Participant Success ─────────────────────────────────────────
-  app.get("/api/platform/participant-success", async (_req, res) => {
+  app.get("/api/platform/participant-success", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const valueOrgs = rows(await db.execute(sql`
         SELECT oos.org_id, COUNT(DISTINCT oia.id) AS installs, COUNT(DISTINCT ar.id) AS reviews
@@ -453,7 +455,7 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 12: Activation Score ────────────────────────────────────────────
-  app.get("/api/platform/activation-score", async (_req, res) => {
+  app.get("/api/platform/activation-score", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -503,7 +505,7 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 13: Marketplace Validation ──────────────────────────────────────
-  app.get("/api/platform/marketplace-validation", async (_req, res) => {
+  app.get("/api/platform/marketplace-validation", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -540,7 +542,7 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 14: Wave 4 Scorecard ────────────────────────────────────────────
-  app.get("/api/platform/wave4-scorecard", async (_req, res) => {
+  app.get("/api/platform/wave4-scorecard", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT

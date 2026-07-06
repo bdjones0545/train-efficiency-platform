@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -102,7 +104,7 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 5: Developer Success Tracking ───────────────────────────────────
-  app.get("/api/platform/developer-success", async (_req, res) => {
+  app.get("/api/platform/developer-success", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const pipeline = rows(await db.execute(sql`
         SELECT dp.*, dra.lifetime_earned,
@@ -159,7 +161,7 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 6: Adoption Audit (real vs seeded) ──────────────────────────────
-  app.get("/api/platform/adoption-audit", async (_req, res) => {
+  app.get("/api/platform/adoption-audit", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -217,7 +219,7 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 7: Royalty Readiness ─────────────────────────────────────────────
-  app.get("/api/platform/royalty-readiness", async (_req, res) => {
+  app.get("/api/platform/royalty-readiness", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -258,7 +260,7 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 9: First Success Stories ────────────────────────────────────────
-  app.get("/api/platform/first-success-stories", async (_req, res) => {
+  app.get("/api/platform/first-success-stories", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const candidates = rows(await db.execute(sql`
         SELECT
@@ -310,7 +312,7 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 10: Founder KPIs ─────────────────────────────────────────────────
-  app.get("/api/platform/founder-kpis", async (_req, res) => {
+  app.get("/api/platform/founder-kpis", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -356,7 +358,7 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 11: Marketplace Readiness ───────────────────────────────────────
-  app.get("/api/platform/readiness", async (_req, res) => {
+  app.get("/api/platform/readiness", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -403,7 +405,7 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 12: Wave 6 Scorecard ────────────────────────────────────────────
-  app.get("/api/platform/wave6-scorecard", async (_req, res) => {
+  app.get("/api/platform/wave6-scorecard", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -456,7 +458,7 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 13: Wave 6 Validation ───────────────────────────────────────────
-  app.get("/api/platform/wave6-validation", async (_req, res) => {
+  app.get("/api/platform/wave6-validation", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
