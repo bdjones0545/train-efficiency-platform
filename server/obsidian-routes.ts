@@ -27,7 +27,7 @@ export function registerObsidianRoutes(
 ) {
 
   // ─── GET /api/obsidian/status ─────────────────────────────────────────────
-  app.get("/api/obsidian/status", async (_req: any, res) => {
+  app.get("/api/obsidian/status", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
     try {
       const status = getObsidianStatus();
       if (status.configured) {
@@ -49,7 +49,7 @@ export function registerObsidianRoutes(
   });
 
   // ─── GET /api/obsidian/stats ──────────────────────────────────────────────
-  app.get("/api/obsidian/stats", async (_req: any, res) => {
+  app.get("/api/obsidian/stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
     try {
       const stats = await getVaultStats();
       res.json(stats);
@@ -59,13 +59,13 @@ export function registerObsidianRoutes(
   });
 
   // ─── GET /api/obsidian/folders ────────────────────────────────────────────
-  app.get("/api/obsidian/folders", async (_req: any, res) => {
+  app.get("/api/obsidian/folders", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
     res.json({ folders: Object.values(OBSIDIAN_FOLDERS) });
   });
 
   // ─── POST /api/obsidian/search ────────────────────────────────────────────
   // Supports optional typeFilter and dateFilter in body
-  app.post("/api/obsidian/search", async (req: any, res) => {
+  app.post("/api/obsidian/search", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     const { query, typeFilter, agentFilter, limit } = req.body || {};
     if (!query) return res.status(400).json({ message: "query required" });
     try {
@@ -95,7 +95,7 @@ export function registerObsidianRoutes(
   });
 
   // ─── GET /api/obsidian/read ───────────────────────────────────────────────
-  app.get("/api/obsidian/read", async (req: any, res) => {
+  app.get("/api/obsidian/read", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     const { folder, title } = req.query as { folder: string; title: string };
     if (!folder || !title) return res.status(400).json({ message: "folder and title required" });
     try {
@@ -108,7 +108,7 @@ export function registerObsidianRoutes(
   });
 
   // ─── GET /api/obsidian/vault ──────────────────────────────────────────────
-  app.get("/api/obsidian/vault", async (_req: any, res) => {
+  app.get("/api/obsidian/vault", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
     try {
       const files = await listVaultFiles();
       res.json({ files });
@@ -118,7 +118,7 @@ export function registerObsidianRoutes(
   });
 
   // ─── POST /api/obsidian/write ─────────────────────────────────────────────
-  app.post("/api/obsidian/write", async (req: any, res) => {
+  app.post("/api/obsidian/write", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     const { folder, title, content, mode, meta } = req.body || {};
     if (!folder || !title || !content) return res.status(400).json({ message: "folder, title, and content required" });
     try {
@@ -133,7 +133,7 @@ export function registerObsidianRoutes(
   });
 
   // ─── GET /api/obsidian/connect ────────────────────────────────────────────
-  app.get("/api/obsidian/connect", async (_req: any, res) => {
+  app.get("/api/obsidian/connect", isAuthenticated, requireRole("ADMIN"), async (_req: any, res) => {
     try {
       const result = await checkConnection();
       res.json(result);
@@ -146,7 +146,7 @@ export function registerObsidianRoutes(
   // Diagnostic: probe all known Obsidian REST API endpoint candidates and
   // return full results (status, content-type, body preview for each).
   // Logs findings to the server console. Also updates the cached health path.
-  app.get("/api/obsidian/probe", async (_req: any, res) => {
+  app.get("/api/obsidian/probe", isAuthenticated, requireRole("ADMIN"), async (_req: any, res) => {
     if (!isObsidianConfigured()) {
       return res.status(400).json({ message: "Obsidian not configured — set OBSIDIAN_BASE_URL and OBSIDIAN_API_KEY" });
     }
@@ -160,7 +160,7 @@ export function registerObsidianRoutes(
 
   // ─── POST /api/obsidian/similar ───────────────────────────────────────────
   // Find notes similar to the provided content or filename
-  app.post("/api/obsidian/similar", async (req: any, res) => {
+  app.post("/api/obsidian/similar", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     const { content, sourceFilename, limit } = req.body || {};
     if (!content) return res.status(400).json({ message: "content required" });
     try {
@@ -173,7 +173,7 @@ export function registerObsidianRoutes(
 
   // ─── POST /api/obsidian/context ───────────────────────────────────────────
   // Retrieve agent context before execution
-  app.post("/api/obsidian/context", async (req: any, res) => {
+  app.post("/api/obsidian/context", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     const { query, orgId, limit } = req.body || {};
     if (!query) return res.status(400).json({ message: "query required" });
     try {
@@ -201,7 +201,7 @@ export function registerObsidianRoutes(
 
   // ─── POST /api/obsidian/decision ──────────────────────────────────────────
   // Write to Decision Journal
-  app.post("/api/obsidian/decision", async (req: any, res) => {
+  app.post("/api/obsidian/decision", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     const { decision, reasoning, outcome, followUp, agent, orgId, confidence, tags } = req.body || {};
     if (!decision || !reasoning || !agent)
       return res.status(400).json({ message: "decision, reasoning, agent required" });
@@ -215,7 +215,7 @@ export function registerObsidianRoutes(
 
   // ─── PATCH /api/obsidian/decision/outcome ─────────────────────────────────
   // Update decision outcome after follow-up
-  app.patch("/api/obsidian/decision/outcome", async (req: any, res) => {
+  app.patch("/api/obsidian/decision/outcome", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     const { decisionTitle, outcome, followUp, orgId } = req.body || {};
     if (!decisionTitle || !outcome) return res.status(400).json({ message: "decisionTitle and outcome required" });
     try {
@@ -228,7 +228,7 @@ export function registerObsidianRoutes(
 
   // ─── POST /api/obsidian/software-kb ──────────────────────────────────────
   // Write to Software Knowledge Base
-  app.post("/api/obsidian/software-kb", async (req: any, res) => {
+  app.post("/api/obsidian/software-kb", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     const { issue, rootCause, fix, filesModified, outcome, severity, tags, orgId } = req.body || {};
     if (!issue || !rootCause || !fix || !outcome)
       return res.status(400).json({ message: "issue, rootCause, fix, outcome required" });
@@ -242,7 +242,7 @@ export function registerObsidianRoutes(
 
   // ─── GET /api/obsidian/software-kb/search ────────────────────────────────
   // Search Software KB before creating new improvement tasks
-  app.get("/api/obsidian/software-kb/search", async (req: any, res) => {
+  app.get("/api/obsidian/software-kb/search", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     const { q, limit } = req.query as { q: string; limit: string };
     if (!q) return res.status(400).json({ message: "q required" });
     try {
@@ -256,7 +256,7 @@ export function registerObsidianRoutes(
   // ─── Obsidian Sync Queue Management ──────────────────────────────────────
 
   // GET /api/obsidian/sync-queue/stats — queue health summary
-  app.get("/api/obsidian/sync-queue/stats", async (_req: any, res) => {
+  app.get("/api/obsidian/sync-queue/stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req: any, res) => {
     try {
       const { getQueueStats } = await import("./services/obsidian-sync-service");
       const stats = await getQueueStats();
@@ -267,7 +267,7 @@ export function registerObsidianRoutes(
   });
 
   // GET /api/obsidian/sync-queue/items — list queue items
-  app.get("/api/obsidian/sync-queue/items", async (req: any, res) => {
+  app.get("/api/obsidian/sync-queue/items", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const { getQueueItems } = await import("./services/obsidian-sync-service");
       const { status, limit, offset } = req.query as { status?: string; limit?: string; offset?: string };
@@ -283,7 +283,7 @@ export function registerObsidianRoutes(
   });
 
   // POST /api/obsidian/sync-queue/retry-failed — reset failed items back to pending
-  app.post("/api/obsidian/sync-queue/retry-failed", async (_req: any, res) => {
+  app.post("/api/obsidian/sync-queue/retry-failed", isAuthenticated, requireRole("ADMIN"), async (_req: any, res) => {
     try {
       const { requeueFailed } = await import("./services/obsidian-sync-service");
       const count = await requeueFailed();
@@ -294,7 +294,7 @@ export function registerObsidianRoutes(
   });
 
   // POST /api/obsidian/sync-queue/process-now — trigger immediate retry sweep
-  app.post("/api/obsidian/sync-queue/process-now", async (_req: any, res) => {
+  app.post("/api/obsidian/sync-queue/process-now", isAuthenticated, requireRole("ADMIN"), async (_req: any, res) => {
     try {
       const { processObsidianSyncQueue } = await import("./services/obsidian-sync-service");
       const result = await processObsidianSyncQueue();
