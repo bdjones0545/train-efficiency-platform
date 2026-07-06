@@ -2,6 +2,9 @@ import type { Express } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { storage } from "./storage";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 
 function rows(result: unknown): any[] {
   if (Array.isArray(result)) return result;
@@ -289,7 +292,7 @@ export async function registerAttendanceRoutes(app: Express) {
   await createTables();
 
   // ─── Get program config by programId ─────────────────────────────────────
-  app.get("/api/attendance-programs/:programId/config", async (req, res) => {
+  app.get("/api/attendance-programs/:programId/config", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       const { programId } = req.params;
       const config = row0(await db.execute(sql`
@@ -315,7 +318,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Upsert attendance program config ────────────────────────────────────
-  app.post("/api/attendance-programs/:programId/config", async (req, res) => {
+  app.post("/api/attendance-programs/:programId/config", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       const { programId } = req.params;
       const { description, location, startDate, endDate, active, organizationId } = req.body;
@@ -367,7 +370,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Update fields ────────────────────────────────────────────────────────
-  app.put("/api/attendance-programs/:programId/fields", async (req, res) => {
+  app.put("/api/attendance-programs/:programId/fields", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       const { programId } = req.params;
       const { fields } = req.body;
@@ -400,7 +403,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Update reward tiers ──────────────────────────────────────────────────
-  app.put("/api/attendance-programs/:programId/rewards", async (req, res) => {
+  app.put("/api/attendance-programs/:programId/rewards", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       const { programId } = req.params;
       const { tiers } = req.body;
@@ -589,10 +592,10 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Admin: list attendance records with filters ──────────────────────────
-  app.get("/api/attendance/dashboard", async (req, res) => {
+  app.get("/api/attendance/dashboard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const { orgId, programId, sport, view = "all" } = req.query as Record<string, string>;
-      if (!orgId) return res.status(400).json({ error: "orgId required" });
+      const orgId = await resolveOrgIdOrThrow(req);
+      const { programId, sport, view = "all" } = req.query as Record<string, string>;
 
       // Build date filter based on view
       let dateFilter = sql``;
@@ -681,10 +684,10 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Admin: analytics ─────────────────────────────────────────────────────
-  app.get("/api/attendance/analytics", async (req, res) => {
+  app.get("/api/attendance/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const { orgId, programId } = req.query as Record<string, string>;
-      if (!orgId) return res.status(400).json({ error: "orgId required" });
+      const orgId = await resolveOrgIdOrThrow(req);
+      const { programId } = req.query as Record<string, string>;
 
       const pFilter = programId ? sql`AND program_id = ${programId}` : sql``;
 
@@ -804,10 +807,11 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Admin: athlete visit history ─────────────────────────────────────────
-  app.get("/api/attendance/athlete-history", async (req, res) => {
+  app.get("/api/attendance/athlete-history", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const { orgId, email } = req.query as Record<string, string>;
-      if (!orgId || !email) return res.status(400).json({ error: "orgId and email required" });
+      const orgId = await resolveOrgIdOrThrow(req);
+      const { email } = req.query as Record<string, string>;
+      if (!email) return res.status(400).json({ error: "email required" });
 
       const records = rows(await db.execute(sql`
         SELECT ar.*, ap.name AS program_name
@@ -833,10 +837,9 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Admin: list programs for org ─────────────────────────────────────────
-  app.get("/api/attendance/programs", async (req, res) => {
+  app.get("/api/attendance/programs", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
-      const { orgId } = req.query as Record<string, string>;
-      if (!orgId) return res.status(400).json({ error: "orgId required" });
+      const orgId = await resolveOrgIdOrThrow(req);
 
       // Debug: check what types exist for this org
       const allTypes = rows(await db.execute(sql`
@@ -864,7 +867,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Coach report recipients: GET ────────────────────────────────────────
-  app.get("/api/attendance-programs/:programId/report-recipients", async (req, res) => {
+  app.get("/api/attendance-programs/:programId/report-recipients", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       const { programId } = req.params;
       const recipients = rows(await db.execute(sql`
@@ -900,14 +903,14 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Coach report recipients: PUT (full replace) ──────────────────────────
-  app.put("/api/attendance-programs/:programId/report-recipients", async (req, res) => {
+  app.put("/api/attendance-programs/:programId/report-recipients", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       const { programId } = req.params;
-      const { recipients, orgId } = req.body as {
+      // Org scope from the authenticated session — never the client body.
+      const orgId = await resolveOrgIdOrThrow(req);
+      const { recipients } = req.body as {
         recipients: Array<{ coachId?: string; email: string; name: string; receiveDaily: boolean; receiveWeekly: boolean; active: boolean }>;
-        orgId: string;
       };
-      if (!orgId) return res.status(400).json({ error: "orgId required" });
 
       const incomingEmails = (recipients || []).map(r => r.email);
       if (incomingEmails.length > 0) {
@@ -961,13 +964,13 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Send test report (per-recipient) ────────────────────────────────────
-  app.post("/api/attendance-programs/:programId/report-recipients/send-test", async (req, res) => {
+  app.post("/api/attendance-programs/:programId/report-recipients/send-test", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       const { programId } = req.params;
       const { recipientEmail, reportType = "daily" } = req.body;
       if (!recipientEmail) return res.status(400).json({ error: "recipientEmail required" });
       const { sendTestReport } = await import("./attendance-report-cron");
-      const result = await sendTestReport(programId, recipientEmail, reportType);
+      const result = await sendTestReport(programId as string, recipientEmail, reportType);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message || "Failed" });
@@ -975,7 +978,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── SendGrid status check ────────────────────────────────────────────────
-  app.get("/api/attendance-programs/:programId/reports/sendgrid-status", async (_req, res) => {
+  app.get("/api/attendance-programs/:programId/reports/sendgrid-status", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const { checkSendGridConfigured } = await import("./attendance-report-cron");
       const status = await checkSendGridConfigured();
@@ -986,11 +989,11 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Send test daily report → all active recipients ───────────────────────
-  app.post("/api/attendance-programs/:programId/reports/send-test-daily", async (req, res) => {
+  app.post("/api/attendance-programs/:programId/reports/send-test-daily", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       const { programId } = req.params;
       const { sendTestReportToAll } = await import("./attendance-report-cron");
-      const result = await sendTestReportToAll(programId, "daily");
+      const result = await sendTestReportToAll(programId as string, "daily");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ success: false, sendgridConfigured: false, recipients: [], error: e?.message || "Failed" });
@@ -998,11 +1001,11 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Send test weekly report → all active recipients ──────────────────────
-  app.post("/api/attendance-programs/:programId/reports/send-test-weekly", async (req, res) => {
+  app.post("/api/attendance-programs/:programId/reports/send-test-weekly", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
     try {
       const { programId } = req.params;
       const { sendTestReportToAll } = await import("./attendance-report-cron");
-      const result = await sendTestReportToAll(programId, "weekly");
+      const result = await sendTestReportToAll(programId as string, "weekly");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ success: false, sendgridConfigured: false, recipients: [], error: e?.message || "Failed" });
