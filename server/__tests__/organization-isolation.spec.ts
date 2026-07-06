@@ -334,3 +334,161 @@ describe("Agent audit — distributed lock key org isolation", () => {
     );
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Test 12: POST /api/lead-capture/submissions/:id/recover-pipeline — authz (PR #11)
+//
+// This route was previously UNAUTHENTICATED and side-effecting: it loads a
+// submission by :id and runs the intelligent lead-intake pipeline (emails + AI).
+// PR #11 adds isAuthenticated + requireRole("COACH","ADMIN") + resolveOrgIdOrThrow
+// + an ownership check (submission.orgId must equal the caller's resolved org).
+//
+// The REJECT paths need NO fixtures and run whenever the dev server is up:
+//   - unauthenticated         → 401
+//   - invalid credential      → 401
+// The FIXTURE-dependent paths are env-injected and SKIP with a clear message when
+// their fixtures/DB are unavailable (Replit or CI can supply them):
+//   - wrong role (CLIENT)            → 403   needs TEST_CLIENT_AUTH
+//   - cross-org coach/admin          → 403   needs TEST_ORG_B_COACH_AUTH + TEST_ORG_A_SUBMISSION_ID
+//   - unknown id, authorized         → 404   needs TEST_COACH_AUTH
+//   - owner-org (INTEGRATION ONLY)   → 200   needs RUN_INTEGRATION_TESTS=1 + TEST_COACH_AUTH
+//                                             + TEST_OWN_SUBMISSION_ID  (runs REAL OpenAI/Gmail)
+//
+// Each *_AUTH env var holds a credential string, either:
+//   * a Cookie header value   (e.g. "connect.sid=s%3A...")     → sent as Cookie, or
+//   * a bearer token          (raw, or prefixed "Bearer ...")  → sent as Authorization.
+// Produce them by logging in as the relevant user and copying the session cookie,
+// or by minting a bearer with createAuthToken(userId)
+// (server/replit_integrations/auth/replitAuth.ts) for a seeded coach/admin per org.
+//
+// Run:  tsx server/__tests__/organization-isolation.spec.ts   (dev server on :5000,
+//       or set TEST_BASE_URL). Reject-path tests pass with just a running server.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const recoverPath = (id: string) => `/api/lead-capture/submissions/${id}/recover-pipeline`;
+const randomSubmissionId = () => `test-${Math.random().toString(36).slice(2)}-nonexistent`;
+// Fields only present when the pipeline actually runs (see the route's 200 response).
+const PIPELINE_RESULT_FIELDS = ["profileId", "leadScore", "temperature", "aiSummaryPreview", "gmailDraftActionId"];
+
+/** Build request headers from an env-provided credential (cookie or bearer). Null when unset. */
+function authFromEnv(name: string): Record<string, string> | null {
+  const v = process.env[name]?.trim();
+  if (!v) return null;
+  if (/^Bearer\s+/i.test(v)) return { Authorization: v };
+  if (v.includes("=")) return { Cookie: v }; // looks like a cookie header value
+  return { Authorization: `Bearer ${v}` }; // raw token
+}
+
+/** A rejected request must not have run the pipeline: no result fields in the body. */
+async function assertNoPipelineSideEffects(res: Response, label: string): Promise<void> {
+  const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  for (const field of PIPELINE_RESULT_FIELDS) {
+    assert.ok(
+      !(field in body),
+      `${label}: rejected response must not contain pipeline field "${field}" (would mean the pipeline ran)`,
+    );
+  }
+}
+
+let _reachable: boolean | null = null;
+/** True if the dev server answers at BASE. Memoized so we only probe once. */
+async function serverReachable(): Promise<boolean> {
+  if (_reachable !== null) return _reachable;
+  try {
+    await get("/api/health");
+    _reachable = true;
+  } catch {
+    _reachable = false;
+  }
+  return _reachable;
+}
+
+describe("POST recover-pipeline — org auth + ownership (PR #11)", () => {
+  test("unauthenticated → 401, and pipeline did not run", async (t) => {
+    if (!(await serverReachable())) {
+      t.skip("dev server not reachable at BASE — start `npm run dev` (port 5000) or set TEST_BASE_URL");
+      return;
+    }
+    const res = await post(recoverPath(randomSubmissionId()), {});
+    assert.equal(res.status, 401, "unauthenticated recover-pipeline must be 401");
+    await assertNoPipelineSideEffects(res, "unauthenticated");
+  });
+
+  test("invalid credential → 401 (not 200/500)", async (t) => {
+    if (!(await serverReachable())) {
+      t.skip("dev server not reachable at BASE");
+      return;
+    }
+    const res = await post(recoverPath(randomSubmissionId()), {}, { Authorization: "Bearer invalid-token-no-session" });
+    assert.equal(res.status, 401, "invalid credential must be rejected with 401");
+    await assertNoPipelineSideEffects(res, "invalid-credential");
+  });
+
+  test("wrong role (non coach/admin) → 403", async (t) => {
+    if (!(await serverReachable())) {
+      t.skip("dev server not reachable at BASE");
+      return;
+    }
+    const auth = authFromEnv("TEST_CLIENT_AUTH");
+    if (!auth) {
+      t.skip("set TEST_CLIENT_AUTH (a logged-in CLIENT / non-coach cookie or bearer) to run this");
+      return;
+    }
+    const res = await post(recoverPath(randomSubmissionId()), {}, auth);
+    assert.equal(res.status, 403, "authenticated non coach/admin must be 403 (requireRole)");
+    await assertNoPipelineSideEffects(res, "wrong-role");
+  });
+
+  test("cross-org coach/admin (different org than submission) → 403", async (t) => {
+    if (!(await serverReachable())) {
+      t.skip("dev server not reachable at BASE");
+      return;
+    }
+    const auth = authFromEnv("TEST_ORG_B_COACH_AUTH");
+    const submissionId = process.env.TEST_ORG_A_SUBMISSION_ID?.trim();
+    if (!auth || !submissionId) {
+      t.skip("set TEST_ORG_B_COACH_AUTH + TEST_ORG_A_SUBMISSION_ID (coach/admin of Org B; a submission owned by Org A)");
+      return;
+    }
+    const res = await post(recoverPath(submissionId), {}, auth);
+    assert.equal(res.status, 403, "coach/admin acting on another org's submission must be 403 (ownership guard)");
+    await assertNoPipelineSideEffects(res, "cross-org");
+  });
+
+  test("unknown submission id, authorized caller → 404", async (t) => {
+    if (!(await serverReachable())) {
+      t.skip("dev server not reachable at BASE");
+      return;
+    }
+    const auth = authFromEnv("TEST_COACH_AUTH");
+    if (!auth) {
+      t.skip("set TEST_COACH_AUTH (a coach/admin cookie or bearer) to run this");
+      return;
+    }
+    const res = await post(recoverPath(randomSubmissionId()), {}, auth);
+    assert.equal(res.status, 404, "authorized caller with an unknown submission id must be 404");
+    await assertNoPipelineSideEffects(res, "unknown-id");
+  });
+
+  test("owner-org coach/admin → 200 [integration only: real AI/email]", async (t) => {
+    if (process.env.RUN_INTEGRATION_TESTS !== "1") {
+      t.skip("integration-only: set RUN_INTEGRATION_TESTS=1 (runs REAL OpenAI/Gmail) + TEST_COACH_AUTH + TEST_OWN_SUBMISSION_ID");
+      return;
+    }
+    if (!(await serverReachable())) {
+      t.skip("dev server not reachable at BASE");
+      return;
+    }
+    const auth = authFromEnv("TEST_COACH_AUTH");
+    const submissionId = process.env.TEST_OWN_SUBMISSION_ID?.trim();
+    if (!auth || !submissionId) {
+      t.skip("set TEST_COACH_AUTH + TEST_OWN_SUBMISSION_ID (coach/admin owning the submission)");
+      return;
+    }
+    const res = await post(recoverPath(submissionId), {}, auth);
+    assert.equal(res.status, 200, "owner-org coach/admin must be 200");
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    assert.equal(body.success, true, "owner-path 200 must report success");
+    assert.ok("submissionId" in body, "owner-path 200 returns submissionId (pipeline ran)");
+  });
+});
