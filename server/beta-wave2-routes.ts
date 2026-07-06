@@ -614,13 +614,13 @@ export async function registerBetaWave2Routes(app: Express) {
   });
 
   // ─── PART 12: Community CRUD ───────────────────────────────────────────────
-  app.get("/api/community/announcements", async (_req, res) => {
+  app.get("/api/community/announcements", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM marketplace_announcements WHERE published=true ORDER BY pinned DESC, created_at DESC LIMIT 50`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch announcements" }); }
   });
 
-  app.post("/api/community/announcements", async (req, res) => {
+  app.post("/api/community/announcements", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { title, body, type, author_id, author_name, pinned } = req.body;
       if (!title || !body) return res.status(400).json({ error: "title and body required" });
@@ -633,13 +633,13 @@ export async function registerBetaWave2Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create announcement" }); }
   });
 
-  app.get("/api/community/developer-updates", async (_req, res) => {
+  app.get("/api/community/developer-updates", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM developer_updates WHERE published=true ORDER BY created_at DESC LIMIT 50`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch developer updates" }); }
   });
 
-  app.post("/api/community/developer-updates", async (req, res) => {
+  app.post("/api/community/developer-updates", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { developer_id, agent_id, agent_name, title, body, update_type } = req.body;
       if (!developer_id || !title || !body) return res.status(400).json({ error: "developer_id, title and body required" });
@@ -652,13 +652,13 @@ export async function registerBetaWave2Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create developer update" }); }
   });
 
-  app.get("/api/community/release-notes", async (_req, res) => {
+  app.get("/api/community/release-notes", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM agent_release_notes WHERE published=true ORDER BY released_at DESC LIMIT 50`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch release notes" }); }
   });
 
-  app.post("/api/community/release-notes", async (req, res) => {
+  app.post("/api/community/release-notes", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { agent_id, agent_name, version, title, body, change_type } = req.body;
       if (!agent_id || !title || !body) return res.status(400).json({ error: "agent_id, title and body required" });
