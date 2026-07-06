@@ -13577,7 +13577,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
   // ─── Business Brain API ──────────────────────────────────────────────────────
 
-  app.post("/api/admin/business-brain/run", async (req, res) => {
+  app.post("/api/admin/business-brain/run", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13625,7 +13625,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
-  app.get("/api/admin/business-brain/feed", async (req, res) => {
+  app.get("/api/admin/business-brain/feed", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13641,7 +13641,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
-  app.get("/api/admin/business-brain/brief", async (req, res) => {
+  app.get("/api/admin/business-brain/brief", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13652,7 +13652,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
-  app.get("/api/admin/business-brain/runs", async (req, res) => {
+  app.get("/api/admin/business-brain/runs", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13663,7 +13663,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
-  app.get("/api/admin/business-brain/health-score", async (req, res) => {
+  app.get("/api/admin/business-brain/health-score", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13679,7 +13679,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
-  app.post("/api/admin/business-brain/recommendations/:id/execute", async (req, res) => {
+  app.post("/api/admin/business-brain/recommendations/:id/execute", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13718,12 +13718,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         const result = await proposeToolCall(orgId, {
           agentName: "business_brain",
           ...toolProposal,
-          sourceRecommendationId: id,
+          sourceRecommendationId: id as string,
         });
 
         if (result.requiresConfirmation) {
           // Keep rec visible in pending-tool state; mark out of main inbox
-          await storage.updateAgentRecommendation(id, { status: "pending_tool_confirmation" as any });
+          await storage.updateAgentRecommendation(id as string, { status: "pending_tool_confirmation" as any });
           return res.json({
             toolCall: {
               toolCallId: result.toolCallId,
@@ -13743,14 +13743,14 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         };
       }
 
-      const rec = await storage.updateAgentRecommendation(id, { status: "executed", executedAt: new Date() });
+      const rec = await storage.updateAgentRecommendation(id as string, { status: "executed", executedAt: new Date() });
       res.json({ rec, toolCall });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }
   });
 
-  app.post("/api/admin/business-brain/recommendations/:id/dismiss", async (req, res) => {
+  app.post("/api/admin/business-brain/recommendations/:id/dismiss", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13758,7 +13758,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       // Verify ownership before mutating
       const ownerCheck = await db.execute(sql`SELECT id FROM agent_recommendations WHERE id = ${id} AND org_id = ${orgId}`);
       if (!ownerCheck.rows[0]) return res.status(404).json({ error: "Not found" });
-      const rec = await storage.updateAgentRecommendation(id, { status: "dismissed", dismissedAt: new Date() });
+      const rec = await storage.updateAgentRecommendation(id as string, { status: "dismissed", dismissedAt: new Date() });
       if (!rec) return res.status(404).json({ error: "Not found" });
       res.json(rec);
     } catch (e: any) {
@@ -13766,7 +13766,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     }
   });
 
-  app.post("/api/admin/business-brain/recommendations/:id/outcome", async (req, res) => {
+  app.post("/api/admin/business-brain/recommendations/:id/outcome", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13775,7 +13775,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       // Verify ownership before mutating
       const ownerCheck = await db.execute(sql`SELECT id FROM agent_recommendations WHERE id = ${id} AND org_id = ${orgId}`);
       if (!ownerCheck.rows[0]) return res.status(404).json({ error: "Not found" });
-      const rec = await storage.updateAgentRecommendation(id, {
+      const rec = await storage.updateAgentRecommendation(id as string, {
         outcomeType,
         outcomeValue: outcomeValue || 0,
         outcomeLoggedAt: new Date(),
@@ -13788,7 +13788,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
   // GET /api/admin/business-brain/command-center-summary
   // Unified summary for Command Center: health + brief + merged ranked actions
-  app.get("/api/admin/business-brain/command-center-summary", async (req, res) => {
+  app.get("/api/admin/business-brain/command-center-summary", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13900,7 +13900,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // ─── Agent Tool Layer ─────────────────────────────────────────────────────
 
   // GET /api/admin/agent-tools — list all tool definitions + permissions
-  app.get("/api/admin/agent-tools", async (req, res) => {
+  app.get("/api/admin/agent-tools", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13921,7 +13921,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/agent-tool-calls — audit log
-  app.get("/api/admin/agent-tool-calls", async (req, res) => {
+  app.get("/api/admin/agent-tool-calls", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13935,7 +13935,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/agent-tool-calls/pending — pending confirmations
-  app.get("/api/admin/agent-tool-calls/pending", async (req, res) => {
+  app.get("/api/admin/agent-tool-calls/pending", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13948,12 +13948,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/agent-tool-calls/:id/confirm
-  app.post("/api/admin/agent-tool-calls/:id/confirm", async (req, res) => {
+  app.post("/api/admin/agent-tool-calls/:id/confirm", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { executePendingToolCall } = await import("./agent-tools/index");
-      const result = await executePendingToolCall(orgId, req.params.id, "admin");
+      const result = await executePendingToolCall(orgId, (req.params.id as string), "admin");
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -13961,12 +13961,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/agent-tool-calls/:id/reject
-  app.post("/api/admin/agent-tool-calls/:id/reject", async (req, res) => {
+  app.post("/api/admin/agent-tool-calls/:id/reject", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { rejectToolCall } = await import("./agent-tools/index");
-      await rejectToolCall(orgId, req.params.id, "admin");
+      await rejectToolCall(orgId, (req.params.id as string), "admin");
       res.json({ success: true });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
@@ -13974,7 +13974,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/agent-tools/propose — submit an action proposal
-  app.post("/api/admin/agent-tools/propose", async (req, res) => {
+  app.post("/api/admin/agent-tools/propose", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -13987,7 +13987,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/agent-tools/execute — direct execute (auto-execute tools only)
-  app.post("/api/admin/agent-tools/execute", async (req, res) => {
+  app.post("/api/admin/agent-tools/execute", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14007,7 +14007,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // ─── Workflow Orchestration ───────────────────────────────────────────────
 
   // GET /api/admin/workflows/definitions
-  app.get("/api/admin/workflows/definitions", async (req, res) => {
+  app.get("/api/admin/workflows/definitions", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14022,7 +14022,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/workflows/stats
-  app.get("/api/admin/workflows/stats", async (req, res) => {
+  app.get("/api/admin/workflows/stats", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14032,7 +14032,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/workflows
-  app.get("/api/admin/workflows", async (req, res) => {
+  app.get("/api/admin/workflows", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14042,7 +14042,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/workflows/trigger
-  app.post("/api/admin/workflows/trigger", async (req, res) => {
+  app.post("/api/admin/workflows/trigger", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14065,7 +14065,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/workflows/resume-waiting
-  app.post("/api/admin/workflows/resume-waiting", async (req, res) => {
+  app.post("/api/admin/workflows/resume-waiting", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14076,19 +14076,19 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/workflows/:id
-  app.get("/api/admin/workflows/:id", async (req, res) => {
+  app.get("/api/admin/workflows/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { getWorkflowRunWithSteps } = await import("./workflows/index");
-      const result = await getWorkflowRunWithSteps(req.params.id, orgId);
+      const result = await getWorkflowRunWithSteps((req.params.id as string), orgId);
       if (!result) return res.status(404).json({ error: "Not found" });
       res.json(result);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // POST /api/admin/workflows/:id/approve
-  app.post("/api/admin/workflows/:id/approve", async (req, res) => {
+  app.post("/api/admin/workflows/:id/approve", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14100,12 +14100,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         const { db } = await import("./db");
         const { workflowRuns } = await import("@shared/schema");
         const { eq } = await import("drizzle-orm");
-        const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, req.params.id));
+        const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, (req.params.id as string)));
         if (run) {
           const ctx = (run.context as any) ?? {};
           await db.update(workflowRuns)
             .set({ context: { ...ctx, draftSubject: editedSubject ?? ctx.draftSubject, draftBody: editedBody ?? ctx.draftBody } })
-            .where(eq(workflowRuns.id, req.params.id));
+            .where(eq(workflowRuns.id, (req.params.id as string)));
         }
 
         // Persist operator override memory
@@ -14118,13 +14118,13 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           contextType: "operator_override",
           summary: `Admin edited workflow draft before approving.${editedSubject ? ` Subject changed to: "${editedSubject}"` : ""}${editedBody ? " Body was modified." : ""}`,
           structuredContext: { editedSubject: editedSubject ?? null, editedBodyLength: editedBody?.length ?? 0, workflowRunId: req.params.id },
-          sourceWorkflowId: req.params.id,
+          sourceWorkflowId: (req.params.id as string),
           createdBy: "admin",
           neverDelete: true,
         });
       }
 
-      const result = await approveWorkflowStep(req.params.id, orgId, "admin");
+      const result = await approveWorkflowStep((req.params.id as string), orgId, "admin");
 
       // Persist workflow approval memory
       if (result.ok) {
@@ -14133,7 +14133,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           const { db } = await import("./db");
           const { workflowRuns } = await import("@shared/schema");
           const { eq } = await import("drizzle-orm");
-          const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, req.params.id));
+          const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, (req.params.id as string)));
           if (run?.entityId) {
             await persistWorkflowMemory({
               orgId,
@@ -14141,7 +14141,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
               entityId: run.entityId,
               contextType: "workflow_memory",
               summary: `Workflow "${run.displayName ?? run.workflowType}" approved by admin${editedSubject || editedBody ? " (with edits)" : ""}.`,
-              sourceWorkflowId: req.params.id,
+              sourceWorkflowId: (req.params.id as string),
               createdBy: "admin",
             });
           }
@@ -14152,10 +14152,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           const { db: _db2 } = await import("./db");
           const { workflowRuns: _wr2 } = await import("@shared/schema");
           const { eq: _eq2 } = await import("drizzle-orm");
-          const [_run2] = await _db2.select().from(_wr2).where(_eq2(_wr2.id, req.params.id));
+          const [_run2] = await _db2.select().from(_wr2).where(_eq2(_wr2.id, (req.params.id as string)));
           await recordWorkflowLearning({
             orgId,
-            workflowId: req.params.id,
+            workflowId: (req.params.id as string),
             workflowType: _run2?.workflowType ?? "unknown",
             displayName: _run2?.displayName ?? undefined,
             status: "approved",
@@ -14168,10 +14168,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           const { db: _djdb } = await import("./db");
           const { workflowRuns: _djwr } = await import("@shared/schema");
           const { eq: _djeq } = await import("drizzle-orm");
-          const [_djrun] = await _djdb.select().from(_djwr).where(_djeq(_djwr.id, req.params.id));
+          const [_djrun] = await _djdb.select().from(_djwr).where(_djeq(_djwr.id, (req.params.id as string)));
           await recordWorkflowDecision({
             orgId,
-            workflowId: req.params.id,
+            workflowId: (req.params.id as string),
             workflowType: _djrun?.workflowType ?? "unknown",
             displayName: _djrun?.displayName ?? undefined,
             status: "approved",
@@ -14185,13 +14185,13 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/workflows/:id/reject
-  app.post("/api/admin/workflows/:id/reject", async (req, res) => {
+  app.post("/api/admin/workflows/:id/reject", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { feedback } = req.body ?? {};
       const { rejectWorkflowStep } = await import("./workflows/index");
-      const result = await rejectWorkflowStep(req.params.id, orgId, "admin");
+      const result = await rejectWorkflowStep((req.params.id as string), orgId, "admin");
 
       // Persist operator override memory for rejection feedback
       if (result.ok) {
@@ -14200,7 +14200,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           const { db } = await import("./db");
           const { workflowRuns } = await import("@shared/schema");
           const { eq } = await import("drizzle-orm");
-          const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, req.params.id));
+          const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, (req.params.id as string)));
           if (run?.entityId) {
             await persistWorkflowMemory({
               orgId,
@@ -14209,7 +14209,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
               contextType: "operator_override",
               summary: `Admin rejected workflow "${run.displayName ?? run.workflowType}"${feedback ? `. Feedback: ${feedback}` : "."}`,
               structuredContext: { feedback: feedback ?? null, workflowRunId: req.params.id, workflowType: run.workflowType },
-              sourceWorkflowId: req.params.id,
+              sourceWorkflowId: (req.params.id as string),
               createdBy: "admin",
               neverDelete: true,
             });
@@ -14221,10 +14221,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           const { db: _db3 } = await import("./db");
           const { workflowRuns: _wr3 } = await import("@shared/schema");
           const { eq: _eq3 } = await import("drizzle-orm");
-          const [_run3] = await _db3.select().from(_wr3).where(_eq3(_wr3.id, req.params.id));
+          const [_run3] = await _db3.select().from(_wr3).where(_eq3(_wr3.id, (req.params.id as string)));
           await recordWorkflowLearning({
             orgId,
-            workflowId: req.params.id,
+            workflowId: (req.params.id as string),
             workflowType: _run3?.workflowType ?? "unknown",
             displayName: _run3?.displayName ?? undefined,
             status: "rejected",
@@ -14237,10 +14237,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           const { db: _djdb2 } = await import("./db");
           const { workflowRuns: _djwr2 } = await import("@shared/schema");
           const { eq: _djeq2 } = await import("drizzle-orm");
-          const [_djrun2] = await _djdb2.select().from(_djwr2).where(_djeq2(_djwr2.id, req.params.id));
+          const [_djrun2] = await _djdb2.select().from(_djwr2).where(_djeq2(_djwr2.id, (req.params.id as string)));
           await recordWorkflowDecision({
             orgId,
-            workflowId: req.params.id,
+            workflowId: (req.params.id as string),
             workflowType: _djrun2?.workflowType ?? "unknown",
             displayName: _djrun2?.displayName ?? undefined,
             status: "rejected",
@@ -14254,30 +14254,30 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/workflows/:id/cancel
-  app.post("/api/admin/workflows/:id/cancel", async (req, res) => {
+  app.post("/api/admin/workflows/:id/cancel", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { cancelWorkflow } = await import("./workflows/index");
-      const result = await cancelWorkflow(req.params.id, orgId);
+      const result = await cancelWorkflow((req.params.id as string), orgId);
       res.json(result);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
   // POST /api/admin/workflows/:id/regenerate — cancel and re-queue with feedback
-  app.post("/api/admin/workflows/:id/regenerate", async (req, res) => {
+  app.post("/api/admin/workflows/:id/regenerate", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
       const { feedback } = req.body;
       const { cancelWorkflow } = await import("./workflows/index");
-      await cancelWorkflow(req.params.id, orgId);
+      await cancelWorkflow((req.params.id as string), orgId);
       const { logUnifiedAction } = await import("./unified-action-logger");
       await logUnifiedAction({
         orgId,
         actorType: "admin",
         actionType: "workflow:regenerate_with_feedback",
-        workflowRunId: req.params.id,
+        workflowRunId: (req.params.id as string),
         status: "started",
         riskLevel: "low",
         reasoningSummary: feedback ? `Admin feedback: ${feedback}` : "Regeneration requested by admin",
@@ -14290,7 +14290,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           const { db } = await import("./db");
           const { workflowRuns } = await import("@shared/schema");
           const { eq } = await import("drizzle-orm");
-          const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, req.params.id));
+          const [run] = await db.select().from(workflowRuns).where(eq(workflowRuns.id, (req.params.id as string)));
           if (run?.entityId) {
             await persistWorkflowMemory({
               orgId,
@@ -14299,7 +14299,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
               contextType: "operator_override",
               summary: `Admin requested regeneration of "${run.displayName ?? run.workflowType}". Feedback: ${feedback}`,
               structuredContext: { feedback, workflowRunId: req.params.id, workflowType: run.workflowType },
-              sourceWorkflowId: req.params.id,
+              sourceWorkflowId: (req.params.id as string),
               createdBy: "admin",
               neverDelete: true,
             });
@@ -14399,7 +14399,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // ─── Workflow Settings & Mapper ──────────────────────────────────────────
 
   // GET /api/admin/workflows/settings
-  app.get("/api/admin/workflows/settings", async (req, res) => {
+  app.get("/api/admin/workflows/settings", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14412,7 +14412,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/workflows/settings
-  app.post("/api/admin/workflows/settings", async (req, res) => {
+  app.post("/api/admin/workflows/settings", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14429,7 +14429,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
   // GET /api/admin/workflows/active-summary
   // Returns active workflow counts + items needing approval for the status strip
-  app.get("/api/admin/workflows/active-summary", async (req, res) => {
+  app.get("/api/admin/workflows/active-summary", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14456,7 +14456,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
   // GET /api/admin/workflows/eligibility
   // Given a list of recommendation/action IDs, return workflow mapping metadata
-  app.post("/api/admin/workflows/eligibility", async (req, res) => {
+  app.post("/api/admin/workflows/eligibility", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14483,7 +14483,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
   // POST /api/admin/start-my-day
   // Runs all agents, returns a ranked daily execution checklist
-  app.post("/api/admin/start-my-day", async (req, res) => {
+  app.post("/api/admin/start-my-day", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14602,7 +14602,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/day-review
-  app.get("/api/admin/day-review", async (req, res) => {
+  app.get("/api/admin/day-review", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14668,7 +14668,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/operator-score
-  app.get("/api/admin/operator-score", async (req, res) => {
+  app.get("/api/admin/operator-score", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14788,7 +14788,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   // ─── Agent Ops Monitor ────────────────────────────────────────────────────
 
   // GET /api/admin/agent-ops/health
-  app.get("/api/admin/agent-ops/health", async (req, res) => {
+  app.get("/api/admin/agent-ops/health", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -14881,7 +14881,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/agent-ops/ops-monitor — unified infrastructure + integrations status
-  app.get("/api/admin/agent-ops/ops-monitor", async (req, res) => {
+  app.get("/api/admin/agent-ops/ops-monitor", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -15165,7 +15165,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/agent-ops/failure-queue
-  app.get("/api/admin/agent-ops/failure-queue", async (req, res) => {
+  app.get("/api/admin/agent-ops/failure-queue", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -15190,7 +15190,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/agent-ops/stuck-workflows
-  app.get("/api/admin/agent-ops/stuck-workflows", async (req, res) => {
+  app.get("/api/admin/agent-ops/stuck-workflows", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -15232,7 +15232,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/admin/agent-ops/alerts
-  app.get("/api/admin/agent-ops/alerts", async (req, res) => {
+  app.get("/api/admin/agent-ops/alerts", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -15276,7 +15276,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/agent-ops/tool-calls/:id/resolve
-  app.post("/api/admin/agent-ops/tool-calls/:id/resolve", async (req, res) => {
+  app.post("/api/admin/agent-ops/tool-calls/:id/resolve", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -15287,7 +15287,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
       const updated = await db.update(agentToolCalls)
         .set({ resolvedAt: new Date(), resolvedBy: "admin" })
-        .where(and(eq(agentToolCalls.id, req.params.id), eq(agentToolCalls.orgId, orgId)))
+        .where(and(eq(agentToolCalls.id, (req.params.id as string)), eq(agentToolCalls.orgId, orgId)))
         .returning({ id: agentToolCalls.id });
 
       if (!updated.length) return res.status(404).json({ error: "Tool call not found" });
@@ -15296,7 +15296,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // POST /api/admin/agent-ops/tool-calls/:id/retry
-  app.post("/api/admin/agent-ops/tool-calls/:id/retry", async (req, res) => {
+  app.post("/api/admin/agent-ops/tool-calls/:id/retry", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ error: "Unauthorized" });
@@ -15307,7 +15307,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const { getTool, executePendingToolCall } = await import("./agent-tools/index");
 
       const [existing] = await db.select().from(agentToolCalls)
-        .where(and(eq(agentToolCalls.id, req.params.id), eq(agentToolCalls.orgId, orgId)))
+        .where(and(eq(agentToolCalls.id, (req.params.id as string)), eq(agentToolCalls.orgId, orgId)))
         .limit(1);
 
       if (!existing) return res.status(404).json({ error: "Tool call not found" });
@@ -15319,9 +15319,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
       await db.update(agentToolCalls)
         .set({ status: "pending", error: null, executedAt: null })
-        .where(eq(agentToolCalls.id, req.params.id));
+        .where(eq(agentToolCalls.id, (req.params.id as string)));
 
-      const result = await executePendingToolCall(orgId, req.params.id, "admin-retry");
+      const result = await executePendingToolCall(orgId, (req.params.id as string), "admin-retry");
       res.json(result);
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
