@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -17,7 +19,7 @@ function n(v: unknown): number {
 export async function registerBetaWave2Routes(app: Express) {
 
   // ─── PART 1: Developer Recruitment ────────────────────────────────────────
-  app.get("/api/platform/developer-recruitment", async (_req, res) => {
+  app.get("/api/platform/developer-recruitment", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const inv = rows(await db.execute(sql`
         SELECT
@@ -78,7 +80,7 @@ export async function registerBetaWave2Routes(app: Express) {
   });
 
   // ─── PART 2: Org Recruitment ───────────────────────────────────────────────
-  app.get("/api/platform/org-recruitment", async (_req, res) => {
+  app.get("/api/platform/org-recruitment", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const inv = row0(await db.execute(sql`
         SELECT
@@ -234,7 +236,7 @@ export async function registerBetaWave2Routes(app: Express) {
   });
 
   // ─── PART 5: Revenue Validation ───────────────────────────────────────────
-  app.get("/api/platform/revenue-validation", async (_req, res) => {
+  app.get("/api/platform/revenue-validation", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const rev = row0(await db.execute(sql`
         SELECT
@@ -396,7 +398,7 @@ export async function registerBetaWave2Routes(app: Express) {
   });
 
   // ─── PART 8: Success Stories Engine ───────────────────────────────────────
-  app.get("/api/platform/success-stories", async (_req, res) => {
+  app.get("/api/platform/success-stories", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const existing = rows(await db.execute(sql`
         SELECT * FROM beta_case_studies ORDER BY created_at DESC
@@ -484,7 +486,7 @@ export async function registerBetaWave2Routes(app: Express) {
   });
 
   // ─── PART 10: Flywheel Acceleration ──────────────────────────────────────
-  app.get("/api/platform/flywheel-acceleration", async (_req, res) => {
+  app.get("/api/platform/flywheel-acceleration", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const devs      = n(row0(await db.execute(sql`SELECT COUNT(*) AS c FROM developer_royalty_accounts`))?.c);
       const agents    = n(row0(await db.execute(sql`SELECT COUNT(*) AS c FROM agent_templates WHERE status='active'`))?.c);
@@ -670,7 +672,7 @@ export async function registerBetaWave2Routes(app: Express) {
   });
 
   // ─── PART 13: Beta Wave 2 Scorecard ───────────────────────────────────────
-  app.get("/api/platform/beta-wave2-scorecard", async (_req, res) => {
+  app.get("/api/platform/beta-wave2-scorecard", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT

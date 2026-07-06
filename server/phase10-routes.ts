@@ -285,7 +285,7 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Part 6: Beta Program Infrastructure ──────────────────────────────────────
 
-  app.get("/api/beta/programs", async (req, res) => {
+  app.get("/api/beta/programs", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { betaPrograms, betaParticipants } = await import("@shared/schema");
       const programs = await db.select().from(betaPrograms).orderBy(desc(betaPrograms.createdAt)).catch(() => []);
@@ -301,7 +301,7 @@ export async function registerPhase10Routes(app: Express) {
     }
   });
 
-  app.post("/api/beta/programs", async (req, res) => {
+  app.post("/api/beta/programs", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { betaPrograms } = await import("@shared/schema");
       const { name, description, endDate, targetCoaches, targetGymOwners, targetFacilities, targetConsultants, targetDevelopers } = req.body;
@@ -318,7 +318,7 @@ export async function registerPhase10Routes(app: Express) {
     }
   });
 
-  app.get("/api/beta/participants", async (req, res) => {
+  app.get("/api/beta/participants", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { betaParticipants } = await import("@shared/schema");
       const { programId } = req.query as { programId?: string };
@@ -347,10 +347,10 @@ export async function registerPhase10Routes(app: Express) {
     }
   });
 
-  app.patch("/api/beta/participants/:id", async (req, res) => {
+  app.patch("/api/beta/participants/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { betaParticipants } = await import("@shared/schema");
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { status, agentsInstalled, reviewsSubmitted, feedbackScore, notes } = req.body;
       const [updated] = await db.update(betaParticipants)
         .set({ status, agentsInstalled, reviewsSubmitted, feedbackScore, notes, updatedAt: new Date() })
@@ -401,7 +401,7 @@ export async function registerPhase10Routes(app: Express) {
   app.patch("/api/feedback/:id", isAuthenticated, async (req: any, res) => {
     try {
       const { inAppFeedback } = await import("@shared/schema");
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { status, resolution } = req.body;
       const [updated] = await db.update(inAppFeedback).set({
         status, resolution,
@@ -429,7 +429,7 @@ export async function registerPhase10Routes(app: Express) {
     }
   });
 
-  app.get("/api/beta/feedback", async (req, res) => {
+  app.get("/api/beta/feedback", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { betaFeedback } = await import("@shared/schema");
       const { programId } = req.query as { programId?: string };
@@ -626,7 +626,7 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Part 10: Beta Success Metrics ────────────────────────────────────────────
 
-  app.get("/api/platform/beta-metrics", async (req, res) => {
+  app.get("/api/platform/beta-metrics", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { betaPrograms, betaParticipants, betaFeedback, betaInvites, agentTemplates, orgInstalledAgents, agentReviews, orgAiExecutionPlans, agentTrials, developerAccounts } = await import("@shared/schema");
 
@@ -707,7 +707,7 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Part 12: Beta Cohort Recruitment ─────────────────────────────────────────
 
-  app.get("/api/beta/invites", async (req, res) => {
+  app.get("/api/beta/invites", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { betaInvites } = await import("@shared/schema");
       const { status, role } = req.query as { status?: string; role?: string };
@@ -722,7 +722,7 @@ export async function registerPhase10Routes(app: Express) {
     }
   });
 
-  app.post("/api/beta/invites", async (req, res) => {
+  app.post("/api/beta/invites", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { betaInvites } = await import("@shared/schema");
       const { programId, name, email, organization, industry, role, notes } = req.body;
@@ -738,10 +738,10 @@ export async function registerPhase10Routes(app: Express) {
     }
   });
 
-  app.patch("/api/beta/invites/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/beta/invites/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const { betaInvites } = await import("@shared/schema");
-      const { id } = req.params;
+      const id = req.params.id as string;
       const { inviteStatus, activationStatus, feedbackScore, notes } = req.body;
       const [updated] = await db.update(betaInvites).set({
         inviteStatus, activationStatus, feedbackScore, notes,
@@ -755,7 +755,7 @@ export async function registerPhase10Routes(app: Express) {
   });
 
   // Seed initial beta invites (30 target cohort per spec)
-  app.post("/api/beta/invites/seed", isAuthenticated, async (req: any, res) => {
+  app.post("/api/beta/invites/seed", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const { betaInvites } = await import("@shared/schema");
       const existing = await db.select({ c: sql<number>`count(*)` }).from(betaInvites).then(r => Number(r[0]?.c ?? 0)).catch(() => 0);
@@ -813,7 +813,7 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Part 13: RC-2 Audit ──────────────────────────────────────────────────────
 
-  app.post("/api/platform/rc2-audit", async (req, res) => {
+  app.post("/api/platform/rc2-audit", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const auditResults: Array<{ area: string; score: number; status: string; findings: string[]; fixes: string[] }> = [];
 

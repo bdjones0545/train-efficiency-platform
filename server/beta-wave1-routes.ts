@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -104,7 +106,7 @@ export async function registerBetaWave1Routes(app: Express) {
   });
 
   // ─── PART 5: First Value Validation ───────────────────────────────────────
-  app.get("/api/platform/first-value", async (_req, res) => {
+  app.get("/api/platform/first-value", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const fi  = row0(await db.execute(sql`SELECT MIN(created_at) AS ts FROM org_installed_agents`))?.ts ?? null;
       const fe  = row0(await db.execute(sql`SELECT MIN(created_at) AS ts FROM unified_agent_action_log`))?.ts ?? null;
@@ -288,7 +290,7 @@ export async function registerBetaWave1Routes(app: Express) {
   });
 
   // ─── PART 9: Ecosystem Flywheel Tracking ──────────────────────────────────
-  app.get("/api/platform/flywheel", async (_req, res) => {
+  app.get("/api/platform/flywheel", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const fw = row0(await db.execute(sql`
         SELECT
@@ -325,13 +327,13 @@ export async function registerBetaWave1Routes(app: Express) {
   });
 
   // ─── PART 10: Beta Interviews CRUD ────────────────────────────────────────
-  app.get("/api/beta/interviews", async (_req, res) => {
+  app.get("/api/beta/interviews", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM beta_interviews ORDER BY created_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch interviews" }); }
   });
 
-  app.post("/api/beta/interviews", async (req, res) => {
+  app.post("/api/beta/interviews", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { participant_id, role, organization, agent_used, positive_feedback,
               negative_feedback, requested_features, confusion_points, value_realized,
@@ -352,13 +354,13 @@ export async function registerBetaWave1Routes(app: Express) {
   });
 
   // ─── PART 11: Case Studies CRUD ───────────────────────────────────────────
-  app.get("/api/beta/case-studies", async (_req, res) => {
+  app.get("/api/beta/case-studies", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM beta_case_studies ORDER BY created_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch case studies" }); }
   });
 
-  app.post("/api/beta/case-studies", async (req, res) => {
+  app.post("/api/beta/case-studies", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { organization, agent_name, problem, action_taken, outcome,
               revenue_impact, hours_saved, review_score, verification_status } = req.body;
@@ -375,7 +377,7 @@ export async function registerBetaWave1Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create case study" }); }
   });
 
-  app.patch("/api/beta/case-studies/:id", async (req, res) => {
+  app.patch("/api/beta/case-studies/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       const { verification_status, published, outcome, revenue_impact, hours_saved, review_score } = req.body;
@@ -451,7 +453,7 @@ export async function registerBetaWave1Routes(app: Express) {
   });
 
   // ─── PART 13: Beta Wave 1 Scorecard ───────────────────────────────────────
-  app.get("/api/platform/beta-wave1-scorecard", async (_req, res) => {
+  app.get("/api/platform/beta-wave1-scorecard", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT

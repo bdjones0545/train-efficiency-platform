@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -17,7 +19,7 @@ function safe(v: number, max = 100): number { return Math.min(max, Math.max(0, M
 export async function registerBetaWave5Routes(app: Express) {
 
   // ─── PART 1: Marketplace Velocity ─────────────────────────────────────────
-  app.get("/api/platform/velocity", async (_req, res) => {
+  app.get("/api/platform/velocity", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const weeks = rows(await db.execute(sql`
         SELECT
@@ -79,7 +81,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 2: Time-to-Value ─────────────────────────────────────────────────
-  app.get("/api/platform/time-to-value", async (_req, res) => {
+  app.get("/api/platform/time-to-value", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const installTimes = rows(await db.execute(sql`
         SELECT
@@ -242,7 +244,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 5: Royalty Milestones ────────────────────────────────────────────
-  app.get("/api/platform/royalty-milestones", async (_req, res) => {
+  app.get("/api/platform/royalty-milestones", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const dist = rows(await db.execute(sql`
         SELECT rd.developer_id, rd.agent_id, rd.developer_share, rd.payout_status, rd.created_at,
@@ -289,7 +291,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 6: Marketplace Cohorts ──────────────────────────────────────────
-  app.get("/api/platform/cohorts", async (_req, res) => {
+  app.get("/api/platform/cohorts", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const now = new Date();
       const d30 = new Date(now.getTime() - 30 * 86400000).toISOString();
@@ -361,7 +363,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 7: Referral Flywheel ─────────────────────────────────────────────
-  app.get("/api/platform/referral-flywheel", async (_req, res) => {
+  app.get("/api/platform/referral-flywheel", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const devRef = rows(await db.execute(sql`
         SELECT dr.referrer_id, dr.status, dr.generated_revenue, dr.published_agent, 'dev→dev' AS flow FROM developer_referrals dr
@@ -395,7 +397,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 8: Conversion Optimization ──────────────────────────────────────
-  app.get("/api/platform/conversion-optimization", async (_req, res) => {
+  app.get("/api/platform/conversion-optimization", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -492,7 +494,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 10: Royalty Proof ────────────────────────────────────────────────
-  app.get("/api/platform/royalty-proof", async (_req, res) => {
+  app.get("/api/platform/royalty-proof", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const events = rows(await db.execute(sql`
         SELECT
@@ -543,7 +545,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 11: Momentum Score ───────────────────────────────────────────────
-  app.get("/api/platform/momentum", async (_req, res) => {
+  app.get("/api/platform/momentum", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const now = new Date();
       const d30 = new Date(now.getTime() - 30 * 86400000).toISOString();
@@ -604,7 +606,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 12/13: Wave 5 Scorecard ─────────────────────────────────────────
-  app.get("/api/platform/wave5-scorecard", async (_req, res) => {
+  app.get("/api/platform/wave5-scorecard", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const d30 = new Date(Date.now() - 30 * 86400000).toISOString();
       const c = row0(await db.execute(sql`
@@ -662,7 +664,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 14: Marketplace Stage ───────────────────────────────────────────
-  app.get("/api/platform/marketplace-stage", async (_req, res) => {
+  app.get("/api/platform/marketplace-stage", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT

@@ -1,4 +1,6 @@
 import type { Express } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 
@@ -20,7 +22,7 @@ function pct(a: number, b: number): number {
 export async function registerBetaWave3Routes(app: Express) {
 
   // ─── PART 1: Marketplace Activation Center data ────────────────────────────
-  app.get("/api/platform/marketplace-activation", async (_req, res) => {
+  app.get("/api/platform/marketplace-activation", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -90,7 +92,7 @@ export async function registerBetaWave3Routes(app: Express) {
   });
 
   // ─── PART 2: Revenue Milestones ────────────────────────────────────────────
-  app.get("/api/platform/revenue-milestones", async (_req, res) => {
+  app.get("/api/platform/revenue-milestones", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const firstInstall = row0(await db.execute(sql`
         SELECT oia.created_at, oia.agent_id, oia.org_id
@@ -296,7 +298,7 @@ export async function registerBetaWave3Routes(app: Express) {
   });
 
   // ─── PART 5: Revenue Attribution Audit ────────────────────────────────────
-  app.get("/api/platform/revenue-proof", async (_req, res) => {
+  app.get("/api/platform/revenue-proof", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const events = rows(await db.execute(sql`
         SELECT
@@ -384,7 +386,7 @@ export async function registerBetaWave3Routes(app: Express) {
   });
 
   // ─── PART 7: Repeat Usage ─────────────────────────────────────────────────
-  app.get("/api/platform/repeat-usage", async (_req, res) => {
+  app.get("/api/platform/repeat-usage", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const repDevs = rows(await db.execute(sql`
         SELECT maintainer AS developer_id, COUNT(*) AS agent_count
@@ -422,7 +424,7 @@ export async function registerBetaWave3Routes(app: Express) {
   });
 
   // ─── PART 8: Referral Economy ─────────────────────────────────────────────
-  app.get("/api/platform/referral-economy", async (_req, res) => {
+  app.get("/api/platform/referral-economy", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const dr = row0(await db.execute(sql`
         SELECT
@@ -466,7 +468,7 @@ export async function registerBetaWave3Routes(app: Express) {
   });
 
   // ─── PART 10: Success Story Candidates ────────────────────────────────────
-  app.get("/api/platform/success-story-candidates", async (_req, res) => {
+  app.get("/api/platform/success-story-candidates", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const candidates = rows(await db.execute(sql`
         SELECT
@@ -529,7 +531,7 @@ export async function registerBetaWave3Routes(app: Express) {
   });
 
   // ─── PART 11: Flywheel Monitor (upgraded) ─────────────────────────────────
-  app.get("/api/platform/flywheel-monitor", async (_req, res) => {
+  app.get("/api/platform/flywheel-monitor", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const devs     = n(row0(await db.execute(sql`SELECT COUNT(*) AS c FROM developer_royalty_accounts`))?.c);
       const agents   = n(row0(await db.execute(sql`SELECT COUNT(*) AS c FROM agent_templates WHERE status='active'`))?.c);
@@ -594,7 +596,7 @@ export async function registerBetaWave3Routes(app: Express) {
   });
 
   // ─── PART 12: Ecosystem Health Index ──────────────────────────────────────
-  app.get("/api/platform/ecosystem-health-index", async (_req, res) => {
+  app.get("/api/platform/ecosystem-health-index", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
@@ -645,7 +647,7 @@ export async function registerBetaWave3Routes(app: Express) {
   });
 
   // ─── PART 9: Agent Economy Leaderboard data ────────────────────────────────
-  app.get("/api/platform/agent-economy-leaderboard", async (_req, res) => {
+  app.get("/api/platform/agent-economy-leaderboard", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const topAgents = rows(await db.execute(sql`
         SELECT
@@ -724,7 +726,7 @@ export async function registerBetaWave3Routes(app: Express) {
   });
 
   // ─── PART 13: Wave 3 Validation ───────────────────────────────────────────
-  app.get("/api/platform/wave3-scorecard", async (_req, res) => {
+  app.get("/api/platform/wave3-scorecard", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const c = row0(await db.execute(sql`
         SELECT
