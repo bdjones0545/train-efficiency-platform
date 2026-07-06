@@ -1,4 +1,6 @@
 import express, { type Express, type Request, type Response } from "express";
+import { isAuthenticated } from "../auth";
+import { requireRole } from "../../lib/require-role";
 import { chatStorage } from "../chat/storage";
 import { openai, speechToText, ensureCompatibleFormat } from "./client";
 
@@ -7,7 +9,7 @@ const audioBodyParser = express.json({ limit: "50mb" });
 
 export function registerAudioRoutes(app: Express): void {
   // Get all conversations
-  app.get("/api/conversations", async (req: Request, res: Response) => {
+  app.get("/api/conversations", isAuthenticated, requireRole("ADMIN"), async (req: Request, res: Response) => {
     try {
       const conversations = await chatStorage.getAllConversations();
       res.json(conversations);
@@ -18,9 +20,9 @@ export function registerAudioRoutes(app: Express): void {
   });
 
   // Get single conversation with messages
-  app.get("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.get("/api/conversations/:id", isAuthenticated, requireRole("ADMIN"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       const conversation = await chatStorage.getConversation(id);
       if (!conversation) {
         return res.status(404).json({ error: "Conversation not found" });
@@ -34,7 +36,7 @@ export function registerAudioRoutes(app: Express): void {
   });
 
   // Create new conversation
-  app.post("/api/conversations", async (req: Request, res: Response) => {
+  app.post("/api/conversations", isAuthenticated, requireRole("ADMIN"), async (req: Request, res: Response) => {
     try {
       const { title } = req.body;
       const conversation = await chatStorage.createConversation(title || "New Chat");
@@ -46,9 +48,9 @@ export function registerAudioRoutes(app: Express): void {
   });
 
   // Delete conversation
-  app.delete("/api/conversations/:id", async (req: Request, res: Response) => {
+  app.delete("/api/conversations/:id", isAuthenticated, requireRole("ADMIN"), async (req: Request, res: Response) => {
     try {
-      const id = parseInt(req.params.id);
+      const id = parseInt(req.params.id as string);
       await chatStorage.deleteConversation(id);
       res.status(204).send();
     } catch (error) {
@@ -60,9 +62,9 @@ export function registerAudioRoutes(app: Express): void {
   // Send voice message and get streaming audio response
   // Auto-detects audio format and converts WebM/MP4/OGG to WAV
   // Uses gpt-4o-mini-transcribe for STT, gpt-audio for voice response
-  app.post("/api/conversations/:id/messages", audioBodyParser, async (req: Request, res: Response) => {
+  app.post("/api/conversations/:id/messages", isAuthenticated, requireRole("ADMIN"), audioBodyParser, async (req: Request, res: Response) => {
     try {
-      const conversationId = parseInt(req.params.id);
+      const conversationId = parseInt(req.params.id as string);
       const { audio, voice = "alloy" } = req.body;
 
       if (!audio) {
