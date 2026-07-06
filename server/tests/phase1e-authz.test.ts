@@ -84,12 +84,6 @@ test("no /api/platform/* route in these files is left unauthenticated", () => {
   assert.deepEqual(open.map((r) => `${r.method} ${r.p}`), [], "open platform routes remain");
 });
 
-// ── /api/community/* untouched by this PR ───────────────────────────────────
-test("/api/community/* routes are not modified (out of scope)", () => {
-  const COMMUNITY = /app\.(get|post|put|patch|delete)\(\s*"(\/api\/community\/[^"]*)"\s*,\s*([^\n]*)/g;
-  for (const f of FILES) {
-    for (const m of src(f).matchAll(COMMUNITY)) {
-      assert.ok(!/requireRole/.test(m[0]), `community route ${m[2]} must not be gated by Phase 1E`);
-    }
-  }
-});
+// NOTE: /api/community/* was out of scope for Phase 1E and is now guarded by
+// Phase 1G (see phase1g-authz.test.ts). The former "not modified" assertion was
+// intentionally removed here when Phase 1G superseded it.

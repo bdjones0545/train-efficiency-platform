@@ -492,7 +492,7 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 14: Hall of Fame Expansion ──────────────────────────────────────
-  app.get("/api/community/hall-of-fame-expansion", async (_req, res) => {
+  app.get("/api/community/hall-of-fame-expansion", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const firstExtDev = row0(await db.execute(sql`
         SELECT developer_id, created_at FROM developer_royalty_accounts

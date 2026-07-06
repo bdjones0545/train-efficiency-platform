@@ -437,7 +437,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 9: Hall of Fame data ─────────────────────────────────────────────
-  app.get("/api/community/hall-of-fame", async (_req, res) => {
+  app.get("/api/community/hall-of-fame", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
     try {
       const firstPublisher = row0(await db.execute(sql`
         SELECT maintainer AS developer_id, agent_name, agent_id, created_at
