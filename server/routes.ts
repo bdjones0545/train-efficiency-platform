@@ -532,34 +532,17 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/setup", async (req: any, res) => {
-    try {
-      const { db: dbRef } = await import("./db");
-      const { users } = await import("@shared/models/auth");
-      const { userProfiles } = await import("@shared/schema");
-
-      const adminEmail = "admin@efficiencystrengthtraining.com";
-      const existing = await storage.getUserByEmail(adminEmail);
-      if (existing) {
-        const token = await createAuthToken(existing.id);
-        return res.json({ success: true, message: "Admin already exists, token refreshed", token });
-      }
-
-      const hash = await bcrypt.hash("ESTadmin2025!", 10);
-      const [created] = await dbRef.insert(users).values({
-        email: adminEmail,
-        firstName: "EST",
-        lastName: "Admin",
-        passwordHash: hash,
-      }).returning();
-
-      await dbRef.insert(userProfiles).values({ userId: created.id, role: "ADMIN" as any });
-      const token = await createAuthToken(created.id);
-      res.json({ success: true, message: "Admin created", token });
-    } catch (error) {
-      console.error("Admin setup error:", error);
-      res.status(500).json({ message: "Setup failed" });
-    }
+  // SECURITY HOTFIX: this endpoint previously minted and returned an ADMIN auth
+  // token to ANY anonymous caller (and, if no admin existed, created an ADMIN user
+  // with a hardcoded password) — an unauthenticated account-takeover vector.
+  // The token-minting and hardcoded-password bootstrap have been removed, and the
+  // route now requires an authenticated ADMIN. It performs no privileged action.
+  app.post("/api/admin/setup", isAuthenticated, requireRole("ADMIN"), async (_req: any, res) => {
+    res.status(410).json({
+      success: false,
+      message:
+        "Admin bootstrap setup is disabled. Administrators are provisioned through the standard admin flow.",
+    });
   });
 
   app.post("/api/client/register", async (req: any, res) => {
