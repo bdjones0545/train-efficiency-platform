@@ -303,6 +303,16 @@ export async function runMonitoringCheck(watchlistId: string) {
 export function startIntelligenceCron() {
   const INTERVAL_MS = 30 * 60 * 1000; // every 30 minutes
   async function runDueCycles() {
+    // Global lock: prevents two instances (autoscale) from double-processing the
+    // due-watchlist sweep in the same cycle.
+    const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
+    const { acquired, lockKey } = await acquireJobLock("__global__", "intelligence_monitoring_cron", 30).catch(
+      () => ({ acquired: true, lockKey: "" })
+    );
+    if (!acquired) {
+      console.log("[Intelligence] Lock held by another instance — skipping this cycle");
+      return;
+    }
     try {
       const now = new Date();
       const due = await db
@@ -323,6 +333,8 @@ export function startIntelligenceCron() {
       if (due.length > 0) console.log(`[Intelligence] Processed ${due.length} watchlist checks`);
     } catch (e) {
       console.error("[Intelligence] Cron error:", e);
+    } finally {
+      if (lockKey) await releaseJobLock(lockKey).catch(() => {});
     }
   }
 

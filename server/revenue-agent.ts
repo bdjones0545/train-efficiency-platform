@@ -339,10 +339,23 @@ export function startRevenueAgentCron(getOrgIds: () => Promise<string[]>) {
           const lastRun = settings?.lastRunAt ? new Date(settings.lastRunAt) : null;
           const hoursSinceRun = lastRun ? (Date.now() - lastRun.getTime()) / 3600000 : 999;
           if (hoursSinceRun >= 20) {
-            console.log(`[RevenueAgent] Running scheduled scan for org ${orgId}`);
-            await runRevenueAgent(orgId, "scheduled").catch((e: any) =>
-              console.error(`[RevenueAgent] Scheduled run failed for ${orgId}:`, e.message)
+            // Per-org lock: prevents duplicate scheduled runs across instances (autoscale).
+            const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
+            const { acquired, lockKey } = await acquireJobLock(orgId, "revenue_agent_cron", 60).catch(
+              () => ({ acquired: true, lockKey: "" })
             );
+            if (!acquired) {
+              console.log(`[RevenueAgent] Lock held for org ${orgId} — skipping duplicate run`);
+              continue;
+            }
+            try {
+              console.log(`[RevenueAgent] Running scheduled scan for org ${orgId}`);
+              await runRevenueAgent(orgId, "scheduled").catch((e: any) =>
+                console.error(`[RevenueAgent] Scheduled run failed for ${orgId}:`, e.message)
+              );
+            } finally {
+              if (lockKey) await releaseJobLock(lockKey).catch(() => {});
+            }
           }
         }
       }
