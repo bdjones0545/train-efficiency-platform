@@ -704,7 +704,17 @@ export async function runPulseForAllOrgs(
     `[Pulse] Starting daily run for ${orgs.length} org(s) — triggered by ${triggeredBy}`
   );
 
+  const { acquireJobLock, releaseJobLock } = await import("../services/ceo-heartbeat-service");
+
   for (const org of orgs) {
+    // Per-org lock: prevents duplicate daily runs across instances (autoscale).
+    const { acquired, lockKey } = await acquireJobLock(org.id, "pulse_daily_cron", 1440).catch(
+      () => ({ acquired: true, lockKey: "" })
+    );
+    if (!acquired) {
+      console.log(`[Pulse][${org.id}] Lock held — skipping duplicate run`);
+      continue;
+    }
     try {
       const result = await runPulseForOrg(org.id, triggeredBy);
       console.log(
@@ -712,6 +722,8 @@ export async function runPulseForAllOrgs(
       );
     } catch (err) {
       console.error(`[Pulse][${org.id}] Run failed:`, err);
+    } finally {
+      if (lockKey) await releaseJobLock(lockKey).catch(() => {});
     }
   }
 }

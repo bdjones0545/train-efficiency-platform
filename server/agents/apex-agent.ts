@@ -507,7 +507,17 @@ export async function runApexForAllOrgs(triggeredBy: "cron" | "manual" | "startu
 
   console.log(`[Apex] Starting daily run for ${orgs.length} org(s) — triggered by ${triggeredBy}`);
 
+  const { acquireJobLock, releaseJobLock } = await import("../services/ceo-heartbeat-service");
+
   for (const org of orgs) {
+    // Per-org lock: prevents duplicate daily runs across instances (autoscale).
+    const { acquired, lockKey } = await acquireJobLock(org.id, "apex_daily_cron", 1440).catch(
+      () => ({ acquired: true, lockKey: "" })
+    );
+    if (!acquired) {
+      console.log(`[Apex][${org.id}] Lock held — skipping duplicate run`);
+      continue;
+    }
     try {
       const result = await runApexForOrg(org.id, triggeredBy);
       console.log(
@@ -515,6 +525,8 @@ export async function runApexForAllOrgs(triggeredBy: "cron" | "manual" | "startu
       );
     } catch (err) {
       console.error(`[Apex][${org.id}] Run failed:`, err);
+    } finally {
+      if (lockKey) await releaseJobLock(lockKey).catch(() => {});
     }
   }
 }
