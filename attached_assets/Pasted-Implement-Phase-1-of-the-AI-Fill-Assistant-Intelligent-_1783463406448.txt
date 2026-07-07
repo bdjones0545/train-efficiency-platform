@@ -1,0 +1,87 @@
+Implement Phase 1 of the AI Fill Assistant: Intelligent Recipient Selection.
+
+Do not implement sending yet.
+
+Goal:
+When a coach clicks "Create Fill Campaign," the system should determine the best athletes to invite before generating any outreach.
+
+Create a Recipient Intelligence step that runs before campaign generation.
+
+Prioritize candidates using a relevance score, not a simple query.
+
+Potential scoring signals (weighted):
+
+* Previously attended this exact session
+* Previously trained with this coach
+* Similar service type (speed, hockey, strength, etc.)
+* Usually attends on the same weekday/time
+* Waitlist for this session
+* Recent attendance (last 30–60 days)
+* High attendance consistency
+
+- Already booked during that time
+- Recently declined/cancelled
+- Inactive for an extended period
+- Age/program mismatch
+
+Requirements:
+
+1. Add a recipient-selection service.
+2. Return an ordered list of recommended recipients with a relevance score and explanation.
+3. Do NOT send anything.
+4. Do NOT generate campaign copy yet.
+5. Display a preview such as:
+
+Recommended Recipients
+
+Sarah Johnson
+92% match
+• Attended this session 8 times
+• Trains with Coach Hunter
+• Usually attends Wednesdays
+
+Michael Smith
+87% match
+• Waitlisted last week
+• Hockey athlete
+• Available during this time
+
+...
+
+6. Allow the coach to:
+
+* Remove recipients
+* Select/deselect recipients
+* View why each athlete was recommended
+
+7. Show summary metrics:
+
+Recommended recipients: 18
+Estimated open spots: 5
+Estimated fill probability: High / Medium / Low
+
+8. Keep this deterministic.
+   Do not use GPT/OpenAI for recipient selection.
+   Only use AI later for writing campaign copy after recipients have been confirmed.
+
+Architecture:
+
+Button click
+↓
+Recipient Intelligence Service
+↓
+Rank candidates
+↓
+Display recommendation UI
+↓
+Coach reviews recipients
+↓
+(Phase 2 will generate campaign copy)
+
+Acceptance criteria:
+
+* No outbound communication.
+* No AgentMail integration yet.
+* No SMS.
+* No email sending.
+* Only recipient discovery, ranking, and review.

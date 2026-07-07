@@ -10,10 +10,13 @@ import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import {
   Inbox, TrendingUp, Users, AlertCircle, DollarSign,
   Clock, RefreshCw, ChevronRight, Zap, UserCheck,
-  BarChart3, Target, Calendar, User
+  BarChart3, Target, Calendar, User, X, Check,
+  ChevronDown, ChevronUp, Loader2
 } from "lucide-react";
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 interface Opportunity {
   id: string;
@@ -53,12 +56,40 @@ interface OpportunityData {
   estimatedTotalValueCents: number;
 }
 
+interface RecipientCandidate {
+  userId: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  score: number;
+  reasons: string[];
+  excluded: boolean;
+  exclusionReason?: string;
+}
+
+interface SessionContext {
+  coachFirstName: string;
+  coachLastName: string;
+  serviceName: string;
+  startAt: string;
+  maxParticipants: number;
+}
+
+interface RecipientResult {
+  recipients: RecipientCandidate[];
+  sessionContext: SessionContext | null;
+  registeredCount: number;
+  openSpots: number;
+}
+
 interface CampaignDraft {
   sessionId: string;
   subject: string;
   smsBody: string;
   emailBody: string;
 }
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 function priorityBadge(priority: string) {
   switch (priority) {
@@ -89,6 +120,115 @@ function categoryLabel(category: string) {
   }
 }
 
+function scoreBadge(score: number) {
+  const pct = `${score}% match`;
+  if (score >= 70) return <Badge className="text-xs bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20">{pct}</Badge>;
+  if (score >= 40) return <Badge className="text-xs bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20">{pct}</Badge>;
+  return <Badge className="text-xs bg-muted text-muted-foreground">{pct}</Badge>;
+}
+
+function fillProbabilityLabel(recommended: number, openSpots: number): { label: string; color: string } {
+  if (openSpots === 0) return { label: "N/A", color: "text-muted-foreground" };
+  const ratio = recommended / Math.max(1, openSpots);
+  if (ratio >= 1.5) return { label: "High", color: "text-green-600 dark:text-green-400" };
+  if (ratio >= 1.0) return { label: "Medium", color: "text-yellow-600 dark:text-yellow-400" };
+  return { label: "Low", color: "text-red-600 dark:text-red-400" };
+}
+
+// ── Recipient Card ─────────────────────────────────────────────────────────────
+
+function RecipientCard({
+  candidate,
+  selected,
+  onToggle,
+  onRemove,
+}: {
+  candidate: RecipientCandidate;
+  selected: boolean;
+  onToggle: () => void;
+  onRemove: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const name = `${candidate.firstName} ${candidate.lastName}`.trim() || candidate.email;
+
+  return (
+    <div
+      data-testid={`recipient-card-${candidate.userId}`}
+      className={`rounded-lg border px-3 py-2.5 transition-colors ${
+        selected
+          ? "bg-background border-border"
+          : "bg-muted/30 border-transparent opacity-50"
+      }`}
+    >
+      <div className="flex items-center gap-2">
+        {/* Checkbox */}
+        <button
+          data-testid={`recipient-toggle-${candidate.userId}`}
+          onClick={onToggle}
+          className={`flex-none w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+            selected
+              ? "bg-primary border-primary text-primary-foreground"
+              : "border-muted-foreground/40 bg-transparent"
+          }`}
+        >
+          {selected && <Check className="h-3 w-3" />}
+        </button>
+
+        {/* Avatar-like initial */}
+        <div className="flex-none w-8 h-8 rounded-full bg-muted flex items-center justify-center text-xs font-semibold text-muted-foreground">
+          {(candidate.firstName?.[0] || candidate.email?.[0] || "?").toUpperCase()}
+        </div>
+
+        {/* Name + score */}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-sm font-medium truncate">{name}</p>
+            {scoreBadge(candidate.score)}
+          </div>
+          {/* First reason as preview */}
+          {candidate.reasons[0] && (
+            <p className="text-xs text-muted-foreground truncate">
+              • {candidate.reasons[0]}
+            </p>
+          )}
+        </div>
+
+        {/* Expand reasons */}
+        {candidate.reasons.length > 1 && (
+          <button
+            data-testid={`recipient-expand-${candidate.userId}`}
+            onClick={() => setExpanded(v => !v)}
+            className="text-muted-foreground hover:text-foreground transition-colors p-1"
+          >
+            {expanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          </button>
+        )}
+
+        {/* Remove */}
+        <button
+          data-testid={`recipient-remove-${candidate.userId}`}
+          onClick={onRemove}
+          className="flex-none text-muted-foreground hover:text-destructive transition-colors p-1"
+          title="Remove from list"
+        >
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      {/* Expanded reasons */}
+      {expanded && candidate.reasons.length > 1 && (
+        <div className="mt-2 pl-[52px] space-y-0.5">
+          {candidate.reasons.map((r, i) => (
+            <p key={i} className="text-xs text-muted-foreground">• {r}</p>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Fill Campaign Dialog ───────────────────────────────────────────────────────
+
 function FillCampaignDialog({
   opportunity,
   onClose,
@@ -97,98 +237,270 @@ function FillCampaignDialog({
   onClose: () => void;
 }) {
   const { toast } = useToast();
+
+  // Step state: 'recipients' (Phase 1) → 'draft' (Phase 2, copy generation)
+  const [step, setStep] = useState<"recipients" | "draft">("recipients");
+
+  // Recipient state
+  const [removedIds, setRemovedIds] = useState<Set<string>>(new Set());
+  const [deselectedIds, setDeselectedIds] = useState<Set<string>>(new Set());
+
+  // Copy draft state (Phase 2)
   const [draft, setDraft] = useState<CampaignDraft | null>(null);
 
+  const bookingId = opportunity.sessionId || "unknown";
+
+  // ── Recipient query ──────────────────────────────────────────────────────
+  const { data: recipientData, isLoading: recipientsLoading, error: recipientsError } = useQuery<RecipientResult>({
+    queryKey: [`/api/scheduling-intelligence/fill-campaign/${bookingId}/recipients`],
+    queryFn: async () => authenticatedFetch(
+      `/api/scheduling-intelligence/fill-campaign/${bookingId}/recipients`
+    ),
+    enabled: step === "recipients",
+    retry: 1,
+  });
+
+  // Filter out removed candidates, build visible list
+  const allRecipients = (recipientData?.recipients ?? []).filter(
+    (r) => !removedIds.has(r.userId)
+  );
+  const selectedIds = new Set(
+    allRecipients
+      .filter((r) => !deselectedIds.has(r.userId))
+      .map((r) => r.userId)
+  );
+  const selectedCount = selectedIds.size;
+  const openSpots = recipientData?.openSpots ?? opportunity.openSpots ?? 0;
+  const { label: fillLabel, color: fillColor } = fillProbabilityLabel(selectedCount, openSpots);
+
+  const toggleRecipient = (userId: string) => {
+    setDeselectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  };
+
+  const removeRecipient = (userId: string) => {
+    setRemovedIds((prev) => new Set([...prev, userId]));
+    setDeselectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(userId);
+      return next;
+    });
+  };
+
+  // ── Campaign copy generation (Phase 2, already built) ────────────────────
   const generateMutation = useMutation({
     mutationFn: async () => {
-      const bookingId = opportunity.sessionId || "unknown";
       const res = await apiRequest("POST", `/api/scheduling-intelligence/fill-campaign/${bookingId}`, {
         sessionName: opportunity.title.replace(/^Fill \d+ open spot[s]? in /, ""),
         startAt: opportunity.sessionStart,
-        openSpots: opportunity.openSpots,
+        openSpots: selectedCount,
       });
       return res.json();
     },
-    onSuccess: (data) => {
-      setDraft(data);
-    },
-    onError: () => {
-      toast({ title: "Error", description: "Could not generate campaign draft.", variant: "destructive" });
-    },
+    onSuccess: (data) => setDraft(data),
+    onError: () => toast({ title: "Error", description: "Could not generate campaign draft.", variant: "destructive" }),
   });
 
+  const handleConfirmRecipients = () => {
+    if (selectedCount === 0) {
+      toast({ title: "No recipients selected", description: "Select at least one recipient to continue.", variant: "destructive" });
+      return;
+    }
+    setStep("draft");
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
     <Dialog open onOpenChange={onClose}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Zap className="h-5 w-5 text-primary" />
-            Fill Campaign Generator
+            {step === "recipients" ? "Recommended Recipients" : "Fill Campaign Generator"}
           </DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="p-3 rounded-lg bg-muted/40 text-sm">
-            <p className="font-medium">{opportunity.title}</p>
-            {opportunity.sessionStart && (
-              <p className="text-xs text-muted-foreground mt-1">
-                {format(parseISO(opportunity.sessionStart), "EEE MMM d · h:mm a")} ·{" "}
-                {opportunity.openSpots} open spot{opportunity.openSpots !== 1 ? "s" : ""}
-              </p>
-            )}
-          </div>
+        {/* Step indicator */}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground -mt-1">
+          <span className={step === "recipients" ? "text-primary font-medium" : ""}>1 · Select Recipients</span>
+          <ChevronRight className="h-3 w-3" />
+          <span className={step === "draft" ? "text-primary font-medium" : ""}>2 · Generate Copy</span>
+        </div>
 
-          {!draft ? (
-            <Button
-              className="w-full"
-              onClick={() => generateMutation.mutate()}
-              disabled={generateMutation.isPending}
-              data-testid="button-generate-campaign"
-            >
-              {generateMutation.isPending ? (
-                <>Generating with AI...</>
-              ) : (
-                <><Zap className="h-4 w-4 mr-2" />Generate Fill Campaign</>
-              )}
-            </Button>
-          ) : (
-            <div className="space-y-3">
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subject Line</p>
-                <div className="p-3 rounded-lg border bg-background text-sm font-medium">{draft.subject}</div>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">SMS</p>
-                <div className="p-3 rounded-lg border bg-background text-sm whitespace-pre-wrap">{draft.smsBody}</div>
-              </div>
-              <div className="space-y-1">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</p>
-                <div className="p-3 rounded-lg border bg-background text-sm whitespace-pre-wrap">{draft.emailBody}</div>
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="flex-1"
-                  onClick={() => generateMutation.mutate()}
-                  disabled={generateMutation.isPending}
-                >
-                  <RefreshCw className="h-3.5 w-3.5 mr-1.5" />Regenerate
-                </Button>
-                <Button size="sm" className="flex-1" onClick={() => {
-                  navigator.clipboard?.writeText(`Subject: ${draft.subject}\n\n${draft.emailBody}`);
-                  toast({ title: "Copied to clipboard" });
-                }}>
-                  Copy Email
-                </Button>
-              </div>
-            </div>
+        {/* Session context pill */}
+        <div className="p-3 rounded-lg bg-muted/40 text-sm flex-none">
+          <p className="font-medium">{opportunity.title}</p>
+          {opportunity.sessionStart && (
+            <p className="text-xs text-muted-foreground mt-1">
+              {format(parseISO(opportunity.sessionStart), "EEE MMM d · h:mm a")}
+              {" · "}{openSpots} open spot{openSpots !== 1 ? "s" : ""}
+            </p>
           )}
         </div>
+
+        {/* ── Step 1: Recipients ─────────────────────────────────────────── */}
+        {step === "recipients" && (
+          <div className="flex flex-col gap-3 min-h-0 flex-1">
+            {recipientsLoading && (
+              <div className="flex flex-col items-center justify-center py-10 gap-3">
+                <Loader2 className="h-6 w-6 animate-spin text-primary" />
+                <p className="text-sm text-muted-foreground">Analyzing athlete history…</p>
+              </div>
+            )}
+
+            {recipientsError && (
+              <div className="py-6 text-center">
+                <AlertCircle className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground">Could not load recipient suggestions.</p>
+              </div>
+            )}
+
+            {!recipientsLoading && !recipientsError && (
+              <>
+                {/* Summary metrics */}
+                <div className="grid grid-cols-3 gap-2 flex-none">
+                  <div className="rounded-lg border bg-muted/30 p-2 text-center">
+                    <p className="text-lg font-bold text-primary" data-testid="metric-recommended-count">{allRecipients.length}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">Recommended</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/30 p-2 text-center">
+                    <p className="text-lg font-bold" data-testid="metric-open-spots">{openSpots}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">Open Spots</p>
+                  </div>
+                  <div className="rounded-lg border bg-muted/30 p-2 text-center">
+                    <p className={`text-lg font-bold ${fillColor}`} data-testid="metric-fill-probability">{fillLabel}</p>
+                    <p className="text-[10px] text-muted-foreground leading-tight">Fill Probability</p>
+                  </div>
+                </div>
+
+                {allRecipients.length === 0 ? (
+                  <div className="py-6 text-center">
+                    <Users className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
+                    <p className="text-sm font-medium">No recipients found</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      No active clients match the criteria for this session.
+                    </p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center justify-between text-xs text-muted-foreground flex-none">
+                      <span>{selectedCount} selected · {allRecipients.length} recommended</span>
+                      <button
+                        data-testid="button-select-all"
+                        className="text-primary hover:underline"
+                        onClick={() => setDeselectedIds(new Set())}
+                      >
+                        Select all
+                      </button>
+                    </div>
+
+                    {/* Scrollable recipient list */}
+                    <div className="overflow-y-auto flex-1 space-y-1.5 pr-0.5">
+                      {allRecipients.map((candidate) => (
+                        <RecipientCard
+                          key={candidate.userId}
+                          candidate={candidate}
+                          selected={selectedIds.has(candidate.userId)}
+                          onToggle={() => toggleRecipient(candidate.userId)}
+                          onRemove={() => removeRecipient(candidate.userId)}
+                        />
+                      ))}
+                    </div>
+                  </>
+                )}
+
+                <Button
+                  className="w-full flex-none"
+                  onClick={handleConfirmRecipients}
+                  disabled={selectedCount === 0}
+                  data-testid="button-confirm-recipients"
+                >
+                  Confirm {selectedCount} Recipient{selectedCount !== 1 ? "s" : ""}
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ── Step 2: Campaign Copy (Phase 2) ───────────────────────────── */}
+        {step === "draft" && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <button
+                data-testid="button-back-to-recipients"
+                onClick={() => { setStep("recipients"); setDraft(null); }}
+                className="text-primary hover:underline"
+              >
+                ← Back to recipients
+              </button>
+              <span>·</span>
+              <span>{selectedCount} recipient{selectedCount !== 1 ? "s" : ""} confirmed</span>
+            </div>
+
+            {!draft ? (
+              <Button
+                className="w-full"
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending}
+                data-testid="button-generate-campaign"
+              >
+                {generateMutation.isPending ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Generating with AI…</>
+                ) : (
+                  <><Zap className="h-4 w-4 mr-2" />Generate Fill Campaign</>
+                )}
+              </Button>
+            ) : (
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Subject Line</p>
+                  <div className="p-3 rounded-lg border bg-background text-sm font-medium">{draft.subject}</div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">SMS</p>
+                  <div className="p-3 rounded-lg border bg-background text-sm whitespace-pre-wrap">{draft.smsBody}</div>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Email</p>
+                  <div className="p-3 rounded-lg border bg-background text-sm whitespace-pre-wrap">{draft.emailBody}</div>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="flex-1"
+                    onClick={() => generateMutation.mutate()}
+                    disabled={generateMutation.isPending}
+                  >
+                    <RefreshCw className="h-3.5 w-3.5 mr-1.5" />Regenerate
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="flex-1"
+                    data-testid="button-copy-email"
+                    onClick={() => {
+                      navigator.clipboard?.writeText(`Subject: ${draft.subject}\n\n${draft.emailBody}`);
+                      toast({ title: "Copied to clipboard" });
+                    }}
+                  >
+                    Copy Email
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
 }
+
+// ── Opportunity Card ───────────────────────────────────────────────────────────
 
 function OpportunityCard({
   opp,
@@ -254,6 +566,8 @@ function OpportunityCard({
   );
 }
 
+// ── Page ──────────────────────────────────────────────────────────────────────
+
 export default function AdminSchedulingOpportunityInboxPage() {
   const [activeOpp, setActiveOpp] = useState<Opportunity | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("all");
@@ -271,19 +585,14 @@ export default function AdminSchedulingOpportunityInboxPage() {
     if (opp.category === "revenue" && opp.type === "fill_session") {
       setActiveOpp(opp);
     } else if (opp.category === "revenue" && opp.type === "recover_cancellation") {
-      // Navigate to scheduling for cancellation recovery
       window.location.href = "/admin/scheduling-command-center";
     } else if (opp.category === "capacity" && opp.type === "waitlist_demand") {
-      // Navigate to open sessions to add another session
       window.location.href = "/sessions";
     } else if (opp.category === "retention" && opp.type === "reactivation") {
-      // Navigate to AI comms center for outreach drafts
       window.location.href = "/admin/ai-outreach-opportunities";
     } else if (opp.category === "coach") {
-      // Navigate to coach capacity page
       window.location.href = "/admin/coach-capacity";
     } else {
-      // Fallback: navigate to command center
       window.location.href = "/admin/scheduling-command-center";
     }
   };

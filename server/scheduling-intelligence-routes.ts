@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import OpenAI from "openai";
+import { rankFillRecipients } from "./services/fill-recipient-service";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -1144,6 +1145,19 @@ export async function registerSchedulingIntelligenceRoutes(
       res.json({ coaches: profiles });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to compute utilization intelligence", error: e.message });
+    }
+  });
+
+  // ─── Fill Campaign: Recipient Intelligence (deterministic, no AI) ──────────
+  app.get("/api/scheduling-intelligence/fill-campaign/:bookingId/recipients", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { bookingId } = req.params;
+      const result = await rankFillRecipients(bookingId, orgId);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to rank recipients", error: e.message });
     }
   });
 
