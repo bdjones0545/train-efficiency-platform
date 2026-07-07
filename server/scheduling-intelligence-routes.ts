@@ -124,6 +124,22 @@ export async function registerSchedulingIntelligenceRoutes(
     )
   `).catch(() => {});
 
+  // Extend fill_campaign_drafts with Phase 2 metadata columns
+  for (const stmt of [
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS preview_text TEXT`,
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS sms_body TEXT`,
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS push_body TEXT`,
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS social_caption TEXT`,
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS selected_recipient_count INTEGER DEFAULT 0`,
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS recipient_ids JSONB`,
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS recipient_summary JSONB`,
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS model_used TEXT`,
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS generation_version TEXT`,
+    `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS generated_at TIMESTAMPTZ`,
+  ]) {
+    await db.execute(sql.raw(stmt)).catch(() => {});
+  }
+
   // ─── Health Score ─────────────────────────────────────────────────────────
   app.get("/api/scheduling-intelligence/health-score", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     try {
@@ -1168,38 +1184,102 @@ export async function registerSchedulingIntelligenceRoutes(
       if (!orgId) return res.status(403).json({ message: "No org" });
 
       const { bookingId } = req.params;
-      const { sessionName, startAt, openSpots, coachName, orgName } = req.body;
+      const {
+        sessionName, startAt, openSpots,
+        selectedCount, recipientIds, recipientSummary,
+      } = req.body;
       const sessionId = bookingId || req.body.sessionId;
 
-      const start = startAt ? new Date(startAt) : new Date();
+      // ── Fetch session context from DB ─────────────────────────────────────
+      const [sessionRaw, orgRaw] = await Promise.all([
+        db.execute(sql`
+          SELECT b.start_at, b.max_participants,
+                 s.name AS service_name,
+                 u.first_name AS coach_first, u.last_name AS coach_last
+          FROM bookings b
+          LEFT JOIN services s ON b.service_id = s.id
+          LEFT JOIN coach_profiles cp ON b.coach_id = cp.id
+          LEFT JOIN users u ON cp.user_id = u.id
+          WHERE b.id = ${sessionId} AND b.organization_id = ${orgId}
+          LIMIT 1
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT name FROM organizations WHERE id = ${orgId} LIMIT 1
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const sessRow = (Array.isArray(sessionRaw) ? sessionRaw : (sessionRaw as any)?.rows ?? [])[0];
+      const orgRow = (Array.isArray(orgRaw) ? orgRaw : (orgRaw as any)?.rows ?? [])[0];
+
+      const resolvedSessionName = sessRow?.service_name || sessionName || "Group Training Session";
+      const resolvedCoachName = sessRow
+        ? `${sessRow.coach_first || ""} ${sessRow.coach_last || ""}`.trim() || "your coach"
+        : "your coach";
+      const resolvedOrgName = orgRow?.name || "our studio";
+
+      const start = startAt ? new Date(startAt) : (sessRow?.start_at ? new Date(sessRow.start_at) : new Date());
       const dateStr = start.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
       const timeStr = start.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+      const resolvedOpenSpots = openSpots ?? (sessRow?.max_participants ?? "a few");
+      const resolvedSelectedCount = selectedCount ?? resolvedOpenSpots;
 
-      const prompt = `You are a fitness business outreach specialist. Write a short, compelling fill-campaign message to re-engage clients for an open group training session.
+      // ── Build audience context block ──────────────────────────────────────
+      const audienceLines: string[] = [];
+      if (resolvedSelectedCount) audienceLines.push(`- ${resolvedSelectedCount} athletes selected for outreach`);
+      if (recipientSummary) {
+        const s = recipientSummary as any;
+        if (s.avgScore) audienceLines.push(`- Average relevance score: ${s.avgScore}%`);
+        if (s.topReasons?.length) {
+          audienceLines.push("- Key audience characteristics:");
+          (s.topReasons as string[]).slice(0, 5).forEach((r: string) => audienceLines.push(`  • ${r}`));
+        }
+        if (s.sportMix?.length) audienceLines.push(`- Sport/program mix: ${(s.sportMix as string[]).join(", ")}`);
+        if (s.waitlistedCount) audienceLines.push(`- ${s.waitlistedCount} athletes are waitlisted for this session`);
+        if (s.coachRegularsCount) audienceLines.push(`- ${s.coachRegularsCount} regularly train with Coach ${resolvedCoachName}`);
+      }
+      const audienceBlock = audienceLines.length
+        ? `\nAUDIENCE SUMMARY:\n${audienceLines.join("\n")}\n`
+        : "";
 
-Session: ${sessionName || "Group Training Session"}
-Date: ${dateStr} at ${timeStr}
-Open spots: ${openSpots || "a few"}
-Coach: ${coachName || "your coach"}
-Gym/Studio: ${orgName || "our studio"}
+      const MODEL = "gpt-4o";
+      const GENERATION_VERSION = "phase2-v1";
 
-Write:
-1. A compelling subject line (max 8 words)
-2. A short SMS-style body (2-3 sentences, max 80 words, personal, urgent but not pushy)
-3. An email body (3-4 sentences, max 150 words, friendly, creates urgency around limited spots)
+      const prompt = `You are an expert fitness business outreach specialist. Write a personalized fill-campaign for a strength and conditioning studio.
+${audienceBlock}
+SESSION DETAILS:
+- Session: ${resolvedSessionName}
+- Coach: ${resolvedCoachName}
+- Studio: ${resolvedOrgName}
+- Date/Time: ${dateStr} at ${timeStr}
+- Open spots: ${resolvedOpenSpots}
+- Outreach audience: ${resolvedSelectedCount} selected athletes
 
-Return as JSON:
+INSTRUCTIONS:
+- Write copy that feels tailored to this specific audience — reference their history with the coach and session naturally (not by name).
+- Create urgency around the limited spots without being pushy.
+- Tone: warm, personal, motivating. Not corporate. Not generic.
+- For email: 3-4 short paragraphs, max 200 words total.
+- For SMS: 2-3 sentences, max 70 words, conversational.
+- For push: ultra-short, max 12 words, action-oriented.
+- Subject line: max 9 words, creates curiosity or urgency.
+- Preview text: 1 sentence, teases the email, max 15 words.
+- Social caption: 1-2 punchy sentences with 2-3 hashtags, optional use.
+
+Return ONLY a JSON object with these exact keys:
 {
   "subject": "...",
+  "previewText": "...",
+  "emailBody": "...",
   "smsBody": "...",
-  "emailBody": "..."
+  "pushBody": "...",
+  "socialCaption": "..."
 }`;
 
       const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
+        model: MODEL,
         messages: [{ role: "user", content: prompt }],
         response_format: { type: "json_object" },
-        max_tokens: 400,
+        max_tokens: 800,
       });
 
       const content = completion.choices[0]?.message?.content ?? "{}";
@@ -1207,22 +1287,60 @@ Return as JSON:
       try {
         draft = JSON.parse(content);
       } catch {
-        draft = { subject: "Spots available this week!", smsBody: "Hey! A spot just opened in your session. Grab it before it's gone.", emailBody: "We have a spot available in your upcoming training session. Don't miss this opportunity — spaces fill fast!" };
+        draft = {
+          subject: "Spots still open — reserve yours today",
+          previewText: "A few spots remain in this week's session.",
+          emailBody: "Hey! A few spots just opened up in an upcoming session with Coach " + resolvedCoachName + ". Based on your training history this is a great fit — and spaces are filling fast.\n\nThis is the same session many of you have attended before. Don't miss the chance to lock in your spot.\n\nReply or book directly to confirm your place.",
+          smsBody: "Hey! A spot just opened in " + resolvedSessionName + " with Coach " + resolvedCoachName + " on " + dateStr + ". Only " + resolvedOpenSpots + " left — grab it before it's gone.",
+          pushBody: resolvedOpenSpots + " spots left in " + resolvedSessionName + ".",
+          socialCaption: "Spots available in this week\u2019s session \u2014 DM to reserve. \uD83D\uDCAA #TrainingDay #SpotAvailable",
+        };
       }
 
+      const nowIso = new Date().toISOString();
+
+      // ── Persist with rich metadata ────────────────────────────────────────
       if (sessionId) {
         await db.execute(sql`
-          INSERT INTO fill_campaign_drafts (org_id, booking_id, subject, body, target_count, status)
-          VALUES (${orgId}, ${sessionId}, ${draft.subject || ""}, ${draft.emailBody || draft.smsBody || ""}, ${openSpots || 0}, 'draft')
+          INSERT INTO fill_campaign_drafts (
+            org_id, booking_id, subject, body,
+            preview_text, sms_body, push_body, social_caption,
+            target_count, selected_recipient_count,
+            recipient_ids, recipient_summary,
+            model_used, generation_version, generated_at, status
+          ) VALUES (
+            ${orgId}, ${sessionId},
+            ${draft.subject || ""},
+            ${draft.emailBody || ""},
+            ${draft.previewText || ""},
+            ${draft.smsBody || ""},
+            ${draft.pushBody || ""},
+            ${draft.socialCaption || ""},
+            ${resolvedOpenSpots || 0},
+            ${resolvedSelectedCount || 0},
+            ${JSON.stringify(recipientIds ?? [])},
+            ${JSON.stringify(recipientSummary ?? {})},
+            ${MODEL}, ${GENERATION_VERSION}, ${nowIso}, 'draft'
+          )
         `).catch(() => {});
       }
 
       res.json({
         sessionId,
         subject: draft.subject || "",
-        smsBody: draft.smsBody || "",
+        previewText: draft.previewText || "",
         emailBody: draft.emailBody || "",
-        generatedAt: new Date().toISOString(),
+        smsBody: draft.smsBody || "",
+        pushBody: draft.pushBody || "",
+        socialCaption: draft.socialCaption || "",
+        generatedAt: nowIso,
+        modelUsed: MODEL,
+        generationVersion: GENERATION_VERSION,
+        selectedCount: resolvedSelectedCount,
+        openSpots: resolvedOpenSpots,
+        sessionName: resolvedSessionName,
+        coachName: resolvedCoachName,
+        orgName: resolvedOrgName,
       });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to generate fill campaign", error: e.message });

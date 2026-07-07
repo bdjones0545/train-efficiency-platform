@@ -1,0 +1,102 @@
+Implement Phase 2 of the AI Fill Assistant: Personalized Campaign Generation.
+
+Do not implement sending yet.
+
+Goal:
+After the coach confirms recipients in Phase 1, generate a personalized outreach campaign using the selected audience.
+
+Workflow:
+
+Opportunity
+→ Recipient Intelligence
+→ Coach reviews recipients
+→ Generate Campaign
+→ Preview
+→ (Phase 3 will handle approvals and sending)
+
+Requirements:
+
+1. Replace the current generic prompt with one that includes:
+
+   * Session name
+   * Coach name
+   * Organization name
+   * Session date/time
+   * Open spots
+   * Recipient summary:
+
+     * Number selected
+     * Common characteristics
+     * Top recommendation reasons
+     * Sport/program mix
+     * Average attendance history
+
+2. Generate:
+
+* Subject line
+* Preview text
+* Email body
+* SMS version
+* Push notification version
+* Short social caption (optional future use)
+
+3. The AI should reference the audience naturally.
+
+Example:
+
+Instead of:
+"Spots are available tomorrow."
+
+Use:
+"Many of the athletes invited have attended Coach Hunter's semi-private sessions before, so this is a great opportunity to reserve your usual spot before the session fills."
+
+Do not personalize to individual names yet—generate one campaign for the selected audience.
+
+4. Show a full preview screen:
+
+Campaign Summary
+
+* Session
+* Coach
+* Recipients selected
+* Estimated revenue
+* Open spots
+
+Tabs:
+
+* Email
+* SMS
+* Push
+
+Buttons:
+
+* Regenerate
+* Copy Email
+* Copy SMS
+* Back to Recipients
+
+5. Store richer metadata with the draft:
+
+* selected_recipient_count
+* recipient_ids
+* recipient_summary
+* generated_at
+* model_used
+* generation_version
+
+Do not only store subject/body.
+
+6. Continue saving drafts only.
+
+No outbound communication.
+No AgentMail.
+No Gmail.
+No Twilio.
+No SendGrid.
+
+Acceptance criteria:
+
+* Campaign reflects the selected audience.
+* Copy is significantly better than the current generic draft.
+* Coach can regenerate without losing recipient selections.
+* Existing approval/sending architecture remains untouched.
