@@ -288,12 +288,40 @@ function RecipientCard({
   );
 }
 
+// ── Reason label distiller ─────────────────────────────────────────────────────
+
+function distillReason(raw: string): string {
+  // raw format from computeRecipientSummary: "N athletes: reason lowercase"
+  const stripped = raw.replace(/^\d+\s+athlete[s]?:\s*/i, "");
+  if (/attended this session/i.test(stripped)) return "Previous attendee";
+  if (/trains with coach\s+(\S+)/i.test(stripped)) {
+    const m = stripped.match(/trains with coach\s+(\S+)/i);
+    return m ? `Coach ${m[1]} regular` : "Coach regular";
+  }
+  if (/usually attends on\s+(\w+)/i.test(stripped)) {
+    const m = stripped.match(/usually attends on\s+(\w+)/i);
+    return m ? `${m[1]} athlete` : "Regular day attendee";
+  }
+  if (/(\w+(?:\s+\w+)?)\s+athlete.*match/i.test(stripped)) {
+    const m = stripped.match(/^(\w+(?:\s+\w+)?)\s+athlete/i);
+    return m ? `${m[1]} athlete` : "Sport match";
+  }
+  if (/waitlisted/i.test(stripped)) return "On waitlist";
+  if (/active in the last 30/i.test(stripped)) return "Recently active";
+  if (/active in the last 60/i.test(stripped)) return "Active this quarter";
+  if (/high consistency/i.test(stripped)) return "High consistency";
+  if (/sessions in/i.test(stripped)) return "Consistent attendee";
+  if (/recently cancelled/i.test(stripped)) return "Recent cancellation";
+  return stripped.charAt(0).toUpperCase() + stripped.slice(1);
+}
+
 // ── Campaign Preview (Step 2) ─────────────────────────────────────────────────
 
 function CampaignPreview({
   draft,
   opportunity,
   selectedCount,
+  recipientSummary,
   onRegenerate,
   onBack,
   isPending,
@@ -301,6 +329,7 @@ function CampaignPreview({
   draft: CampaignDraft;
   opportunity: Opportunity;
   selectedCount: number;
+  recipientSummary: RecipientSummary;
   onRegenerate: () => void;
   onBack: () => void;
   isPending: boolean;
@@ -370,6 +399,69 @@ function CampaignPreview({
           </div>
         </div>
       </div>
+
+      {/* Audience Summary card */}
+      {(selectedCount > 0 || recipientSummary.topReasons.length > 0) && (
+        <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5 flex-none">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Audience Summary</p>
+
+          {/* Recipient count + avg match row */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <p className="text-[10px] text-muted-foreground mb-0.5">Recipients</p>
+              <p className="text-2xl font-bold leading-none" data-testid="audience-recipient-count">{selectedCount}</p>
+              <p className="text-[10px] text-muted-foreground mt-0.5">selected</p>
+            </div>
+            {recipientSummary.avgScore > 0 && (
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-0.5">Average Match</p>
+                <p className={`text-2xl font-bold leading-none ${
+                  recipientSummary.avgScore >= 70
+                    ? "text-green-600 dark:text-green-400"
+                    : recipientSummary.avgScore >= 40
+                    ? "text-yellow-600 dark:text-yellow-400"
+                    : "text-muted-foreground"
+                }`} data-testid="audience-avg-score">{recipientSummary.avgScore}%</p>
+                <p className="text-[10px] text-muted-foreground mt-0.5">relevance score</p>
+              </div>
+            )}
+          </div>
+
+          {/* Top reasons */}
+          {recipientSummary.topReasons.length > 0 && (
+            <div>
+              <p className="text-[10px] text-muted-foreground mb-1.5">Top reasons</p>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                {recipientSummary.topReasons.slice(0, 6).map((reason, i) => (
+                  <div key={i} className="flex items-center gap-1.5 text-xs text-foreground">
+                    <Check className="h-3 w-3 flex-none text-green-500" />
+                    <span className="truncate">{distillReason(reason)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Fill probability + revenue row */}
+          <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border/60">
+            <div>
+              <p className="text-[10px] text-muted-foreground mb-0.5">Est. Fill Probability</p>
+              <p className={`text-sm font-semibold ${fillProbabilityLabel(selectedCount, draft.openSpots ?? 0).color}`}
+                data-testid="audience-fill-probability">
+                {fillProbabilityLabel(selectedCount, draft.openSpots ?? 0).label}
+              </p>
+            </div>
+            {opportunity.estimatedValueCents > 0 && (
+              <div>
+                <p className="text-[10px] text-muted-foreground mb-0.5">Est. Revenue</p>
+                <p className="text-sm font-semibold text-green-600 dark:text-green-400" data-testid="audience-est-revenue">
+                  ${Math.round(opportunity.estimatedValueCents / 100).toLocaleString()}
+                </p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 flex-none">
@@ -725,6 +817,7 @@ function FillCampaignDialog({
                 draft={draft}
                 opportunity={opportunity}
                 selectedCount={selectedCount}
+                recipientSummary={recipientSummary}
                 onRegenerate={() => generateMutation.mutate()}
                 onBack={handleBackToRecipients}
                 isPending={generateMutation.isPending}
