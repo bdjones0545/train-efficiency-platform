@@ -203,6 +203,31 @@ app.use((req, res, next) => {
   const { seedDefaultEducationLibrary } = await import("./education-seed");
   await seedDefaultEducationLibrary();
 
+  // ─── Cron duplicate-execution guard (multi-instance safety) ──────────────
+  // Wraps a cron body in a DB job lock so two server instances cannot run the
+  // same job concurrently. Single-instance behavior is unchanged — the lock is
+  // always acquired on the first attempt. When another instance already holds
+  // the lock, the body is skipped and logged. Per-org jobs lock on org.id;
+  // process-global jobs lock on the "__global__" sentinel.
+  const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
+  async function runWithJobLock(
+    lockScope: string,
+    jobName: string,
+    ttlMinutes: number,
+    fn: () => Promise<void>,
+  ): Promise<void> {
+    const { acquired, lockKey } = await acquireJobLock(lockScope, jobName, ttlMinutes);
+    if (!acquired) {
+      console.log(`[Cron] Skipped ${jobName} for ${lockScope} — lock held by another instance`);
+      return;
+    }
+    try {
+      await fn();
+    } finally {
+      await releaseJobLock(lockKey);
+    }
+  }
+
   const { detectOutcomesForOrg, executeAutoActions, runCampaignEngine } = await import("./action-tracking");
   const { db: actionDb } = await import("./db");
   const { organizations: orgsTable } = await import("@shared/schema");
@@ -211,7 +236,9 @@ app.use((req, res, next) => {
     try {
       const orgs = await actionDb.select({ id: orgsTable.id }).from(orgsTable).limit(100);
       for (const org of orgs) {
-        await detectOutcomesForOrg(org.id).catch(() => {});
+        await runWithJobLock(org.id, "outcome_detection", 30, async () => {
+          await detectOutcomesForOrg(org.id).catch(() => {});
+        });
       }
     } catch (_) {}
   };
@@ -220,13 +247,15 @@ app.use((req, res, next) => {
     try {
       const orgs = await actionDb.select({ id: orgsTable.id, automationLevel: orgsTable.automationLevel }).from(orgsTable).limit(100);
       for (const org of orgs) {
-        const level = org.automationLevel ?? 1;
-        if (level >= 2) {
-          await runCampaignEngine(org.id).catch(() => {});
-        }
-        if (level >= 3) {
-          await executeAutoActions(org.id).catch(() => {});
-        }
+        await runWithJobLock(org.id, "auto_send_and_campaigns", 30, async () => {
+          const level = org.automationLevel ?? 1;
+          if (level >= 2) {
+            await runCampaignEngine(org.id).catch(() => {});
+          }
+          if (level >= 3) {
+            await executeAutoActions(org.id).catch(() => {});
+          }
+        });
       }
     } catch (_) {}
   };
@@ -237,13 +266,15 @@ app.use((req, res, next) => {
   // ─── Agent Pending Actions cleanup ───────────────────────────────────────
   // Mark expired rows every 15 minutes; also run once on startup.
   const runPendingActionsCleanup = async () => {
-    try {
-      const { storage: st } = await import("./storage");
-      const count = await st.markExpiredAgentPendingActions();
-      if (count > 0) console.log(`[PendingActionsCleanup] Marked ${count} expired pending action(s).`);
-    } catch (err) {
-      console.error("[PendingActionsCleanup] Error:", err);
-    }
+    await runWithJobLock("__global__", "pending_actions_cleanup", 15, async () => {
+      try {
+        const { storage: st } = await import("./storage");
+        const count = await st.markExpiredAgentPendingActions();
+        if (count > 0) console.log(`[PendingActionsCleanup] Marked ${count} expired pending action(s).`);
+      } catch (err) {
+        console.error("[PendingActionsCleanup] Error:", err);
+      }
+    });
   };
   runPendingActionsCleanup();
   setInterval(runPendingActionsCleanup, 15 * 60 * 1000);
@@ -258,6 +289,11 @@ app.use((req, res, next) => {
         const orgId = settings.organizationId;
         if (!settings.defaultLocation?.trim()) {
           console.warn(`[Team Leads Recurring Research] orgId=${orgId} skipped — no defaultLocation`);
+          continue;
+        }
+        const { acquired: rlAcquired, lockKey: rlLockKey } = await acquireJobLock(orgId, "recurring_team_lead_research", 60);
+        if (!rlAcquired) {
+          console.log(`[Team Leads Recurring Research] orgId=${orgId} skipped — lock held by another instance`);
           continue;
         }
         console.log(`[Team Leads Recurring Research] orgId=${orgId} status=started`);
@@ -455,6 +491,8 @@ app.use((req, res, next) => {
               metadata: { error: err.message },
             });
           } catch {}
+        } finally {
+          await releaseJobLock(rlLockKey);
         }
       }
     } catch (err: any) {
@@ -469,12 +507,14 @@ app.use((req, res, next) => {
   // ─── Financial Event Retry Cron ──────────────────────────────────────────
   // Retries pending financial_event_failures every 15 minutes (max 5 attempts per failure).
   const runFinancialEventRetryCron = async () => {
-    try {
-      const { runFinancialEventRetry } = await import("./financial-event-retry-cron");
-      await runFinancialEventRetry();
-    } catch (err: any) {
-      console.error("[FinancialEventRetry] Cron wrapper error:", err?.message ?? err);
-    }
+    await runWithJobLock("__global__", "financial_event_retry", 15, async () => {
+      try {
+        const { runFinancialEventRetry } = await import("./financial-event-retry-cron");
+        await runFinancialEventRetry();
+      } catch (err: any) {
+        console.error("[FinancialEventRetry] Cron wrapper error:", err?.message ?? err);
+      }
+    });
   };
   setInterval(runFinancialEventRetryCron, 15 * 60 * 1000);
 
@@ -482,12 +522,14 @@ app.use((req, res, next) => {
   // Rebuilds living athlete context objects for all athletes with active programs.
   // Runs once daily. Also runs 5 minutes after startup to catch any missed refresh.
   const runAthleteContextRefreshCron = async () => {
-    try {
-      const { runDailyAthleteContextRefreshCron } = await import("./services/athlete-context-broker");
-      await runDailyAthleteContextRefreshCron();
-    } catch (err: any) {
-      console.error("[AthleteContextCron] Error:", err?.message ?? err);
-    }
+    await runWithJobLock("__global__", "athlete_context_refresh", 1440, async () => {
+      try {
+        const { runDailyAthleteContextRefreshCron } = await import("./services/athlete-context-broker");
+        await runDailyAthleteContextRefreshCron();
+      } catch (err: any) {
+        console.error("[AthleteContextCron] Error:", err?.message ?? err);
+      }
+    });
   };
   setInterval(runAthleteContextRefreshCron, 24 * 60 * 60 * 1000); // every 24 hours
   setTimeout(runAthleteContextRefreshCron, 5 * 60 * 1000); // 5 minutes after startup
@@ -506,8 +548,10 @@ app.use((req, res, next) => {
         .from(orgMemberships).limit(50).catch(() => []);
       let total = 0;
       for (const { orgId } of orgs) {
-        const result = await runOutcomeEvaluationCron(orgId).catch(() => ({ evaluated: 0, errors: 0 }));
-        total += result.evaluated;
+        await runWithJobLock(orgId, "outcome_eval", 360, async () => {
+          const result = await runOutcomeEvaluationCron(orgId).catch(() => ({ evaluated: 0, errors: 0 }));
+          total += result.evaluated;
+        });
       }
       if (total > 0) console.log(`[OutcomeEvalCron] Evaluated ${total} outcomes across ${orgs.length} orgs`);
     } catch (err: any) {
@@ -524,13 +568,15 @@ app.use((req, res, next) => {
   // ─── Phase 4: Daily Operations Engine Cron ───────────────────────────────
   // Generates a proactive daily brief each morning and on a 6-hour cycle.
   const runDailyOpsCron = async () => {
-    try {
-      const { runDailyOperationsCron } = await import("./services/daily-operations-engine");
-      const result = await runDailyOperationsCron();
-      if (result.orgs > 0) console.log(`[DailyOps] Brief generated for ${result.orgs} orgs (${result.errors} errors)`);
-    } catch (err: any) {
-      console.error("[DailyOps] Cron error:", err?.message ?? err);
-    }
+    await runWithJobLock("__global__", "daily_ops", 360, async () => {
+      try {
+        const { runDailyOperationsCron } = await import("./services/daily-operations-engine");
+        const result = await runDailyOperationsCron();
+        if (result.orgs > 0) console.log(`[DailyOps] Brief generated for ${result.orgs} orgs (${result.errors} errors)`);
+      } catch (err: any) {
+        console.error("[DailyOps] Cron error:", err?.message ?? err);
+      }
+    });
   };
   setInterval(runDailyOpsCron, 6 * 60 * 60 * 1000); // every 6 hours
   // Run at 6 AM each day via a smart scheduler (first run: 8 minutes after startup)
@@ -551,12 +597,14 @@ app.use((req, res, next) => {
       let synced = 0;
       let errors = 0;
       for (const org of orgs) {
-        try {
-          await syncAttentionItems(org.id);
-          synced++;
-        } catch {
-          errors++;
-        }
+        await runWithJobLock(org.id, "daily_revenue_sync", 1440, async () => {
+          try {
+            await syncAttentionItems(org.id);
+            synced++;
+          } catch {
+            errors++;
+          }
+        });
       }
       if (synced > 0) console.log(`[RevenueSync] Daily sync complete — ${synced} org(s) synced (${errors} errors)`);
     } catch (err: any) {
