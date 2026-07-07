@@ -161,7 +161,8 @@ export async function gmailCreateDraft(input: GmailDraftInput): Promise<{ ok: bo
 
 export async function gmailClassifyReply(input: GmailClassifyInput): Promise<GmailClassification> {
   try {
-    const { openai } = await import("../openai");
+    const OpenAI = (await import("openai")).default;
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const prompt = `Classify this email reply for a fitness coaching business.
 
 From: ${input.sender}
@@ -204,7 +205,8 @@ export async function gmailSummarizeConversation(
   messages: Array<{ from: string; subject: string; body: string; date: string }>,
 ): Promise<string> {
   try {
-    const { openai } = await import("../openai");
+    const OpenAI = (await import("openai")).default;
+    const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
     const thread = messages.map(m => `[${m.date}] ${m.from}: ${m.body.slice(0, 500)}`).join("\n\n");
     const res = await openai.chat.completions.create({
       model: "gpt-4o-mini",

@@ -33,7 +33,7 @@ import {
   agentAutonomySettings,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and, sql, or, lt, gt, ne, isNull, desc, inArray } from "drizzle-orm";
+import { eq, and, sql, or, lt, gt, gte, ne, isNull, desc, inArray } from "drizzle-orm";
 import { users } from "@shared/models/auth";
 import { getUncachableStripeClient, getStripePublishableKey } from "./stripeClient";
 import { startWeeklyReminderJob } from "./weekly-reminder";
@@ -8619,7 +8619,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         organizationId: orgId,
       });
 
-      const orgB = await getOrgBranding(orgId || adminProfile?.organizationId);
+      const orgB = await getOrgBranding(orgId);
       sendTeamQuoteEmail(
         coachEmail,
         teamName,
@@ -12611,6 +12611,8 @@ WIN RATE BY TONE: ${winRateByTone.map(t => `${t.tone}: ${t.winRate}% (${t.sent} 
 STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 `;
 
+      const OpenAI = (await import("openai")).default;
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
         messages: [
@@ -16031,7 +16033,8 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           const orgLogoUrl = org.logoUrl || null;
           const primaryColor = org.emailPrimaryColor || org.primaryColor || "#f97316";
           const athleteFirstName = athleteName.split(" ")[0];
-          const contactEmail = org.ownerEmail || org.schedulingInquiryEmail || fromEmail;
+          const { fromEmail: senderEmail } = await getSg();
+          const contactEmail = org.ownerEmail || org.schedulingInquiryEmail || senderEmail;
           const websiteUrl = org.websiteUrl || null;
 
           const applicantHtml = `<!DOCTYPE html>
