@@ -513,7 +513,21 @@ async function runDailyJobForAllOrgs(): Promise<void> {
           console.log(`[Email Agent Cron] org ${org.id} already ran today, skipping`);
           continue;
         }
-        await runEmailAgentForOrg(org.id, "cron_8_30am");
+        // Per-org lock: prevents duplicate 8:30 runs across instances (autoscale).
+        // Only guards the cron path — manual triggers call runEmailAgentForOrg directly.
+        const { acquireJobLock, releaseJobLock } = await import("../services/ceo-heartbeat-service");
+        const { acquired, lockKey } = await acquireJobLock(org.id, "scheduled_email_agent", 1440).catch(
+          () => ({ acquired: true, lockKey: "" })
+        );
+        if (!acquired) {
+          console.log(`[Email Agent Cron] Lock held for org ${org.id} — skipping duplicate run`);
+          continue;
+        }
+        try {
+          await runEmailAgentForOrg(org.id, "cron_8_30am");
+        } finally {
+          if (lockKey) await releaseJobLock(lockKey).catch(() => {});
+        }
       } catch (err: any) {
         console.error(`[Email Agent Cron] error for org ${org.id}:`, err.message);
       }
