@@ -94,8 +94,8 @@ export async function runSchedulingAgent(orgId: string): Promise<SchedulingAgent
       : 10000;
 
   // --- Compute open slots from availability blocks ---
-  const confirmedBookings = weekBookings.filter((b) => b.status === "confirmed" || b.status === "completed");
-  const cancelledBookings = weekBookings.filter((b) => b.status === "cancelled");
+  const confirmedBookings = weekBookings.filter((b) => b.status === "CONFIRMED" || b.status === "COMPLETED");
+  const cancelledBookings = weekBookings.filter((b) => b.status === "CANCELLED");
 
   // Build a set of booked time windows
   const bookedWindows = confirmedBookings.map((b) => ({
