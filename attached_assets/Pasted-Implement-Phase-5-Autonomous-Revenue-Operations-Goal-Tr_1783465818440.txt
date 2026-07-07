@@ -1,0 +1,243 @@
+Implement Phase 5: Autonomous Revenue Operations.
+
+Goal:
+Transform Fill Campaigns from a reactive tool into a proactive revenue assistant.
+
+Do not remove human approval.
+
+Workflow
+
+Session Created
+↓
+
+Continuous Opportunity Monitoring
+
+↓
+
+AI Opportunity Detection
+
+↓
+
+Recipient Intelligence
+
+↓
+
+Campaign Draft
+
+↓
+
+Manager Review
+
+↓
+
+Approval
+
+↓
+
+AgentMail
+
+↓
+
+Booking Attribution
+
+↓
+
+Learning
+
+Phase 5 Features
+
+1. Continuous Opportunity Monitoring
+
+Run automatically.
+
+Detect opportunities based on configurable rules.
+
+Examples:
+
+* Session below utilization threshold
+* High-value session underfilled
+* Session starts within 72 hours
+* Waitlist pressure
+* Coach cancellation
+* Weather-related attendance risk
+* Holiday schedules
+
+2. Opportunity Scoring
+
+Every opportunity gets:
+
+Revenue Impact
+
+Urgency
+
+Probability of Filling
+
+Overall Priority
+
+Example:
+
+Revenue Impact:
+High
+
+Urgency:
+Critical
+
+Estimated Fill Probability:
+82%
+
+Overall Priority:
+94
+
+3. Opportunity Queue
+
+New dashboard:
+
+Revenue Opportunities
+
+Highest Priority
+
+Estimated Revenue Recovery
+
+Days Until Session
+
+Recommended Action
+
+AI Confidence
+
+4. Automatic Draft Creation
+
+Instead of waiting for a click:
+
+Recipient Intelligence runs automatically.
+
+Campaign drafts are pre-generated.
+
+Manager sees:
+
+Ready for Review
+
+instead of
+
+Create Fill Campaign
+
+5. Multi-Strategy Recommendations
+
+The AI can recommend different actions.
+
+Examples:
+
+Fill Campaign
+
+Waitlist Promotion
+
+Offer Discount
+
+Move Athletes
+
+Merge Sessions
+
+Coach Schedule Adjustment
+
+Manual Outreach
+
+Do not execute automatically.
+
+Only recommend.
+
+6. Opportunity Timeline
+
+Opportunity Detected
+
+Recipients Ranked
+
+Campaign Generated
+
+Awaiting Approval
+
+Approved
+
+Sent
+
+Bookings
+
+Revenue Recovered
+
+Closed
+
+7. Organizational Learning
+
+Track:
+
+Best campaign timing
+
+Best send day
+
+Best send hour
+
+Best audience size
+
+Best coach performance
+
+Best subject lines
+
+Best campaign type
+
+Use deterministic analytics.
+
+8. Executive Dashboard
+
+Add:
+
+Revenue Opportunities Today
+
+Potential Revenue Recovery
+
+Campaigns Awaiting Approval
+
+Revenue Recovered This Month
+
+Average Fill Rate
+
+Coach Utilization
+
+9. Executive AI Brief
+
+Generate one executive summary.
+
+Examples:
+
+"You have 4 revenue opportunities worth $1,180."
+
+"Coach Hunter has three underfilled sessions this week."
+
+"Wednesday evening campaigns outperform morning campaigns."
+
+Only summarize measured analytics.
+
+10. Configurable Organization Policies
+
+Allow organizations to configure:
+
+Minimum fill threshold
+
+Minimum revenue opportunity
+
+Campaign lead time
+
+Automatic draft generation
+
+Approval requirements
+
+Coach-specific capacity
+
+Waitlist priority
+
+Acceptance Criteria
+
+* No automatic sending.
+* Automatic opportunity detection.
+* Automatic recipient ranking.
+* Automatic draft generation.
+* Human approval remains mandatory.
+* AI recommendations are advisory.
+* Existing AgentMail safety controls remain unchanged.
