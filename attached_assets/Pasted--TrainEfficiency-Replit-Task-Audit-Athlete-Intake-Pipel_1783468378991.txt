@@ -1,0 +1,241 @@
+# TrainEfficiency Replit Task
+
+## Audit Athlete Intake Pipeline Workflow
+
+You are working inside the TrainEfficiency codebase.
+
+Your task is to audit the **Athlete Intake Pipeline** workflow before we make changes.
+
+Do **not** redesign the UI yet.
+
+Do **not** add new features yet.
+
+First, trace and document what currently happens when a new athlete or lead enters the pipeline.
+
+---
+
+## Context
+
+In the frontend, each Athlete Intake Pipeline card currently shows something like:
+
+Sophia Stewart
+Caydence Partridge
+New
+Volleyball
+Bluffton High School
+1d ago
+Organic · organic
+
+Buttons:
+
+* Schedule Eval
+* Convert to Athlete
+* Email
+* Archive
+
+We need to understand exactly what these buttons do, what backend routes they call, what database records are created or updated, and what automations are triggered.
+
+---
+
+## Primary Questions
+
+Answer these with evidence from the codebase.
+
+### 1. New Lead Creation
+
+When a new athlete enters the intake pipeline:
+
+* Which frontend component renders the card?
+* Which API route fetches the pipeline data?
+* Which database table stores the lead?
+* What fields are stored?
+* How is status determined?
+* How are source/channel values determined?
+* How is "1d ago" calculated?
+
+---
+
+### 2. Automatic Intro Email
+
+Determine whether a new lead automatically triggers:
+
+* An intro email
+* A welcome email
+* A parent email
+* A coach notification
+* An internal task
+* A follow-up sequence
+* An AI-generated email draft
+
+For each item, document:
+
+* Whether it exists
+* Where the code lives
+* Whether it is wired to real lead creation
+* Whether it is currently mocked, stubbed, or incomplete
+
+---
+
+### 3. Organization Landing Page / Signup Link
+
+Audit whether the system generates a link for the athlete or parent to sign up.
+
+Check:
+
+* Is there an org landing page route?
+* Is there an athlete signup route?
+* Is there a public intake form route?
+* Does the email include a link?
+* Is the link org-specific?
+* Does it prefill lead data?
+* Does it create an athlete account?
+* Does it convert a lead to an athlete automatically after signup?
+
+Document all existing routes and gaps.
+
+---
+
+### 4. Button Behavior
+
+For each button on the card, trace exactly what happens.
+
+#### Schedule Eval
+
+Find:
+
+* Frontend click handler
+* API route called
+* Database writes
+* Calendar integration, if any
+* Notification/email side effects
+* Whether this creates an eval appointment
+* Whether it changes pipeline status
+
+#### Convert to Athlete
+
+Find:
+
+* Frontend click handler
+* API route called
+* Database writes
+* Which athlete table is used
+* Whether the original lead is retained
+* Whether status changes
+* Whether onboarding starts
+* Whether an invitation email is sent
+* Whether parent/guardian data transfers
+* Whether PAIL/Athlete Intelligence is initialized
+
+#### Email
+
+Find:
+
+* Frontend click handler
+* Whether it opens a modal, generated draft, Gmail compose, mailto link, or AgentMail
+* Whether AI generates the email
+* Whether a template is used
+* Whether the org landing/signup link is included
+* Whether sending is enabled or draft-only
+
+#### Archive
+
+Find:
+
+* Frontend click handler
+* API route called
+* Whether this is a soft archive or delete
+* Database fields updated
+* Whether archived leads can be restored
+* Whether archive reason is captured
+
+---
+
+### 5. Follow-Up Automation
+
+Audit what happens if the lead is not acted on.
+
+Check for:
+
+* 24-hour follow-up
+* 3-day follow-up
+* 7-day follow-up
+* abandoned intake recovery
+* stale lead alerts
+* coach reminders
+* admin notifications
+* AgentMail follow-up sequences
+* lead capture sequences
+
+Document whether these exist and whether they are wired into Athlete Intake Pipeline.
+
+---
+
+### 6. Customer Experience
+
+Trace what the athlete or parent actually experiences.
+
+Document:
+
+* Do they receive an email?
+* What does it say?
+* Does it contain a CTA?
+* Can they schedule an evaluation?
+* Can they register?
+* Can they pay?
+* Can they create an account?
+* Can they return later?
+* Are they branded under the correct organization?
+
+---
+
+### 7. Internal Coach/Admin Experience
+
+Trace what the coach or admin experiences.
+
+Document:
+
+* Are they notified when a new lead arrives?
+* Do they see lead priority?
+* Do they see sport, school, source, and time since submission?
+* Do they get recommended next actions?
+* Does the system suggest eval times?
+* Does it create tasks?
+* Does it log activity?
+
+---
+
+## Deliverable
+
+Produce an audit report with the following sections:
+
+1. Executive Summary
+2. Current End-to-End Workflow
+3. Frontend Components Involved
+4. Backend Routes Involved
+5. Database Tables / Fields Involved
+6. Email / Notification / Automation Findings
+7. Button-by-Button Behavior
+8. Public Signup / Landing Page Findings
+9. Follow-Up Sequence Findings
+10. Current Gaps
+11. High-Risk Issues
+12. Quick Wins
+13. Recommended Next Implementation Order
+
+---
+
+## Important Rules
+
+* Do not make assumptions.
+* Cite exact file paths and function names.
+* Distinguish clearly between:
+
+  * implemented and wired
+  * implemented but not wired
+  * mocked/stubbed
+  * missing
+* Do not modify files during this audit unless explicitly asked.
+* If you find broken buttons, dead routes, missing handlers, or placeholder data, call them out clearly.
+* Focus on workflow truth, not ideal product behavior.
+
+The goal is to understand what actually happens today before we harden the pipeline later with Claude Code.
