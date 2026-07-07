@@ -242,13 +242,28 @@ export function startSessionReminderJob() {
     `[Session Reminders] Job started. Checking every hour for sessions in the next 24 hours.`
   );
 
+  // Global lock: prevents two instances (autoscale) from running the sweep
+  // concurrently and double-sending before markClient/CoachReminderSent updates.
+  // Send behavior inside sendSessionReminders is unchanged.
+  const guardedRun = async () => {
+    const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
+    const { acquired, lockKey } = await acquireJobLock("__global__", "session_reminders", 60).catch(
+      () => ({ acquired: true, lockKey: "" })
+    );
+    if (!acquired) {
+      console.log("[Session Reminders] Lock held by another instance — skipping this run");
+      return;
+    }
+    try {
+      await sendSessionReminders();
+    } finally {
+      if (lockKey) await releaseJobLock(lockKey).catch(() => {});
+    }
+  };
+
   // Run first check after a short startup delay
-  setTimeout(() => {
-    sendSessionReminders();
-  }, INITIAL_DELAY_MS);
+  setTimeout(guardedRun, INITIAL_DELAY_MS);
 
   // Then run every hour
-  setInterval(() => {
-    sendSessionReminders();
-  }, CHECK_INTERVAL_MS);
+  setInterval(guardedRun, CHECK_INTERVAL_MS);
 }
