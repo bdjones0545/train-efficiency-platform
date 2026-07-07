@@ -530,26 +530,38 @@ export async function registerSchedulingIntelligenceRoutes(
               actionLabel: "Schedule Sessions",
               coachId: c.id,
             });
-          } else if (sessions <= 2) {
+          } else if (sessions <= 10) {
             opportunities.push({
               id: `coach-low-${c.id}`,
               type: "coach_underutilized",
               category: "coach",
               priority: "medium",
               title: `Coach ${name} is underutilized (${sessions} session${sessions !== 1 ? "s" : ""}/week)`,
-              description: "Low session count — increasing to 4-6 sessions/week can significantly boost revenue",
+              description: "Low session count — a healthy full-time coaching load is 11–20 sessions/week. Consider filling open slots.",
               estimatedValueCents: 0,
               actionLabel: "Add Sessions",
               coachId: c.id,
             });
-          } else if (sessions >= 10) {
+          } else if (sessions >= 41) {
             opportunities.push({
               id: `coach-overloaded-${c.id}`,
               type: "coach_overloaded",
               category: "coach",
               priority: "high",
-              title: `Coach ${name} may be overloaded (${sessions} sessions/week)`,
-              description: "High session volume — review workload to prevent burnout and maintain quality",
+              title: `Coach ${name} is overloaded (${sessions} sessions/week)`,
+              description: "Session count exceeds full-time capacity (40/wk). Redistribute clients to prevent burnout and quality decline.",
+              estimatedValueCents: 0,
+              actionLabel: "Review Schedule",
+              coachId: c.id,
+            });
+          } else if (sessions >= 31) {
+            opportunities.push({
+              id: `coach-near-capacity-${c.id}`,
+              type: "coach_overloaded",
+              category: "coach",
+              priority: "medium",
+              title: `Coach ${name} is near capacity (${sessions} sessions/week)`,
+              description: "Approaching full load (30/wk). Accept new bookings cautiously and monitor for fatigue.",
               estimatedValueCents: 0,
               actionLabel: "Review Schedule",
               coachId: c.id,
@@ -1092,20 +1104,25 @@ export async function registerSchedulingIntelligenceRoutes(
         const avgSessionsPerWeek = Math.round(sessions30d / 4);
 
         const recommendations: string[] = [];
-        let status: "optimal" | "underutilized" | "overloaded" | "inactive" = "optimal";
+        const WEEKLY_CAPACITY = 30; // default full-time capacity
+        let status: "optimal" | "underutilized" | "overloaded" | "near_capacity" | "inactive" = "optimal";
 
         if (sessionsWeek === 0 && sessions30d === 0) {
           status = "inactive";
           recommendations.push("No sessions recorded in 30 days. Verify coach is active and has availability blocks set.");
-        } else if (sessionsWeek <= 2 && sessions30d > 0) {
+        } else if (sessionsWeek <= 10 && sessions30d > 0) {
           status = "underutilized";
           recommendations.push("Low weekly volume — run a fill campaign for open slots.");
           recommendations.push("Consider assigning additional semi-private or group sessions.");
-          if (sessions30d < 8) recommendations.push("Reach out to inactive clients from this coach's roster.");
-        } else if (sessionsWeek >= 15) {
+          if (sessions30d < 20) recommendations.push("Reach out to inactive clients from this coach's roster.");
+        } else if (sessionsWeek >= 41) {
           status = "overloaded";
-          recommendations.push("High session count — monitor for signs of burnout.");
-          recommendations.push("Consider capping new bookings and redistributing to other coaches.");
+          recommendations.push("Session count is critically high — reduce load to prevent burnout.");
+          recommendations.push("Redistribute clients to other coaches and pause new bookings immediately.");
+        } else if (sessionsWeek >= 31) {
+          status = "near_capacity";
+          recommendations.push("Approaching full capacity — accept new bookings only for high-priority clients.");
+          recommendations.push("Monitor for signs of fatigue; proactively manage the schedule for next week.");
         }
 
         if (revenue30d < 50000 && sessions30d > 5) {

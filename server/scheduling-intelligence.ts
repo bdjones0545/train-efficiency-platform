@@ -18,7 +18,7 @@ export interface ScheduleInsight {
   actionPrompt?: string;
 }
 
-export type UtilizationStatus = "overloaded" | "high_load" | "healthy" | "underbooked" | "no_availability" | "active_no_schedule";
+export type UtilizationStatus = "overloaded" | "near_capacity" | "high_load" | "healthy" | "underbooked" | "no_availability" | "active_no_schedule";
 
 export interface CoachDigest {
   coachId: string;
@@ -34,17 +34,23 @@ export interface CoachDigest {
   recommendation: string;
 }
 
+// DEFAULT_WEEKLY_CAPACITY is the baseline full-time coaching load used for all
+// utilization percentage calculations. Coaches may have a per-profile override
+// in the future; today this single constant is the denominator.
+export const DEFAULT_WEEKLY_CAPACITY = 30;
+
 export function getUtilizationStatus(
-  pct: number,
+  _pct: number,
   availableMinutes: number,
   weekSessionCount: number = 0,
+  weeklyCapacity: number = DEFAULT_WEEKLY_CAPACITY,
 ): {
   statusLabel: UtilizationStatus;
   statusMessage: string;
   recommendation: string;
 } {
   if (availableMinutes === 0) {
-    // Case 3: no availability blocks but coach is actively delivering sessions
+    // Case: no availability blocks but coach is actively delivering sessions
     if (weekSessionCount > 0) {
       return {
         statusLabel: "active_no_schedule",
@@ -52,38 +58,50 @@ export function getUtilizationStatus(
         recommendation: "Add availability blocks so the dashboard can calculate and track this coach's utilization.",
       };
     }
-    // Case 4: no availability blocks and no sessions
+    // Case: no availability blocks and no sessions
     return {
       statusLabel: "no_availability",
       statusMessage: "No availability blocks set",
       recommendation: "Set availability blocks to start tracking utilization",
     };
   }
-  if (pct > 90) {
+
+  // Classification is session-count-based so thresholds reflect real coaching workloads.
+  // Percentage is displayed relative to weeklyCapacity (default 30 sessions/week).
+  const sessionPct = Math.min(100, Math.round((weekSessionCount / weeklyCapacity) * 100));
+
+  if (weekSessionCount >= 41) {
     return {
       statusLabel: "overloaded",
-      statusMessage: `At ${pct}% capacity — risk of burnout and client experience decline`,
-      recommendation: "Consider moving lower-priority sessions or adding capacity. Do not accept new clients this week.",
+      statusMessage: `${weekSessionCount} sessions this week (${sessionPct}% of ${weeklyCapacity}/wk capacity) — risk of burnout`,
+      recommendation: "Reduce session load immediately. Redistribute clients to other coaches and decline new bookings.",
     };
   }
-  if (pct > 80) {
+  if (weekSessionCount >= 31) {
+    return {
+      statusLabel: "near_capacity",
+      statusMessage: `${weekSessionCount} sessions this week (${sessionPct}% of ${weeklyCapacity}/wk capacity) — approaching full load`,
+      recommendation: "Near capacity. Accept new bookings only for high-priority clients and monitor for fatigue.",
+    };
+  }
+  if (weekSessionCount >= 21) {
     return {
       statusLabel: "high_load",
-      statusMessage: `At ${pct}% capacity — healthy but limited room for additions`,
-      recommendation: "Accept new bookings with caution. Prioritize high-value clients for any remaining slots.",
+      statusMessage: `${weekSessionCount} sessions this week (${sessionPct}% of ${weeklyCapacity}/wk capacity) — high but sustainable`,
+      recommendation: "Strong utilization. Leave buffer for admin time and client check-ins before adding more sessions.",
     };
   }
-  if (pct >= 45) {
+  if (weekSessionCount >= 11) {
     return {
       statusLabel: "healthy",
-      statusMessage: `At ${pct}% — good balance of bookings and flexibility`,
-      recommendation: "Room to add 1–2 new clients or fill gaps with semi-private sessions.",
+      statusMessage: `${weekSessionCount} sessions this week (${sessionPct}% of ${weeklyCapacity}/wk capacity) — healthy balance`,
+      recommendation: "Good capacity balance. Room to add sessions or fill gaps with semi-private bookings.",
     };
   }
   return {
     statusLabel: "underbooked",
-    statusMessage: `At ${pct}% — significant capacity available`,
-    recommendation: "Focus on reactivating inactive clients and filling open slots. Good time for outreach.",
+    statusMessage: `${weekSessionCount} sessions this week (${sessionPct}% of ${weeklyCapacity}/wk capacity) — significant capacity available`,
+    recommendation: "Focus on reactivating inactive clients and filling open slots. Good time for outreach campaigns.",
   };
 }
 
@@ -196,13 +214,15 @@ export async function computeOrgDigest(orgId: string): Promise<OpsDigest> {
     const actualOpenSlots = Math.floor(freeMinutes / 60);
     totalOpenSlots += actualOpenSlots;
 
-    const utilizationPct = availableMinutesThisWeek > 0
-      ? Math.min(100, Math.round((bookedMinutesThisWeek / availableMinutesThisWeek) * 100))
-      : 0;
-
     const coachName = coach.user ? `${coach.user.firstName} ${coach.user.lastName}` : "Unknown";
     const weekSessionCount = coachBookingsThisWeek.length;
-    const statusInfo = getUtilizationStatus(utilizationPct, availableMinutesThisWeek, weekSessionCount);
+
+    // Utilization % is session-count-based (sessions / weekly capacity) so that
+    // a coach with 15 sessions/week shows ~50%, not "overloaded".
+    const weeklyCapacity = DEFAULT_WEEKLY_CAPACITY;
+    const utilizationPct = Math.min(100, Math.round((weekSessionCount / weeklyCapacity) * 100));
+
+    const statusInfo = getUtilizationStatus(utilizationPct, availableMinutesThisWeek, weekSessionCount, weeklyCapacity);
 
     coachDigests.push({
       coachId: coach.id,

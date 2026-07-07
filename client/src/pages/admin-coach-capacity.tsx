@@ -111,14 +111,15 @@ interface CoachIntelligence {
   sessions30Days: number;
   revenue30DayCents: number;
   avgSessionsPerWeek: number;
-  status: "optimal" | "underutilized" | "overloaded" | "inactive";
+  status: "optimal" | "underutilized" | "overloaded" | "near_capacity" | "inactive";
   recommendations: string[];
 }
 
 function statusIcon(status: string) {
   switch (status) {
     case "optimal": return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    case "overloaded": return <AlertTriangle className="h-4 w-4 text-orange-500" />;
+    case "overloaded": return <AlertTriangle className="h-4 w-4 text-red-500" />;
+    case "near_capacity": return <AlertTriangle className="h-4 w-4 text-orange-500" />;
     case "underutilized": return <AlertCircle className="h-4 w-4 text-yellow-500" />;
     default: return <AlertCircle className="h-4 w-4 text-muted-foreground" />;
   }
@@ -127,7 +128,8 @@ function statusIcon(status: string) {
 function statusBadge(status: string) {
   switch (status) {
     case "optimal": return <Badge className="text-xs bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20">Optimal</Badge>;
-    case "overloaded": return <Badge className="text-xs bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/20">Overloaded</Badge>;
+    case "overloaded": return <Badge className="text-xs bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20">Overloaded</Badge>;
+    case "near_capacity": return <Badge className="text-xs bg-orange-500/15 text-orange-700 dark:text-orange-400 border-orange-500/20">Near Capacity</Badge>;
     case "underutilized": return <Badge className="text-xs bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20">Underutilized</Badge>;
     default: return <Badge variant="secondary" className="text-xs">Inactive</Badge>;
   }
@@ -217,14 +219,16 @@ interface CapacityResponse {
   endDate: string;
 }
 
+// Utilization % is now session-based: 100% = 30 sessions/week (DEFAULT_WEEKLY_CAPACITY)
+// Healthy range: 37–67% (11–20 sessions), High: 67–100% (21–30), Low: <37% (<11 sessions)
 function UtilizationBar({ pct }: { pct: number }) {
-  const color = pct >= 80 ? "bg-green-500" : pct >= 50 ? "bg-yellow-500" : "bg-red-500";
-  const label = pct >= 80 ? "High" : pct >= 50 ? "Moderate" : "Low";
-  const labelColor = pct >= 80 ? "text-green-600 dark:text-green-400" : pct >= 50 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400";
+  const color = pct >= 67 ? "bg-yellow-500" : pct >= 37 ? "bg-green-500" : "bg-red-500";
+  const label = pct >= 67 ? "High" : pct >= 37 ? "Healthy" : "Low";
+  const labelColor = pct >= 67 ? "text-yellow-600 dark:text-yellow-400" : pct >= 37 ? "text-green-600 dark:text-green-400" : "text-red-600 dark:text-red-400";
   return (
     <div className="space-y-1">
       <div className="flex items-center justify-between text-xs">
-        <span className="text-muted-foreground">Utilization</span>
+        <span className="text-muted-foreground">Utilization (of 30/wk)</span>
         <span className={`font-semibold ${labelColor}`}>{pct}% · {label}</span>
       </div>
       <div className="w-full bg-muted rounded-full h-2">
@@ -235,8 +239,8 @@ function UtilizationBar({ pct }: { pct: number }) {
 }
 
 function UtilizationTrend({ pct }: { pct: number }) {
-  if (pct >= 80) return <ChevronUp className="h-4 w-4 text-green-500" />;
-  if (pct >= 50) return <Minus className="h-4 w-4 text-yellow-500" />;
+  if (pct >= 67) return <ChevronUp className="h-4 w-4 text-yellow-500" />;
+  if (pct >= 37) return <Minus className="h-4 w-4 text-green-500" />;
   return <ChevronDown className="h-4 w-4 text-red-500" />;
 }
 
@@ -346,9 +350,11 @@ export default function AdminCoachCapacityPage() {
   const totalOpenSpots = coaches.reduce((s, c) => s + c.openSpots, 0);
   const avgUtilization = coaches.length > 0 ? Math.round(coaches.reduce((s, c) => s + c.utilizationPct, 0) / coaches.length) : 0;
 
-  const highUtil = coaches.filter(c => c.utilizationPct >= 80).length;
-  const midUtil = coaches.filter(c => c.utilizationPct >= 50 && c.utilizationPct < 80).length;
-  const lowUtil = coaches.filter(c => c.utilizationPct < 50).length;
+  // Thresholds align with session-based percentages (30/wk capacity):
+  // High ≥ 67% = 21+ sessions, Healthy 37–66% = 11–20 sessions, Low < 37% = ≤10 sessions
+  const highUtil = coaches.filter(c => c.utilizationPct >= 67).length;
+  const midUtil = coaches.filter(c => c.utilizationPct >= 37 && c.utilizationPct < 67).length;
+  const lowUtil = coaches.filter(c => c.utilizationPct < 37).length;
 
   return (
     <div className="space-y-6">
@@ -405,16 +411,16 @@ export default function AdminCoachCapacityPage() {
         <p className="text-sm font-semibold mb-3 flex items-center gap-2"><BarChart3 className="h-4 w-4 text-muted-foreground" />Utilization Distribution</p>
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-green-500" />
-            <span className="text-sm">High (80%+): <strong>{highUtil}</strong> coach{highUtil !== 1 ? "es" : ""}</span>
+            <div className="w-3 h-3 rounded-full bg-yellow-500" />
+            <span className="text-sm">High (21+ sessions): <strong>{highUtil}</strong> coach{highUtil !== 1 ? "es" : ""}</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-yellow-500" />
-            <span className="text-sm">Moderate (50-79%): <strong>{midUtil}</strong></span>
+            <div className="w-3 h-3 rounded-full bg-green-500" />
+            <span className="text-sm">Healthy (11–20 sessions): <strong>{midUtil}</strong></span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-red-500" />
-            <span className="text-sm">Low (&lt;50%): <strong>{lowUtil}</strong></span>
+            <span className="text-sm">Low (≤10 sessions): <strong>{lowUtil}</strong></span>
           </div>
           <div className="ml-auto">
             <Badge variant="outline" className="text-xs">Avg: {avgUtilization}%</Badge>
@@ -423,7 +429,7 @@ export default function AdminCoachCapacityPage() {
         <div className="mt-3 flex gap-0.5 rounded-full overflow-hidden h-3">
           {coaches.length > 0 ? (
             sorted.map(c => {
-              const color = c.utilizationPct >= 80 ? "bg-green-500" : c.utilizationPct >= 50 ? "bg-yellow-500" : "bg-red-500";
+              const color = c.utilizationPct >= 67 ? "bg-yellow-500" : c.utilizationPct >= 37 ? "bg-green-500" : "bg-red-500";
               return <div key={c.coachId} className={color} style={{ flex: 1 }} title={`${c.firstName}: ${c.utilizationPct}%`} />;
             })
           ) : (
