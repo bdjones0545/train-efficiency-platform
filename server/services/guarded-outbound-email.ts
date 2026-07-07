@@ -4,6 +4,7 @@
  * Phase 4 Remediation: Wraps all automated SendGrid outreach sends with the
  * full guard chain before any email leaves the system:
  *
+ *   0. Global kill-switch (AUTOMATION_SENDS_ENABLED — emergency off-switch)
  *   1. Emergency pause (org-wide halt)
  *   2. Suppression / opt-out (legal)
  *   3. Daily email cap (burst prevention)
@@ -49,6 +50,18 @@ export interface GuardedSendOpts {
   isTransactionalExempt?: boolean;
 }
 
+// ── Global kill-switch ────────────────────────────────────────────────────────
+// Emergency off-switch for ALL automated outreach sends routed through this
+// module. Transactional reminders/receipts (sent via sendEmail()) never route
+// here and are intentionally unaffected. Disabled ONLY when the env var is
+// exactly "false" or "0"; unset or any other value = enabled (current behavior).
+const AUTOMATION_KILL_SWITCH_REASON = "global kill-switch (AUTOMATION_SENDS_ENABLED=false)";
+
+function automatedSendsDisabled(): boolean {
+  const v = process.env.AUTOMATION_SENDS_ENABLED;
+  return v === "false" || v === "0";
+}
+
 /**
  * Send a team-training outreach email through the full guard chain.
  * Returns { sent: false, blocked: true, blockReason } if any guard fails.
@@ -70,6 +83,30 @@ export async function guardedSendTeamTrainingOutreachEmail(
     emailType,
     policyDecision,
   } = opts;
+
+  // ── 0: Global kill-switch (emergency off-switch for automated outreach) ─────
+  if (automatedSendsDisabled()) {
+    console.warn(`[GuardedSend] BLOCKED (emergency_pause): ${recipientEmail} — ${AUTOMATION_KILL_SWITCH_REASON}`);
+    await writeOutboundAuditLog({
+      orgId,
+      channel: "sendgrid",
+      sourceSystem,
+      sourceRecordId,
+      recipientEmail,
+      recipientName: opts.recipientName,
+      subject,
+      emailType,
+      triggeredBy,
+      autoSent: triggeredBy !== "human_approved",
+      approvalRequired: false,
+      approvalStatus: "n/a",
+      policyDecision,
+      guardResult: "blocked_kill_switch",
+      status: "blocked",
+      errorMessage: AUTOMATION_KILL_SWITCH_REASON,
+    }).catch(() => {});
+    return { sent: false, blocked: true, blockReason: AUTOMATION_KILL_SWITCH_REASON, blockType: "emergency_pause" };
+  }
 
   // ── 1-3: Send Guard checks (emergency pause + suppression + daily cap) ──────
   let guardResult: GuardedSendResult["blockType"] | "passed" = "passed";
@@ -201,6 +238,29 @@ export async function guardedSendAgentOutreachEmail(opts: {
   sourceSystem: string;
   sourceRecordId?: string;
 }): Promise<GuardedSendResult> {
+  // ── 0: Global kill-switch (emergency off-switch for automated outreach) ─────
+  if (automatedSendsDisabled()) {
+    console.warn(`[GuardedSend] AgentOutreach BLOCKED (emergency_pause) for ${opts.clientEmail}: ${AUTOMATION_KILL_SWITCH_REASON}`);
+    await writeOutboundAuditLog({
+      orgId: opts.orgId,
+      channel: "sendgrid",
+      sourceSystem: opts.sourceSystem,
+      sourceRecordId: opts.sourceRecordId,
+      recipientEmail: opts.clientEmail,
+      recipientName: opts.clientFirstName,
+      subject: opts.emailSubject,
+      emailType: "agent_outreach",
+      triggeredBy: "auto_execute",
+      autoSent: true,
+      approvalRequired: false,
+      approvalStatus: "n/a",
+      guardResult: "blocked_kill_switch",
+      status: "blocked",
+      errorMessage: AUTOMATION_KILL_SWITCH_REASON,
+    }).catch(() => {});
+    return { sent: false, blocked: true, blockReason: AUTOMATION_KILL_SWITCH_REASON, blockType: "emergency_pause" };
+  }
+
   const guard = await checkHumanApprovedSendGuards(opts.orgId, opts.clientEmail).catch(() => ({
     blocked: false,
   }));
