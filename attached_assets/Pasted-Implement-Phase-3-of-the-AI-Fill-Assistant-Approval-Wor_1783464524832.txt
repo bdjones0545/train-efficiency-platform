@@ -1,0 +1,154 @@
+Implement Phase 3 of the AI Fill Assistant: Approval Workflow + AgentMail Integration.
+
+Do not send emails directly from the Fill Campaign feature.
+
+Goal:
+Fill Campaigns should become first-class AgentMail campaigns that follow the same approval and outbound safety architecture already used elsewhere in TrainEfficiency.
+
+Workflow:
+
+Opportunity
+→ Recipient Intelligence
+→ Campaign Generation
+→ Review
+→ Submit for Approval
+→ AgentMail Draft
+→ Approval Queue
+→ Approved
+→ Existing outbound infrastructure
+→ Delivery Tracking
+
+Requirements
+
+1. Replace "Copy Email" as the primary action with:
+
+Submit Campaign for Approval
+
+2. When submitted:
+
+* Create one Fill Campaign record.
+* Create one AgentMail campaign/draft.
+* Associate:
+
+  * booking_id
+  * opportunity_id
+  * recipient_ids
+  * campaign metadata
+  * generated content
+  * coach
+  * organization
+
+Do not send anything.
+
+3. Approval Queue
+
+Campaign status:
+
+Draft
+↓
+
+Pending Approval
+↓
+
+Approved
+↓
+
+Scheduled
+↓
+
+Sending
+↓
+
+Completed
+
+Rejected
+
+4. Approval Screen
+
+Display:
+
+Campaign Summary
+
+Session
+Coach
+Recipients
+Open Spots
+Estimated Revenue
+Estimated Fill Probability
+
+Recipient Preview
+
+Campaign Preview
+
+Email
+SMS
+Push
+
+Approve
+
+Reject
+
+Request Regeneration
+
+5. Use the existing outbound safeguards.
+
+Do not bypass:
+
+* AUTOMATION_SENDS_ENABLED
+* AgentMail approval requirements
+* organization policies
+* send limits
+* existing email safety infrastructure
+
+Fill Campaigns must use the same outbound pipeline as every other automated communication.
+
+6. Preserve campaign versions.
+
+If regenerated after approval rejection:
+
+Version 1
+Version 2
+Version 3
+
+Keep previous versions for audit purposes.
+
+7. Add campaign timeline.
+
+Created
+
+Recipients Selected
+
+Generated
+
+Submitted
+
+Approved
+
+Sent
+
+Completed
+
+8. Add campaign analytics placeholders.
+
+Recipients
+
+Delivered
+
+Opened
+
+Clicked
+
+Booked
+
+Revenue Generated
+
+Leave these as placeholders if tracking isn't implemented yet.
+
+Acceptance Criteria
+
+* No new outbound infrastructure.
+* Reuse AgentMail.
+* Reuse approval system.
+* Reuse safety controls.
+* Reuse delivery pipeline.
+* Fill Campaign becomes another campaign type within the existing messaging architecture.

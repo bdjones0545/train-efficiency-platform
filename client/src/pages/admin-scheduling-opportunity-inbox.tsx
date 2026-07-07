@@ -12,8 +12,9 @@ import {
   Clock, RefreshCw, ChevronRight, Zap, UserCheck,
   BarChart3, Target, Calendar, User, X, Check,
   ChevronDown, ChevronUp, Loader2, Mail, MessageSquare,
-  Bell, ArrowLeft, Copy
+  Bell, ArrowLeft, Copy, Send, ExternalLink
 } from "lucide-react";
+import { useLocation } from "wouter";
 import { useState, useMemo } from "react";
 import { format, parseISO } from "date-fns";
 
@@ -324,7 +325,10 @@ function CampaignPreview({
   recipientSummary,
   onRegenerate,
   onBack,
+  onSubmit,
   isPending,
+  isSubmitting,
+  submitSuccess,
 }: {
   draft: CampaignDraft;
   opportunity: Opportunity;
@@ -332,7 +336,10 @@ function CampaignPreview({
   recipientSummary: RecipientSummary;
   onRegenerate: () => void;
   onBack: () => void;
+  onSubmit: () => void;
   isPending: boolean;
+  isSubmitting: boolean;
+  submitSuccess: boolean;
 }) {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState<"email" | "sms" | "push">("email");
@@ -532,35 +539,69 @@ function CampaignPreview({
       </div>
 
       {/* Actions */}
-      <div className="flex gap-2 flex-none pt-1">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onRegenerate}
-          disabled={isPending}
-          data-testid="button-regenerate-campaign"
-        >
-          {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-1"
-          data-testid="button-copy-email"
-          onClick={() => copyText(`Subject: ${draft.subject}\nPreview: ${draft.previewText}\n\n${draft.emailBody}`, "Email")}
-        >
-          <Copy className="h-3.5 w-3.5 mr-1.5" />Copy Email
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="flex-1"
-          data-testid="button-copy-sms"
-          onClick={() => copyText(draft.smsBody, "SMS")}
-        >
-          <Copy className="h-3.5 w-3.5 mr-1.5" />Copy SMS
-        </Button>
-      </div>
+      {submitSuccess ? (
+        <div className="flex flex-col gap-2 flex-none pt-1">
+          <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400">
+            <Check className="h-4 w-4 flex-none" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Campaign submitted for approval</p>
+              <p className="text-xs opacity-75">Ready for review in the approval queue</p>
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            data-testid="button-view-campaign-queue"
+            onClick={() => { window.location.href = "/admin/fill-campaigns"; }}
+          >
+            <ExternalLink className="h-3.5 w-3.5 mr-1.5" />View in Campaign Queue
+          </Button>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-2 flex-none pt-1">
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRegenerate}
+              disabled={isPending || isSubmitting}
+              data-testid="button-regenerate-campaign"
+            >
+              {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              data-testid="button-copy-email"
+              onClick={() => copyText(`Subject: ${draft.subject}\nPreview: ${draft.previewText}\n\n${draft.emailBody}`, "Email")}
+            >
+              <Copy className="h-3.5 w-3.5 mr-1.5" />Copy Email
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="flex-1"
+              data-testid="button-copy-sms"
+              onClick={() => copyText(draft.smsBody, "SMS")}
+            >
+              <Copy className="h-3.5 w-3.5 mr-1.5" />Copy SMS
+            </Button>
+          </div>
+          <Button
+            className="w-full"
+            onClick={onSubmit}
+            disabled={isSubmitting || isPending}
+            data-testid="button-submit-for-approval"
+          >
+            {isSubmitting
+              ? <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              : <Send className="h-4 w-4 mr-2" />}
+            Submit Campaign for Approval
+          </Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -628,6 +669,12 @@ function FillCampaignDialog({
   };
 
   // ── Phase 2: Campaign copy generation ────────────────────────────────────
+  // Full selected candidate objects (with email) for submit payload
+  const selectedRecipients = useMemo(
+    () => allRecipients.filter((r) => selectedIds.has(r.userId)),
+    [allRecipients, selectedIds]
+  );
+
   const generateMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest("POST", `/api/scheduling-intelligence/fill-campaign/${bookingId}`, {
@@ -643,6 +690,48 @@ function FillCampaignDialog({
     onSuccess: (data) => setDraft(data),
     onError: () =>
       toast({ title: "Error", description: "Could not generate campaign draft.", variant: "destructive" }),
+  });
+
+  // ── Phase 3: Submit for approval ──────────────────────────────────────────
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+
+  const submitMutation = useMutation({
+    mutationFn: async () => {
+      if (!draft) throw new Error("No draft to submit");
+      const res = await apiRequest(
+        "POST",
+        `/api/scheduling-intelligence/fill-campaign/${bookingId}/submit`,
+        {
+          subject: draft.subject,
+          previewText: draft.previewText,
+          emailBody: draft.emailBody,
+          smsBody: draft.smsBody,
+          pushBody: draft.pushBody,
+          socialCaption: draft.socialCaption,
+          recipients: selectedRecipients.map((r) => ({
+            userId: r.userId,
+            email: r.email,
+            firstName: r.firstName,
+            lastName: r.lastName,
+            score: r.score,
+          })),
+          recipientSummary,
+          sessionName: draft.sessionName,
+          coachName: draft.coachName,
+          orgName: draft.orgName,
+          openSpots,
+          estimatedValueCents: opportunity.estimatedValueCents,
+          fillProbability: fillLabel,
+        }
+      );
+      return res.json();
+    },
+    onSuccess: (data) => {
+      setSubmissionId(data.submissionId);
+      toast({ title: "Campaign submitted", description: "Ready for review in the approval queue." });
+    },
+    onError: () =>
+      toast({ title: "Error", description: "Could not submit campaign.", variant: "destructive" }),
   });
 
   const handleConfirmRecipients = () => {
@@ -820,7 +909,10 @@ function FillCampaignDialog({
                 recipientSummary={recipientSummary}
                 onRegenerate={() => generateMutation.mutate()}
                 onBack={handleBackToRecipients}
+                onSubmit={() => submitMutation.mutate()}
                 isPending={generateMutation.isPending}
+                isSubmitting={submitMutation.isPending}
+                submitSuccess={submitMutation.isSuccess}
               />
             )}
           </>

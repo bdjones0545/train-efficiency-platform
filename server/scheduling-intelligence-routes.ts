@@ -3,6 +3,8 @@ import { db } from "./db";
 import { sql } from "drizzle-orm";
 import OpenAI from "openai";
 import { rankFillRecipients } from "./services/fill-recipient-service";
+import { sendAgentEmail } from "./services/agentmail-service";
+import { checkAgentMailSendPolicy } from "./services/agentmail-send-guard";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -120,6 +122,47 @@ export async function registerSchedulingIntelligenceRoutes(
       body TEXT,
       target_count INTEGER DEFAULT 0,
       status TEXT NOT NULL DEFAULT 'draft',
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `).catch(() => {});
+
+  // ── fill_campaign_submissions (Phase 3) ──────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS fill_campaign_submissions (
+      id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      org_id TEXT NOT NULL,
+      booking_id TEXT NOT NULL,
+      draft_id TEXT,
+      action_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending_approval',
+      version INTEGER NOT NULL DEFAULT 1,
+      parent_submission_id TEXT,
+      subject TEXT,
+      preview_text TEXT,
+      email_body TEXT,
+      sms_body TEXT,
+      push_body TEXT,
+      social_caption TEXT,
+      recipients JSONB DEFAULT '[]',
+      recipient_count INTEGER DEFAULT 0,
+      recipient_summary JSONB DEFAULT '{}',
+      session_name TEXT,
+      coach_name TEXT,
+      org_name TEXT,
+      open_spots INTEGER DEFAULT 0,
+      estimated_value_cents INTEGER DEFAULT 0,
+      fill_probability TEXT,
+      approved_at TIMESTAMPTZ,
+      approved_by TEXT,
+      rejected_at TIMESTAMPTZ,
+      rejection_reason TEXT,
+      rejection_type TEXT,
+      regeneration_requested_at TIMESTAMPTZ,
+      timeline JSONB DEFAULT '[]',
+      analytics JSONB DEFAULT '{"delivered":0,"opened":0,"clicked":0,"booked":0,"revenueGenerated":0}',
+      submitted_at TIMESTAMPTZ DEFAULT NOW(),
+      sent_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `).catch(() => {});
@@ -1920,6 +1963,318 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
     } catch (e: any) {
       console.error("[copilot] unexpected error:", e?.message, e?.stack?.split("\n")[1]);
       res.status(500).json({ message: "Failed to get copilot response", error: e.message });
+    }
+  });
+
+  // ─── Phase 3: Fill Campaign Approval Workflow ─────────────────────────────
+
+  // Helper: add a timeline event to a submission
+  async function addTimelineEvent(submissionId: string, event: string, note?: string) {
+    const existing = await db.execute(sql`SELECT timeline FROM fill_campaign_submissions WHERE id = ${submissionId}`).catch(() => ({ rows: [] }));
+    const rows = Array.isArray(existing) ? existing : (existing as any)?.rows ?? [];
+    const timeline: any[] = Array.isArray(rows[0]?.timeline) ? rows[0].timeline : (typeof rows[0]?.timeline === 'string' ? JSON.parse(rows[0].timeline) : []);
+    timeline.push({ event, timestamp: new Date().toISOString(), note: note ?? null });
+    await db.execute(sql`UPDATE fill_campaign_submissions SET timeline = ${JSON.stringify(timeline)} WHERE id = ${submissionId}`).catch(() => {});
+  }
+
+  // POST /api/scheduling-intelligence/fill-campaign/:bookingId/submit
+  app.post("/api/scheduling-intelligence/fill-campaign/:bookingId/submit", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { bookingId } = req.params;
+      const {
+        draftId, subject, previewText, emailBody, smsBody, pushBody, socialCaption,
+        recipients, recipientSummary, sessionName, coachName, orgName,
+        openSpots, estimatedValueCents, fillProbability, parentSubmissionId,
+      } = req.body;
+
+      // Resolve version number from parent chain
+      let version = 1;
+      if (parentSubmissionId) {
+        const parentRows = await db.execute(sql`SELECT version FROM fill_campaign_submissions WHERE id = ${parentSubmissionId}`).catch(() => ({ rows: [] }));
+        const pRows = Array.isArray(parentRows) ? parentRows : (parentRows as any)?.rows ?? [];
+        version = (parseInt(pRows[0]?.version || "1") + 1);
+      }
+
+      const submissionId = crypto.randomUUID();
+      const actionId = crypto.randomUUID();
+      const now = new Date().toISOString();
+      const recipientCount = Array.isArray(recipients) ? recipients.length : 0;
+      const recipientEmails = Array.isArray(recipients) ? recipients.map((r: any) => r.email).filter(Boolean).join(", ") : "";
+
+      const initialTimeline = [
+        { event: "Created", timestamp: now, note: null },
+        { event: "Recipients Selected", timestamp: now, note: `${recipientCount} athlete${recipientCount !== 1 ? "s" : ""} selected` },
+        { event: "Generated", timestamp: now, note: `Version ${version} — personalized with AI` },
+        { event: "Submitted", timestamp: now, note: "Awaiting approval" },
+      ];
+
+      // Create submission record
+      await db.execute(sql`
+        INSERT INTO fill_campaign_submissions (
+          id, org_id, booking_id, draft_id, action_id, status, version, parent_submission_id,
+          subject, preview_text, email_body, sms_body, push_body, social_caption,
+          recipients, recipient_count, recipient_summary,
+          session_name, coach_name, org_name, open_spots, estimated_value_cents, fill_probability,
+          timeline, submitted_at, created_at
+        ) VALUES (
+          ${submissionId}, ${orgId}, ${bookingId}, ${draftId ?? null}, ${actionId},
+          'pending_approval', ${version}, ${parentSubmissionId ?? null},
+          ${subject ?? ""}, ${previewText ?? ""}, ${emailBody ?? ""}, ${smsBody ?? ""},
+          ${pushBody ?? ""}, ${socialCaption ?? ""},
+          ${JSON.stringify(recipients ?? [])}, ${recipientCount}, ${JSON.stringify(recipientSummary ?? {})},
+          ${sessionName ?? ""}, ${coachName ?? ""}, ${orgName ?? ""},
+          ${openSpots ?? 0}, ${estimatedValueCents ?? 0}, ${fillProbability ?? ""},
+          ${JSON.stringify(initialTimeline)}, ${now}, ${now}
+        )
+      `);
+
+      // Create AgentMail draft in gmail_agent_actions
+      const bodyPreview = `[FILL CAMPAIGN v${version}] ${subject ?? "Fill Campaign"}\n\nRecipients (${recipientCount}): ${recipientEmails}\n\n${emailBody ?? ""}`.slice(0, 2000);
+      await db.execute(sql`
+        INSERT INTO gmail_agent_actions (
+          id, org_id, action_type, status, approval_required,
+          recipient_email, subject, body_preview,
+          created_by_agent, risk_level, communication_domain, result
+        ) VALUES (
+          ${actionId}, ${orgId}, 'fill_campaign', 'proposed', true,
+          ${recipientEmails || "(multiple recipients)"},
+          ${subject ?? "Fill Campaign"},
+          ${bodyPreview},
+          'fill_campaign_agent', 'low', 'fill_campaign',
+          ${JSON.stringify({ submissionId, bookingId, recipientCount, version })}
+        )
+      `).catch(() => {});
+
+      // Mark previous version rejected if this is a regeneration
+      if (parentSubmissionId) {
+        await db.execute(sql`
+          UPDATE fill_campaign_submissions
+          SET status = 'superseded'
+          WHERE id = ${parentSubmissionId}
+        `).catch(() => {});
+      }
+
+      res.json({ submissionId, actionId, version, status: "pending_approval", recipientCount });
+    } catch (e: any) {
+      console.error("[fill-campaign/submit]", e?.message);
+      res.status(500).json({ message: "Failed to submit campaign", error: e.message });
+    }
+  });
+
+  // GET /api/scheduling-intelligence/fill-campaigns — list all for org
+  app.get("/api/scheduling-intelligence/fill-campaigns", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { status } = req.query;
+
+      const whereStatus = status && status !== "all"
+        ? sql`AND fcs.status = ${status as string}`
+        : sql``;
+
+      const rows = await db.execute(sql`
+        SELECT fcs.*
+        FROM fill_campaign_submissions fcs
+        WHERE fcs.org_id = ${orgId} ${whereStatus}
+        ORDER BY fcs.created_at DESC
+        LIMIT 100
+      `).catch(() => ({ rows: [] }));
+
+      const submissions = Array.isArray(rows) ? rows : (rows as any)?.rows ?? [];
+      res.json({ submissions, total: submissions.length });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to list campaigns", error: e.message });
+    }
+  });
+
+  // GET /api/scheduling-intelligence/fill-campaign/submission/:id — detail
+  app.get("/api/scheduling-intelligence/fill-campaign/submission/:id", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { id } = req.params;
+
+      const rows = await db.execute(sql`
+        SELECT * FROM fill_campaign_submissions WHERE id = ${id} AND org_id = ${orgId} LIMIT 1
+      `).catch(() => ({ rows: [] }));
+      const subs = Array.isArray(rows) ? rows : (rows as any)?.rows ?? [];
+      if (!subs[0]) return res.status(404).json({ message: "Submission not found" });
+
+      // Fetch version history
+      const sub = subs[0];
+      const versionRows = await db.execute(sql`
+        SELECT id, version, status, created_at
+        FROM fill_campaign_submissions
+        WHERE org_id = ${orgId}
+          AND booking_id = ${sub.booking_id}
+        ORDER BY version ASC
+      `).catch(() => ({ rows: [] }));
+      const versions = Array.isArray(versionRows) ? versionRows : (versionRows as any)?.rows ?? [];
+
+      res.json({ submission: sub, versions });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to get submission", error: e.message });
+    }
+  });
+
+  // POST /api/scheduling-intelligence/fill-campaign/submission/:id/approve
+  app.post("/api/scheduling-intelligence/fill-campaign/submission/:id/approve", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { id } = req.params;
+      const now = new Date().toISOString();
+
+      const rows = await db.execute(sql`SELECT * FROM fill_campaign_submissions WHERE id = ${id} AND org_id = ${orgId} LIMIT 1`).catch(() => ({ rows: [] }));
+      const subs = Array.isArray(rows) ? rows : (rows as any)?.rows ?? [];
+      if (!subs[0]) return res.status(404).json({ message: "Submission not found" });
+      const sub = subs[0];
+
+      if (!["pending_approval"].includes(sub.status)) {
+        return res.status(400).json({ message: `Cannot approve a campaign with status "${sub.status}"` });
+      }
+
+      // Update submission to approved
+      await db.execute(sql`
+        UPDATE fill_campaign_submissions
+        SET status = 'approved', approved_at = ${now}
+        WHERE id = ${id}
+      `);
+
+      // Update gmail_agent_actions
+      if (sub.action_id) {
+        await db.execute(sql`
+          UPDATE gmail_agent_actions
+          SET status = 'approved', approved_by = 'admin', executed_at = ${now}
+          WHERE id = ${sub.action_id}
+        `).catch(() => {});
+      }
+
+      await addTimelineEvent(id, "Approved", "Campaign approved — initiating outbound sends");
+
+      // Send to each recipient via AgentMail outbound pipeline
+      const recipients: any[] = Array.isArray(sub.recipients) ? sub.recipients : (typeof sub.recipients === "string" ? JSON.parse(sub.recipients) : []);
+      let sentCount = 0;
+      let blockedCount = 0;
+      const sendErrors: string[] = [];
+
+      for (const recipient of recipients) {
+        if (!recipient.email) continue;
+        try {
+          const policyCheck = await checkAgentMailSendPolicy({
+            orgId,
+            agentName: "fill_campaign_agent",
+            toEmail: recipient.email,
+            subject: sub.subject ?? "Session availability",
+            humanApproved: true,
+          } as any);
+
+          if (!policyCheck.allowed) {
+            blockedCount++;
+            sendErrors.push(`${recipient.email}: ${policyCheck.reason ?? "policy blocked"}`);
+            continue;
+          }
+
+          await sendAgentEmail({
+            organizationId: orgId,
+            agentName: "Fill Campaign Agent",
+            fromInbox: "scheduling" as any,
+            to: recipient.email,
+            subject: sub.subject ?? "Session availability",
+            body: sub.email_body ?? "",
+            humanApproved: true,
+            actionQueueId: sub.action_id ?? undefined,
+          });
+          sentCount++;
+        } catch (err: any) {
+          sendErrors.push(`${recipient.email}: ${err?.message ?? "unknown error"}`);
+        }
+      }
+
+      // Update to sending → completed
+      const finalStatus = sentCount > 0 ? "completed" : "approved";
+      await db.execute(sql`
+        UPDATE fill_campaign_submissions
+        SET status = ${finalStatus}, sent_at = ${now}, completed_at = ${sentCount > 0 ? now : null}
+        WHERE id = ${id}
+      `);
+
+      if (sentCount > 0) {
+        await addTimelineEvent(id, "Sent", `${sentCount} email${sentCount !== 1 ? "s" : ""} dispatched via outbound pipeline`);
+        await addTimelineEvent(id, "Completed", `Campaign delivered to ${sentCount} recipient${sentCount !== 1 ? "s" : ""}`);
+      }
+
+      res.json({
+        status: finalStatus,
+        sentCount,
+        blockedCount,
+        errors: sendErrors.length > 0 ? sendErrors : undefined,
+      });
+    } catch (e: any) {
+      console.error("[fill-campaign/approve]", e?.message);
+      res.status(500).json({ message: "Failed to approve campaign", error: e.message });
+    }
+  });
+
+  // POST /api/scheduling-intelligence/fill-campaign/submission/:id/reject
+  app.post("/api/scheduling-intelligence/fill-campaign/submission/:id/reject", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { id } = req.params;
+      const { reason, rejectionType } = req.body;
+      const now = new Date().toISOString();
+
+      await db.execute(sql`
+        UPDATE fill_campaign_submissions
+        SET status = 'rejected', rejected_at = ${now},
+            rejection_reason = ${reason ?? "Rejected by admin"},
+            rejection_type = ${rejectionType ?? "manual"}
+        WHERE id = ${id} AND org_id = ${orgId}
+      `);
+
+      await db.execute(sql`
+        UPDATE gmail_agent_actions SET status = 'rejected'
+        WHERE id = (SELECT action_id FROM fill_campaign_submissions WHERE id = ${id})
+      `).catch(() => {});
+
+      await addTimelineEvent(id, "Rejected", reason ?? "Rejected by admin");
+
+      res.json({ status: "rejected" });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to reject campaign", error: e.message });
+    }
+  });
+
+  // POST /api/scheduling-intelligence/fill-campaign/submission/:id/request-regeneration
+  app.post("/api/scheduling-intelligence/fill-campaign/submission/:id/request-regeneration", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { id } = req.params;
+      const { notes } = req.body;
+      const now = new Date().toISOString();
+
+      await db.execute(sql`
+        UPDATE fill_campaign_submissions
+        SET status = 'rejected', rejected_at = ${now},
+            rejection_reason = ${notes ?? "Regeneration requested"},
+            rejection_type = 'regeneration_requested',
+            regeneration_requested_at = ${now}
+        WHERE id = ${id} AND org_id = ${orgId}
+      `);
+
+      await addTimelineEvent(id, "Regeneration Requested", notes ?? "Admin requested a new version");
+
+      // Return the current content so the inbox can offer to pre-populate a new draft
+      const rows = await db.execute(sql`SELECT * FROM fill_campaign_submissions WHERE id = ${id} LIMIT 1`).catch(() => ({ rows: [] }));
+      const subs = Array.isArray(rows) ? rows : (rows as any)?.rows ?? [];
+
+      res.json({ status: "rejected", rejectionType: "regeneration_requested", submission: subs[0] ?? null });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to request regeneration", error: e.message });
     }
   });
 
