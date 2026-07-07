@@ -15797,8 +15797,11 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           const { organizationEventLog } = await import("@shared/schema");
           await gdb.insert(organizationEventLog).values({
             orgId: org.id,
+            eventId: crypto.randomUUID(),
             eventType: "lead_capture_program_missing",
+            sourceSystem: "lead_capture",
             payload: guardCtx as any,
+            resolutionState: "open",
             createdAt: new Date(),
           });
         } catch (_guardLogErr) {
