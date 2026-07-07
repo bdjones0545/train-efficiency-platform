@@ -167,6 +167,25 @@ export async function registerSchedulingIntelligenceRoutes(
     )
   `).catch(() => {});
 
+  // ── fill_campaign_attributions (Phase 4) ─────────────────────────────────
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS fill_campaign_attributions (
+      id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      org_id TEXT NOT NULL,
+      campaign_submission_id TEXT NOT NULL,
+      booking_id TEXT NOT NULL,
+      participant_id TEXT,
+      user_id TEXT NOT NULL,
+      booking_timestamp TIMESTAMPTZ,
+      hours_since_send NUMERIC,
+      attribution_window TEXT,
+      session_price_cents INTEGER DEFAULT 0,
+      attributed_revenue_cents INTEGER DEFAULT 0,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(campaign_submission_id, user_id)
+    )
+  `).catch(() => {});
+
   // Extend fill_campaign_drafts with Phase 2 metadata columns
   for (const stmt of [
     `ALTER TABLE fill_campaign_drafts ADD COLUMN IF NOT EXISTS preview_text TEXT`,
@@ -2275,6 +2294,359 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
       res.json({ status: "rejected", rejectionType: "regeneration_requested", submission: subs[0] ?? null });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to request regeneration", error: e.message });
+    }
+  });
+
+  // ─── Phase 4: Campaign Performance & Booking Attribution ──────────────────
+
+  // Helper: attribute bookings to a campaign submission
+  async function attributeCampaignBookings(submissionId: string, orgId: string): Promise<number> {
+    try {
+      const subRows = await db.execute(sql`
+        SELECT id, booking_id, sent_at, open_spots, recipients, org_id
+        FROM fill_campaign_submissions
+        WHERE id = ${submissionId} AND org_id = ${orgId} AND sent_at IS NOT NULL
+        LIMIT 1
+      `).catch(() => ({ rows: [] }));
+      const subs = Array.isArray(subRows) ? subRows : (subRows as any)?.rows ?? [];
+      if (!subs[0]) return 0;
+      const sub = subs[0];
+      const recipients: any[] = Array.isArray(sub.recipients) ? sub.recipients : (typeof sub.recipients === 'string' ? JSON.parse(sub.recipients) : []);
+      if (!recipients.length) return 0;
+
+      // Find booking_participants for the target session who are in the recipient list and joined after send
+      const partRows = await db.execute(sql`
+        SELECT bp.id as participant_id, bp.user_id, bp.joined_at,
+               EXTRACT(EPOCH FROM (bp.joined_at - ${sub.sent_at}::timestamptz)) / 3600.0 AS hours_since_send,
+               COALESCE(srv.price_cents, 0) AS session_price_cents
+        FROM booking_participants bp
+        JOIN bookings b ON b.id = bp.booking_id
+        LEFT JOIN services srv ON b.service_id = srv.id
+        WHERE bp.booking_id = ${sub.booking_id}
+          AND bp.joined_at > ${sub.sent_at}::timestamptz
+          AND bp.joined_at < ${sub.sent_at}::timestamptz + INTERVAL '7 days'
+          AND EXISTS (
+            SELECT 1 FROM jsonb_array_elements(${JSON.stringify(recipients)}::jsonb) AS r
+            WHERE r->>'userId' = bp.user_id
+          )
+      `).catch(() => ({ rows: [] }));
+      const parts = Array.isArray(partRows) ? partRows : (partRows as any)?.rows ?? [];
+
+      let newCount = 0;
+      for (const p of parts) {
+        const hours = parseFloat(String(p.hours_since_send ?? 0));
+        const window = hours <= 24 ? '24h' : hours <= 48 ? '48h' : '7d';
+        const priceCents = parseInt(String(p.session_price_cents ?? 0));
+        await db.execute(sql`
+          INSERT INTO fill_campaign_attributions
+            (org_id, campaign_submission_id, booking_id, participant_id, user_id, booking_timestamp, hours_since_send, attribution_window, session_price_cents, attributed_revenue_cents)
+          VALUES
+            (${orgId}, ${submissionId}, ${sub.booking_id}, ${p.participant_id}, ${p.user_id}, ${p.joined_at}, ${hours}, ${window}, ${priceCents}, ${priceCents})
+          ON CONFLICT (campaign_submission_id, user_id) DO NOTHING
+        `).catch(() => {});
+        newCount++;
+      }
+      return newCount;
+    } catch { return 0; }
+  }
+
+  // Helper: compute live analytics for a submission
+  async function computeCampaignAnalytics(submissionId: string, orgId: string) {
+    const aRows = await db.execute(sql`
+      SELECT
+        COUNT(a.id)::int AS bookings,
+        COALESCE(SUM(a.attributed_revenue_cents), 0)::int AS revenue_generated_cents,
+        COALESCE(AVG(a.hours_since_send), 0)::numeric AS avg_hours_to_fill,
+        COALESCE(MIN(a.hours_since_send), 0)::numeric AS min_hours_to_fill
+      FROM fill_campaign_attributions a
+      WHERE a.campaign_submission_id = ${submissionId} AND a.org_id = ${orgId}
+    `).catch(() => ({ rows: [] }));
+    const stats = Array.isArray(aRows) ? aRows[0] : (aRows as any)?.rows?.[0] ?? {};
+
+    const subRows = await db.execute(sql`
+      SELECT recipient_count, open_spots, sent_at, status
+      FROM fill_campaign_submissions WHERE id = ${submissionId} LIMIT 1
+    `).catch(() => ({ rows: [] }));
+    const sub = Array.isArray(subRows) ? subRows[0] : (subRows as any)?.rows?.[0] ?? {};
+
+    const bookings = parseInt(String(stats.bookings ?? 0));
+    const openSpots = parseInt(String(sub.open_spots ?? 0));
+    const recipientCount = parseInt(String(sub.recipient_count ?? 0));
+    const revCents = parseInt(String(stats.revenue_generated_cents ?? 0));
+    const avgHours = parseFloat(String(stats.avg_hours_to_fill ?? 0));
+    const delivered = sub.status === 'completed' || sub.status === 'approved' ? recipientCount : 0;
+    const fillRate = openSpots > 0 ? Math.round((bookings / openSpots) * 100) : 0;
+
+    return {
+      recipients: recipientCount,
+      delivered,
+      opened: null,
+      clicked: null,
+      bookings,
+      revenueGeneratedCents: revCents,
+      revenueGenerated: Math.round(revCents / 100),
+      fillRatePct: fillRate,
+      openSpotsFilled: bookings,
+      avgHoursToFill: Math.round(avgHours * 10) / 10,
+      minHoursToFill: Math.round(parseFloat(String(stats.min_hours_to_fill ?? 0)) * 10) / 10,
+    };
+  }
+
+  // GET /api/scheduling-intelligence/fill-campaign/submission/:id/analytics
+  app.get("/api/scheduling-intelligence/fill-campaign/submission/:id/analytics", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { id } = req.params;
+      await attributeCampaignBookings(id, orgId);
+      const analytics = await computeCampaignAnalytics(id, orgId);
+      res.json({ analytics });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute analytics", error: e.message });
+    }
+  });
+
+  // POST /api/scheduling-intelligence/fill-campaign/submission/:id/run-attribution
+  app.post("/api/scheduling-intelligence/fill-campaign/submission/:id/run-attribution", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { id } = req.params;
+      const newCount = await attributeCampaignBookings(id, orgId);
+      const analytics = await computeCampaignAnalytics(id, orgId);
+      res.json({ attributed: newCount, analytics });
+    } catch (e: any) {
+      res.status(500).json({ message: "Attribution failed", error: e.message });
+    }
+  });
+
+  // GET /api/scheduling-intelligence/fill-campaigns/aggregate-analytics
+  app.get("/api/scheduling-intelligence/fill-campaigns/aggregate-analytics", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+
+      // Auto-run attribution for all completed/approved submissions
+      const toAttribute = await db.execute(sql`
+        SELECT id FROM fill_campaign_submissions
+        WHERE org_id = ${orgId} AND status IN ('completed', 'approved') AND sent_at IS NOT NULL
+      `).catch(() => ({ rows: [] }));
+      const toAttrRows = Array.isArray(toAttribute) ? toAttribute : (toAttribute as any)?.rows ?? [];
+      for (const row of toAttrRows.slice(0, 20)) {
+        await attributeCampaignBookings(row.id, orgId).catch(() => {});
+      }
+
+      // Per-campaign metrics with attribution
+      const campaignRows = await db.execute(sql`
+        SELECT
+          s.id, s.session_name, s.coach_name, s.subject, s.recipient_count, s.open_spots,
+          s.estimated_value_cents, s.status, s.version, s.submitted_at, s.sent_at,
+          COUNT(a.id)::int AS bookings,
+          COALESCE(SUM(a.attributed_revenue_cents), 0)::int AS revenue_cents,
+          CASE WHEN s.open_spots > 0 THEN ROUND(COUNT(a.id)::numeric / s.open_spots * 100) ELSE 0 END AS fill_rate_pct,
+          COALESCE(AVG(a.hours_since_send), 0)::numeric AS avg_hours_to_fill,
+          COALESCE(MIN(a.hours_since_send), 0)::numeric AS min_hours_to_fill
+        FROM fill_campaign_submissions s
+        LEFT JOIN fill_campaign_attributions a ON a.campaign_submission_id = s.id AND a.org_id = ${orgId}
+        WHERE s.org_id = ${orgId}
+        GROUP BY s.id, s.session_name, s.coach_name, s.subject, s.recipient_count, s.open_spots,
+                 s.estimated_value_cents, s.status, s.version, s.submitted_at, s.sent_at
+        ORDER BY fill_rate_pct DESC NULLS LAST, revenue_cents DESC
+        LIMIT 50
+      `).catch(() => ({ rows: [] }));
+      const campaigns = Array.isArray(campaignRows) ? campaignRows : (campaignRows as any)?.rows ?? [];
+
+      // Coach-level aggregates
+      const coachRows = await db.execute(sql`
+        SELECT
+          s.coach_name,
+          COUNT(DISTINCT s.id)::int AS campaigns_sent,
+          ROUND(AVG(CASE WHEN s.open_spots > 0 THEN cnt.bookings::numeric / s.open_spots * 100 ELSE 0 END)) AS avg_fill_rate_pct,
+          COALESCE(SUM(cnt.revenue_cents), 0)::int AS total_revenue_cents,
+          COALESCE(AVG(cnt.avg_hours), 0)::numeric AS avg_hours_to_fill
+        FROM fill_campaign_submissions s
+        LEFT JOIN LATERAL (
+          SELECT COUNT(*)::int AS bookings, COALESCE(SUM(attributed_revenue_cents), 0)::int AS revenue_cents,
+                 COALESCE(AVG(hours_since_send), 0)::numeric AS avg_hours
+          FROM fill_campaign_attributions WHERE campaign_submission_id = s.id
+        ) cnt ON true
+        WHERE s.org_id = ${orgId} AND s.status IN ('completed', 'approved', 'sending')
+        GROUP BY s.coach_name
+        ORDER BY total_revenue_cents DESC
+      `).catch(() => ({ rows: [] }));
+      const coachAnalytics = Array.isArray(coachRows) ? coachRows : (coachRows as any)?.rows ?? [];
+
+      // Summary KPIs
+      const kpiRows = await db.execute(sql`
+        SELECT
+          COUNT(DISTINCT s.id)::int AS total_campaigns,
+          COUNT(DISTINCT s.id) FILTER (WHERE s.status IN ('completed', 'approved', 'sending'))::int AS campaigns_sent,
+          COUNT(a.id)::int AS total_bookings,
+          COALESCE(SUM(a.attributed_revenue_cents), 0)::int AS total_revenue_cents,
+          ROUND(AVG(CASE WHEN s.open_spots > 0 THEN (SELECT COUNT(*) FROM fill_campaign_attributions WHERE campaign_submission_id = s.id)::numeric / s.open_spots * 100 ELSE NULL END))::int AS avg_fill_rate_pct
+        FROM fill_campaign_submissions s
+        LEFT JOIN fill_campaign_attributions a ON a.campaign_submission_id = s.id
+        WHERE s.org_id = ${orgId}
+      `).catch(() => ({ rows: [] }));
+      const kpi = Array.isArray(kpiRows) ? kpiRows[0] : (kpiRows as any)?.rows?.[0] ?? {};
+
+      // Top performers
+      const sorted = [...campaigns];
+      const topByFillRate = [...sorted].sort((a, b) => Number(b.fill_rate_pct) - Number(a.fill_rate_pct)).slice(0, 5);
+      const topByRevenue = [...sorted].sort((a, b) => Number(b.revenue_cents) - Number(a.revenue_cents)).slice(0, 5);
+      const topBySpeed = [...sorted].filter((c) => Number(c.avg_hours_to_fill) > 0).sort((a, b) => Number(a.avg_hours_to_fill) - Number(b.avg_hours_to_fill)).slice(0, 5);
+      const topByBookings = [...sorted].sort((a, b) => Number(b.bookings) - Number(a.bookings)).slice(0, 5);
+      const worst = [...sorted].filter((c) => Number(c.status) !== 'pending_approval').sort((a, b) => Number(a.fill_rate_pct) - Number(b.fill_rate_pct)).slice(0, 5);
+
+      res.json({
+        summary: kpi,
+        campaigns,
+        coachAnalytics,
+        topPerformers: { byFillRate: topByFillRate, byRevenue: topByRevenue, bySpeed: topBySpeed, byBookings: topByBookings },
+        worstPerforming: worst,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute aggregate analytics", error: e.message });
+    }
+  });
+
+  // GET /api/scheduling-intelligence/fill-campaigns/reporting
+  app.get("/api/scheduling-intelligence/fill-campaigns/reporting", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+      const { coachName, status, startDate, endDate } = req.query as Record<string, string>;
+
+      const coachFilter = coachName && coachName !== 'all' ? coachName : null;
+      const statusFilter = status && status !== 'all' ? status : null;
+      const startFilter = startDate || null;
+      const endFilter = endDate || null;
+
+      const rows = await db.execute(sql`
+        SELECT
+          s.id, s.session_name, s.coach_name, s.subject, s.recipient_count, s.open_spots,
+          s.estimated_value_cents, s.status, s.version, s.submitted_at, s.sent_at,
+          s.recipient_summary,
+          COUNT(a.id)::int AS bookings,
+          COALESCE(SUM(a.attributed_revenue_cents), 0)::int AS revenue_cents,
+          CASE WHEN s.open_spots > 0 THEN ROUND(COUNT(a.id)::numeric / s.open_spots * 100) ELSE 0 END AS fill_rate_pct,
+          COALESCE(AVG(a.hours_since_send), 0)::numeric AS avg_hours_to_fill
+        FROM fill_campaign_submissions s
+        LEFT JOIN fill_campaign_attributions a ON a.campaign_submission_id = s.id AND a.org_id = ${orgId}
+        WHERE s.org_id = ${orgId}
+          AND (${coachFilter}::text IS NULL OR s.coach_name = ${coachFilter}::text)
+          AND (${statusFilter}::text IS NULL OR s.status = ${statusFilter}::text)
+          AND (${startFilter}::date IS NULL OR s.submitted_at >= ${startFilter}::date)
+          AND (${endFilter}::date IS NULL OR s.submitted_at <= ${endFilter}::date)
+        GROUP BY s.id, s.session_name, s.coach_name, s.subject, s.recipient_count, s.open_spots,
+                 s.estimated_value_cents, s.status, s.version, s.submitted_at, s.sent_at, s.recipient_summary
+        ORDER BY s.submitted_at DESC
+        LIMIT 200
+      `).catch(() => ({ rows: [] }));
+      const campaigns = Array.isArray(rows) ? rows : (rows as any)?.rows ?? [];
+
+      // Aggregate metrics over filtered set
+      const totalCampaigns = campaigns.length;
+      const campaignsSent = campaigns.filter((c: any) => ['completed','approved','sending'].includes(c.status)).length;
+      const totalBookings = campaigns.reduce((sum: number, c: any) => sum + Number(c.bookings ?? 0), 0);
+      const totalRevenueCents = campaigns.reduce((sum: number, c: any) => sum + Number(c.revenue_cents ?? 0), 0);
+      const fillRates = campaigns.filter((c: any) => Number(c.fill_rate_pct) > 0).map((c: any) => Number(c.fill_rate_pct));
+      const avgFillRatePct = fillRates.length ? Math.round(fillRates.reduce((s: number, v: number) => s + v, 0) / fillRates.length) : 0;
+      const hours = campaigns.filter((c: any) => Number(c.avg_hours_to_fill) > 0).map((c: any) => Number(c.avg_hours_to_fill));
+      const avgHoursToFill = hours.length ? Math.round((hours.reduce((s: number, v: number) => s + v, 0) / hours.length) * 10) / 10 : 0;
+
+      // Top subject lines (by fill rate)
+      const subjectMap: Record<string, { bookings: number; campaigns: number; totalFillRate: number }> = {};
+      for (const c of campaigns) {
+        if (!c.subject) continue;
+        if (!subjectMap[c.subject]) subjectMap[c.subject] = { bookings: 0, campaigns: 0, totalFillRate: 0 };
+        subjectMap[c.subject].bookings += Number(c.bookings ?? 0);
+        subjectMap[c.subject].campaigns++;
+        subjectMap[c.subject].totalFillRate += Number(c.fill_rate_pct ?? 0);
+      }
+      const topSubjectLines = Object.entries(subjectMap)
+        .map(([subject, s]) => ({ subject, avgFillRate: Math.round(s.totalFillRate / s.campaigns), totalBookings: s.bookings, campaigns: s.campaigns }))
+        .sort((a, b) => b.avgFillRate - a.avgFillRate)
+        .slice(0, 10);
+
+      // Top audience types (from recipient_summary.topReasons)
+      const reasonCounts: Record<string, number> = {};
+      for (const c of campaigns) {
+        const summary = typeof c.recipient_summary === 'string' ? JSON.parse(c.recipient_summary || '{}') : (c.recipient_summary || {});
+        const reasons: string[] = Array.isArray(summary.topReasons) ? summary.topReasons : [];
+        for (const r of reasons) reasonCounts[r] = (reasonCounts[r] ?? 0) + 1;
+      }
+      const topAudienceTypes = Object.entries(reasonCounts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 8)
+        .map(([reason, count]) => ({ reason, count }));
+
+      // Coach list for filter dropdown
+      const coaches = [...new Set(campaigns.map((c: any) => c.coach_name).filter(Boolean))];
+
+      res.json({
+        summary: { totalCampaigns, campaignsSent, totalBookings, totalRevenueCents, avgFillRatePct, avgHoursToFill },
+        campaigns,
+        topSubjectLines,
+        topAudienceTypes,
+        coaches,
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to generate report", error: e.message });
+    }
+  });
+
+  // GET /api/scheduling-intelligence/fill-campaigns/insights
+  app.get("/api/scheduling-intelligence/fill-campaigns/insights", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+
+      // Pull real aggregate metrics for AI to summarize
+      const kpiRows = await db.execute(sql`
+        SELECT
+          s.session_name, s.coach_name, s.subject, s.open_spots, s.recipient_count,
+          s.fill_probability, s.sent_at,
+          COUNT(a.id)::int AS bookings,
+          COALESCE(SUM(a.attributed_revenue_cents), 0)::int AS revenue_cents,
+          CASE WHEN s.open_spots > 0 THEN ROUND(COUNT(a.id)::numeric / s.open_spots * 100) ELSE 0 END AS fill_rate_pct,
+          COALESCE(AVG(a.hours_since_send), 0)::numeric AS avg_hours_to_fill,
+          a.attribution_window
+        FROM fill_campaign_submissions s
+        LEFT JOIN fill_campaign_attributions a ON a.campaign_submission_id = s.id AND a.org_id = ${orgId}
+        WHERE s.org_id = ${orgId} AND s.status IN ('completed', 'approved')
+        GROUP BY s.session_name, s.coach_name, s.subject, s.open_spots, s.recipient_count,
+                 s.fill_probability, s.sent_at, a.attribution_window
+        LIMIT 30
+      `).catch(() => ({ rows: [] }));
+      const metrics = Array.isArray(kpiRows) ? kpiRows : (kpiRows as any)?.rows ?? [];
+
+      if (metrics.length === 0) {
+        return res.json({ insights: ["No campaign performance data is available yet. Send and complete campaigns to generate insights."] });
+      }
+
+      const context = JSON.stringify(metrics, null, 2);
+      const { openai } = await import("../services/openai-service");
+      const completion = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "system",
+            content: `You are a sports business analytics assistant. You generate ONLY observations that can be directly measured from the data provided. Do NOT invent percentages, names, or statistics not present in the data. Do NOT say "data shows" or "statistics indicate" — just state the observation directly. Return a JSON array of 3-6 concise insight strings, each under 120 characters.`
+          },
+          {
+            role: "user",
+            content: `Based on this actual fill campaign performance data, generate specific, factual insights:\n\n${context}`
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.2,
+      });
+      const parsed = JSON.parse(completion.choices[0].message.content || '{"insights":[]}');
+      const insights: string[] = Array.isArray(parsed.insights) ? parsed.insights : Object.values(parsed)[0] as string[];
+      res.json({ insights: insights.slice(0, 6) });
+    } catch (e: any) {
+      res.status(500).json({ message: "Insights generation failed", error: e.message });
     }
   });
 

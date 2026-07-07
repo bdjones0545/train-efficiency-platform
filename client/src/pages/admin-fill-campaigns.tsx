@@ -10,13 +10,14 @@ import { apiRequest } from "@/lib/queryClient";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import {
   Send, Users, CheckCircle2, XCircle, RefreshCw, Clock,
-  Mail, MessageSquare, Bell, ChevronRight, BarChart3,
-  Calendar, User, DollarSign, Loader2, AlertCircle,
+  Mail, MessageSquare, Bell, BarChart3,
+  Calendar, User, DollarSign, Loader2,
   FileText, TrendingUp, Check, X, RotateCcw, Eye,
-  Activity
+  Activity, Target, Zap, ChevronRight
 } from "lucide-react";
 import { useState } from "react";
 import { format, parseISO } from "date-fns";
+import { Link } from "wouter";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -54,9 +55,9 @@ interface Submission {
   rejection_type: string | null;
   timeline: Array<{ event: string; timestamp: string; note: string | null }>;
   analytics: {
-    delivered?: number;
-    opened?: number;
-    clicked?: number;
+    delivered?: number | null;
+    opened?: number | null;
+    clicked?: number | null;
     booked?: number;
     revenueGenerated?: number;
   };
@@ -71,6 +72,20 @@ interface VersionMeta {
   version: number;
   status: string;
   created_at: string;
+}
+
+interface LiveAnalytics {
+  recipients: number;
+  delivered: number;
+  opened: number | null;
+  clicked: number | null;
+  bookings: number;
+  revenueGeneratedCents: number;
+  revenueGenerated: number;
+  fillRatePct: number;
+  openSpotsFilled: number;
+  avgHoursToFill: number;
+  minHoursToFill: number;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -98,6 +113,12 @@ function StatusBadge({ status }: { status: string }) {
 function fillProbColor(label: string) {
   if (label === "High") return "text-green-600 dark:text-green-400";
   if (label === "Medium") return "text-yellow-600 dark:text-yellow-400";
+  return "text-red-600 dark:text-red-400";
+}
+
+function fillRateColor(pct: number) {
+  if (pct >= 70) return "text-green-600 dark:text-green-400";
+  if (pct >= 40) return "text-yellow-600 dark:text-yellow-400";
   return "text-red-600 dark:text-red-400";
 }
 
@@ -142,24 +163,145 @@ function TimelineTrack({ timeline }: { timeline: Submission["timeline"] }) {
   );
 }
 
-function AnalyticsRow({ analytics, recipientCount }: { analytics: Submission["analytics"]; recipientCount: number }) {
+// Live Analytics Panel (Phase 4)
+function LiveAnalyticsPanel({
+  submissionId,
+  status,
+  openSpots,
+  estimatedValueCents,
+}: {
+  submissionId: string;
+  status: string;
+  openSpots: number;
+  estimatedValueCents: number;
+}) {
+  const isSent = ["completed", "approved", "sending"].includes(status);
+
+  const { data, isLoading, refetch } = useQuery<{ analytics: LiveAnalytics }>({
+    queryKey: ["/api/scheduling-intelligence/fill-campaign/submission", submissionId, "analytics"],
+    queryFn: () => authenticatedFetch(`/api/scheduling-intelligence/fill-campaign/submission/${submissionId}/analytics`),
+    enabled: isSent,
+    staleTime: 60_000,
+  });
+
+  const runAttrMutation = useMutation({
+    mutationFn: () => apiRequest("POST", `/api/scheduling-intelligence/fill-campaign/submission/${submissionId}/run-attribution`, {}),
+    onSuccess: () => refetch(),
+  });
+
+  const a = data?.analytics;
+  const estimatedRevenue = estimatedValueCents > 0 ? estimatedValueCents / 100 : 0;
+  const generatedRevenue = a?.revenueGenerated ?? 0;
+  const revVsEst = estimatedRevenue > 0 ? Math.round((generatedRevenue / estimatedRevenue) * 100) : null;
+
   const stats = [
-    { label: "Recipients", value: recipientCount, icon: Users, active: true },
-    { label: "Delivered", value: analytics?.delivered ?? "—", icon: Mail, active: false },
-    { label: "Opened", value: analytics?.opened ?? "—", icon: Eye, active: false },
-    { label: "Clicked", value: analytics?.clicked ?? "—", icon: TrendingUp, active: false },
-    { label: "Booked", value: analytics?.booked ?? "—", icon: Calendar, active: false },
-    { label: "Revenue", value: analytics?.revenueGenerated ? `$${analytics.revenueGenerated}` : "—", icon: DollarSign, active: false },
+    { label: "Recipients", value: a?.recipients ?? "—", icon: Users, active: true, hint: null },
+    { label: "Delivered", value: isSent ? (a?.delivered ?? "—") : "—", icon: Mail, active: isSent, hint: null },
+    { label: "Opened", value: a?.opened ?? "—", icon: Eye, active: false, hint: "Tracking not yet configured" },
+    { label: "Clicked", value: a?.clicked ?? "—", icon: TrendingUp, active: false, hint: "Tracking not yet configured" },
+    { label: "Booked", value: a?.bookings ?? 0, icon: CheckCircle2, active: isSent, hint: null },
+    { label: "Revenue", value: generatedRevenue > 0 ? `$${generatedRevenue.toLocaleString()}` : "—", icon: DollarSign, active: isSent && generatedRevenue > 0, hint: null },
   ];
+
+  if (!isSent) {
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-lg border p-2 text-center bg-muted/20">
+            <s.icon className="h-3.5 w-3.5 mx-auto mb-1 text-muted-foreground" />
+            <p className="text-lg font-bold leading-none text-muted-foreground">—</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (isLoading) {
+    return <div className="grid grid-cols-3 gap-2">{[1,2,3,4,5,6].map((i) => <Skeleton key={i} className="h-16" />)}</div>;
+  }
+
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {stats.map((s) => (
-        <div key={s.label} className={`rounded-lg border p-2 text-center ${s.active ? "bg-background" : "bg-muted/20"}`}>
-          <s.icon className={`h-3.5 w-3.5 mx-auto mb-1 ${s.active ? "text-primary" : "text-muted-foreground"}`} />
-          <p className={`text-lg font-bold leading-none ${s.active ? "" : "text-muted-foreground"}`}>{s.value}</p>
-          <p className="text-[10px] text-muted-foreground mt-0.5">{s.label}</p>
+    <div className="space-y-3">
+      <div className="grid grid-cols-3 gap-2">
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            className={`rounded-lg border p-2 text-center ${s.active ? "bg-background" : "bg-muted/20"}`}
+            title={s.hint ?? undefined}
+          >
+            <s.icon className={`h-3.5 w-3.5 mx-auto mb-1 ${s.active ? "text-primary" : "text-muted-foreground"}`} />
+            <p className={`text-lg font-bold leading-none ${s.active ? "" : "text-muted-foreground"}`}>{s.value}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Key outcome metrics */}
+      {a && (
+        <div className="grid grid-cols-3 gap-2">
+          <div className="rounded-lg border p-2 text-center">
+            <Target className="h-3.5 w-3.5 mx-auto mb-1 text-primary" />
+            <p className={`text-lg font-bold leading-none ${fillRateColor(a.fillRatePct)}`}>{a.fillRatePct}%</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Fill Rate</p>
+          </div>
+          <div className="rounded-lg border p-2 text-center">
+            <BarChart3 className="h-3.5 w-3.5 mx-auto mb-1 text-blue-500" />
+            <p className="text-lg font-bold leading-none text-blue-600 dark:text-blue-400">{a.openSpotsFilled}/{openSpots}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">Spots Filled</p>
+          </div>
+          <div className="rounded-lg border p-2 text-center">
+            <Zap className="h-3.5 w-3.5 mx-auto mb-1 text-yellow-500" />
+            <p className="text-lg font-bold leading-none">{a.minHoursToFill > 0 ? `${a.minHoursToFill}h` : "—"}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">First Booking</p>
+          </div>
         </div>
-      ))}
+      )}
+
+      {/* Revenue vs estimated */}
+      {estimatedRevenue > 0 && generatedRevenue >= 0 && (
+        <div className="rounded-lg border p-2.5 bg-muted/20">
+          <p className="text-[10px] text-muted-foreground mb-1.5">Revenue Attribution</p>
+          <div className="flex items-end justify-between gap-2">
+            <div>
+              <p className="text-xs text-muted-foreground">Opportunity Value</p>
+              <p className="text-sm font-medium">${Math.round(estimatedRevenue).toLocaleString()}</p>
+            </div>
+            <ChevronRight className="h-3 w-3 text-muted-foreground mb-1" />
+            <div>
+              <p className="text-xs text-muted-foreground">Generated</p>
+              <p className={`text-sm font-bold ${generatedRevenue > 0 ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+                ${generatedRevenue.toLocaleString()}
+              </p>
+            </div>
+            {revVsEst !== null && (
+              <>
+                <ChevronRight className="h-3 w-3 text-muted-foreground mb-1" />
+                <div>
+                  <p className="text-xs text-muted-foreground">Recovery</p>
+                  <p className={`text-sm font-bold ${revVsEst >= 80 ? "text-green-600 dark:text-green-400" : revVsEst >= 40 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
+                    {revVsEst}%
+                  </p>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      <div className="flex justify-end">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 text-xs gap-1.5"
+          onClick={() => runAttrMutation.mutate()}
+          disabled={runAttrMutation.isPending}
+          data-testid="button-run-attribution"
+        >
+          {runAttrMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+          Re-run Attribution
+        </Button>
+      </div>
     </div>
   );
 }
@@ -342,21 +484,28 @@ function ApprovalDialog({
             )}
           </section>
 
+          {/* Live Analytics (Phase 4) */}
+          <section>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Campaign Analytics</p>
+              <Link href="/admin/fill-campaign-analytics">
+                <a className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
+                  Full Report <ChevronRight className="h-3 w-3" />
+                </a>
+              </Link>
+            </div>
+            <LiveAnalyticsPanel
+              submissionId={submission.id}
+              status={submission.status}
+              openSpots={submission.open_spots}
+              estimatedValueCents={submission.estimated_value_cents}
+            />
+          </section>
+
           {/* Campaign Timeline */}
           <section>
             <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Campaign Timeline</p>
             <TimelineTrack timeline={submission.timeline} />
-          </section>
-
-          {/* Analytics */}
-          <section>
-            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-              Analytics
-              {submission.status !== "completed" && (
-                <span className="ml-2 text-muted-foreground normal-case font-normal text-[10px]">tracking begins after send</span>
-              )}
-            </p>
-            <AnalyticsRow analytics={submission.analytics ?? {}} recipientCount={submission.recipient_count} />
           </section>
 
           {/* Version history */}
@@ -456,7 +605,7 @@ function ApprovalDialog({
                   data-testid="button-request-regeneration"
                 >
                   <RotateCcw className="h-3.5 w-3.5 mr-1.5" />
-                  Request Regeneration
+                  Regeneration
                 </Button>
                 <Button
                   size="sm"
@@ -599,11 +748,11 @@ export default function AdminFillCampaignsPage() {
     mutationFn: async (id: string) =>
       apiRequest("POST", `/api/scheduling-intelligence/fill-campaign/submission/${id}/approve`, {}),
     onSuccess: async (res) => {
-      const data = await res.json();
+      const d = await res.json();
       toast({
         title: "Campaign approved",
-        description: data.sentCount > 0
-          ? `${data.sentCount} email${data.sentCount !== 1 ? "s" : ""} dispatched.`
+        description: d.sentCount > 0
+          ? `${d.sentCount} email${d.sentCount !== 1 ? "s" : ""} dispatched.`
           : "Campaign approved — outbound queue updated.",
       });
       queryClient.invalidateQueries({ queryKey: ["/api/scheduling-intelligence/fill-campaigns"] });
@@ -658,16 +807,26 @@ export default function AdminFillCampaignsPage() {
             Review, approve, and track AI-generated session fill campaigns
           </p>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          className="gap-2"
-          data-testid="button-refresh-campaigns"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Refresh
-        </Button>
+        <div className="flex gap-2">
+          <Link href="/admin/fill-campaign-analytics">
+            <a>
+              <Button variant="outline" size="sm" className="gap-2" data-testid="link-analytics">
+                <BarChart3 className="h-3.5 w-3.5" />
+                Analytics Report
+              </Button>
+            </a>
+          </Link>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            className="gap-2"
+            data-testid="button-refresh-campaigns"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Summary cards */}

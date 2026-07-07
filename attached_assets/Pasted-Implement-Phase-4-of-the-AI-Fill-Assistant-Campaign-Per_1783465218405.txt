@@ -1,0 +1,179 @@
+Implement Phase 4 of the AI Fill Assistant: Campaign Performance & Booking Attribution.
+
+Goal:
+Measure whether Fill Campaigns actually filled sessions and attribute bookings back to the campaign.
+
+Do not change the approval or sending workflow.
+
+Workflow:
+
+Opportunity
+→ Recipient Intelligence
+→ Campaign Generation
+→ Approval
+→ AgentMail Delivery
+→ Booking Attribution
+→ Performance Analytics
+
+Requirements
+
+1. Campaign Performance
+
+Replace placeholder analytics with live metrics.
+
+Display:
+
+Recipients
+Delivered
+Opened
+Clicked
+Bookings
+Revenue Generated
+Fill Rate
+Open Spots Filled
+Time to Fill
+
+2. Booking Attribution
+
+When an athlete books a session after receiving a Fill Campaign:
+
+Record:
+
+campaign_submission_id
+booking_id
+user_id
+booking_timestamp
+hours_since_send
+
+Support attribution windows:
+
+24 hours
+48 hours
+7 days
+
+Attribute only the first booking for each athlete.
+
+3. Revenue Attribution
+
+Calculate:
+
+Revenue Generated
+
+Bookings × Session Price
+
+Compare against:
+
+Original Opportunity Value
+
+Example:
+
+Opportunity:
+$175
+
+Generated:
+$140
+
+Filled:
+4 / 5 spots
+
+4. Campaign Dashboard
+
+Add:
+
+Top Performing Campaigns
+
+Highest Fill Rate
+
+Highest Revenue
+
+Fastest Filled
+
+Most Bookings
+
+Worst Performing
+
+5. Coach Analytics
+
+Per coach:
+
+Campaigns Sent
+
+Fill Rate
+
+Revenue Generated
+
+Average Time to Fill
+
+6. AI Insights
+
+Do not let AI invent statistics.
+
+Generate observations from deterministic metrics.
+
+Examples:
+
+"Wednesday evening sessions consistently fill after one email."
+
+"Hockey athletes respond more frequently than baseball athletes."
+
+"Coach Hunter's campaigns average a 78% fill rate."
+
+Only summarize actual analytics.
+
+7. Opportunity Feedback
+
+When a campaign succeeds:
+
+Update the original Opportunity record.
+
+Show:
+
+Filled by Campaign
+
+Campaign Version
+
+Revenue Recovered
+
+Fill Date
+
+8. Historical Reporting
+
+New reporting page:
+
+Fill Campaign Analytics
+
+Filters:
+
+Coach
+
+Date Range
+
+Service
+
+Campaign Status
+
+Metrics:
+
+Campaigns Created
+
+Campaigns Sent
+
+Bookings
+
+Revenue
+
+Average Fill Rate
+
+Average Time to Fill
+
+Top Audience Types
+
+Top Performing Subject Lines
+
+Acceptance Criteria
+
+* No estimated metrics when actual data exists.
+* Booking attribution is deterministic.
+* Revenue attribution is deterministic.
+* Analytics update automatically as bookings occur.
+* AI only summarizes measured performance.

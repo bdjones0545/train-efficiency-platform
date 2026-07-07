@@ -205,6 +205,7 @@ import AdminCoachCapacityPage from "@/pages/admin-coach-capacity";
 import AdminSchedulingCommandCenterPage from "@/pages/admin-scheduling-command-center";
 import AdminSchedulingOpportunityInboxPage from "@/pages/admin-scheduling-opportunity-inbox";
 import AdminFillCampaignsPage from "@/pages/admin-fill-campaigns";
+import AdminFillCampaignAnalyticsPage from "@/pages/admin-fill-campaign-analytics";
 import AdminSchedulingCopilotPage from "@/pages/admin-scheduling-copilot";
 import AdminApexAgentPage from "@/pages/admin-apex-agent";
 import AdminPulseAgentPage from "@/pages/admin-pulse-agent";
@@ -626,6 +627,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/scheduling-opportunity-inbox" component={AdminSchedulingOpportunityInboxPage} />
                   <Route path="/admin/scheduling-copilot" component={AdminSchedulingCopilotPage} />
                   <Route path="/admin/fill-campaigns" component={AdminFillCampaignsPage} />
+                  <Route path="/admin/fill-campaign-analytics" component={AdminFillCampaignAnalyticsPage} />
                   <Route path="/developer" component={DeveloperPortalPage} />
                   <Route path="/developer/sandbox" component={DeveloperSandboxPage} />
                   <Route path="/marketplace/store" component={MarketplaceStorePage} />
