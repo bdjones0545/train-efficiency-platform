@@ -510,13 +510,21 @@ export default function AdminAgentMailPage() {
   // Tab 7 — Activity Log
   const { data: messagesRaw } = useQuery<AgentMailMessage[]>({ queryKey: ["/api/agentmail/messages"] });
 
+  // Normalize API responses that may return an object wrapper instead of a raw array
+  const toArray = <T,>(value: unknown): T[] =>
+    Array.isArray(value) ? (value as T[])
+    : Array.isArray((value as any)?.messages) ? (value as any).messages
+    : Array.isArray((value as any)?.data) ? (value as any).data
+    : Array.isArray((value as any)?.items) ? (value as any).items
+    : [];
+
   // Derived data
-  const gmailConversations = gmailConversationsRaw ?? [];
-  const inbound = inboundRaw ?? [];
-  const replies = repliesRaw ?? [];
-  const gmailApprovals = gmailApprovalsRaw ?? [];
-  const followups = followupsRaw ?? [];
-  const messages = messagesRaw ?? [];
+  const gmailConversations: GmailConversation[] = toArray(gmailConversationsRaw);
+  const inbound: InboundMessage[] = toArray(inboundRaw);
+  const replies: ReplyQueueItem[] = toArray(repliesRaw);
+  const gmailApprovals: AiApproval[] = toArray(gmailApprovalsRaw);
+  const followups: FollowupItem[] = toArray(followupsRaw);
+  const messages: AgentMailMessage[] = toArray(messagesRaw);
 
   const orgDomain = statusData?.orgDomain ?? "trainefficiency.com";
   const needsResponseInbound = inbound.filter(m => ["received", "pending", "routed"].includes(m.routed_status) && !m.action_payload?.suggestedReply);
