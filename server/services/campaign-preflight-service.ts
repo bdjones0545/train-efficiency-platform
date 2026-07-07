@@ -9,6 +9,7 @@
  * Returns a structured result with per-check status and overall health badge.
  */
 
+import { randomUUID } from "crypto";
 import { db } from "../db";
 import {
   organizations,
@@ -328,7 +329,9 @@ export async function runCampaignPreflight(
   try {
     await db.insert(organizationEventLog).values({
       orgId,
+      eventId: randomUUID(),
       eventType: "preflight_run",
+      sourceSystem: "campaign_preflight",
       payload: {
         programId,
         healthBadge: result.healthBadge,
@@ -338,6 +341,7 @@ export async function runCampaignPreflight(
         ranAt: result.ranAt,
         durationMs: result.durationMs,
       } as any,
+      resolutionState: "open",
       createdAt: new Date(),
     });
   } catch (_) {}
