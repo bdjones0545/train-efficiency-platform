@@ -4098,7 +4098,7 @@ Return a JSON object with exactly these keys:
           contactName: prospect.contactName || "unknown",
           services: org ? [(org as any).specialties || "speed, strength, agility, performance training"] : undefined,
         });
-        const saved = await storage.createOutreachDraft({
+        const saved = await storage.createTeamTrainingOutreachDraft({
           orgId: organizationId,
           prospectId: prospect.id,
           subject: draft.subject,
@@ -4127,10 +4127,10 @@ Return a JSON object with exactly these keys:
         if (!organizationId) return JSON.stringify({ error: "No organization context." });
         const draftId = args.draftId as string;
         if (!draftId) return JSON.stringify({ error: "draftId is required." });
-        const draft = await storage.getOutreachDraft(draftId);
+        const draft = await storage.getTeamTrainingOutreachDraft(draftId);
         if (!draft || draft.orgId !== organizationId) return JSON.stringify({ error: "Draft not found." });
         if (draft.sentAt) return JSON.stringify({ error: "Draft already sent." });
-        const updated = await storage.updateOutreachDraft(draftId, { approved: true, approvedAt: new Date() });
+        const updated = await storage.updateTeamTrainingOutreachDraft(draftId, { approved: true, approvedAt: new Date() });
         await storage.logOutreachEvent({
           orgId: organizationId,
           prospectId: draft.prospectId,
@@ -4152,7 +4152,7 @@ Return a JSON object with exactly these keys:
         const pendingActionId = args.pendingActionId as string | undefined;
 
         if (!draftId) return JSON.stringify({ error: "draftId is required." });
-        const draft = await storage.getOutreachDraft(draftId);
+        const draft = await storage.getTeamTrainingOutreachDraft(draftId);
         if (!draft || draft.orgId !== organizationId) return JSON.stringify({ error: "Draft not found." });
         if (draft.sentAt) return JSON.stringify({ error: "This email has already been sent." });
 
@@ -4214,7 +4214,7 @@ Return a JSON object with exactly these keys:
         if (pending.actionType !== "send_team_outreach_email") return JSON.stringify({ error: "Confirmation mismatch. Please restart." });
 
         if (!draft.approved) {
-          await storage.updateOutreachDraft(draftId, { approved: true, approvedAt: new Date() });
+          await storage.updateTeamTrainingOutreachDraft(draftId, { approved: true, approvedAt: new Date() });
         }
 
         const branding = await getOrgBranding(organizationId);
@@ -4232,7 +4232,7 @@ Return a JSON object with exactly these keys:
           return JSON.stringify({ error: `Failed to send email: ${sendErr.message}` });
         }
 
-        await storage.updateOutreachDraft(draftId, { sentAt: new Date() });
+        await storage.updateTeamTrainingOutreachDraft(draftId, { sentAt: new Date() });
         await storage.updateTeamTrainingProspect(prospect.id, {
           outreachStatus: "Contacted",
           lastContactedAt: new Date(),

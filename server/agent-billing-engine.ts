@@ -17,6 +17,7 @@ import {
   agentTemplates,
   orgInstalledAgents,
   agentSubmissions,
+  type RoyaltyDistribution,
 } from "@shared/schema";
 import { eq, and, gte, sql, desc } from "drizzle-orm";
 import { AGENT_IDENTITIES } from "./agent-identities";

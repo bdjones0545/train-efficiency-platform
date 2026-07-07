@@ -333,7 +333,7 @@ async function executeDraftGeneration(
   }
 
   const autoSend = settings.autoSend === true;
-  const saved = await storage.createOutreachDraft({
+  const saved = await storage.createTeamTrainingOutreachDraft({
     orgId,
     prospectId,
     subject: generated.subject,
@@ -576,7 +576,7 @@ export async function undoAutoExecution(
         await storage.cancelFollowUpSequence(draft.id).catch(() => {});
       }
     } else if (exec.draftId) {
-      await storage.updateOutreachDraft(exec.draftId, {
+      await storage.updateTeamTrainingOutreachDraft(exec.draftId, {
         approved: false,
         body: "[Auto-execution undone — edit or delete this draft]",
       });

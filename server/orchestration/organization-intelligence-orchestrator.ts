@@ -21,6 +21,7 @@ import {
   athleteContextObjects,
   orgUsers,
   type OrganizationIntelligenceState,
+  type OrganizationEventLog,
 } from "@shared/schema";
 import { eq, and, desc, gte, sql } from "drizzle-orm";
 import { subscribeToEvent, publishEvent } from "../events/event-bus";

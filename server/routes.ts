@@ -11426,7 +11426,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         services: req.body?.services,
       });
 
-      const saved = await storage.createOutreachDraft({
+      const saved = await storage.createTeamTrainingOutreachDraft({
         orgId: profile.organizationId,
         prospectId: prospect.id,
         subject: draft.subject,
@@ -11645,7 +11645,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         return res.status(500).json({ message: "AI is not configured — missing OPENAI_API_KEY" });
       }
 
-      const draft = await storage.getOutreachDraft(req.params.id);
+      const draft = await storage.getTeamTrainingOutreachDraft(req.params.id);
       if (!draft) return res.status(404).json({ message: "Draft not found" });
 
       const prospect = await storage.getTeamTrainingProspect(draft.prospectId);
@@ -11742,7 +11742,7 @@ Refine this email following the instruction above. Preserve the core message and
   // Update draft (edit body/subject)
   app.patch("/api/admin/team-training/drafts/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
-      const updated = await storage.updateOutreachDraft(req.params.id, req.body);
+      const updated = await storage.updateTeamTrainingOutreachDraft(req.params.id, req.body);
       res.json(updated);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -11756,10 +11756,10 @@ Refine this email following the instruction above. Preserve the core message and
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
 
-      const draft = await storage.getOutreachDraft(req.params.id);
+      const draft = await storage.getTeamTrainingOutreachDraft(req.params.id);
       if (!draft) return res.status(404).json({ message: "Draft not found" });
 
-      const updated = await storage.updateOutreachDraft(req.params.id, {
+      const updated = await storage.updateTeamTrainingOutreachDraft(req.params.id, {
         approved: true,
         approvedAt: new Date(),
       });
@@ -11785,7 +11785,7 @@ Refine this email following the instruction above. Preserve the core message and
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
 
-      const draft = await storage.getOutreachDraft(req.params.id);
+      const draft = await storage.getTeamTrainingOutreachDraft(req.params.id);
       if (!draft) return res.status(404).json({ message: "Draft not found" });
       if (!draft.approved) return res.status(400).json({ message: "Draft must be approved before sending" });
       if (draft.sentAt) return res.status(400).json({ message: "Draft already sent" });
@@ -11850,7 +11850,7 @@ Refine this email following the instruction above. Preserve the core message and
 
       // Mark sent
       const manualSentAt = new Date();
-      await storage.updateOutreachDraft(draft.id, { sentAt: manualSentAt });
+      await storage.updateTeamTrainingOutreachDraft(draft.id, { sentAt: manualSentAt });
       await storage.updateTeamTrainingProspect(prospect.id, {
         outreachStatus: "Contacted",
         lastContactedAt: manualSentAt,
@@ -11931,7 +11931,7 @@ Refine this email following the instruction above. Preserve the core message and
       const drafts = await storage.getOutreachDraftsByProspect(req.params.id);
       const sentDraft = drafts.find(d => !!d.sentAt && !d.repliedAt);
       if (sentDraft) {
-        await storage.updateOutreachDraft(sentDraft.id, {
+        await storage.updateTeamTrainingOutreachDraft(sentDraft.id, {
           repliedAt: new Date(),
           replyText: replyText ?? null,
           replyClassification: classification,
@@ -12437,7 +12437,7 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
 
       if (saveDraft) {
         // Save to outreach drafts for later approval/sending
-        const draft = await storage.createOutreachDraft({
+        const draft = await storage.createTeamTrainingOutreachDraft({
           orgId: profile.organizationId,
           prospectId: deal.prospectId,
           subject: subject || "Follow-up",
@@ -12475,7 +12475,7 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
         const toEmail = prospect?.decisionMakerEmail || prospect?.contactEmail;
         if (!toEmail) return res.status(400).json({ message: "No email address on file for this prospect" });
         // Record the draft as sent
-        const draft = await storage.createOutreachDraft({
+        const draft = await storage.createTeamTrainingOutreachDraft({
           orgId: profile.organizationId,
           prospectId: deal.prospectId,
           subject: subject || "Follow-up",
@@ -12550,7 +12550,7 @@ Contact: ${contactName}${contactRole ? " — " + contactRole : ""}
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
-      const events = await storage.getOutreachEvents(profile.organizationId, req.query.prospectId as string | undefined);
+      const events = await storage.getTeamTrainingOutreachEvents(profile.organizationId, req.query.prospectId as string | undefined);
       res.json(events);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -12710,7 +12710,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const status = (req.query.status as string) || undefined;
-      const actions = await storage.getAgentActions(profile.organizationId, status);
+      const actions = await storage.getRevenueAgentActions(profile.organizationId, status);
       res.json(actions);
     } catch (err: any) {
       res.status(500).json({ message: err.message });
@@ -12772,7 +12772,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
         if (result.requiresConfirmation) {
           // Mark action as pending confirmation rather than fully executed
-          await (storage as any).updateAgentAction(req.params.id, {
+          await (storage as any).updateRevenueAgentAction(req.params.id, {
             status: "pending_tool_confirmation",
           });
           return res.json({
@@ -12796,7 +12796,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       }
 
       // Mark action as fully executed
-      const action = await (storage as any).updateAgentAction(req.params.id, {
+      const action = await (storage as any).updateRevenueAgentAction(req.params.id, {
         status: "executed",
         executedAt: new Date(),
         acceptedAt: new Date(),
@@ -12842,7 +12842,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       // Verify ownership before mutating (column is org_id in revenue_agent_actions)
       const ownerCheck = await db.execute(sql`SELECT id FROM revenue_agent_actions WHERE id = ${req.params.id} AND org_id = ${profile.organizationId}`);
       if (!ownerCheck.rows[0]) return res.status(404).json({ message: "Action not found" });
-      const action = await storage.updateAgentAction(req.params.id, {
+      const action = await storage.updateRevenueAgentAction(req.params.id, {
         status: "dismissed",
         dismissedAt: new Date(),
       });
@@ -12942,9 +12942,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   app.get("/api/email-agent/track-open/:emailId", async (req: any, res) => {
     try {
       const { emailId } = req.params;
-      const draft = await storage.getOutreachDraft(emailId);
+      const draft = await storage.getTeamTrainingOutreachDraft(emailId);
       if (draft && !draft.openedAt) {
-        await storage.updateOutreachDraft(emailId, { openedAt: new Date() });
+        await storage.updateTeamTrainingOutreachDraft(emailId, { openedAt: new Date() });
       }
     } catch (_) {}
     // Return 1x1 transparent GIF
@@ -12962,9 +12962,9 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     try {
       const { emailId } = req.params;
       const { url } = req.query as { url?: string };
-      const draft = await storage.getOutreachDraft(emailId);
+      const draft = await storage.getTeamTrainingOutreachDraft(emailId);
       if (draft && !draft.clickedAt) {
-        await storage.updateOutreachDraft(emailId, { clickedAt: new Date() });
+        await storage.updateTeamTrainingOutreachDraft(emailId, { clickedAt: new Date() });
         // Also update variant stats if linked
         if (draft.messageVariantId) {
           const variant = await storage.getEmailMessageVariant(draft.messageVariantId);
@@ -13496,7 +13496,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       }
 
       // AI-classify the reply intent
-      let classification: string | null = null;
+      let classification: import("./email-agent/reply-classifier").ReplyClassification | null = null;
       if (replyText) {
         try {
           const { classifyReply } = await import("./email-agent/reply-classifier");
@@ -13511,7 +13511,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const drafts = await storage.getOutreachDraftsByProspect(prospect.id);
       const sentDraft = drafts.find(d => !!d.sentAt && !d.repliedAt);
       if (sentDraft) {
-        await storage.updateOutreachDraft(sentDraft.id, {
+        await storage.updateTeamTrainingOutreachDraft(sentDraft.id, {
           repliedAt: new Date(),
           replyText: replyText || null,
           replyClassification: classification,
@@ -13798,7 +13798,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const [brief, brainRecs, revenueActionsRaw, runs] = await Promise.all([
         storage.getLatestExecutiveBrief(orgId),
         storage.getAgentRecommendations(orgId, "pending", 15),
-        (storage as any).getAgentActions(orgId, "pending"),
+        (storage as any).getRevenueAgentActions(orgId, "pending"),
         storage.getOrchestratorRuns(orgId, 1),
       ]);
 
@@ -14495,7 +14495,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
       const [brainRecs, revenueActionsRaw] = await Promise.all([
         storage.getAgentRecommendations(orgId, "pending", 20),
-        (storage as any).getAgentActions(orgId, "pending"),
+        (storage as any).getRevenueAgentActions(orgId, "pending"),
       ]);
 
       const ra: any[] = Array.isArray(revenueActionsRaw) ? revenueActionsRaw : [];
