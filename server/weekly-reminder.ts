@@ -54,11 +54,26 @@ async function sendWeeklyReminders() {
 export function startWeeklyReminderJob() {
   console.log("[Weekly Reminder] Job started. Checking every 7 days for users inactive 7+ days.");
 
-  setTimeout(() => {
-    sendWeeklyReminders();
-  }, 60 * 1000);
+  // Global lock: prevents two instances (autoscale) from running the sweep
+  // concurrently and double-sending before markReminderSent updates. Send
+  // behavior inside sendWeeklyReminders is unchanged.
+  const guardedRun = async () => {
+    const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
+    const { acquired, lockKey } = await acquireJobLock("__global__", "weekly_reminder", 120).catch(
+      () => ({ acquired: true, lockKey: "" })
+    );
+    if (!acquired) {
+      console.log("[Weekly Reminder] Lock held by another instance — skipping this run");
+      return;
+    }
+    try {
+      await sendWeeklyReminders();
+    } finally {
+      if (lockKey) await releaseJobLock(lockKey).catch(() => {});
+    }
+  };
 
-  setInterval(() => {
-    sendWeeklyReminders();
-  }, REMINDER_INTERVAL_MS);
+  setTimeout(guardedRun, 60 * 1000);
+
+  setInterval(guardedRun, REMINDER_INTERVAL_MS);
 }
