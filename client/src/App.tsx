@@ -222,6 +222,7 @@ import AdminEmailAuditPage from "@/pages/admin-email-audit";
 import AdminCommunicationIntelligencePage from "@/pages/admin-communication-intelligence";
 import HomePage from "@/pages/home";
 import SetupWizardPage from "@/pages/setup-wizard";
+import { isPlatformAdminOrg } from "@/lib/platform-access";
 
 interface SubscriptionStatus {
   status: string;
@@ -235,6 +236,32 @@ function RedirectToHome() {
     setLocation("/", { replace: true });
   }, []);
   return null;
+}
+
+function PlatformAdminRoute({ component: Component }: { component: React.ComponentType }) {
+  const [, setLocation] = useLocation();
+  const { data: profile } = useQuery<{ role?: string; organizationId?: string | null }>({
+    queryKey: ["/api/profile"],
+  });
+  const orgId = profile?.organizationId;
+  const { data: organization, isLoading: orgLoading } = useQuery<{ name: string }>({
+    queryKey: ["/api/organizations/by-id", orgId],
+    queryFn: async () => {
+      const res = await fetch(`/api/organizations/by-id/${orgId}`);
+      if (!res.ok) throw new Error("Failed to fetch org");
+      return res.json();
+    },
+    enabled: !!orgId,
+  });
+
+  if (!profile || orgLoading) return null;
+
+  if (!isPlatformAdminOrg(organization?.name)) {
+    setLocation("/admin", { replace: true });
+    return null;
+  }
+
+  return <Component />;
 }
 
 function SmartHome() {
@@ -583,7 +610,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/integrations" component={AdminIntegrationsPage} />
                   <Route path="/admin/workforce-os" component={AdminWorkforceOsPage} />
                   <Route path="/admin/command-center" component={AdminUnifiedCommandPage} />
-                  <Route path="/admin/customer-success-os" component={AdminCustomerSuccessOsPage} />
+                  <Route path="/admin/customer-success-os" component={() => <PlatformAdminRoute component={AdminCustomerSuccessOsPage} />} />
                   <Route path="/admin/platform-brain" component={AdminPlatformBrainPage} />
                   <Route path="/admin/platform-engineering" component={AdminPlatformEngineeringPage} />
                   <Route path="/admin/agent-communications" component={AdminAgentCommunicationsPage} />

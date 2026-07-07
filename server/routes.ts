@@ -155,6 +155,20 @@ async function getAdminAuthContext(req: any): Promise<{
   }
 }
 
+const PLATFORM_ADMIN_ORG_ID = "org-est";
+
+async function requirePlatformAdminOrg(req: any, res: any, next: any) {
+  try {
+    const orgId = await getAdminOrgId(req);
+    if (!orgId || orgId !== PLATFORM_ADMIN_ORG_ID) {
+      return res.status(403).json({ message: "Access restricted to platform administrators." });
+    }
+    next();
+  } catch {
+    res.status(403).json({ message: "Access restricted to platform administrators." });
+  }
+}
+
 function generateTimeSlots(
   availBlocks: any[],
   existingBookings: any[],
@@ -28861,6 +28875,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // ═══════════════════════════════════════════════════════════════
   // CUSTOMER SUCCESS OS — Phase 16
   // ═══════════════════════════════════════════════════════════════
+
+  app.use("/api/customer-success", requirePlatformAdminOrg);
 
   // Shared mock org portfolio
   function makePortfolio() {

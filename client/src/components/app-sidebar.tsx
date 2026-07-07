@@ -60,6 +60,7 @@ import { setLastOrgSlug } from "@/lib/logout";
 import type { UserProfile } from "@shared/schema";
 import { cn } from "@/lib/utils";
 import { getOrgPreset } from "@/lib/org-presets";
+import { isPlatformAdminOrg } from "@/lib/platform-access";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Types
@@ -609,6 +610,10 @@ export function AppSidebar() {
               icon: Brain,
               testId: "nav-athlete-intelligence",
             },
+          ]
+        : []),
+      ...(isAdmin && isPlatformAdminOrg(organization?.name)
+        ? [
             {
               title: "Customer Success",
               url: "/admin/customer-success-os",

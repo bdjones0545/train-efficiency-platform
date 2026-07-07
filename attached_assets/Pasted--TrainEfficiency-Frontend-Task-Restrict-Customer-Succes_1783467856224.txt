@@ -1,0 +1,96 @@
+# TrainEfficiency Frontend Task
+
+## Restrict Customer Success Navigation to Internal Platform Admin
+
+### Objective
+
+Temporarily hide the **Customer Success** section in the left sidebar from all customer organizations.
+
+The section should only be visible when the logged-in user belongs to the **Efficiency Strength Training** organization (our internal platform admin organization).
+
+This is a temporary product decision while the Customer Success operating system is being redesigned and audited.
+
+---
+
+## Requirements
+
+### Visibility Rules
+
+The **Customer Success** item in the left navigation should only render if:
+
+* The authenticated user belongs to the **Efficiency Strength Training** organization.
+
+All other organizations should not see:
+
+* Customer Success
+* Any nested Customer Success routes
+* Any Customer Success navigation items
+
+The goal is that customers are completely unaware this section currently exists.
+
+---
+
+## Route Protection
+
+Do **not** rely on hiding the sidebar alone.
+
+Protect the routes as well.
+
+If a user manually enters a Customer Success URL:
+
+* Verify they belong to the Efficiency Strength Training organization.
+* If not:
+
+  * Return 403
+  * or redirect them to the main dashboard.
+
+Navigation visibility alone is **not** sufficient.
+
+---
+
+## Implementation
+
+Reuse existing organization authentication/authorization patterns already used elsewhere in the application.
+
+Avoid introducing duplicate authorization logic.
+
+If there is already an organization helper, permission middleware, or organization context, extend that rather than creating new code.
+
+---
+
+## Future-Proofing
+
+Do **not** hardcode this throughout the codebase.
+
+Instead, centralize the check in one reusable helper, for example:
+
+* `isPlatformAdminOrganization`
+* `canAccessInternalCustomerSuccess`
+* `hasInternalPlatformAccess`
+
+The implementation can currently check for the Efficiency Strength Training organization, but it should be encapsulated so it can later evolve into a true platform-admin permission without requiring widespread refactoring.
+
+---
+
+## Non-Goals
+
+Do **not** redesign Customer Success.
+
+Do **not** change any functionality.
+
+Do **not** remove any pages.
+
+Do **not** delete any code.
+
+This task is strictly an authorization and navigation visibility change.
+
+---
+
+## Acceptance Criteria
+
+* ✅ Customer Success only appears in the left sidebar for users in the Efficiency Strength Training organization.
+* ✅ Users from every other organization cannot see the navigation item.
+* ✅ Direct URL access is blocked.
+* ✅ Authorization logic is centralized and reusable.
+* ✅ Existing functionality remains unchanged for the internal organization.
+* ✅ No regressions to the rest of the navigation system.
