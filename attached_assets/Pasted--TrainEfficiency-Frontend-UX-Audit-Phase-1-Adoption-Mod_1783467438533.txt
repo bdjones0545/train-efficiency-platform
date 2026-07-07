@@ -1,0 +1,310 @@
+# TrainEfficiency Frontend UX Audit
+
+## Phase 1 — Adoption Module Audit
+
+You are acting as a **Senior Product Designer, UX Researcher, SaaS Product Manager, and Sports Performance Operations Consultant**.
+
+Your job is **NOT** to redesign the UI yet.
+
+Your first objective is to perform a comprehensive audit of the existing Adoption module so we understand what should stay, move, merge, improve, or be removed before making any visual changes.
+
+---
+
+# Goal
+
+Audit the Adoption section from the perspective of a sports performance business owner.
+
+Assume the user owns a facility and asks:
+
+> "What should I do today to improve athlete success, increase revenue, improve retention, and operate my business more efficiently?"
+
+The interface should answer that question within seconds.
+
+---
+
+# For Every Card
+
+Evaluate every card using the following criteria.
+
+## 1. Purpose
+
+* Does this feature belong on this page?
+* Does it belong in this category?
+* Should it live somewhere else?
+* Is it redundant with another feature?
+
+Score:
+1–10
+
+Explain why.
+
+---
+
+## 2. Clarity
+
+Could a first-time customer understand:
+
+* What this is
+* Why it matters
+* What it does
+
+within five seconds?
+
+If not, explain why.
+
+Score:
+1–10
+
+---
+
+## 3. Business Value
+
+Does the card communicate measurable business value?
+
+Examples:
+
+Revenue
+
+Retention
+
+Athlete outcomes
+
+Coach efficiency
+
+Scheduling
+
+Communication
+
+Operations
+
+If the value is unclear, explain what should be communicated instead.
+
+Score:
+1–10
+
+---
+
+## 4. Actionability
+
+After reading the card:
+
+Does the user know exactly what to do next?
+
+Examples:
+
+Enable
+
+Configure
+
+Review
+
+Monitor
+
+Open Dashboard
+
+Investigate
+
+If not, recommend a stronger call-to-action.
+
+Score:
+1–10
+
+---
+
+## 5. Priority
+
+Is this feature prioritized appropriately?
+
+Questions:
+
+Should this be one of the first recommendations?
+
+Is it actually high priority?
+
+Is it medium?
+
+Low?
+
+Should another feature appear before it?
+
+Score:
+1–10
+
+---
+
+## 6. Data Quality
+
+Audit the information displayed.
+
+Instead of generic states like:
+
+* Never Used
+* Dormant
+* Connected
+
+Recommend actionable metrics such as:
+
+* 12 athletes eligible
+* 4 coach conflicts
+* $2,300 recoverable revenue
+* 5 at-risk athletes
+* 8 open sessions
+* 17 waitlisted athletes
+
+Determine whether better business intelligence can be surfaced.
+
+---
+
+## 7. Copy Review
+
+Evaluate all copy.
+
+Questions:
+
+Does it sound like internal software terminology?
+
+Would a gym owner understand it?
+
+Would a coach understand it?
+
+Would a customer success manager understand it?
+
+Rewrite only if necessary.
+
+---
+
+## 8. Information Architecture
+
+Determine whether each feature belongs inside:
+
+Customer Success
+
+Revenue
+
+Marketing
+
+Operations
+
+Scheduling
+
+AI
+
+Automation
+
+Platform
+
+Reporting
+
+Administration
+
+Recommend moves where appropriate.
+
+---
+
+## 9. Visual Hierarchy
+
+Evaluate whether the page communicates priorities correctly.
+
+The page should immediately answer:
+
+What is my biggest opportunity today?
+
+What should I review next?
+
+What can wait?
+
+Recommend a better hierarchy if necessary.
+
+---
+
+# Page-Level Audit
+
+After auditing every card, provide an overall review.
+
+Include:
+
+## Strengths
+
+What is already working well?
+
+---
+
+## Weaknesses
+
+What is confusing?
+
+What creates friction?
+
+What reduces adoption?
+
+---
+
+## Opportunities
+
+What would have the greatest impact if improved?
+
+---
+
+## Recommended Moves
+
+Which cards should:
+
+Stay
+
+Move
+
+Merge
+
+Split
+
+Be removed
+
+Be renamed
+
+---
+
+# Scoring
+
+Provide scores for:
+
+Information Architecture
+
+Navigation
+
+Clarity
+
+Business Value
+
+Actionability
+
+Visual Hierarchy
+
+Adoption Potential
+
+Overall UX
+
+---
+
+# Deliverables
+
+Return the audit as a professional UX review including:
+
+1. Executive Summary
+
+2. Card-by-card audit
+
+3. Overall findings
+
+4. Recommended structural changes
+
+5. Quick wins
+
+6. Medium-term improvements
+
+7. Long-term product recommendations
+
+Do **not** redesign the interface yet.
+
+Focus only on producing a thorough product and UX audit that will guide the redesign in later phases.
+
+Be objective, critical, and prioritize business outcomes over exposing internal product features.
