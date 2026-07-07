@@ -353,7 +353,26 @@ async function runLeadCaptureSequenceCron(): Promise<void> {
 }
 
 export function initializeLeadCaptureSequenceCron(): void {
-  setTimeout(() => runLeadCaptureSequenceCron(), 5 * 60 * 1000); // first run 5 min after boot
-  setInterval(() => runLeadCaptureSequenceCron(), 30 * 60 * 1000); // then every 30 min
+  // Global lock: runLeadCaptureSequenceCron is a cross-org sweep, so a single
+  // instance runs it per tick (autoscale) — preventing duplicate lead sends
+  // before each row's sequenceStatus advances. Send behavior is unchanged.
+  const guardedRun = async () => {
+    const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
+    const { acquired, lockKey } = await acquireJobLock("__global__", "lead_capture_sequences", 30).catch(
+      () => ({ acquired: true, lockKey: "" })
+    );
+    if (!acquired) {
+      console.log("[LeadCapture Sequences] Lock held by another instance — skipping this run");
+      return;
+    }
+    try {
+      await runLeadCaptureSequenceCron();
+    } finally {
+      if (lockKey) await releaseJobLock(lockKey).catch(() => {});
+    }
+  };
+
+  setTimeout(guardedRun, 5 * 60 * 1000); // first run 5 min after boot
+  setInterval(guardedRun, 30 * 60 * 1000); // then every 30 min
   console.log("[LeadCapture Sequences] cron started — runs every 30 minutes");
 }

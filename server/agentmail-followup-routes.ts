@@ -82,10 +82,24 @@ function startFollowupCron(): void {
   const INTERVAL = 20 * 60 * 1000; // every 20 minutes
 
   const run = async () => {
+    // Global lock: processDueFollowups is a cross-org due-queue sweep, so a
+    // single instance runs it per tick (autoscale) — preventing duplicate
+    // follow-up sends before each row's status advances. Only the cron path is
+    // guarded; the manual /run route calls processDueFollowups directly.
+    const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
+    const { acquired, lockKey } = await acquireJobLock("__global__", "agentmail_followup", 20).catch(
+      () => ({ acquired: true, lockKey: "" })
+    );
+    if (!acquired) {
+      console.log("[FollowupCron] Lock held by another instance — skipping this run");
+      return;
+    }
     try {
       await processDueFollowups();
     } catch (e: any) {
       console.error("[FollowupCron] Error:", e?.message);
+    } finally {
+      if (lockKey) await releaseJobLock(lockKey).catch(() => {});
     }
   };
 
