@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import { useToast } from "@/hooks/use-toast";
 import {
   Bot, Send, User, Sparkles, TrendingUp, Users,
-  DollarSign, Calendar, RefreshCw, Lightbulb
+  DollarSign, Calendar, RefreshCw, Lightbulb, Mic, MicOff
 } from "lucide-react";
 
 interface SupportingData {
@@ -181,6 +181,65 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
+function useVoiceInput(onTranscript: (text: string) => void) {
+  const [listening, setListening] = useState(false);
+  const [supported, setSupported] = useState(false);
+  const recognitionRef = useRef<any>(null);
+  const { toast } = useToast();
+
+  useEffect(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    setSupported(!!SpeechRecognition);
+  }, []);
+
+  const toggle = useCallback(() => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SpeechRecognition) return;
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = "en-US";
+
+    recognition.onstart = () => setListening(true);
+
+    recognition.onresult = (event: any) => {
+      const transcript = Array.from(event.results as SpeechRecognitionResultList)
+        .map((r: SpeechRecognitionResult) => r[0].transcript)
+        .join(" ")
+        .trim();
+      if (transcript) onTranscript(transcript);
+    };
+
+    recognition.onerror = (event: any) => {
+      if (event.error !== "no-speech" && event.error !== "aborted") {
+        toast({
+          title: "Voice input error",
+          description: event.error === "not-allowed"
+            ? "Microphone access was denied. Please allow it in your browser settings."
+            : `Speech recognition error: ${event.error}`,
+          variant: "destructive",
+        });
+      }
+      setListening(false);
+    };
+
+    recognition.onend = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }, [listening, onTranscript, toast]);
+
+  return { listening, supported, toggle };
+}
+
 export default function AdminSchedulingCopilotPage() {
   const { toast } = useToast();
   const [messages, setMessages] = useState<Message[]>([
@@ -192,6 +251,12 @@ export default function AdminSchedulingCopilotPage() {
   ]);
   const [input, setInput] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const handleVoiceTranscript = useCallback((text: string) => {
+    setInput(prev => prev ? `${prev} ${text}` : text);
+  }, []);
+
+  const { listening, supported: voiceSupported, toggle: toggleVoice } = useVoiceInput(handleVoiceTranscript);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -331,12 +396,26 @@ export default function AdminSchedulingCopilotPage() {
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ask about sessions, revenue gaps, utilization, client retention…"
-                  className="resize-none min-h-[44px] max-h-[120px] text-sm"
+                  placeholder={listening ? "Listening… speak now" : "Ask about sessions, revenue gaps, utilization, client retention…"}
+                  className={`resize-none min-h-[44px] max-h-[120px] text-sm transition-colors ${listening ? "border-red-400 focus-visible:ring-red-400" : ""}`}
                   rows={1}
                   disabled={askMutation.isPending}
                   data-testid="input-copilot-question"
                 />
+                {voiceSupported && (
+                  <Button
+                    size="icon"
+                    type="button"
+                    variant="outline"
+                    className={`h-11 w-11 shrink-0 transition-colors ${listening ? "border-red-400 text-red-500 bg-red-50 dark:bg-red-950/30 hover:bg-red-100 dark:hover:bg-red-950/50 animate-pulse" : "hover:border-violet-400 hover:text-violet-600"}`}
+                    onClick={toggleVoice}
+                    disabled={askMutation.isPending}
+                    title={listening ? "Stop recording" : "Start voice input"}
+                    data-testid="button-voice-input"
+                  >
+                    {listening ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                  </Button>
+                )}
                 <Button
                   size="icon"
                   className="h-11 w-11 shrink-0 bg-violet-600 hover:bg-violet-700 text-white"
@@ -348,7 +427,9 @@ export default function AdminSchedulingCopilotPage() {
                 </Button>
               </div>
               <p className="text-[10px] text-muted-foreground mt-2 text-center">
-                Press Enter to send · Shift+Enter for new line · Powered by GPT-4o mini
+                Press Enter to send · Shift+Enter for new line
+                {voiceSupported && ` · ${listening ? "🔴 Recording — click mic to stop" : "🎙 Click mic to speak"}`}
+                {" · "}Powered by GPT-4o mini
               </p>
             </div>
           </Card>
