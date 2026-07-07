@@ -120,8 +120,8 @@ export async function captureExecution(exec: TelemetryExecution): Promise<void> 
   // Record as cross-org learning event (anonymized)
   if (exec.success && exec.revenueImpact) {
     await db.insert(crossOrgLearningEvents).values({
-      agentType: exec.agentId,
-      patternType: exec.executionType,
+      agentId: exec.agentId,
+      eventType: exec.executionType,
       benchmarkData: {
         revenueImpact: exec.revenueImpact,
         durationMs: exec.durationMs,

@@ -16871,7 +16871,7 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       const step = req.body.step || "recovery_30min";
       const sent = await sendAbandonedRecovery({ abandonedId: ab.id, step, orgId: ab.orgId, athleteName: ab.athleteName, email: ab.email, programName: program.name, orgName: org.name, orgSlug: org.slug, programSlug: program.slug });
       if (sent) {
-        await db.update(leadCaptureAbandoned).set({ contactedAt: new Date(), followupSentAt: new Date(), followupCount: (ab.followupCount ?? 0) + 1 }).where(eq(leadCaptureAbandoned.id, ab.id));
+        await db.update(leadCaptureAbandoned).set({ followupSentAt: new Date(), followupCount: (ab.followupCount ?? 0) + 1 }).where(eq(leadCaptureAbandoned.id, ab.id));
       }
       res.json({ success: sent });
     } catch (error) {
@@ -23430,7 +23430,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
       try {
         const devs = await db.select().from(developerAccounts).where(eq(developerAccounts.id, testDevId)).catch(() => []);
         if (devs.length === 0) {
-          await db.insert(developerAccounts).values({ id: testDevId, orgId: testOrgId, developerName: "Test Developer", displayName: "E2E Test Developer", email: "e2e@test.com", revenueShareRate: 0.30, status: "active", publishedAgents: 0, totalInstalls: 0, totalRevenue: 0 }).catch(() => {});
+          await db.insert(developerAccounts).values({ id: testDevId, orgId: testOrgId, displayName: "E2E Test Developer", email: "e2e@test.com", revenueShareRate: 0.30, status: "active", agentsPublished: 0, totalInstalls: 0, totalRevenue: 0 }).catch(() => {});
         }
         pass(1, "Developer account created", `Developer ID: ${testDevId}`);
       } catch (e: any) { fail(1, "Developer account created", e.message); }
