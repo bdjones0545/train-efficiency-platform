@@ -613,7 +613,7 @@ export class WorkflowOrchestrator {
         const actionId = meta.operatorActionId;
         const assigneeId = step.params?.assigneeId || run.createdBy;
         if (actionId && assigneeId) {
-          await storage.updateOperatorAction(actionId, { assignedTo: assigneeId });
+          await storage.updateOperatorAction(actionId, { assignedToUserId: assigneeId });
           await storage.createOperatorActionEvent({
             operatorActionId: actionId, actorId: run.createdBy || undefined,
             eventType: "assigned", note: `Assigned by orchestration run: ${run.id}`,
