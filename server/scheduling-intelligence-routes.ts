@@ -1508,6 +1508,42 @@ Return as JSON:
   });
 
   // ─── AI Scheduling Copilot ────────────────────────────────────────────────
+
+  /**
+   * Extract a coach name from the user's question using common patterns.
+   * Returns the matched name string, or null if no specific coach is referenced.
+   */
+  function extractCoachNameFromQuestion(question: string): string | null {
+    const patterns = [
+      /show\s+me\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'s?\s+schedule/i,
+      /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)'s?\s+schedule/i,
+      /schedule\s+(?:for|of)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)/i,
+      /what(?:'s|\s+is|\s+does)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)(?:'s?\s+schedule|\s+have|\s+scheduled)/i,
+      /(?:for|show|pull up|get)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)\s+(?:schedule|sessions|bookings|calendar)/i,
+    ];
+    for (const pattern of patterns) {
+      const match = question.match(pattern);
+      if (match?.[1]) return match[1].trim();
+    }
+    return null;
+  }
+
+  /**
+   * Fuzzy-match a name string against a list of coaches.
+   * Returns all coaches whose full name contains any word from the query, or
+   * whose first or last name matches any word from the query.
+   */
+  function matchCoaches(
+    requestedName: string,
+    coaches: Array<{ coach_profile_id: string; first_name: string; last_name: string }>
+  ) {
+    const queryWords = requestedName.toLowerCase().split(/\s+/).filter(Boolean);
+    return coaches.filter((c) => {
+      const fullName = `${c.first_name ?? ""} ${c.last_name ?? ""}`.toLowerCase();
+      return queryWords.every((word) => fullName.includes(word));
+    });
+  }
+
   app.post("/api/scheduling-intelligence/copilot", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
     console.log("[copilot] route entered");
     try {
@@ -1533,6 +1569,57 @@ Return as JSON:
       const thirtyDaysAgo = new Date(now);
       thirtyDaysAgo.setDate(now.getDate() - 30);
 
+      // ── Step 1: Resolve coach scope ──────────────────────────────────────
+      // Fetch all coaches for this org so we can match by name.
+      const allCoachesRaw = await db.execute(sql`
+        SELECT cp.id as coach_profile_id, u.first_name, u.last_name
+        FROM coach_profiles cp
+        JOIN users u ON cp.user_id = u.id
+        WHERE cp.organization_id = ${orgId}
+        ORDER BY u.last_name, u.first_name
+      `).catch(() => ({ rows: [] }));
+      const allCoaches = getRows(allCoachesRaw) as Array<{ coach_profile_id: string; first_name: string; last_name: string }>;
+
+      const requestedName = extractCoachNameFromQuestion(question);
+      let filteredCoachProfileId: string | null = null;
+      let coachScopeLabel = "all coaches";
+
+      if (requestedName) {
+        const matches = matchCoaches(requestedName, allCoaches);
+        console.log(`[copilot] coach name detected: "${requestedName}", matches: ${matches.length}`);
+
+        if (matches.length === 0) {
+          const coachList = allCoaches.length
+            ? allCoaches.map((c) => `${c.first_name} ${c.last_name}`).join(", ")
+            : "none on record";
+          return res.json({
+            answer: `I couldn't find a coach named "${requestedName}" in your organization. Available coaches are: ${coachList}. Could you clarify which coach you're looking for?`,
+            question,
+            supportingData: {
+              sessionsThisWeek: 0, cancellationsThisWeek: 0, sessions30Days: 0,
+              upcomingSessions: [], recentClients: [], generatedAt: now.toISOString(),
+            },
+          });
+        }
+
+        if (matches.length > 1) {
+          const nameList = matches.map((c) => `${c.first_name} ${c.last_name}`).join(", ");
+          return res.json({
+            answer: `I found multiple coaches matching "${requestedName}": ${nameList}. Could you use their full name so I can show the right schedule?`,
+            question,
+            supportingData: {
+              sessionsThisWeek: 0, cancellationsThisWeek: 0, sessions30Days: 0,
+              upcomingSessions: [], recentClients: [], generatedAt: now.toISOString(),
+            },
+          });
+        }
+
+        filteredCoachProfileId = matches[0].coach_profile_id;
+        coachScopeLabel = `${matches[0].first_name} ${matches[0].last_name}`;
+        console.log(`[copilot] resolved coach scope → ${coachScopeLabel} (profileId: ${filteredCoachProfileId})`);
+      }
+
+      // ── Step 2: Fetch scheduling context (coach-scoped if applicable) ────
       console.log("[copilot] fetching scheduling context from DB");
       const [statsRaw, upcomingRaw, recentRaw] = await Promise.all([
         db.execute(sql`
@@ -1542,23 +1629,45 @@ Return as JSON:
             COUNT(*) FILTER (WHERE status IN ('CONFIRMED','COMPLETED') AND start_at >= ${thirtyDaysAgo.toISOString()}) as sessions_30d
           FROM bookings WHERE organization_id = ${orgId}
         `).catch((err: any) => { console.log("[copilot] stats query failed:", err?.message); return { rows: [{}] }; }),
-        db.execute(sql`
-          SELECT b.id, b.start_at, b.max_participants, s.name as service_name,
-                 u.first_name as coach_first, u.last_name as coach_last,
-                 COUNT(bp.id) as registered
-          FROM bookings b
-          LEFT JOIN services s ON b.service_id = s.id
-          LEFT JOIN coach_profiles cp ON b.coach_id = cp.id
-          LEFT JOIN users u ON cp.user_id = u.id
-          LEFT JOIN booking_participants bp ON bp.booking_id = b.id
-          WHERE b.organization_id = ${orgId}
-            AND b.status = 'CONFIRMED'
-            AND b.start_at > ${now.toISOString()}
-            AND b.start_at < ${new Date(now.getTime() + 7 * 86400000).toISOString()}
-          GROUP BY b.id, s.name, u.first_name, u.last_name
-          ORDER BY b.start_at ASC
-          LIMIT 10
-        `).catch((err: any) => { console.log("[copilot] upcoming query failed:", err?.message); return { rows: [] }; }),
+
+        // Upcoming sessions — strictly filtered by coach_id when a specific coach was requested.
+        filteredCoachProfileId
+          ? db.execute(sql`
+              SELECT b.id, b.start_at, b.max_participants, s.name as service_name,
+                     u.first_name as coach_first, u.last_name as coach_last,
+                     COUNT(bp.id) as registered
+              FROM bookings b
+              LEFT JOIN services s ON b.service_id = s.id
+              LEFT JOIN coach_profiles cp ON b.coach_id = cp.id
+              LEFT JOIN users u ON cp.user_id = u.id
+              LEFT JOIN booking_participants bp ON bp.booking_id = b.id
+              WHERE b.organization_id = ${orgId}
+                AND b.coach_id = ${filteredCoachProfileId}
+                AND b.status = 'CONFIRMED'
+                AND b.start_at > ${now.toISOString()}
+                AND b.start_at < ${new Date(now.getTime() + 7 * 86400000).toISOString()}
+              GROUP BY b.id, s.name, u.first_name, u.last_name
+              ORDER BY b.start_at ASC
+              LIMIT 20
+            `).catch((err: any) => { console.log("[copilot] upcoming (coach) query failed:", err?.message); return { rows: [] }; })
+          : db.execute(sql`
+              SELECT b.id, b.start_at, b.max_participants, s.name as service_name,
+                     u.first_name as coach_first, u.last_name as coach_last,
+                     COUNT(bp.id) as registered
+              FROM bookings b
+              LEFT JOIN services s ON b.service_id = s.id
+              LEFT JOIN coach_profiles cp ON b.coach_id = cp.id
+              LEFT JOIN users u ON cp.user_id = u.id
+              LEFT JOIN booking_participants bp ON bp.booking_id = b.id
+              WHERE b.organization_id = ${orgId}
+                AND b.status = 'CONFIRMED'
+                AND b.start_at > ${now.toISOString()}
+                AND b.start_at < ${new Date(now.getTime() + 7 * 86400000).toISOString()}
+              GROUP BY b.id, s.name, u.first_name, u.last_name
+              ORDER BY b.start_at ASC
+              LIMIT 10
+            `).catch((err: any) => { console.log("[copilot] upcoming query failed:", err?.message); return { rows: [] }; }),
+
         db.execute(sql`
           SELECT u.first_name, u.last_name, MAX(b.start_at) as last_booking,
                  COUNT(b.id) as total_bookings
@@ -1580,6 +1689,7 @@ Return as JSON:
 
       const contextData = {
         currentDate: now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }),
+        coachScope: coachScopeLabel,
         sessionsThisWeek: parseInt(stats.sessions_this_week || 0),
         cancellationsThisWeek: parseInt(stats.cancellations_this_week || 0),
         sessions30Days: parseInt(stats.sessions_30d || 0),
@@ -1597,7 +1707,13 @@ Return as JSON:
         })),
       };
 
+      const coachScopeNote = filteredCoachProfileId
+        ? `IMPORTANT: The upcomingSessions list has been pre-filtered to ONLY include sessions for ${coachScopeLabel}. Do NOT mention or include any other coaches in your answer.`
+        : `The upcomingSessions list includes sessions across all coaches. Group by coach where helpful.`;
+
       const systemPrompt = `You are an expert scheduling intelligence assistant for a strength and conditioning coaching business. You have access to live scheduling data.
+
+${coachScopeNote}
 
 Current Data Context:
 ${JSON.stringify(contextData, null, 2)}
@@ -1618,7 +1734,7 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
 
       messages.push({ role: "user", content: question });
 
-      console.log("[copilot] calling OpenAI model=gpt-4o-mini messages=", messages.length);
+      console.log("[copilot] calling OpenAI model=gpt-4o-mini messages=", messages.length, "coachScope:", coachScopeLabel);
       let completion: any;
       try {
         completion = await openai.chat.completions.create({
