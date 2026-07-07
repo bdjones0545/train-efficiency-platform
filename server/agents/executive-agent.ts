@@ -66,7 +66,7 @@ export async function runOrchestrator(orgId: string, triggeredBy = "manual"): Pr
     try {
       await runRevenueAgent(orgId);
       const { getAgentActions } = await import("../storage").then((m) => m.storage);
-      const actions = await (await import("../storage")).storage.getAgentActions(orgId, "pending");
+      const actions = await (await import("../storage")).storage.getRevenueAgentActions(orgId, "pending");
       revenueActions = actions.map((a) => ({
         estimatedValue: a.estimatedValue || 0,
         reason: a.reason,

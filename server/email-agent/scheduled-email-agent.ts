@@ -224,7 +224,7 @@ export async function runEmailAgentForOrg(orgId: string, triggerSource: "cron_8_
             generated = await generateOutreachEmail(emailParams);
           }
 
-          const saved = await storage.createOutreachDraft({
+          const saved = await storage.createTeamTrainingOutreachDraft({
             orgId,
             prospectId: prospect.id,
             subject: generated.subject,
@@ -268,7 +268,7 @@ export async function runEmailAgentForOrg(orgId: string, triggerSource: "cron_8_
           continue;
         }
       } else if (anyUnsent && !approvedUnsent && autoSend) {
-        const updated = await storage.updateOutreachDraft(anyUnsent.id, {
+        const updated = await storage.updateTeamTrainingOutreachDraft(anyUnsent.id, {
           approved: true,
           approvedAt: new Date(),
         });
@@ -343,7 +343,7 @@ export async function runEmailAgentForOrg(orgId: string, triggerSource: "cron_8_
         });
 
         if (policy.decision === "blocked") {
-          await storage.updateOutreachDraft(draftToSend.id, { approved: false });
+          await storage.updateTeamTrainingOutreachDraft(draftToSend.id, { approved: false });
           result.emailsBlocked++;
           await updateTriggerEvent(triggerEventId, {
             wasExecuted: false,
@@ -373,7 +373,7 @@ export async function runEmailAgentForOrg(orgId: string, triggerSource: "cron_8_
               result: { draftId: draftToSend.id, prospectId: prospect.id },
             });
           } catch { /* approval queuing is best-effort */ }
-          await storage.updateOutreachDraft(draftToSend.id, { approved: false });
+          await storage.updateTeamTrainingOutreachDraft(draftToSend.id, { approved: false });
           result.emailsSkipped++;
           await updateTriggerEvent(triggerEventId, {
             wasExecuted: false,
@@ -413,7 +413,7 @@ export async function runEmailAgentForOrg(orgId: string, triggerSource: "cron_8_
         }
 
         const sentAt = new Date();
-        await storage.updateOutreachDraft(draftToSend.id, { sentAt });
+        await storage.updateTeamTrainingOutreachDraft(draftToSend.id, { sentAt });
         await storage.updateTeamTrainingProspect(prospect.id, {
           outreachStatus: "Contacted",
           lastContactedAt: sentAt,

@@ -466,12 +466,12 @@ export interface IStorage {
   updateTeamTrainingProspect(id: string, data: Partial<import("@shared/schema").TeamTrainingProspect>): Promise<import("@shared/schema").TeamTrainingProspect | undefined>;
   deleteTeamTrainingProspect(id: string): Promise<boolean>;
   getOutreachDraftsByProspect(prospectId: string): Promise<import("@shared/schema").TeamTrainingOutreachDraft[]>;
-  getOutreachDraft(id: string): Promise<import("@shared/schema").TeamTrainingOutreachDraft | undefined>;
-  createOutreachDraft(data: import("@shared/schema").InsertTeamTrainingOutreachDraft): Promise<import("@shared/schema").TeamTrainingOutreachDraft>;
-  updateOutreachDraft(id: string, data: Partial<import("@shared/schema").TeamTrainingOutreachDraft>): Promise<import("@shared/schema").TeamTrainingOutreachDraft | undefined>;
+  getTeamTrainingOutreachDraft(id: string): Promise<import("@shared/schema").TeamTrainingOutreachDraft | undefined>;
+  createTeamTrainingOutreachDraft(data: import("@shared/schema").InsertTeamTrainingOutreachDraft): Promise<import("@shared/schema").TeamTrainingOutreachDraft>;
+  updateTeamTrainingOutreachDraft(id: string, data: Partial<import("@shared/schema").TeamTrainingOutreachDraft>): Promise<import("@shared/schema").TeamTrainingOutreachDraft | undefined>;
   deleteOutreachDraft(id: string): Promise<boolean>;
   logOutreachEvent(data: import("@shared/schema").InsertTeamTrainingOutreachEvent): Promise<import("@shared/schema").TeamTrainingOutreachEvent>;
-  getOutreachEvents(orgId: string, prospectId?: string): Promise<import("@shared/schema").TeamTrainingOutreachEvent[]>;
+  getTeamTrainingOutreachEvents(orgId: string, prospectId?: string): Promise<import("@shared/schema").TeamTrainingOutreachEvent[]>;
   isProspectOptedOut(orgId: string, email: string): Promise<boolean>;
   addProspectOptOut(orgId: string, email: string, reason?: string): Promise<void>;
   getProspectDashboardStats(orgId: string): Promise<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>;
@@ -514,8 +514,8 @@ export interface IStorage {
   // Revenue Agent
   getAgentSettings(orgId: string): Promise<import("@shared/schema").RevenueAgentSettings | undefined>;
   upsertAgentSettings(orgId: string, data: Partial<import("@shared/schema").InsertRevenueAgentSettings>): Promise<import("@shared/schema").RevenueAgentSettings>;
-  getAgentActions(orgId: string, status?: string): Promise<import("@shared/schema").RevenueAgentAction[]>;
-  updateAgentAction(id: string, data: Partial<import("@shared/schema").RevenueAgentAction>): Promise<import("@shared/schema").RevenueAgentAction | undefined>;
+  getRevenueAgentActions(orgId: string, status?: string): Promise<import("@shared/schema").RevenueAgentAction[]>;
+  updateRevenueAgentAction(id: string, data: Partial<import("@shared/schema").RevenueAgentAction>): Promise<import("@shared/schema").RevenueAgentAction | undefined>;
   getAgentRuns(orgId: string, limit?: number): Promise<import("@shared/schema").RevenueAgentRun[]>;
 
   // Business Brain
@@ -2732,19 +2732,19 @@ export class DatabaseStorage implements IStorage {
     return drafts.map((d) => ({ ...d, prospect: prospectMap.get(d.prospectId) }));
   }
 
-  async getOutreachDraft(id: string) {
+  async getTeamTrainingOutreachDraft(id: string) {
     const { teamTrainingOutreachDrafts } = await import("@shared/schema");
     const [row] = await db.select().from(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.id, id));
     return row || undefined;
   }
 
-  async createOutreachDraft(data: import("@shared/schema").InsertTeamTrainingOutreachDraft) {
+  async createTeamTrainingOutreachDraft(data: import("@shared/schema").InsertTeamTrainingOutreachDraft) {
     const { teamTrainingOutreachDrafts } = await import("@shared/schema");
     const [row] = await db.insert(teamTrainingOutreachDrafts).values(data).returning();
     return row;
   }
 
-  async updateOutreachDraft(id: string, data: Partial<import("@shared/schema").TeamTrainingOutreachDraft>) {
+  async updateTeamTrainingOutreachDraft(id: string, data: Partial<import("@shared/schema").TeamTrainingOutreachDraft>) {
     const { teamTrainingOutreachDrafts } = await import("@shared/schema");
     const updateData: any = { ...data, updatedAt: new Date() };
     delete updateData.id;
@@ -2765,7 +2765,7 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async getOutreachEvents(orgId: string, prospectId?: string) {
+  async getTeamTrainingOutreachEvents(orgId: string, prospectId?: string) {
     const { teamTrainingOutreachEvents } = await import("@shared/schema");
     if (prospectId) {
       return db.select().from(teamTrainingOutreachEvents).where(and(eq(teamTrainingOutreachEvents.orgId, orgId), eq(teamTrainingOutreachEvents.prospectId!, prospectId))).orderBy(desc(teamTrainingOutreachEvents.createdAt));
@@ -3173,7 +3173,7 @@ export class DatabaseStorage implements IStorage {
     return row;
   }
 
-  async getAgentActions(orgId: string, status?: string) {
+  async getRevenueAgentActions(orgId: string, status?: string) {
     const { revenueAgentActions } = await import("@shared/schema");
     const { desc } = await import("drizzle-orm");
     let q = db.select().from(revenueAgentActions).where(eq(revenueAgentActions.orgId, orgId)).$dynamic();
@@ -3181,7 +3181,7 @@ export class DatabaseStorage implements IStorage {
     return q.orderBy(desc(revenueAgentActions.priority), desc(revenueAgentActions.createdAt));
   }
 
-  async updateAgentAction(id: string, data: Partial<import("@shared/schema").RevenueAgentAction>) {
+  async updateRevenueAgentAction(id: string, data: Partial<import("@shared/schema").RevenueAgentAction>) {
     const { revenueAgentActions } = await import("@shared/schema");
     const [row] = await db.update(revenueAgentActions)
       .set({ ...data, updatedAt: new Date() } as any)

@@ -10,7 +10,6 @@ import { eq, and, or, desc, isNotNull } from "drizzle-orm";
 import {
   agentCommunicationOutcomes,
   gmailAgentActions,
-  deals,
   employmentApplicants,
 } from "@shared/schema";
 import { writeTimeline } from "./ceo-heartbeat-service";
