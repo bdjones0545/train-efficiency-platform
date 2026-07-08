@@ -2482,6 +2482,31 @@ export type AthleteStatusSnapshot = typeof athleteStatusSnapshots.$inferSelect;
 export type AthleteRiskFlag = typeof athleteRiskFlags.$inferSelect;
 export type AthleteInterventionRecommendation = typeof athleteInterventionRecommendations.$inferSelect;
 
+// ─── Athlete Onboarding Checklists ────────────────────────────────────────────
+
+export const athleteOnboardingChecklists = pgTable("athlete_onboarding_checklists", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  orgId: varchar("org_id").notNull(),
+  athleteUserId: varchar("athlete_user_id").notNull(),
+  leadSubmissionId: varchar("lead_submission_id"),
+  accountInviteSent: boolean("account_invite_sent").notNull().default(false),
+  welcomeDraftQueued: boolean("welcome_draft_queued").notNull().default(false),
+  welcomeDraftApproved: boolean("welcome_draft_approved").notNull().default(false),
+  pailContextSeeded: boolean("pail_context_seeded").notNull().default(false),
+  guardianLinked: boolean("guardian_linked").notNull().default(false),
+  firstSessionScheduled: boolean("first_session_scheduled").notNull().default(false),
+  programAssigned: boolean("program_assigned").notNull().default(false),
+  paymentSetup: boolean("payment_setup").notNull().default(false),
+  waiverCompleted: boolean("waiver_completed").notNull().default(false),
+  firstSessionCompleted: boolean("first_session_completed").notNull().default(false),
+  nextBestAction: text("next_best_action"),
+  status: varchar("status").notNull().default("pending"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type AthleteOnboardingChecklist = typeof athleteOnboardingChecklists.$inferSelect;
+
 // ─── Program Builder + Exercise Intelligence ──────────────────────────────────
 
 export const exerciseLibrary = pgTable("exercise_library", {
@@ -2775,6 +2800,7 @@ export const leadCaptureSubmissions = pgTable("lead_capture_submissions", {
   programId: varchar("program_id").notNull(),
   athleteName: varchar("athlete_name").notNull(),
   parentName: varchar("parent_name"),
+  parentEmail: varchar("parent_email"),
   email: varchar("email").notNull(),
   phone: varchar("phone"),
   age: varchar("age"),

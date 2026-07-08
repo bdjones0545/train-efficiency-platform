@@ -60,6 +60,7 @@ const GRADE_OPTIONS = ["6th", "7th", "8th", "9th", "10th", "11th", "12th", "Coll
 type FormData = {
   athleteName: string;
   parentName: string;
+  parentEmail: string;
   email: string;
   phone: string;
   age: string;
@@ -75,7 +76,7 @@ type FormData = {
 };
 
 const EMPTY_FORM: FormData = {
-  athleteName: "", parentName: "", email: "", phone: "",
+  athleteName: "", parentName: "", parentEmail: "", email: "", phone: "",
   age: "", grade: "", sport: "", position: "", school: "",
   goals: [], experienceLevel: "", currentTrainingStatus: "", commitmentLevel: "", notes: "",
 };
@@ -862,6 +863,19 @@ export default function LeadCaptureLanding() {
                       data-testid="input-parent-name"
                     />
                   </div>
+                  {form.parentName && (
+                    <div className="space-y-1.5">
+                      <Label className="text-white/70 text-sm">Parent / Guardian Email <span className="text-white/30">(optional)</span></Label>
+                      <Input
+                        type="email"
+                        placeholder="parent@email.com"
+                        value={form.parentEmail}
+                        onChange={(e) => set("parentEmail", e.target.value)}
+                        className="bg-white/5 border-white/10 text-white placeholder:text-white/30 focus:border-orange-500/50 h-12 rounded-xl"
+                        data-testid="input-parent-email"
+                      />
+                    </div>
+                  )}
                   <div className="space-y-1.5">
                     <Label className="text-white/70 text-sm">Email Address <span className="text-orange-400">*</span></Label>
                     <Input

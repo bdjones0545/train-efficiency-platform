@@ -213,6 +213,7 @@ const FUNNEL_CONFIGS: Record<FunnelType, {
     defaultFormFields: [
       { id: "athleteName", label: "Athlete Name", enabled: true, required: true, type: "text", placeholder: "Marcus Thompson" },
       { id: "parentName", label: "Parent / Guardian Name", enabled: true, required: false, type: "text", placeholder: "Sarah Thompson" },
+      { id: "parentEmail", label: "Parent / Guardian Email", enabled: true, required: false, type: "text", placeholder: "parent@email.com" },
       { id: "email", label: "Email Address", enabled: true, required: true, type: "text", placeholder: "marcus@email.com" },
       { id: "phone", label: "Phone Number", enabled: true, required: false, type: "text", placeholder: "(555) 123-4567" },
       { id: "age", label: "Age", enabled: true, required: false, type: "text", placeholder: "16" },

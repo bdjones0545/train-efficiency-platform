@@ -1,0 +1,330 @@
+# TrainEfficiency Replit Task
+
+## Phase 4 — Onboarding Completion System
+
+You are working inside the TrainEfficiency codebase.
+
+Phase 1 made the Athlete Intake Pipeline actions real.
+
+Phase 2 made **Convert to Athlete** create/link an actual athlete user.
+
+Phase 3 enriched converted athletes with intake context, PAIL seed data, personalized AgentMail welcome drafts, and coach next actions.
+
+Now implement **Phase 4: Onboarding Completion System**.
+
+---
+
+# Phase 4 Goal
+
+After a lead is converted into an athlete, the system should track and guide the remaining onboarding steps instead of relying on scattered booleans or one-time modal output.
+
+The coach/admin should know:
+
+* Has the account invite been sent?
+* Has the welcome draft been reviewed?
+* Is guardian info complete?
+* Has the first session been scheduled?
+* Has a program been assigned?
+* Is billing/payment setup needed?
+* Has PAIL context been seeded?
+* What is the next best onboarding action?
+
+---
+
+# Scope
+
+## 1. Add Parent / Guardian Email Capture
+
+Audit the existing lead capture schema and public form.
+
+If supported safely, add `parentEmail` to the intake flow.
+
+Update:
+
+* Database schema
+* Insert/select logic
+* Public intake form
+* Admin lead card/detail display
+* Conversion route
+
+Rules:
+
+* Parent email should be optional.
+* Only show it when relevant.
+* Preserve existing submissions.
+* Do not break old leads that do not have this field.
+* Do not require parent email for adult athletes.
+
+If the intake form already captures guardian email under another field name, reuse it instead of adding a duplicate.
+
+---
+
+## 2. Create Real Guardian Link When Possible
+
+Using the parent/guardian email from intake:
+
+* Find or create guardian user if safe.
+* Link guardian to athlete using existing guardian relationship schema if available.
+* Avoid duplicate guardian records.
+* Do not create guardian login access unless existing invitation flow supports it.
+* If guardian invite infrastructure exists, queue/send system invite.
+* If guardian email is missing, preserve current Phase 3 behavior:
+
+  * store parent name as context
+  * recommend “Create parent/guardian account manually”
+
+Expected conversion response should include:
+
+```ts
+guardianLinked: boolean,
+guardianUserId?: string,
+guardianInviteCreated: boolean,
+guardianReason?: string
+```
+
+---
+
+## 3. Schema-Backed Onboarding Checklist
+
+Add or reuse a real onboarding checklist system.
+
+If an existing checklist/task/onboarding table exists, use it.
+
+If none exists, create a lightweight table such as:
+
+```ts
+athlete_onboarding_checklists
+- id
+- orgId
+- athleteUserId
+- leadSubmissionId
+- accountInviteSent boolean
+- welcomeDraftQueued boolean
+- welcomeDraftApproved boolean
+- pailContextSeeded boolean
+- guardianLinked boolean
+- firstSessionScheduled boolean
+- programAssigned boolean
+- paymentSetup boolean
+- waiverCompleted boolean
+- firstSessionCompleted boolean
+- nextBestAction text
+- status text // pending, in_progress, complete
+- createdAt
+- updatedAt
+```
+
+Rules:
+
+* Keep it simple.
+* Do not build a full onboarding product yet.
+* Initialize this checklist during conversion.
+* Update fields based on what actually happened during conversion.
+* Return checklist ID in the conversion response.
+* Make checklist creation idempotent for repeated conversions.
+
+---
+
+## 4. First Session / Program Assignment Handoff
+
+Do not auto-assign a training program unless the existing app already has a safe default.
+
+Instead:
+
+* Detect whether the athlete has an assigned program.
+* Detect whether the athlete has a first session scheduled.
+* If missing, set onboarding checklist fields:
+
+  * `programAssigned = false`
+  * `firstSessionScheduled = false`
+* Create recommended next actions:
+
+  * “Assign first training program”
+  * “Schedule first training session”
+  * “Review athlete intake goals”
+
+If existing routes exist, include frontend action links:
+
+* Open Athlete Intelligence
+* Assign Program
+* Scheduling Command Center
+* Athlete Profile
+
+---
+
+## 5. Optional Stripe Customer Creation
+
+Audit billing/payment schema.
+
+If Stripe customer creation already exists safely elsewhere in the codebase:
+
+* Create or link a Stripe customer during conversion.
+* Store Stripe customer ID in the correct existing field.
+* Set `paymentSetup` in checklist accordingly.
+
+If not safe or not already supported:
+
+* Do not implement new Stripe integration from scratch.
+* Leave `paymentSetup = false`.
+* Add recommended next action:
+
+  * “Set up billing/payment for athlete”
+
+---
+
+## 6. Selective Merge for Athlete Memory Profiles
+
+Phase 3 used `onConflictDoNothing()` for `athlete_memory_profiles`.
+
+Improve this carefully.
+
+Goal:
+
+* If a profile already exists, fill blank fields from intake.
+* Do not overwrite stronger coach-entered or AI-synthesized data.
+
+Expected behavior:
+
+* If `primarySport` is null and intake sport exists, set it.
+* If `position` is null and intake position exists, set it.
+* If `competitionLevel` is null or generic and intake gives better detail, set it.
+* If `trainingAgeYears` is null/0 and intake gives mapped value, set it.
+* Preserve existing non-empty data.
+* Do not reduce `memoryConfidence`.
+* Add or append intake note/context without deleting prior coach notes.
+
+---
+
+## 7. Frontend Onboarding Success State
+
+Update the conversion success modal to show the real onboarding checklist.
+
+Display:
+
+* Checklist created
+* Account invite
+* Welcome draft
+* PAIL context
+* Guardian link
+* First session
+* Program assignment
+* Payment setup
+* Waiver
+* First session completed
+
+Use clear labels:
+
+* Completed
+* Needs action
+* Not available yet
+
+Add next action links where routes exist.
+
+---
+
+# Conversion Response
+
+Expand `/api/admin/athlete-leads/:id/convert` response:
+
+```ts
+{
+  success: true,
+  userId: string,
+  athleteCreated: boolean,
+  linkedExisting: boolean,
+  accountInviteCreated: boolean,
+  welcomeDraftCreated: boolean,
+  welcomeDraftId: string | null,
+  pailInitialized: boolean,
+  pailContextSeeded: boolean,
+  guardianLinked: boolean,
+  guardianUserId?: string,
+  guardianInviteCreated: boolean,
+  guardianReason?: string,
+  onboardingChecklistCreated: boolean,
+  onboardingChecklistId?: string,
+  onboardingStatus: "pending" | "in_progress" | "complete",
+  nextBestAction: string,
+  recommendedNextActions: string[],
+  submissionId: string,
+  email: string,
+  athleteName: string
+}
+```
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* Full athlete portal
+* Full parent portal
+* Full billing product
+* Full waiver system
+* Full program assignment wizard
+* Full onboarding dashboard
+
+Do not auto-send AgentMail coach-style communication.
+
+Do not break account invite/system email separation.
+
+Do not break Phase 1, Phase 2, or Phase 3 flows.
+
+---
+
+# Files / Areas To Inspect
+
+Start with:
+
+* `server/routes.ts`
+* `client/src/pages/admin-athlete-leads.tsx`
+* shared schema files
+* lead capture schema
+* public intake form
+* admin athlete leads page
+* guardian/parent schema
+* athlete intelligence / PAIL schema
+* athlete memory profile schema
+* intervention recommendations schema
+* billing/customer schema
+* scheduling/booking schema
+* program assignment schema
+* migration setup
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. Existing leads without parent email still load and convert.
+2. New intake form can optionally capture parent email.
+3. Parent email is stored correctly.
+4. Conversion creates/links guardian when parent email exists.
+5. No duplicate guardian user is created for the same org + email.
+6. Guardian link is created only when schema supports it.
+7. Onboarding checklist is created during conversion.
+8. Re-running conversion does not duplicate checklist rows.
+9. Checklist accurately reflects account invite, welcome draft, PAIL context, guardian, session, program, payment, waiver, and first session status.
+10. Memory profile merge fills blanks without overwriting existing data.
+11. Frontend success modal shows checklist state clearly.
+12. TypeScript passes.
+13. Existing email, scheduling, conversion, and PAIL context flows still work.
+
+---
+
+# Deliverable
+
+Implement Phase 4 and provide a report:
+
+* Files changed
+* Schema/migration changes
+* Parent email implementation
+* Guardian linking behavior
+* Onboarding checklist behavior
+* Memory profile merge behavior
+* Frontend changes
+* What remains for Phase 5
+
+Focus on turning conversion into a trackable onboarding process without overbuilding the portal, billing, waiver, or program assignment systems.

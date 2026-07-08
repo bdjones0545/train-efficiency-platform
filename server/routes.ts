@@ -15829,7 +15829,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         });
       }
 
-      const { athleteName, parentName, email, phone, age, grade, sport, position, school, goals, experienceLevel, currentTrainingStatus, commitmentLevel, notes, utmSource, utmMedium, utmCampaign, utmContent, utmTerm, abandonedId } = req.body;
+      const { athleteName, parentName, parentEmail, email, phone, age, grade, sport, position, school, goals, experienceLevel, currentTrainingStatus, commitmentLevel, notes, utmSource, utmMedium, utmCampaign, utmContent, utmTerm, abandonedId } = req.body;
       if (!athleteName || !email) return res.status(400).json({ message: "athleteName and email are required" });
 
       const { db } = await import("./db");
@@ -15841,6 +15841,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
         programId: program.id,
         athleteName,
         parentName: parentName || null,
+        parentEmail: parentEmail || null,
         email,
         phone: phone || null,
         age: age ? String(age) : null,
@@ -16216,6 +16217,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
             orgName: org.name,
             athleteName,
             parentName: parentName || null,
+            parentEmail: parentEmail || null,
             email,
             phone: phone || null,
             age: age ? String(age) : null,
@@ -19738,7 +19740,7 @@ Respond with this exact JSON structure:
     }
   });
 
-  // POST /api/admin/athlete-leads/:id/convert — Phase 3: enriched conversion with PAIL context, guardian, next actions
+  // POST /api/admin/athlete-leads/:id/convert — Phase 4: onboarding checklist, guardian linking, selective merge
   app.post("/api/admin/athlete-leads/:id/convert", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const adminUserId = req.user.claims.sub ?? req.user.id;
@@ -19751,6 +19753,7 @@ Respond with this exact JSON structure:
       const {
         leadCaptureSubmissions, leadIntelligenceProfiles, gmailAgentActions, userProfiles,
         athleteContextObjects, athleteMemoryProfiles, athleteInterventionRecommendations,
+        athleteGuardianLinks, athleteOnboardingChecklists,
       } = await import("@shared/schema");
       const { users: usersTable } = await import("@shared/models/auth");
       const { eq, and } = await import("drizzle-orm");
@@ -19827,11 +19830,11 @@ Respond with this exact JSON structure:
         console.warn("[convert] intel stage sync failed:", intelErr.message);
       }
 
-      // ── 5. Seed PAIL context objects (athlete_context_objects) ────────────
+      // ── 5. Seed PAIL context + selective memory profile merge ─────────────
       let pailContextSeeded = false;
+      let intakeNoteLines = "";
       try {
-        // Build a structured intake note for coachNotes
-        const intakeNoteLines = [
+        intakeNoteLines = [
           `[Intake Capture — ${new Date().toLocaleDateString()}]`,
           submission.sport ? `Sport: ${submission.sport}` : null,
           submission.position ? `Position: ${submission.position}` : null,
@@ -19843,17 +19846,12 @@ Respond with this exact JSON structure:
           submission.commitmentLevel ? `Commitment: ${submission.commitmentLevel}` : null,
           goalsText ? `Goals: ${goalsText}` : null,
           submission.parentName ? `Parent/guardian: ${submission.parentName}` : null,
+          (submission as any).parentEmail ? `Parent email: ${(submission as any).parentEmail}` : null,
           submission.notes ? `Notes: ${submission.notes}` : null,
         ].filter(Boolean).join("\n");
 
-        const intakeNote = {
-          text: intakeNoteLines,
-          author: "intake_system",
-          timestamp: new Date().toISOString(),
-          source: "lead_capture",
-        };
+        const intakeNote = { text: intakeNoteLines, author: "intake_system", timestamp: new Date().toISOString(), source: "lead_capture" };
 
-        // Intake-aware AI summary seed
         const summaryParts: string[] = [];
         if (submission.sport) summaryParts.push(`${firstName} is a ${submission.sport} athlete`);
         if (submission.position) summaryParts.push(`(${submission.position})`);
@@ -19862,8 +19860,6 @@ Respond with this exact JSON structure:
         summaryParts.push("— newly onboarded via intake pipeline.");
         if (goalsText) summaryParts.push(`Goals: ${goalsText}.`);
         if (submission.experienceLevel) summaryParts.push(`Experience: ${submission.experienceLevel.replace(/_/g, " ")}.`);
-        if (submission.commitmentLevel) summaryParts.push(`Commitment: ${submission.commitmentLevel}.`);
-
         const aiSummary = summaryParts.join(" ");
 
         await db.insert(athleteContextObjects).values({
@@ -19876,162 +19872,163 @@ Respond with this exact JSON structure:
           lastRefreshTrigger: "conversion_intake",
         }).onConflictDoNothing();
 
-        // Seed athlete_memory_profiles with known training identity from intake
-        const experienceToYears: Record<string, number> = {
-          beginner: 0, novice: 1, intermediate: 2, advanced: 4, elite: 7,
-        };
+        // Selective merge: fill blank fields without overwriting existing coach/AI data
+        const experienceToYears: Record<string, number> = { beginner: 0, novice: 1, intermediate: 2, advanced: 4, elite: 7 };
         const trainingAgeYears = experienceToYears[submission.experienceLevel?.toLowerCase() || ""] ?? null;
-
         const competitionLevel =
           submission.experienceLevel === "elite" ? "elite" :
           submission.experienceLevel === "advanced" ? "competitive" :
           submission.experienceLevel === "intermediate" ? "recreational" : "beginner";
 
-        await db.insert(athleteMemoryProfiles).values({
-          athleteUserId: userId,
-          orgId,
-          primarySport: submission.sport || null,
-          position: submission.position || null,
-          competitionLevel,
-          trainingAgeYears,
-          memoryConfidence: 5, // seeded from intake, not synthesized — intentionally low
-          sessionsAnalyzed: 0,
-          coachNotesSummary: intakeNoteLines,
-          coachingHistorySummary: `Athlete onboarded via intake pipeline on ${new Date().toLocaleDateString()}. No coaching history yet.`,
-        }).onConflictDoNothing();
+        const [existingMemProfile] = await db.select().from(athleteMemoryProfiles)
+          .where(and(eq(athleteMemoryProfiles.athleteUserId, userId), eq(athleteMemoryProfiles.orgId, orgId)))
+          .limit(1);
+
+        if (existingMemProfile) {
+          await db.update(athleteMemoryProfiles).set({
+            primarySport: existingMemProfile.primarySport ?? (submission.sport || null),
+            position: existingMemProfile.position ?? (submission.position || null),
+            competitionLevel: (existingMemProfile.competitionLevel && existingMemProfile.competitionLevel !== "beginner")
+              ? existingMemProfile.competitionLevel : competitionLevel,
+            trainingAgeYears: (existingMemProfile.trainingAgeYears !== null && existingMemProfile.trainingAgeYears > 0)
+              ? existingMemProfile.trainingAgeYears : trainingAgeYears,
+            memoryConfidence: Math.max(existingMemProfile.memoryConfidence || 0, 5),
+            coachNotesSummary: existingMemProfile.coachNotesSummary ?? intakeNoteLines,
+            updatedAt: new Date(),
+          }).where(eq(athleteMemoryProfiles.id, existingMemProfile.id));
+        } else {
+          await db.insert(athleteMemoryProfiles).values({
+            athleteUserId: userId,
+            orgId,
+            primarySport: submission.sport || null,
+            position: submission.position || null,
+            competitionLevel,
+            trainingAgeYears,
+            memoryConfidence: 5,
+            sessionsAnalyzed: 0,
+            coachNotesSummary: intakeNoteLines,
+            coachingHistorySummary: `Athlete onboarded via intake pipeline on ${new Date().toLocaleDateString()}. No coaching history yet.`,
+          });
+        }
 
         pailContextSeeded = true;
       } catch (contextErr: any) {
         console.warn("[convert] PAIL context seeding failed:", contextErr.message);
       }
 
-      // ── 6. Guardian context seeding ───────────────────────────────────────
-      // athlete_guardian_links requires a guardianUserId (a real users.id).
-      // leadCaptureSubmissions has parentName but no parentEmail field,
-      // so we cannot create a guardian user account. Store as athlete context instead.
+      // ── 6. Guardian linking ───────────────────────────────────────────────
       let guardianLinked = false;
-      const guardianReason = submission.parentName
-        ? "Parent name stored as athlete context (no parent email on submission — create guardian account manually)"
-        : "No parent/guardian info on submission";
+      let guardianUserId: string | undefined;
+      let guardianInviteCreated = false;
+      let guardianReason = "";
+      const parentEmail = (submission as any).parentEmail as string | null | undefined;
 
-      if (submission.parentName) {
+      if (parentEmail) {
         try {
-          // Update the existing athlete context object to include parent info
-          // (we just inserted it above; find and update coachNotes)
-          const [existing] = await db.select({ id: athleteContextObjects.id, coachNotes: athleteContextObjects.coachNotes })
+          const [existingGuardian] = await db.select({ id: usersTable.id })
+            .from(usersTable).where(eq(usersTable.email, parentEmail)).limit(1);
+
+          let guardianUserIdVal: string;
+          if (existingGuardian) {
+            guardianUserIdVal = existingGuardian.id;
+          } else {
+            const guardianNameParts = (submission.parentName || "").split(" ");
+            const [newGuardian] = await db.insert(usersTable).values({
+              firstName: guardianNameParts[0] || "Guardian",
+              lastName: guardianNameParts.slice(1).join(" ") || "",
+              email: parentEmail,
+            }).returning();
+            guardianUserIdVal = newGuardian.id;
+          }
+
+          const [existingLink] = await db.select({ id: athleteGuardianLinks.id })
+            .from(athleteGuardianLinks)
+            .where(and(
+              eq(athleteGuardianLinks.athleteUserId, userId),
+              eq(athleteGuardianLinks.guardianUserId, guardianUserIdVal),
+              eq(athleteGuardianLinks.orgId, orgId),
+            )).limit(1);
+
+          if (!existingLink) {
+            await db.insert(athleteGuardianLinks).values({
+              orgId,
+              athleteUserId: userId,
+              guardianUserId: guardianUserIdVal,
+              inviteEmail: parentEmail,
+              status: "pending",
+              invitedByUserId: adminUserId,
+              permissions: {} as any,
+            });
+          }
+
+          guardianLinked = true;
+          guardianUserId = guardianUserIdVal;
+          guardianReason = existingLink ? "Guardian link already existed" : "Guardian linked from parent email";
+
+          if (!existingGuardian) {
+            (async () => {
+              try {
+                const orgBranding = await getOrgBranding(orgId);
+                const baseUrl = buildPublicAppUrl();
+                const token = crypto.randomBytes(32).toString("hex");
+                const tokenExpires = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000);
+                await db.update(usersTable).set({ passwordResetToken: token, passwordResetTokenExpires: tokenExpires }).where(eq(usersTable.id, guardianUserIdVal));
+                await sendClientInviteEmail(parentEmail, submission.parentName || "Guardian", `${buildPublicAppUrl()}/create-password?token=${token}`, orgBranding);
+              } catch (e: any) { console.warn("[convert] guardian invite failed:", e.message); }
+            })();
+            guardianInviteCreated = true;
+          }
+        } catch (guardErr: any) {
+          console.warn("[convert] guardian linking failed:", guardErr.message);
+          guardianReason = `Guardian link failed: ${guardErr.message}`;
+        }
+      } else if (submission.parentName) {
+        guardianReason = "Parent name stored as athlete context (no parent email — create guardian account manually)";
+        try {
+          const [existCtx] = await db.select({ id: athleteContextObjects.id, coachNotes: athleteContextObjects.coachNotes })
             .from(athleteContextObjects)
             .where(and(eq(athleteContextObjects.athleteUserId, userId), eq(athleteContextObjects.orgId, orgId)))
             .limit(1);
-          if (existing) {
-            const guardianNote = {
-              text: `Parent/guardian: ${submission.parentName}${submission.phone ? ` · Phone: ${submission.phone}` : ""}`,
-              author: "intake_system",
-              timestamp: new Date().toISOString(),
-              source: "guardian_intake",
-            };
-            const existingNotes = (existing.coachNotes as any[]) || [];
-            await db.update(athleteContextObjects).set({
-              coachNotes: [...existingNotes, guardianNote] as any,
-              updatedAt: new Date(),
-            }).where(eq(athleteContextObjects.id, existing.id));
+          if (existCtx) {
+            const guardianNote = { text: `Parent/guardian: ${submission.parentName}${submission.phone ? ` · Phone: ${submission.phone}` : ""}`, author: "intake_system", timestamp: new Date().toISOString(), source: "guardian_intake" };
+            await db.update(athleteContextObjects).set({ coachNotes: [...((existCtx.coachNotes as any[]) || []), guardianNote] as any, updatedAt: new Date() }).where(eq(athleteContextObjects.id, existCtx.id));
           }
-        } catch (guardErr: any) {
-          console.warn("[convert] guardian context note failed:", guardErr.message);
-        }
+        } catch { /* silent */ }
+      } else {
+        guardianReason = "No parent/guardian info on submission";
       }
 
-      // ── 7. Recommended next actions (athlete_intervention_recommendations) ─
+      // ── 7. Recommended next actions ────────────────────────────────────────
       const recommendedNextActions: string[] = [];
       try {
-        const nextActions = [
-          {
-            title: "Assign first training program",
-            summary: `${submission.athleteName} is newly onboarded${submission.sport ? ` as a ${submission.sport} athlete` : ""}. Assign an initial training program to get them started.`,
-            suggestedAction: "Go to Training Programs and create or assign a program for this athlete.",
-            recommendationType: "onboarding_program",
-          },
-          {
-            title: "Book baseline evaluation session",
-            summary: `Schedule a baseline evaluation with ${firstName} to assess current fitness levels${submission.sport ? ` for ${submission.sport}` : ""}.`,
-            suggestedAction: "Use the Scheduling page to book an evaluation session.",
-            recommendationType: "onboarding_evaluation",
-          },
-          ...(submission.parentName ? [{
-            title: "Create parent/guardian account",
-            summary: `${submission.parentName} is listed as parent/guardian but no email was captured. Consider reaching out to set up guardian access.`,
-            suggestedAction: "Collect parent email and use Admin > Invite to create a guardian account.",
-            recommendationType: "onboarding_guardian",
-          }] : []),
+        const nextActionsSpec = [
+          { title: "Assign first training program", summary: `${submission.athleteName} is newly onboarded${submission.sport ? ` as a ${submission.sport} athlete` : ""}. Assign an initial training program to get them started.`, suggestedAction: "Go to Training Programs and create or assign a program for this athlete.", recommendationType: "onboarding_program" },
+          { title: "Schedule baseline evaluation session", summary: `Schedule a baseline evaluation with ${firstName} to assess current fitness levels${submission.sport ? ` for ${submission.sport}` : ""}.`, suggestedAction: "Use the Scheduling page to book an evaluation session.", recommendationType: "onboarding_evaluation" },
+          { title: "Set up billing / payment for athlete", summary: `Configure payment and billing for ${submission.athleteName}.`, suggestedAction: "Go to Billing settings and create a payment plan for this athlete.", recommendationType: "onboarding_billing" },
+          ...(submission.parentName && !guardianLinked ? [{ title: "Create parent/guardian account", summary: `${submission.parentName} is listed as parent/guardian but no account has been linked. Collect parent email to create guardian access.`, suggestedAction: "Ask parent for email address, then use Admin > Guardian to create account.", recommendationType: "onboarding_guardian" }] : []),
         ];
-
         await db.insert(athleteInterventionRecommendations).values(
-          nextActions.map(a => ({
-            orgId,
-            athleteUserId: userId,
-            recommendationType: a.recommendationType,
-            generatedBy: "conversion_engine",
-            title: a.title,
-            summary: a.summary,
-            suggestedAction: a.suggestedAction,
-            severity: "info",
-            status: "pending",
-          }))
+          nextActionsSpec.map(a => ({ orgId, athleteUserId: userId, recommendationType: a.recommendationType, generatedBy: "conversion_engine", title: a.title, summary: a.summary, suggestedAction: a.suggestedAction, severity: "info", status: "pending" }))
         );
-
-        recommendedNextActions.push(...nextActions.map(a => a.title));
+        recommendedNextActions.push(...nextActionsSpec.map(a => a.title));
       } catch (actErr: any) {
         console.warn("[convert] next actions seeding failed:", actErr.message);
       }
 
-      // ── 8. Build intake-aware AgentMail welcome draft ─────────────────────
+      // ── 8. Intake-aware AgentMail welcome draft ────────────────────────────
       let welcomeDraftCreated = false;
       let welcomeDraftId: string | null = null;
       try {
         const orgBranding = await getOrgBranding(orgId);
         const orgName = orgBranding?.name || "our training program";
-        const isParentContext = !!submission.parentName;
-
-        // Personalization blocks
-        const sportContext = submission.sport
-          ? `As a ${submission.sport} athlete${submission.position ? ` (${submission.position})` : ""}${submission.school ? ` at ${submission.school}` : ""},`
-          : "";
-
+        const isParentContext = !!(submission.parentName || parentEmail);
+        const sportContext = submission.sport ? `As a ${submission.sport} athlete${submission.position ? ` (${submission.position})` : ""}${submission.school ? ` at ${submission.school}` : ""},` : "";
         const gradeContext = submission.grade ? ` ${firstName} is currently in grade ${submission.grade}.` : "";
-
-        const goalsBlock = goalsList.length > 0
-          ? `\n\nWe've noted the following goals for ${firstName}:\n${goalsList.slice(0, 4).map(g => `• ${g}`).join("\n")}\n\nWe'll make sure the program is built around what matters most.`
-          : "";
-
-        const experienceBlock = submission.experienceLevel
-          ? `\n\nWith ${submission.experienceLevel.replace(/_/g, " ")} experience${submission.currentTrainingStatus ? ` and currently ${submission.currentTrainingStatus.replace(/_/g, " ")}` : ""},`
-          + ` we'll tailor the training approach accordingly.`
-          : "";
-
-        const parentGreeting = isParentContext
-          ? `Hi ${submission.parentName} and ${firstName},`
-          : `Hi ${firstName},`;
-
-        const parentClose = isParentContext
-          ? `\n\nIf you have any questions as a parent or guardian, please don't hesitate to reply — we want to keep you in the loop every step of the way.`
-          : "";
-
-        const welcomeBody = [
-          `${parentGreeting}`,
-          ``,
-          `Congratulations — ${isParentContext ? firstName + " is" : "you're"} officially part of ${orgName}! We're thrilled to have ${isParentContext ? "them" : "you"} on board.`,
-          ``,
-          `${sportContext}${gradeContext} ${isParentContext ? firstName + " is" : "you're"} now set up in our system and ${isParentContext ? "their" : "your"} coach will be reaching out shortly with personalized onboarding details and training schedule.`,
-          goalsBlock,
-          experienceBlock,
-          ``,
-          `**What happens next:**`,
-          `• ${isParentContext ? firstName + " will receive" : "Watch for"} an account setup email to create a password and access ${isParentContext ? "their" : "your"} athlete portal`,
-          `• A coach will be in touch within 1–2 business days to schedule ${isParentContext ? firstName + "'s" : "your"} first session`,
-          `• ${isParentContext ? "Feel free to" : "Don't hesitate to"} reply to this email with any questions`,
-          parentClose,
-          ``,
-          `Welcome to the team!`,
-        ].join("\n").replace(/\n{3,}/g, "\n\n").trim();
+        const goalsBlock = goalsList.length > 0 ? `\n\nWe've noted the following goals for ${firstName}:\n${goalsList.slice(0, 4).map(g => `• ${g}`).join("\n")}\n\nWe'll make sure the program is built around what matters most.` : "";
+        const experienceBlock = submission.experienceLevel ? `\n\nWith ${submission.experienceLevel.replace(/_/g, " ")} experience${submission.currentTrainingStatus ? ` and currently ${submission.currentTrainingStatus.replace(/_/g, " ")}` : ""}, we'll tailor the training approach accordingly.` : "";
+        const parentGreeting = isParentContext ? `Hi ${submission.parentName || "there"} and ${firstName},` : `Hi ${firstName},`;
+        const parentClose = isParentContext ? `\n\nIf you have any questions as a parent or guardian, please don't hesitate to reply — we want to keep you in the loop every step of the way.` : "";
+        const welcomeBody = [parentGreeting, ``, `Congratulations — ${isParentContext ? firstName + " is" : "you're"} officially part of ${orgName}! We're thrilled to have ${isParentContext ? "them" : "you"} on board.`, ``, `${sportContext}${gradeContext} ${isParentContext ? firstName + " is" : "you're"} now set up in our system and ${isParentContext ? "their" : "your"} coach will be reaching out shortly with personalized onboarding details and training schedule.`, goalsBlock, experienceBlock, ``, `**What happens next:**`, `• ${isParentContext ? firstName + " will receive" : "Watch for"} an account setup email to create a password and access ${isParentContext ? "their" : "your"} athlete portal`, `• A coach will be in touch within 1–2 business days to schedule ${isParentContext ? firstName + "'s" : "your"} first session`, `• ${isParentContext ? "Feel free to" : "Don't hesitate to"} reply to this email with any questions`, parentClose, ``, `Welcome to the team!`].join("\n").replace(/\n{3,}/g, "\n\n").trim();
 
         const [welcomeAction] = await db.insert(gmailAgentActions).values({
           orgId,
@@ -20045,19 +20042,7 @@ Respond with this exact JSON structure:
           status: "proposed",
           createdByAgent: "conversion_engine",
           communicationDomain: isParentContext ? "parent_lead" : "athlete_lead",
-          result: {
-            fullBody: welcomeBody,
-            athleteName: submission.athleteName,
-            userId,
-            athleteCreated,
-            linkedExisting,
-            sport: submission.sport,
-            goals: goalsList,
-            school: submission.school,
-            grade: submission.grade,
-            parentName: submission.parentName,
-            createdFrom: "convert_athlete_workflow_phase3",
-          },
+          result: { fullBody: welcomeBody, athleteName: submission.athleteName, userId, athleteCreated, linkedExisting, sport: submission.sport, goals: goalsList, school: submission.school, grade: submission.grade, parentName: submission.parentName, parentEmail, createdFrom: "convert_athlete_workflow_phase4" },
         }).returning();
         welcomeDraftCreated = true;
         welcomeDraftId = welcomeAction.id;
@@ -20065,26 +20050,23 @@ Respond with this exact JSON structure:
         console.warn("[convert] welcome draft failed:", draftErr.message);
       }
 
-      // ── 9. Account invite (system email, fire-and-forget) ─────────────────
+      // ── 9. Account invite (fire-and-forget) ───────────────────────────────
       let accountInviteCreated = false;
       if (athleteCreated) {
         (async () => {
           try {
             const orgBranding = await getOrgBranding(orgId);
-            const baseUrl = buildPublicAppUrl();
             const token = crypto.randomBytes(32).toString("hex");
             const tokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
             await db.update(usersTable).set({ passwordResetToken: token, passwordResetTokenExpires: tokenExpires }).where(eq(usersTable.id, userId));
-            const setupLink = `${baseUrl}/create-password?token=${token}`;
+            const setupLink = `${buildPublicAppUrl()}/create-password?token=${token}`;
             await sendClientInviteEmail(submission.email, firstName, setupLink, orgBranding);
-          } catch (inviteErr: any) {
-            console.warn("[convert] invite email failed:", inviteErr.message);
-          }
+          } catch (inviteErr: any) { console.warn("[convert] invite email failed:", inviteErr.message); }
         })();
         accountInviteCreated = true;
       }
 
-      // ── 10. PAIL synthesis (fire-and-forget, builds on the seeded context) ─
+      // ── 10. PAIL synthesis (fire-and-forget) ──────────────────────────────
       let pailInitialized = false;
       if (pailAthleteUserId) {
         (async () => {
@@ -20092,11 +20074,53 @@ Respond with this exact JSON structure:
             const { synthesizeAthleteIntelligence } = await import("./services/athlete-learning-engine");
             await synthesizeAthleteIntelligence(pailAthleteUserId!, orgId);
             console.log(`[convert] PAIL synthesis complete for user ${pailAthleteUserId}`);
-          } catch (pailErr: any) {
-            console.warn("[convert] PAIL synthesis warning (expected for new athletes):", pailErr.message);
-          }
+          } catch (pailErr: any) { console.warn("[convert] PAIL synthesis warning:", pailErr.message); }
         })();
         pailInitialized = true;
+      }
+
+      // ── 11. Onboarding checklist (idempotent) ─────────────────────────────
+      let onboardingChecklistCreated = false;
+      let onboardingChecklistId: string | undefined;
+      const onboardingStatus: "pending" | "in_progress" | "complete" = "in_progress";
+      const nextBestAction =
+        !welcomeDraftCreated ? "Review and approve welcome draft in AI Approvals" :
+        !guardianLinked && submission.parentName ? "Create parent/guardian account (collect email)" :
+        "Assign first training program";
+      try {
+        const [existingChecklist] = await db.select({ id: athleteOnboardingChecklists.id })
+          .from(athleteOnboardingChecklists)
+          .where(and(
+            eq(athleteOnboardingChecklists.athleteUserId, userId),
+            eq(athleteOnboardingChecklists.leadSubmissionId, submissionId),
+          )).limit(1);
+
+        const checklistValues = {
+          orgId, athleteUserId: userId, leadSubmissionId: submissionId,
+          accountInviteSent: accountInviteCreated,
+          welcomeDraftQueued: welcomeDraftCreated,
+          welcomeDraftApproved: false,
+          pailContextSeeded,
+          guardianLinked,
+          firstSessionScheduled: false,
+          programAssigned: false,
+          paymentSetup: false,
+          waiverCompleted: false,
+          firstSessionCompleted: false,
+          nextBestAction,
+          status: onboardingStatus,
+        };
+
+        if (existingChecklist) {
+          await db.update(athleteOnboardingChecklists).set({ ...checklistValues, updatedAt: new Date() }).where(eq(athleteOnboardingChecklists.id, existingChecklist.id));
+          onboardingChecklistId = existingChecklist.id;
+        } else {
+          const [newChecklist] = await db.insert(athleteOnboardingChecklists).values(checklistValues).returning();
+          onboardingChecklistId = newChecklist.id;
+        }
+        onboardingChecklistCreated = true;
+      } catch (checklistErr: any) {
+        console.warn("[convert] onboarding checklist failed:", checklistErr.message);
       }
 
       return res.json({
@@ -20110,8 +20134,13 @@ Respond with this exact JSON structure:
         pailInitialized,
         pailContextSeeded,
         guardianLinked,
+        guardianUserId,
+        guardianInviteCreated,
         guardianReason,
-        onboardingChecklistCreated: false, // TODO Phase 4: schema-backed onboarding tracker
+        onboardingChecklistCreated,
+        onboardingChecklistId,
+        onboardingStatus,
+        nextBestAction,
         recommendedNextActions,
         submissionId,
         email: submission.email,
