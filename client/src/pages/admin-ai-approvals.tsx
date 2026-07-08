@@ -24,7 +24,8 @@ import {
   TrendingDown, DollarSign, Award, Target, MessageSquare, CalendarCheck,
   FileSignature, UserCheck, BarChart2, ShieldCheck, Send, Ban,
   Activity, BookOpen, CheckCircle2, XCircle, Lightbulb,
-  Eye, User, Info, Sparkles, ExternalLink, ChevronLeft,
+  Eye, EyeOff, User, Info, Sparkles, ExternalLink, ChevronLeft,
+  Phone, MapPin, Star, Bookmark, BookmarkCheck,
 } from "lucide-react";
 
 // ─── Domain Configuration ─────────────────────────────────────────────────────
@@ -410,6 +411,100 @@ function RegenerateDialog({
   );
 }
 
+// ─── Email Preview Pane ───────────────────────────────────────────────────────
+
+function EmailPreviewPane({
+  subject, body, recipientEmail, orgName, logoUrl, primaryColor,
+}: {
+  subject: string;
+  body: string;
+  recipientEmail?: string;
+  orgName?: string | null;
+  logoUrl?: string | null;
+  primaryColor?: string | null;
+}) {
+  const accentColor = primaryColor?.trim() || "#3b82f6";
+
+  const renderBody = (text: string) => {
+    const paragraphs = text.split(/\n\n+/);
+    return paragraphs.map((para, pi) => {
+      const lines = para.split("\n");
+      return (
+        <p key={pi} className="mb-3 text-sm text-gray-800 dark:text-gray-200 leading-relaxed">
+          {lines.map((line, li) => {
+            const parts = line.split(/(https?:\/\/[^\s]+)/g);
+            return (
+              <span key={li}>
+                {parts.map((part, ki) =>
+                  /^https?:\/\//.test(part) ? (
+                    <a key={ki} href={part} className="text-blue-600 dark:text-blue-400 underline break-all"
+                       target="_blank" rel="noopener noreferrer">{part}</a>
+                  ) : part
+                )}
+                {li < lines.length - 1 && <br />}
+              </span>
+            );
+          })}
+        </p>
+      );
+    });
+  };
+
+  return (
+    <div className="border rounded-lg overflow-hidden shadow-sm">
+      {/* Email client meta header */}
+      <div className="bg-muted/40 border-b px-4 py-3 space-y-1.5">
+        <div className="flex items-start gap-2 text-xs">
+          <span className="w-10 text-right text-muted-foreground font-medium shrink-0 mt-0.5">From:</span>
+          <span className="font-semibold text-foreground">{orgName || "AI Coach"}</span>
+        </div>
+        {recipientEmail && (
+          <div className="flex items-start gap-2 text-xs">
+            <span className="w-10 text-right text-muted-foreground font-medium shrink-0 mt-0.5">To:</span>
+            <span className="text-foreground">{recipientEmail}</span>
+          </div>
+        )}
+        <div className="flex items-start gap-2 text-xs">
+          <span className="w-10 text-right text-muted-foreground font-medium shrink-0 mt-0.5">Subj:</span>
+          <span className="font-bold text-foreground">{subject || "(No subject)"}</span>
+        </div>
+      </div>
+
+      {/* Email body */}
+      <div className="bg-white dark:bg-gray-900 px-6 py-5">
+        {/* Org header branding */}
+        {(logoUrl || orgName) && (
+          <div className="flex items-center gap-2 mb-5 pb-4 border-b border-gray-100 dark:border-gray-800">
+            {logoUrl ? (
+              <img src={logoUrl} alt={orgName ?? ""} className="h-8 max-w-[140px] object-contain" />
+            ) : (
+              <span className="font-bold text-base" style={{ color: accentColor }}>{orgName}</span>
+            )}
+          </div>
+        )}
+
+        {/* Body paragraphs */}
+        <div>{renderBody(body || "No content")}</div>
+
+        {/* CTA hint if links present */}
+        {/https?:\/\//.test(body) && (
+          <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-800 text-xs text-muted-foreground flex items-center gap-1.5">
+            <ExternalLink className="w-3 h-3 shrink-0" />
+            Links highlighted above — click to preview destination (opens in new tab).
+          </div>
+        )}
+
+        {/* Footer */}
+        {orgName && (
+          <div className="mt-6 pt-4 border-t border-gray-100 dark:border-gray-800 text-xs text-gray-400 dark:text-gray-500 text-center">
+            {orgName}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Approval Review Drawer ───────────────────────────────────────────────────
 
 type DrawerMode = "view" | "reject" | "regen";
@@ -435,6 +530,8 @@ function ApprovalReviewDrawer({
   const [regenFeedback, setRegenFeedback] = useState("");
   const [regenChips, setRegenChips] = useState<string[]>([]);
   const [regenResult, setRegenResult] = useState<{ subject: string; body: string } | null>(null);
+  const [viewMode, setViewMode] = useState<"edit" | "preview">("edit");
+  const [isSaved, setIsSaved] = useState(false);
 
   const { data: detail, isLoading } = useQuery<any>({
     queryKey: ["/api/ai-approvals/detail", proposalId],
@@ -444,19 +541,26 @@ function ApprovalReviewDrawer({
 
   const proposal = detail?.proposal;
   const lead = detail?.lead;
+  const org = detail?.org as { name?: string; logoUrl?: string | null; primaryColor?: string | null; emailPrimaryColor?: string | null; tagline?: string | null } | null;
   const resultData = (proposal?.result && typeof proposal.result === "object") ? proposal.result as any : {};
 
   useEffect(() => {
     if (proposal) {
-      setSubject(proposal.subject ?? "");
-      setBody(proposal.bodyPreview ?? "");
+      // Full body source fix: prefer saved edits > result.fullBody > result.body > bodyPreview
+      const fullBody = resultData.savedBody ?? resultData.fullBody ?? resultData.body ?? proposal.bodyPreview ?? "";
+      const fullSubject = resultData.savedSubject ?? proposal.subject ?? "";
+      setSubject(fullSubject);
+      setBody(fullBody);
+      setIsSaved(!!(resultData.savedBody || resultData.savedSubject));
     }
   }, [proposal?.id]);
 
   useEffect(() => {
     if (!open) {
       setMode("view");
+      setViewMode("edit");
       setIsEditing(false);
+      setIsSaved(false);
       setRejectReason("");
       setRejectChips([]);
       setRegenFeedback("");
@@ -505,6 +609,21 @@ function ApprovalReviewDrawer({
       onRefresh(); onClose();
     },
     onError: (e: any) => toast({ title: "Error", description: e.message, variant: "destructive" }),
+  });
+
+  const queryClient = useQueryClient();
+  const saveMutation = useMutation({
+    mutationFn: () => apiRequest("PATCH", `/api/ai-approvals/${proposalId}/save-edits`, {
+      editedSubject: subject,
+      editedBody: body,
+    }),
+    onSuccess: () => {
+      setIsSaved(true);
+      setIsEditing(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/ai-approvals/detail", proposalId] });
+      toast({ title: "Edits saved", description: "Draft saved. Email has not been sent." });
+    },
+    onError: (e: any) => toast({ title: "Save failed", description: e.message, variant: "destructive" }),
   });
 
   const toggleRejectChip = (chip: string) =>
@@ -614,122 +733,299 @@ function ApprovalReviewDrawer({
                 </div>
               )}
 
-              {/* ── Recipient Details ── */}
-              <div className="rounded-lg border p-4 space-y-2">
+              {/* ── Recipient / Lead Context Panel ── */}
+              <div className="rounded-lg border p-4 space-y-3">
                 <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                  <User className="w-3.5 h-3.5" /> Recipient
+                  <User className="w-3.5 h-3.5" /> Recipient Context
                 </p>
+
+                {/* Avatar + name + email */}
                 <div className="flex items-center gap-2">
-                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0">
+                  <div className="w-9 h-9 rounded-full bg-primary/10 flex items-center justify-center text-sm font-bold text-primary shrink-0">
                     {recipientName.charAt(0).toUpperCase()}
                   </div>
                   <div className="min-w-0">
-                    <p className="font-medium text-sm" data-testid="drawer-recipient-name">{recipientName}</p>
+                    <p className="font-semibold text-sm" data-testid="drawer-recipient-name">{recipientName}</p>
                     <p className="text-xs text-muted-foreground truncate">{proposal.recipientEmail}</p>
                   </div>
                 </div>
-                {lead && (
-                  <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mt-2">
-                    {lead.organization && (
-                      <div className="col-span-2">
-                        <span className="text-xs text-muted-foreground">Organization: </span>
-                        <span className="text-xs font-medium">{lead.organization}</span>
+
+                {lead ? (
+                  <div className="space-y-3">
+                    {/* Pipeline & score row */}
+                    {(lead.pipelineStage || lead.temperature || lead.leadScore != null) && (
+                      <div className="flex flex-wrap items-center gap-2">
+                        {lead.temperature && (
+                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            lead.temperature === "hot" ? "bg-red-50 text-red-600 dark:bg-red-950/30 dark:text-red-400" :
+                            lead.temperature === "warm" ? "bg-orange-50 text-orange-600 dark:bg-orange-950/30 dark:text-orange-400" :
+                            "bg-blue-50 text-blue-600 dark:bg-blue-950/30 dark:text-blue-400"
+                          }`} data-testid="badge-lead-temperature">
+                            {lead.temperature} lead
+                          </span>
+                        )}
+                        {lead.pipelineStage && (
+                          <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground capitalize">
+                            {lead.pipelineStage.replace(/_/g, " ")}
+                          </span>
+                        )}
+                        {lead.leadScore != null && (
+                          <span className="text-xs flex items-center gap-1">
+                            <Star className="w-3 h-3 text-yellow-500" />
+                            <span className="font-semibold">{lead.leadScore}</span>
+                            <span className="text-muted-foreground">/ 100</span>
+                          </span>
+                        )}
                       </div>
                     )}
-                    {lead.pipelineStage && (
+
+                    {/* Key fields grid */}
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                      {lead.athleteName && lead.parentName && (
+                        <div className="col-span-2">
+                          <span className="text-xs text-muted-foreground">Athlete: </span>
+                          <span className="text-xs font-medium">{lead.athleteName}</span>
+                        </div>
+                      )}
+                      {lead.sport && lead.sport !== "unknown" && (
+                        <div>
+                          <span className="text-xs text-muted-foreground">Sport: </span>
+                          <span className="text-xs font-medium capitalize">{lead.sport}</span>
+                        </div>
+                      )}
+                      {lead.position && (
+                        <div>
+                          <span className="text-xs text-muted-foreground">Position: </span>
+                          <span className="text-xs font-medium">{lead.position}</span>
+                        </div>
+                      )}
+                      {(lead.age || lead.grade) && (
+                        <div>
+                          <span className="text-xs text-muted-foreground">{lead.age ? "Age" : "Grade"}: </span>
+                          <span className="text-xs font-medium">{lead.age ?? lead.grade}</span>
+                        </div>
+                      )}
+                      {lead.school && (
+                        <div className="col-span-2">
+                          <span className="text-xs text-muted-foreground">School: </span>
+                          <span className="text-xs font-medium">{lead.school}</span>
+                        </div>
+                      )}
+                      {lead.experienceLevel && (
+                        <div>
+                          <span className="text-xs text-muted-foreground">Experience: </span>
+                          <span className="text-xs font-medium capitalize">{lead.experienceLevel.replace(/_/g, " ")}</span>
+                        </div>
+                      )}
+                      {lead.phone && (
+                        <div className="flex items-center gap-1">
+                          <Phone className="w-3 h-3 text-muted-foreground shrink-0" />
+                          <span className="text-xs">{lead.phone}</span>
+                        </div>
+                      )}
+                      {(lead.organization || (lead.city && lead.state)) && (
+                        <div className="col-span-2 flex items-center gap-1">
+                          <MapPin className="w-3 h-3 text-muted-foreground shrink-0" />
+                          <span className="text-xs">{lead.organization ?? `${lead.city}, ${lead.state}`}</span>
+                        </div>
+                      )}
+                      {(lead.bookingStatus ?? lead.outreachStatus) && (
+                        <div>
+                          <span className="text-xs text-muted-foreground">Status: </span>
+                          <span className="text-xs font-medium capitalize">{(lead.bookingStatus ?? lead.outreachStatus ?? "").replace(/_/g, " ")}</span>
+                        </div>
+                      )}
+                      {lead.followUpCount != null && lead.followUpCount > 0 && (
+                        <div>
+                          <span className="text-xs text-muted-foreground">Follow-ups: </span>
+                          <span className="text-xs font-medium">{lead.followUpCount}</span>
+                        </div>
+                      )}
+                      {lead.lastInteractionAt && (
+                        <div className="col-span-2">
+                          <span className="text-xs text-muted-foreground">Last contact: </span>
+                          <span className="text-xs font-medium">{new Date(lead.lastInteractionAt).toLocaleDateString()}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Goals */}
+                    {Array.isArray(lead.goals) && lead.goals.length > 0 && (
                       <div>
-                        <span className="text-xs text-muted-foreground">Stage: </span>
-                        <span className="text-xs font-medium capitalize">{lead.pipelineStage.replace(/_/g, " ")}</span>
+                        <p className="text-xs text-muted-foreground mb-1">Goals:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {lead.goals.map((g: string, i: number) => (
+                            <span key={i} className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">{g}</span>
+                          ))}
+                        </div>
                       </div>
                     )}
-                    {(lead.bookingStatus ?? lead.outreachStatus) && (
-                      <div>
-                        <span className="text-xs text-muted-foreground">Status: </span>
-                        <span className="text-xs font-medium capitalize">{(lead.bookingStatus ?? lead.outreachStatus ?? "").replace(/_/g, " ")}</span>
+
+                    {/* Parent info */}
+                    {(lead.parentName || lead.parentEmail) && (
+                      <div className="rounded bg-muted/40 px-3 py-2 space-y-0.5">
+                        <p className="text-xs font-semibold text-muted-foreground">Parent / Guardian</p>
+                        {lead.parentName && <p className="text-xs font-medium">{lead.parentName}</p>}
+                        {lead.parentEmail && <p className="text-xs text-muted-foreground">{lead.parentEmail}</p>}
                       </div>
                     )}
-                    {lead.sport && lead.sport !== "unknown" && (
-                      <div>
-                        <span className="text-xs text-muted-foreground">Sport: </span>
-                        <span className="text-xs font-medium capitalize">{lead.sport}</span>
+
+                    {/* AI summary */}
+                    {lead.aiSummary && (
+                      <div className="rounded bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 px-3 py-2">
+                        <p className="text-xs font-semibold text-blue-700 dark:text-blue-300 mb-1 flex items-center gap-1">
+                          <Brain className="w-3 h-3" /> AI Assessment
+                        </p>
+                        <p className="text-xs text-blue-800 dark:text-blue-200 leading-relaxed">{lead.aiSummary}</p>
                       </div>
                     )}
-                    {lead.temperature && (
-                      <div>
-                        <span className="text-xs text-muted-foreground">Temperature: </span>
-                        <span className={`text-xs font-semibold capitalize ${lead.temperature === "hot" ? "text-red-600" : lead.temperature === "warm" ? "text-orange-500" : "text-blue-500"}`}>{lead.temperature}</span>
+
+                    {/* Suggested next action */}
+                    {lead.aiNextAction && (
+                      <div className="rounded bg-green-50 dark:bg-green-950/20 border border-green-100 dark:border-green-900 px-3 py-2">
+                        <p className="text-xs font-semibold text-green-700 dark:text-green-300 mb-1 flex items-center gap-1">
+                          <Lightbulb className="w-3 h-3" /> Suggested Next Action
+                        </p>
+                        <p className="text-xs text-green-800 dark:text-green-200 leading-relaxed">{lead.aiNextAction}</p>
                       </div>
                     )}
-                    {lead.lastInteractionAt && (
-                      <div className="col-span-2">
-                        <span className="text-xs text-muted-foreground">Last interaction: </span>
-                        <span className="text-xs font-medium">{new Date(lead.lastInteractionAt).toLocaleDateString()}</span>
-                      </div>
+
+                    {/* UTM source */}
+                    {lead.utmSource && (
+                      <p className="text-xs text-muted-foreground">
+                        Source: <span className="font-medium">{lead.utmSource}{lead.utmMedium ? ` / ${lead.utmMedium}` : ""}{lead.utmCampaign ? ` — ${lead.utmCampaign}` : ""}</span>
+                      </p>
                     )}
-                    {lead.followUpCount != null && lead.followUpCount > 0 && (
-                      <div>
-                        <span className="text-xs text-muted-foreground">Follow-ups sent: </span>
-                        <span className="text-xs font-medium">{lead.followUpCount}</span>
+
+                    {/* Workflow context for non-lead drafts */}
+                    {(resultData.workflowType || resultData.triggerEvent || resultData.workflowName) && (
+                      <div className="rounded bg-muted/40 px-3 py-2 space-y-1">
+                        <p className="text-xs font-semibold text-muted-foreground">Workflow Context</p>
+                        {resultData.workflowName && <p className="text-xs"><span className="text-muted-foreground">Workflow: </span><span className="font-medium">{resultData.workflowName}</span></p>}
+                        {resultData.workflowType && <p className="text-xs"><span className="text-muted-foreground">Type: </span><span className="font-medium capitalize">{String(resultData.workflowType).replace(/_/g, " ")}</span></p>}
+                        {resultData.triggerEvent && <p className="text-xs"><span className="text-muted-foreground">Trigger: </span><span className="font-medium">{resultData.triggerEvent}</span></p>}
                       </div>
                     )}
                   </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground italic py-1">No linked context found for this draft.</p>
                 )}
               </div>
 
               <Separator />
 
-              {/* ── Email Preview / Editor ── */}
+              {/* ── Email Draft / Editor / Preview ── */}
               {mode === "view" && (
                 <div className="space-y-3">
-                  <div className="flex items-center justify-between">
+                  {/* Section header with Edit/Preview toggle */}
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
                     <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
-                      <Mail className="w-3.5 h-3.5" /> Email Draft
+                      <Mail className="w-3.5 h-3.5" />
+                      Email Draft
+                      {isSaved && (
+                        <span className="flex items-center gap-1 text-xs font-medium text-amber-600 dark:text-amber-400 ml-1">
+                          <BookmarkCheck className="w-3 h-3" /> Edits saved
+                        </span>
+                      )}
                     </p>
-                    <button
-                      className="text-xs text-primary underline flex items-center gap-1"
-                      onClick={() => setIsEditing((e) => !e)}
-                      data-testid="button-toggle-edit"
-                    >
-                      <Edit3 className="w-3 h-3" />
-                      {isEditing ? "Cancel editing" : "Edit before sending"}
-                    </button>
-                  </div>
-
-                  {/* Subject */}
-                  <div>
-                    <p className="text-xs text-muted-foreground font-medium mb-1">SUBJECT</p>
-                    {isEditing ? (
-                      <Input
-                        data-testid="drawer-input-subject"
-                        value={subject}
-                        onChange={(e) => setSubject(e.target.value)}
-                        className="text-sm font-medium"
-                      />
-                    ) : (
-                      <p className="text-sm font-semibold bg-muted/30 rounded px-3 py-2 border" data-testid="drawer-text-subject">
-                        {subject || "(No subject)"}
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Body */}
-                  <div>
-                    <p className="text-xs text-muted-foreground font-medium mb-1">EMAIL BODY</p>
-                    {isEditing ? (
-                      <Textarea
-                        data-testid="drawer-textarea-body"
-                        value={body}
-                        onChange={(e) => setBody(e.target.value)}
-                        className="min-h-[280px] text-sm font-mono leading-relaxed"
-                      />
-                    ) : (
-                      <div className="bg-muted/30 rounded border px-3 py-3">
-                        <pre className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans" data-testid="drawer-text-body">
-                          {body || "No content"}
-                        </pre>
+                    <div className="flex items-center gap-2">
+                      {/* Edit/Preview toggle */}
+                      <div className="flex items-center rounded-md border overflow-hidden text-xs">
+                        <button
+                          className={`px-2.5 py-1 flex items-center gap-1 transition-colors ${viewMode === "edit" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                          onClick={() => { setViewMode("edit"); }}
+                          data-testid="button-view-mode-edit"
+                        >
+                          <Edit3 className="w-3 h-3" /> Edit
+                        </button>
+                        <button
+                          className={`px-2.5 py-1 flex items-center gap-1 transition-colors ${viewMode === "preview" ? "bg-primary text-primary-foreground" : "hover:bg-muted"}`}
+                          onClick={() => { setViewMode("preview"); setIsEditing(false); }}
+                          data-testid="button-view-mode-preview"
+                        >
+                          <Eye className="w-3 h-3" /> Preview
+                        </button>
                       </div>
-                    )}
+                    </div>
                   </div>
+
+                  {/* ── EDIT MODE ── */}
+                  {viewMode === "edit" && (
+                    <div className="space-y-3">
+                      {/* Subject */}
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium mb-1">SUBJECT</p>
+                        {isEditing ? (
+                          <Input
+                            data-testid="drawer-input-subject"
+                            value={subject}
+                            onChange={(e) => { setSubject(e.target.value); setIsSaved(false); }}
+                            className="text-sm font-medium"
+                          />
+                        ) : (
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-semibold bg-muted/30 rounded px-3 py-2 border flex-1" data-testid="drawer-text-subject">
+                              {subject || "(No subject)"}
+                            </p>
+                            <button
+                              className="text-xs text-primary underline flex items-center gap-1 shrink-0"
+                              onClick={() => setIsEditing(true)}
+                              data-testid="button-toggle-edit"
+                            >
+                              <Edit3 className="w-3 h-3" /> Edit
+                            </button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Body */}
+                      <div>
+                        <p className="text-xs text-muted-foreground font-medium mb-1">EMAIL BODY</p>
+                        {isEditing ? (
+                          <Textarea
+                            data-testid="drawer-textarea-body"
+                            value={body}
+                            onChange={(e) => { setBody(e.target.value); setIsSaved(false); }}
+                            className="min-h-[280px] text-sm font-mono leading-relaxed"
+                          />
+                        ) : (
+                          <div className="bg-muted/30 rounded border px-3 py-3">
+                            <pre className="text-sm text-foreground leading-relaxed whitespace-pre-wrap font-sans" data-testid="drawer-text-body">
+                              {body || "No content"}
+                            </pre>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Cancel edit link */}
+                      {isEditing && (
+                        <button
+                          className="text-xs text-muted-foreground underline"
+                          onClick={() => {
+                            const fullBody = resultData.savedBody ?? resultData.fullBody ?? resultData.body ?? proposal?.bodyPreview ?? "";
+                            const fullSubject = resultData.savedSubject ?? proposal?.subject ?? "";
+                            setSubject(fullSubject);
+                            setBody(fullBody);
+                            setIsEditing(false);
+                          }}
+                        >
+                          Discard changes
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── PREVIEW MODE ── */}
+                  {viewMode === "preview" && (
+                    <EmailPreviewPane
+                      subject={subject}
+                      body={body}
+                      recipientEmail={proposal?.recipientEmail ?? undefined}
+                      orgName={org?.name ?? undefined}
+                      logoUrl={org?.logoUrl ?? undefined}
+                      primaryColor={org?.primaryColor ?? org?.emailPrimaryColor ?? undefined}
+                    />
+                  )}
                 </div>
               )}
 
@@ -825,7 +1121,7 @@ function ApprovalReviewDrawer({
                   data-testid="drawer-button-approve"
                   size="sm"
                   onClick={() => approveMutation.mutate()}
-                  disabled={approveMutation.isPending || (isEditing && (!subject.trim() || !body.trim()))}
+                  disabled={approveMutation.isPending || saveMutation.isPending || (isEditing && (!subject.trim() || !body.trim()))}
                   className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   {approveMutation.isPending
@@ -834,6 +1130,19 @@ function ApprovalReviewDrawer({
                     ? <><Send className="w-3.5 h-3.5 mr-1.5" />Edit & Send</>
                     : <><CheckCheck className="w-3.5 h-3.5 mr-1.5" />Approve & Send</>}
                 </Button>
+                {isEditing && (
+                  <Button
+                    data-testid="drawer-button-save"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => saveMutation.mutate()}
+                    disabled={saveMutation.isPending || approveMutation.isPending || !subject.trim() || !body.trim()}
+                  >
+                    {saveMutation.isPending
+                      ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Saving…</>
+                      : <><Bookmark className="w-3.5 h-3.5 mr-1.5" />Save & Review Later</>}
+                  </Button>
+                )}
                 <Button
                   data-testid="drawer-button-regen"
                   size="sm"

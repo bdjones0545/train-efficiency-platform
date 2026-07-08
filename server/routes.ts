@@ -25250,7 +25250,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
     }
   });
 
-  // GET /api/ai-approvals/:id — fetch full proposal detail with lead enrichment
+  // GET /api/ai-approvals/:id — fetch full proposal detail with lead enrichment + org branding
   app.get("/api/ai-approvals/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
@@ -25260,6 +25260,20 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
         .where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId)))
         .limit(1);
       if (!proposal) return res.status(404).json({ message: "Not found" });
+
+      // Fetch org branding
+      let org: Record<string, any> | null = null;
+      try {
+        const { organizations } = await import("@shared/schema");
+        const [orgRow] = await db.select({
+          name: organizations.name,
+          logoUrl: organizations.logoUrl,
+          primaryColor: organizations.primaryColor,
+          emailPrimaryColor: organizations.emailPrimaryColor,
+          tagline: organizations.tagline,
+        }).from(organizations).where(eq(organizations.id, orgId)).limit(1);
+        if (orgRow) org = orgRow;
+      } catch (_) {}
 
       let lead: Record<string, any> | null = null;
       try {
@@ -25274,15 +25288,34 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
               .limit(1).catch(() => [] as any[]);
             lead = {
               name: sub.athleteName ?? sub.parentName ?? null,
+              athleteName: sub.athleteName,
+              parentName: sub.parentName ?? null,
+              parentEmail: sub.parentEmail ?? null,
               email: sub.email,
-              sport: sub.sport,
-              grade: sub.grade,
-              school: sub.school,
-              bookingStatus: sub.bookingStatus,
+              phone: sub.phone ?? null,
+              age: sub.age ?? null,
+              grade: sub.grade ?? null,
+              position: sub.position ?? null,
+              school: sub.school ?? null,
+              sport: sub.sport ?? null,
+              goals: Array.isArray(sub.goals) ? sub.goals : [],
+              experienceLevel: sub.experienceLevel ?? null,
+              currentTrainingStatus: sub.currentTrainingStatus ?? null,
+              commitmentLevel: sub.commitmentLevel ?? null,
+              notes: sub.notes ?? null,
+              utmSource: sub.utmSource ?? null,
+              utmMedium: sub.utmMedium ?? null,
+              utmCampaign: sub.utmCampaign ?? null,
+              aiQualificationScore: sub.aiQualificationScore ?? null,
+              aiQualificationReason: sub.aiQualificationReason ?? null,
+              aiNextAction: sub.aiNextAction ?? null,
+              bookingStatus: sub.bookingStatus ?? null,
               pipelineStage: intel?.pipelineStage ?? sub.bookingStatus ?? null,
               leadScore: intel?.leadScore ?? null,
               temperature: intel?.temperature ?? null,
               followUpStage: intel?.followUpStage ?? null,
+              aiSummary: intel?.aiSummary ?? null,
+              suggestedNextAction: (intel as any)?.suggestedNextAction ?? null,
               lastInteractionAt: intel?.lastInteractionAt ?? sub.lastFollowUpAt ?? null,
               followUpCount: sub.followUpCount ?? 0,
             };
@@ -25308,7 +25341,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
         }
       } catch (_) {}
 
-      res.json({ proposal, lead });
+      res.json({ proposal, lead, org });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to load proposal" });
     }
@@ -25424,6 +25457,66 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to reject proposal" });
+    }
+  });
+
+  // ─── Save edits without sending ──────────────────────────────────────────
+
+  app.patch("/api/ai-approvals/:id/save-edits", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const { id } = req.params;
+      const { editedSubject, editedBody, feedbackTags, coachingFeedbackText } = req.body ?? {};
+      const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
+      if (!proposal) return res.status(404).json({ message: "Proposal not found" });
+      if (proposal.executedAt) return res.status(409).json({ message: "Already executed — cannot save edits" });
+
+      // Merge saved edits into result JSONB so the original AI draft is not lost
+      const prevResult = (typeof proposal.result === "object" && proposal.result) ? proposal.result as Record<string, any> : {};
+      const updatedResult = {
+        ...prevResult,
+        savedSubject: editedSubject ?? prevResult.savedSubject ?? null,
+        savedBody: editedBody ?? prevResult.savedBody ?? null,
+        savedAt: new Date().toISOString(),
+        savedBy: userId,
+      };
+
+      const updates: Record<string, any> = { result: updatedResult };
+      if (editedSubject != null) updates.subject = editedSubject;
+      if (editedBody != null) updates.bodyPreview = editedBody.slice(0, 500);
+
+      await db.update(gmailAgentActions).set(updates as any).where(eq(gmailAgentActions.id, id));
+
+      // Optionally log feedback for learning (without decision/outcome — save doesn't mean approve)
+      if (coachingFeedbackText?.trim() || feedbackTags?.length) {
+        const [fbRow] = await db.insert(agentMessageFeedback).values({
+          orgId, proposalId: id, leadId: proposal.leadId ?? null,
+          agentName: proposal.createdByAgent ?? null,
+          messageType: proposal.actionType.replace("propose_draft:", ""),
+          originalSubject: proposal.subject ?? null,
+          originalBody: proposal.bodyPreview ?? null,
+          editedSubject: editedSubject ?? null,
+          editedBody: editedBody ?? null,
+          decision: "saved_for_review",
+          reviewedBy: userId,
+          outcome: "pending",
+          coachingFeedbackText: coachingFeedbackText ?? null,
+          feedbackTags: feedbackTags ?? null,
+          communicationDomain: proposal.communicationDomain ?? "athlete_lead",
+        } as any).returning();
+        if (fbRow?.id && coachingFeedbackText?.trim()) {
+          const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
+          extractMessageLearningFromFeedback(orgId, fbRow.id).catch(console.error);
+        }
+      }
+
+      const [updated] = await db.select().from(gmailAgentActions).where(eq(gmailAgentActions.id, id)).limit(1);
+      res.json({ ok: true, proposal: updated });
+    } catch (e: any) {
+      console.error("[ai-approvals] save-edits error:", e);
+      res.status(500).json({ message: e.message ?? "Failed to save edits" });
     }
   });
 

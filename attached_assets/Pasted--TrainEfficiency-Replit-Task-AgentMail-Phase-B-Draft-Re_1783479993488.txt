@@ -1,0 +1,305 @@
+# TrainEfficiency Replit Task
+
+## AgentMail Phase B — Draft Review Trust Layer
+
+You are working inside the TrainEfficiency codebase.
+
+AgentMail Phase A is complete:
+
+* Learning context now flows into lead intake drafts.
+* Learning context now flows into AgentMail follow-ups.
+* Learning context now flows into workflow-triggered emails.
+* Feedback chips are expanded and communication-domain specific.
+* Implicit learning from coach edits is already captured.
+* Approval/send guard behavior remains unchanged.
+
+Now implement **AgentMail Phase B: Draft Review Trust Layer**.
+
+---
+
+# Goal
+
+Make draft review feel trustworthy and professional.
+
+Coaches/admins should be able to review an AI-generated email the way the recipient will actually experience it, with enough context to confidently approve, edit, save, or reject it.
+
+---
+
+# Scope
+
+## 1. Rendered Email Preview
+
+Current issue:
+
+* Drafts are reviewed mostly as raw text.
+* List view uses truncated `body_preview`.
+* Coaches do not see branding, formatting, CTA buttons, or the actual recipient-facing layout.
+
+Add a rendered preview mode in the AI Approval review drawer.
+
+The preview should show:
+
+* From name / organization name
+* Recipient email
+* Subject
+* Inbox preview text if available
+* Organization logo if available
+* Organization primary color if available
+* Formatted paragraphs / line breaks
+* CTA buttons or links rendered clearly
+* Signature block if present
+* Full body, not just truncated preview
+
+Implementation notes:
+
+* Use existing organization branding fields if available, such as:
+
+  * `organization.name`
+  * `organization.logoUrl`
+  * `organization.primaryColor`
+* If branding fields are missing, gracefully fall back to a clean plain preview.
+* Do not execute arbitrary scripts.
+* Sanitize rendered content.
+* Prefer a safe renderer over dangerous raw HTML injection.
+* If iframe preview is used, use `srcDoc` safely and no external scripts.
+
+Acceptance criteria:
+
+* User can toggle between **Edit** and **Preview**.
+* Preview shows full rendered email body.
+* Preview does not rely only on `body_preview`.
+* Preview respects organization branding when available.
+* Preview safely renders links/CTAs.
+
+---
+
+## 2. Lead / Recipient Context Side Panel
+
+Current issue:
+
+Outbound draft proposals do not show the context that caused the email to be generated.
+
+Add a context panel inside the approval drawer.
+
+For lead-related drafts, show:
+
+* Lead name
+* Email
+* Phone if available
+* Sport
+* Position
+* Age / grade
+* School
+* Goals
+* Parent name / parent email
+* Source / UTM if available
+* Lead score / temperature if available
+* Pipeline stage
+* Why this draft was generated if available
+* Related next best action if available
+
+For guardian-related drafts, show:
+
+* Guardian name
+* Guardian email
+* Linked athlete(s)
+* Communication preferences if available
+* Guardian invite status if available
+
+For general workflow drafts, show:
+
+* Workflow type
+* Trigger event
+* Related client/athlete
+* Related booking/session/payment context if available
+
+Implementation notes:
+
+* Reuse existing data when possible.
+* Do not expose internal-only AI summaries unless they are already shown in this admin context.
+* Do not leak private data to non-admins.
+* If context is unavailable, show a friendly empty state:
+
+  * “No linked context found for this draft.”
+
+Acceptance criteria:
+
+* Review drawer has a visible context panel.
+* Lead outreach drafts show lead intake details.
+* Guardian drafts show guardian/athlete relationship details when available.
+* Workflow drafts show trigger/workflow context when available.
+* Missing context fails gracefully.
+
+---
+
+## 3. Save Without Sending
+
+Current issue:
+
+Approving sends immediately unless infrastructure policy prevents sending.
+
+Add a true **Save & Review Later** action.
+
+Behavior:
+
+* Saves current subject/body edits.
+* Keeps the proposal in the queue.
+* Does not mark approved.
+* Does not send.
+* Does not trigger send guard.
+* Does not execute the action.
+* Updates the visible draft content so the admin sees saved edits next time.
+* Optionally logs feedback if feedback chips or coaching text were provided.
+
+Suggested route:
+
+```ts
+PATCH /api/ai-approvals/:id/save-edits
+```
+
+Payload:
+
+```ts
+{
+  editedSubject?: string,
+  editedBody?: string,
+  feedbackTags?: string[],
+  coachingFeedbackText?: string
+}
+```
+
+Expected behavior:
+
+* Persist edited subject/body.
+* Create feedback/learning record if feedback provided.
+* Keep `gmailAgentActions.status = "proposed"` or equivalent pending status.
+* Return updated draft.
+
+Acceptance criteria:
+
+* User can edit a draft and save without sending.
+* Saved edits persist after closing/reopening the drawer.
+* Draft remains in approval queue.
+* No email is sent.
+* Feedback provided during save can still feed the learning loop.
+
+---
+
+## 4. Full Body Source Fix
+
+Current issue:
+
+Some review surfaces use `body_preview` instead of the full email body stored in JSONB `result.fullBody`.
+
+Fix the approval drawer to always prefer the full body.
+
+Priority:
+
+1. `edited_body` / saved edited body if available
+2. `result.fullBody`
+3. `result.body`
+4. `body_preview`
+
+Same idea for subject:
+
+1. `edited_subject`
+2. `result.subject`
+3. `subject`
+
+Acceptance criteria:
+
+* Drawer shows the true complete draft.
+* Preview shows the true complete draft.
+* Editing starts from the full draft, not a truncated preview.
+
+---
+
+## 5. UI Expectations
+
+Update the AI Approvals page / review drawer.
+
+Suggested layout:
+
+Left/main:
+
+* Subject editor
+* Body editor
+* Preview toggle
+* Feedback chips
+* Free-form coaching feedback
+* Actions:
+
+  * Save & Review Later
+  * Approve & Send
+  * Reject
+  * Regenerate
+
+Right side:
+
+* Recipient / Lead Context panel
+* Current learning domain
+* Draft metadata:
+
+  * created time
+  * domain
+  * risk level
+  * action type
+  * workflow/trigger if available
+
+Keep design consistent with existing UI.
+
+Do not redesign the entire page.
+
+---
+
+# Safety / Privacy Rules
+
+* Do not auto-send.
+* Do not bypass approval.
+* Do not bypass send guard.
+* Do not expose admin-only data to non-admin users.
+* Do not render unsafe scripts.
+* Do not break reject/regenerate behavior.
+* Do not remove existing feedback capture.
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. Existing approval drawer still opens.
+2. Full body loads from `result.fullBody` when available.
+3. Edit mode works.
+4. Preview mode works.
+5. Preview shows formatted paragraphs and links.
+6. Organization branding appears when available.
+7. Missing branding falls back safely.
+8. Lead context appears for lead drafts.
+9. Guardian context appears for guardian drafts where available.
+10. Missing context shows an empty state.
+11. Save & Review Later persists edits.
+12. Save & Review Later does not send email.
+13. Saved edits remain when reopening the draft.
+14. Approve & Send still sends the edited version.
+15. Reject still works.
+16. Regenerate still works.
+17. Feedback chips still feed learning.
+18. TypeScript passes.
+
+---
+
+# Deliverable
+
+Implement AgentMail Phase B and provide a report:
+
+* Files changed
+* Preview implementation
+* Context panel implementation
+* Save-without-sending route
+* Full-body source fix
+* Safety decisions
+* Testing results
+* What remains for Phase C
+
+Focus on making coaches trust the draft review workflow before they approve messages.
