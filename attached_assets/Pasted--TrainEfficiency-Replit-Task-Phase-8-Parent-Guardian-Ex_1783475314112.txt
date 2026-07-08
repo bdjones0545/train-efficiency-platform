@@ -1,0 +1,556 @@
+# TrainEfficiency Replit Task
+
+## Phase 8 — Parent & Guardian Experience
+
+You are working inside the TrainEfficiency codebase.
+
+Phases 1–7 completed:
+
+* Athlete Intake Pipeline
+* AgentMail integration
+* Scheduling workflow
+* Lead → Athlete conversion
+* PAIL context seeding
+* Guardian linking
+* Onboarding checklists
+* Onboarding Action Center
+* CEO Heartbeat integration
+* Program assignment recommendations
+* First session handoff
+* Readiness states driven from real data
+
+Now implement **Phase 8: Parent & Guardian Experience**.
+
+---
+
+# Goal
+
+TrainEfficiency serves many youth athletes.
+
+Parents are often:
+
+* Paying customers
+* Decision makers
+* Scheduling coordinators
+* Primary communication contacts
+
+The system should treat parents as first-class participants in the onboarding experience without building a full parent portal.
+
+This phase focuses on communication, visibility, and relationship management.
+
+---
+
+# Core Philosophy
+
+Parents are **contacts**, not athletes.
+
+Do not duplicate athlete data.
+
+Everything should relate back to the athlete while preserving the parent relationship.
+
+---
+
+# Scope
+
+## 1. Guardian Profile Completion
+
+Audit the existing guardian implementation.
+
+Determine:
+
+* guardian user exists
+* guardian invitation status
+* guardian login status
+* guardian relationship
+* linked athletes
+
+If a guardian already exists:
+
+Display:
+
+* invited
+* accepted
+* active
+
+If invitation has not been sent:
+
+Recommend:
+
+> Send Guardian Invite
+
+If invitation is pending:
+
+Display:
+
+> Awaiting Parent Account Setup
+
+---
+
+## 2. Parent Communication Timeline
+
+Create a communication history for each guardian.
+
+Aggregate:
+
+* AgentMail conversations
+* Welcome drafts
+* Evaluation scheduling
+* Follow-up emails
+* Invitations
+* System invites
+
+Do not duplicate communication already stored elsewhere.
+
+Instead, create a unified timeline.
+
+Example:
+
+July 8
+
+Welcome Draft Created
+
+July 9
+
+Welcome Email Approved
+
+July 10
+
+Guardian Invite Sent
+
+July 11
+
+Guardian Accepted Invite
+
+July 13
+
+Evaluation Scheduled
+
+---
+
+## 3. Parent Communication Preferences
+
+Add lightweight preferences.
+
+If schema already exists, use it.
+
+Otherwise create a small table.
+
+Suggested fields:
+
+```text
+guardian_communication_preferences
+
+guardianUserId
+
+emailEnabled
+
+smsEnabled
+
+marketingEnabled
+
+evaluationReminders
+
+scheduleNotifications
+
+programUpdates
+
+preferredContactMethod
+
+updatedAt
+```
+
+Default:
+
+Email enabled
+
+Others configurable
+
+Do not implement SMS yet.
+
+Just store preferences.
+
+---
+
+## 4. Parent Status Card
+
+Inside Athlete Onboarding and Athlete Profile:
+
+Display:
+
+Guardian
+
+Name
+
+Email
+
+Status
+
+Communication Preference
+
+Invitation Status
+
+Relationship
+
+Athletes Linked
+
+Last Communication
+
+Next Recommended Action
+
+---
+
+## 5. Parent Welcome Experience
+
+Improve onboarding communication.
+
+Current:
+
+Athlete welcome
+
+Add:
+
+Guardian-specific draft.
+
+If guardian exists:
+
+Create a second AgentMail draft.
+
+Content:
+
+Welcome parent
+
+Explain organization
+
+Explain onboarding process
+
+Explain next steps
+
+Include:
+
+Organization landing page
+
+Account setup
+
+Evaluation details
+
+How to contact coach
+
+Do not auto-send.
+
+Queue in AI Approvals.
+
+---
+
+## 6. Guardian Dashboard (Lightweight)
+
+Do NOT build a full portal.
+
+Instead build a lightweight summary.
+
+Suggested route:
+
+```text
+/admin/guardian/:guardianId
+```
+
+Visible only to organization admins.
+
+Display:
+
+Guardian information
+
+Linked athletes
+
+Communication history
+
+Outstanding onboarding items
+
+Account status
+
+Invitation status
+
+Latest session
+
+Upcoming session
+
+Assigned programs
+
+Coach notes summary
+
+Recent alerts
+
+This is primarily for coaches/admins.
+
+---
+
+## 7. Parent Alerts
+
+Extend onboarding alerts.
+
+Detect:
+
+Guardian invite never accepted
+
+Guardian not contacted
+
+Guardian preferences incomplete
+
+Guardian missing for youth athlete
+
+Guardian email bounced
+
+If communication history supports it:
+
+No parent communication in X days
+
+Surface:
+
+Onboarding Action Center
+
+CEO Heartbeat
+
+Attention Inbox
+
+---
+
+## 8. Athlete ↔ Guardian Relationships
+
+If schema supports multiple athletes:
+
+Display:
+
+Children linked
+
+Shared guardian
+
+Family relationships
+
+Prevent duplicate guardian creation.
+
+One guardian account should support multiple athletes.
+
+---
+
+## 9. Parent Context for PAIL
+
+Do not mix parent memories with athlete memories.
+
+Instead:
+
+Create guardian context.
+
+Examples:
+
+Highly involved
+
+Primary contact
+
+Requests email only
+
+Handles scheduling
+
+Concerned about recovery
+
+Strong communicator
+
+This should become available to future AI agents.
+
+---
+
+# Backend API
+
+Add:
+
+```text
+GET /api/admin/guardians
+```
+
+Filters:
+
+Status
+
+Invitation
+
+Communication
+
+Search
+
+---
+
+Add:
+
+```text
+GET /api/admin/guardians/:id
+```
+
+Return:
+
+Guardian
+
+Linked athletes
+
+Communication timeline
+
+Preferences
+
+Alerts
+
+Outstanding onboarding
+
+Recent AgentMail activity
+
+Invitation status
+
+---
+
+Optional:
+
+```text
+PATCH /api/admin/guardians/:id/preferences
+```
+
+Update preferences.
+
+---
+
+# Frontend
+
+Create:
+
+```text
+/admin/guardians
+```
+
+Features:
+
+Guardian cards
+
+Search
+
+Status filters
+
+Invitation filters
+
+Communication indicators
+
+Linked athletes
+
+Outstanding actions
+
+---
+
+Guardian Detail
+
+Sections:
+
+Overview
+
+Linked Athletes
+
+Communication Timeline
+
+Communication Preferences
+
+Outstanding Actions
+
+Alerts
+
+Recent Sessions
+
+Upcoming Sessions
+
+---
+
+# CEO Heartbeat
+
+Add guardian metrics.
+
+Examples:
+
+Guardian invites pending
+
+Guardian acceptance rate
+
+Guardian communication backlog
+
+Families with incomplete onboarding
+
+Families with multiple athletes
+
+Surface:
+
+Top parent onboarding risks
+
+Top communication opportunities
+
+---
+
+# Attention Inbox
+
+Generate actionable items:
+
+Guardian invite pending
+
+Guardian never accepted
+
+Guardian communication missing
+
+Guardian follow-up recommended
+
+Guardian onboarding stalled
+
+Do not duplicate onboarding alerts.
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* Full parent portal
+* Parent mobile app
+* SMS platform
+* Parent billing dashboard
+* Parent scheduling UI
+* Family calendar
+* Family messaging app
+
+Do not break existing onboarding workflows.
+
+Keep AgentMail approval flow intact.
+
+---
+
+# Testing
+
+Verify:
+
+1. Guardian records load correctly.
+2. Duplicate guardians are prevented.
+3. Multiple athletes can share one guardian.
+4. Parent communication timeline aggregates correctly.
+5. Parent preferences persist.
+6. Guardian welcome draft queues correctly.
+7. Guardian alerts appear.
+8. CEO Heartbeat surfaces guardian issues.
+9. Attention Inbox integrates guardian actions.
+10. TypeScript passes.
+11. Previous phases remain fully functional.
+
+---
+
+# Deliverable
+
+Provide:
+
+* Files changed
+* Routes added
+* Guardian schema changes
+* Communication timeline implementation
+* Parent preference implementation
+* Guardian dashboard behavior
+* CEO Heartbeat additions
+* Attention Inbox additions
+* Remaining work for Phase 9
+
+The objective is to make parents and guardians first-class participants in the athlete lifecycle while keeping the athlete as the primary record and avoiding unnecessary duplication.

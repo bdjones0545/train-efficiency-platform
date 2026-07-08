@@ -755,4 +755,113 @@ export function registerGuardianRoutes(app: Express) {
       res.status(500).json({ message: e.message });
     }
   });
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // PHASE 8 — Admin Guardian Management Routes
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // Ensure preferences table exists on startup
+  import("./services/guardian-admin-service").then(m => m.ensureGuardianPrefsTable()).catch(() => {});
+
+  // ── GET /api/admin/guardians ────────────────────────────────────────────────
+  app.get("/api/admin/guardians", requireCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      const { status, search, inviteStatus } = req.query as Record<string, string>;
+
+      const { getGuardiansForOrg } = await import("./services/guardian-admin-service");
+      const result = await getGuardiansForOrg(orgId, { status, search, inviteStatus });
+
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/admin/guardians/:guardianUserId ────────────────────────────────
+  app.get("/api/admin/guardians/:guardianUserId", requireCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      const { guardianUserId } = req.params;
+
+      const { getGuardianDetail } = await import("./services/guardian-admin-service");
+      const detail = await getGuardianDetail(orgId, guardianUserId);
+
+      if (!detail) return res.status(404).json({ message: "Guardian not found" });
+      res.json(detail);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── PATCH /api/admin/guardians/:guardianUserId/preferences ─────────────────
+  app.patch("/api/admin/guardians/:guardianUserId/preferences", requireCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      const { guardianUserId } = req.params;
+      const prefs = req.body;
+
+      const { upsertGuardianPreferences } = await import("./services/guardian-admin-service");
+      const updated = await upsertGuardianPreferences(guardianUserId, orgId, prefs);
+
+      res.json({ ok: true, preferences: updated });
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── POST /api/admin/guardians/:guardianUserId/queue-welcome-draft ───────────
+  app.post("/api/admin/guardians/:guardianUserId/queue-welcome-draft", requireCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const orgId = profile.organizationId;
+      const { guardianUserId } = req.params;
+
+      const { getGuardianDetail, queueGuardianWelcomeDraft } = await import("./services/guardian-admin-service");
+      const detail = await getGuardianDetail(orgId, guardianUserId);
+      if (!detail) return res.status(404).json({ message: "Guardian not found" });
+
+      const firstAthlete = detail.linkedAthletes?.[0];
+      const athleteName = firstAthlete?.athleteName ?? "your athlete";
+      const inviteEmail = detail.inviteEmail ?? detail.email;
+
+      // Resolve org name from profile
+      let orgName = "your training organization";
+      try {
+        const { orgUsers } = await import("@shared/schema");
+        const [orgRow] = await db.select().from(orgUsers)
+          .where(eq(orgUsers.orgId, orgId))
+          .limit(1);
+        orgName = (orgRow as any)?.name ?? orgName;
+      } catch {}
+
+      const result = await queueGuardianWelcomeDraft(
+        orgId,
+        guardianUserId,
+        firstAthlete?.athleteUserId ?? "",
+        inviteEmail,
+        athleteName,
+        orgName
+      );
+
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
+
+  // ── GET /api/admin/guardian-metrics ────────────────────────────────────────
+  app.get("/api/admin/guardian-metrics", requireCoach, async (req: any, res) => {
+    try {
+      const profile = req._profile;
+      const { computeGuardianMetricsForOrg } = await import("./services/guardian-admin-service");
+      const metrics = await computeGuardianMetricsForOrg(profile.organizationId);
+      res.json(metrics);
+    } catch (e: any) {
+      res.status(500).json({ message: e.message });
+    }
+  });
 }

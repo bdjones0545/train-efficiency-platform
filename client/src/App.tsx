@@ -65,6 +65,8 @@ import AdminTeamTrainingLeadsPage from "@/pages/admin-team-training-leads";
 import AdminTeamTrainingDealsPage from "@/pages/admin-team-training-deals";
 import AdminAthleteLeadsPage from "@/pages/admin-athlete-leads";
 import AdminAthleteOnboardingPage from "@/pages/admin-athlete-onboarding";
+import AdminGuardiansPage from "@/pages/admin-guardians";
+import AdminGuardianDetailPage from "@/pages/admin-guardian-detail";
 import AdminOutreachCenterPage from "@/pages/admin-outreach-center";
 import BusinessCommandCenterPage from "@/pages/business-command-center";
 import BusinessBrainPage from "@/pages/business-brain";
@@ -565,6 +567,8 @@ function AuthenticatedLayout() {
                   <Route path="/admin/team-training-deals" component={AdminTeamTrainingDealsPage} />
                   <Route path="/admin/athlete-leads" component={AdminAthleteLeadsPage} />
                   <Route path="/admin/athlete-onboarding" component={AdminAthleteOnboardingPage} />
+                  <Route path="/admin/guardians" component={AdminGuardiansPage} />
+                  <Route path="/admin/guardian/:id" component={AdminGuardianDetailPage} />
                   <Route path="/admin/outreach-center" component={AdminOutreachCenterPage} />
                   <Route path="/admin/lead-pipeline" component={AdminLeadPipelinePage} />
                   <Route path="/admin/business-brain" component={BusinessBrainPage} />

@@ -548,6 +548,46 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
     console.warn("[CEO Heartbeat] Onboarding alerts error:", err.message);
   }
 
+  // ── 8. Guardian & Parent Engagement ───────────────────────────────────────
+  try {
+    const { computeGuardianMetricsForOrg } = await import("./guardian-admin-service");
+    const gm = await computeGuardianMetricsForOrg(orgId);
+
+    // Stalled invites — guardian was invited but has not accepted
+    if (gm.pendingInvites >= 2) {
+      priorities.push({
+        id: `${orgId}:guardian-invites-pending`,
+        priorityScore: calcPriorityScore({ revenuePotential: 30, urgency: 60, risk: 25, confidence: 90, stageImportance: 50, safetyRisk: 5 }),
+        category: "athlete_onboarding",
+        action: `${gm.pendingInvites} guardian invite${gm.pendingInvites > 1 ? "s" : ""} pending acceptance — follow up to engage families`,
+        reason: "Guardian involvement correlates with athlete retention — pending invites indicate unengaged families",
+        agentSource: "Guardian Onboarding Monitor",
+        requiresApproval: false,
+        estimatedRevenueCents: gm.pendingInvites * 50_00,
+        entityType: "athlete_guardian_link",
+        urgency: gm.pendingInvites >= 5 ? "high" : "medium",
+      });
+    }
+
+    // Guardians who joined but have never been contacted
+    if (gm.neverContacted >= 2) {
+      priorities.push({
+        id: `${orgId}:guardian-never-contacted`,
+        priorityScore: calcPriorityScore({ revenuePotential: 25, urgency: 50, risk: 20, confidence: 85, stageImportance: 45, safetyRisk: 0 }),
+        category: "athlete_onboarding",
+        action: `${gm.neverContacted} active guardian${gm.neverContacted > 1 ? "s" : ""} have never been contacted — queue welcome drafts`,
+        reason: "Families who haven't been welcomed are significantly less likely to renew athlete memberships",
+        agentSource: "Guardian Onboarding Monitor",
+        requiresApproval: false,
+        estimatedRevenueCents: gm.neverContacted * 75_00,
+        entityType: "athlete_guardian_link",
+        urgency: "medium",
+      });
+    }
+  } catch (err: any) {
+    console.warn("[CEO Heartbeat] Guardian metrics error:", err.message);
+  }
+
   // ── Inject top Hermes learnings as advisory priorities ────────────────────
   try {
     const { getTopLearningsForContext } = await import("./hermes-learning-service");
