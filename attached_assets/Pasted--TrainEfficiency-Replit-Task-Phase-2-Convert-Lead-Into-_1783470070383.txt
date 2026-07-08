@@ -1,0 +1,371 @@
+# TrainEfficiency Replit Task
+
+## Phase 2 — Convert Lead Into Real Athlete Onboarding Workflow
+
+You are working inside the TrainEfficiency codebase.
+
+Phase 1 completed the first wiring pass:
+
+* `Email` no longer uses `mailto:`.
+* Email now opens an AgentMail-backed draft flow.
+* `Schedule Eval` now starts the scheduling agent flow.
+* Slot offering and booking confirmation are real workflows.
+* `/admin/athlete-leads` and `/admin/lead-pipeline` now synchronize major lifecycle stages.
+* Transactional/system emails remain separate from AgentMail.
+
+Now implement **Phase 2**.
+
+---
+
+# Phase 2 Goal
+
+Make **Convert to Athlete** actually convert a lead into an athlete.
+
+Current behavior:
+
+* Clicking Convert to Athlete only sets:
+
+  * `bookingStatus = "enrolled"`
+  * `convertedAt = now`
+
+Target behavior:
+
+* Clicking Convert to Athlete should start a real onboarding workflow:
+
+  * Create or link an athlete/customer record.
+  * Preserve the original lead submission.
+  * Transfer relevant intake data.
+  * Create onboarding/invitation communication.
+  * Initialize athlete intelligence readiness where appropriate.
+  * Keep the lead pipeline and athlete records synchronized.
+
+---
+
+# Architectural Rules
+
+## AgentMail
+
+Use **AgentMail** for human/coach/customer communication:
+
+* Welcome from coach
+* Parent/guardian follow-up
+* Evaluation follow-up
+* Manual onboarding message
+* AI-generated relationship-based messages
+
+## Infrastructure Email
+
+Infrastructure/system emails may remain outside AgentMail:
+
+* Account invitation
+* Magic link
+* Password reset
+* Email verification
+* Security alert
+* Payment receipt
+
+Do not migrate those in this phase unless the existing app already routes them through a system email service.
+
+---
+
+# Scope
+
+## 1. Replace Hollow Convert Action
+
+Current behavior:
+
+```ts
+PATCH /api/admin/athlete-leads/:id
+{
+  bookingStatus: "enrolled",
+  convertedAt: now
+}
+```
+
+Target behavior:
+
+Convert should call a dedicated onboarding route or service.
+
+Suggested endpoint:
+
+```ts
+POST /api/admin/athlete-leads/:id/convert
+```
+
+This route should orchestrate the conversion workflow.
+
+Avoid overloading the generic PATCH route with complex business logic.
+
+---
+
+## 2. Create or Link Athlete Record
+
+Inspect the existing schema before implementing.
+
+Find the correct existing athlete/customer/user table.
+
+Possible names may include:
+
+* `athletes`
+* `users`
+* `clients`
+* `organizationMembers`
+* `athleteProfiles`
+* `teamTrainingAthletes`
+* `customers`
+
+Do not create a duplicate athlete table if one already exists.
+
+Conversion should:
+
+* Create a real athlete/client/customer record if one does not already exist.
+* Link the new athlete record back to the original `leadCaptureSubmissions` row.
+* If an athlete with the same org + email already exists:
+
+  * Do not duplicate.
+  * Link the lead to the existing athlete.
+  * Return a clear result such as `created: false`, `linkedExisting: true`.
+
+Transfer relevant fields:
+
+* Athlete name
+* Email
+* Phone
+* Age
+* Grade
+* Sport
+* Position
+* School
+* Goals
+* Experience level
+* Current training status
+* Commitment level
+* Parent/guardian name
+* Source / UTM metadata where appropriate
+* Notes
+
+---
+
+## 3. Lead Status + Intelligence Sync
+
+After successful conversion:
+
+Update `leadCaptureSubmissions`:
+
+* `bookingStatus = "enrolled"`
+* `convertedAt = now`
+* Link field to athlete/user if one exists, such as:
+
+  * `linkedUserId`
+  * `athleteId`
+  * or the appropriate existing schema field
+
+Update `leadIntelligenceProfiles`:
+
+* `pipelineStage = "converted"`
+* Add stage transition audit entry using existing stage transition conventions.
+* Preserve existing processing logs and history.
+
+Do not lose prior AI summary, draft, or follow-up history.
+
+---
+
+## 4. Onboarding Communication
+
+After conversion, create an onboarding communication.
+
+This should be **AgentMail-backed** if it is a human-style welcome or coach message.
+
+Example:
+
+* Subject: "Welcome to [Organization Name]"
+* Body:
+
+  * Congratulate the athlete/parent
+  * Explain next steps
+  * Include organization-specific onboarding or landing page link if available
+  * Mention evaluation/training start details if known
+  * Encourage reply with questions
+
+Important:
+
+* Do not auto-send unless existing AgentMail workflow requires explicit approval.
+* Prefer draft/approval queue first.
+* Associate the draft with:
+
+  * lead submission
+  * athlete record if possible
+  * org
+  * conversation/contact identity
+
+If the app already has account invitation infrastructure, that can be created separately as a system email.
+
+---
+
+## 5. Account Invitation / Portal Access
+
+Audit existing auth/account invitation capabilities.
+
+If there is already a supported flow for inviting athletes/users:
+
+* Create or queue an account invitation.
+* Link the invited user to the athlete record.
+* Mark invitation status appropriately.
+
+If no supported flow exists:
+
+* Do not invent a full auth system.
+* Leave a clear TODO / response field.
+* Still complete athlete record creation and AgentMail welcome draft.
+
+Expected conversion response should clearly report:
+
+```ts
+{
+  athleteCreated: true,
+  linkedExisting: false,
+  accountInviteCreated: true | false,
+  welcomeDraftCreated: true | false,
+  pailInitialized: true | false
+}
+```
+
+---
+
+## 6. Initialize Athlete Intelligence / PAIL
+
+Inspect the existing PAIL / athlete intelligence implementation.
+
+If there is already a supported service or route for initializing an athlete intelligence profile:
+
+* Call it during conversion.
+* Seed it with intake data where appropriate.
+* Link it to the athlete record.
+
+If PAIL expects a real athlete ID and the athlete record is created successfully:
+
+* Initialize it.
+
+If PAIL initialization is not currently supported by a service:
+
+* Do not hack around it.
+* Return `pailInitialized: false`.
+* Add a clear TODO for Phase 2.5 or Phase 3.
+
+---
+
+## 7. Frontend Convert Flow
+
+Update `client/src/pages/admin-athlete-leads.tsx`.
+
+Current behavior:
+
+* Convert button immediately flips status.
+
+Target behavior:
+
+* Convert button opens a confirmation modal or conversion flow.
+* The modal should show:
+
+  * Athlete name
+  * Email
+  * Sport/school
+  * What will happen:
+
+    * Athlete record created/linked
+    * Lead marked enrolled
+    * Intelligence stage updated
+    * Welcome draft created in AgentMail
+    * Account invite/PAIL initialized if supported
+  * Warning if email is missing or duplicate athlete exists
+
+After conversion succeeds:
+
+* Show success state:
+
+  * Created or linked athlete
+  * Welcome draft queued
+  * Account invite status
+  * PAIL status
+* Refresh the lead list.
+* Button state should reflect converted status.
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* Billing flow
+* Stripe customer/payment setup unless already part of existing athlete creation
+* Full athlete portal
+* Parent portal
+* Waiver system
+* Membership/package assignment
+* Training program assignment
+* Full PAIL redesign
+* Full AgentMail redesign
+
+Do not remove existing lead capture functionality.
+
+Do not break Phase 1 email or scheduling flows.
+
+---
+
+# Files / Areas To Inspect
+
+Start with:
+
+* `client/src/pages/admin-athlete-leads.tsx`
+* `server/routes.ts`
+* existing athlete/client/user schema files
+* `leadCaptureSubmissions`
+* `leadIntelligenceProfiles`
+* `gmailAgentActions`
+* AgentMail / AI approvals routes
+* PAIL / athlete intelligence services/routes
+* auth/invitation/account creation routes
+* organization membership tables
+* any existing onboarding or user invite utilities
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. Convert button opens a conversion confirmation flow.
+2. Converting a lead creates or links a real athlete/customer record.
+3. Duplicate conversion does not create duplicate athlete records.
+4. Lead submission remains preserved.
+5. Lead submission is linked to created/existing athlete where schema supports it.
+6. `bookingStatus` becomes `enrolled`.
+7. `convertedAt` is set.
+8. Lead intelligence stage becomes `converted`.
+9. Stage transition audit entry is written.
+10. AgentMail welcome draft is created or queued.
+11. Account invite is created if supported by existing auth.
+12. PAIL profile is initialized if supported by existing PAIL services.
+13. Conversion response clearly reports what happened.
+14. Frontend displays success/failure clearly.
+15. TypeScript passes.
+16. Existing Phase 1 email and scheduling behavior still works.
+
+---
+
+# Deliverable
+
+Implement Phase 2 and provide a report:
+
+* Files changed
+* New/updated routes
+* Existing athlete/user tables used
+* How duplicate detection works
+* How intake data is transferred
+* How AgentMail welcome draft works
+* Whether account invitation was created
+* Whether PAIL initialization was created
+* How lead/intelligence sync works
+* What remains for Phase 3
+
+Focus on making **Convert to Athlete** real while respecting existing architecture.

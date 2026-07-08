@@ -19738,6 +19738,185 @@ Respond with this exact JSON structure:
     }
   });
 
+  // POST /api/admin/athlete-leads/:id/convert — convert a lead into a real CLIENT user + onboarding flow
+  app.post("/api/admin/athlete-leads/:id/convert", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const adminUserId = req.user.claims.sub ?? req.user.id;
+      const adminProfile = await storage.getUserProfile(adminUserId);
+      if (!adminProfile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = adminProfile.organizationId;
+      const submissionId = req.params.id;
+
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions, leadIntelligenceProfiles, gmailAgentActions, userProfiles } = await import("@shared/schema");
+      const { users: usersTable, passwordResetTokens: prtTable } = await import("@shared/models/auth");
+      const { eq, and } = await import("drizzle-orm");
+
+      // 1. Fetch submission
+      const [submission] = await db.select().from(leadCaptureSubmissions)
+        .where(and(eq(leadCaptureSubmissions.id, submissionId), eq(leadCaptureSubmissions.orgId, orgId)))
+        .limit(1);
+      if (!submission) return res.status(404).json({ message: "Lead not found" });
+      if (!submission.email) return res.status(400).json({ message: "Lead has no email — cannot create account" });
+
+      // 2. Check for existing user by email + org
+      const nameParts = (submission.athleteName || "").split(" ");
+      const firstName = nameParts[0] || "Athlete";
+      const lastName = nameParts.slice(1).join(" ") || "";
+
+      let athleteCreated = false;
+      let linkedExisting = false;
+      let userId: string;
+
+      const existingRows = await db
+        .select({ id: usersTable.id, email: usersTable.email, firstName: usersTable.firstName, passwordHash: usersTable.passwordHash })
+        .from(usersTable)
+        .innerJoin(userProfiles, eq(userProfiles.userId, usersTable.id))
+        .where(and(eq(usersTable.email, submission.email), eq(userProfiles.organizationId, orgId)))
+        .limit(1);
+
+      if (existingRows.length > 0) {
+        userId = existingRows[0].id;
+        linkedExisting = true;
+      } else {
+        // Create user row
+        const [newUser] = await db.insert(usersTable).values({
+          firstName,
+          lastName,
+          email: submission.email,
+          phone: submission.phone || null,
+        }).returning();
+        userId = newUser.id;
+
+        // Create user_profiles row (CLIENT role in this org)
+        await db.insert(userProfiles).values({
+          userId,
+          role: "CLIENT",
+          organizationId: orgId,
+        });
+
+        athleteCreated = true;
+      }
+
+      // Update lead: bookingStatus + convertedAt + linkedUserId
+      await db.update(leadCaptureSubmissions).set({
+        bookingStatus: "enrolled",
+        convertedAt: new Date(),
+        linkedUserId: userId,
+      }).where(eq(leadCaptureSubmissions.id, submissionId));
+
+      // Update intel profile: pipelineStage + stageTransitions
+      let pailAthleteUserId: string | null = null;
+      try {
+        const { buildStageTransition } = await import("./services/intelligent-lead-intake-service");
+        const [intel] = await db.select({ id: leadIntelligenceProfiles.id, pipelineStage: leadIntelligenceProfiles.pipelineStage, stageTransitions: leadIntelligenceProfiles.stageTransitions })
+          .from(leadIntelligenceProfiles)
+          .where(and(eq(leadIntelligenceProfiles.submissionId, submissionId), eq(leadIntelligenceProfiles.orgId, orgId)))
+          .limit(1);
+        if (intel) {
+          const transition = buildStageTransition(intel.pipelineStage, "converted", "Lead converted to athlete via admin", "manual_admin", 1.0);
+          const existing = (intel.stageTransitions as any[]) || [];
+          await db.update(leadIntelligenceProfiles).set({
+            pipelineStage: "converted" as any,
+            stageTransitions: [...existing, transition] as any,
+            updatedAt: new Date(),
+          }).where(eq(leadIntelligenceProfiles.id, intel.id));
+          pailAthleteUserId = userId;
+        }
+      } catch (intelErr: any) {
+        console.warn("[convert] intel stage sync failed:", intelErr.message);
+      }
+
+      // Create AgentMail welcome draft
+      let welcomeDraftCreated = false;
+      let welcomeDraftId: string | null = null;
+      try {
+        const orgBranding = await getOrgBranding(orgId);
+        const orgName = orgBranding?.name || "your training program";
+        const sportLine = submission.sport ? ` As a ${submission.sport} athlete, ` : " ";
+        const goalsList = ((submission.goals || []) as string[]).slice(0, 3).join(", ");
+        const welcomeBody = `Hi ${firstName},\n\nCongratulations — you're officially part of ${orgName}! We're excited to have you on board.\n\n${sportLine}you're now set up in our system and your coach will be in touch shortly with your onboarding details and training schedule.\n\n${goalsList ? `We noted your goals around ${goalsList} — we'll make sure your program is built around what matters most to you.\n\n` : ""}**Next steps:**\n• Watch for an account setup email so you can log in to your athlete portal\n• Your coach will reach out to schedule your first session\n• Feel free to reply here with any questions before you start\n\nWelcome to the team!`;
+
+        const [welcomeAction] = await db.insert(gmailAgentActions).values({
+          orgId,
+          actionType: "propose_draft:onboarding_welcome",
+          leadId: submissionId,
+          recipientEmail: submission.email,
+          subject: `Welcome to ${orgName}, ${firstName}!`,
+          bodyPreview: welcomeBody.slice(0, 500),
+          riskLevel: "low",
+          approvalRequired: true,
+          status: "proposed",
+          createdByAgent: "conversion_engine",
+          communicationDomain: submission.parentName ? "parent_lead" : "athlete_lead",
+          result: {
+            fullBody: welcomeBody,
+            athleteName: submission.athleteName,
+            userId,
+            athleteCreated,
+            linkedExisting,
+            createdFrom: "convert_athlete_workflow",
+          },
+        }).returning();
+        welcomeDraftCreated = true;
+        welcomeDraftId = welcomeAction.id;
+      } catch (draftErr: any) {
+        console.warn("[convert] welcome draft failed:", draftErr.message);
+      }
+
+      // Account invite (system email — SendGrid, fire-and-forget, non-blocking)
+      let accountInviteCreated = false;
+      if (athleteCreated) {
+        (async () => {
+          try {
+            const orgBranding = await getOrgBranding(orgId);
+            const baseUrl = buildPublicAppUrl();
+            const token = crypto.randomBytes(32).toString("hex");
+            const tokenExpires = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+            await db.update(usersTable).set({ passwordResetToken: token, passwordResetTokenExpires: tokenExpires }).where(eq(usersTable.id, userId));
+            const setupLink = `${baseUrl}/create-password?token=${token}`;
+            await sendClientInviteEmail(submission.email, firstName, setupLink, orgBranding);
+          } catch (inviteErr: any) {
+            console.warn("[convert] invite email failed:", inviteErr.message);
+          }
+        })();
+        accountInviteCreated = true; // optimistic — email attempted async
+      }
+
+      // PAIL initialization (fire-and-forget — new athlete has no workout data, creates empty profile)
+      let pailInitialized = false;
+      if (pailAthleteUserId) {
+        (async () => {
+          try {
+            const { synthesizeAthleteIntelligence } = await import("./services/athlete-learning-engine");
+            await synthesizeAthleteIntelligence(pailAthleteUserId!, orgId);
+            console.log(`[convert] PAIL initialized for user ${pailAthleteUserId}`);
+          } catch (pailErr: any) {
+            console.warn("[convert] PAIL initialization failed (expected for new athletes with no data):", pailErr.message);
+          }
+        })();
+        pailInitialized = true; // optimistic — synthesis fired
+      }
+
+      return res.json({
+        success: true,
+        userId,
+        athleteCreated,
+        linkedExisting,
+        accountInviteCreated,
+        welcomeDraftCreated,
+        welcomeDraftId,
+        pailInitialized,
+        submissionId,
+        email: submission.email,
+        athleteName: submission.athleteName,
+      });
+    } catch (err: any) {
+      console.error("[athlete-leads/convert] error:", err);
+      res.status(500).json({ message: "Conversion failed", error: err.message });
+    }
+  });
+
   // ─── Gmail Agent Routes ────────────────────────────────────────────────────
 
   // GET /api/org/gmail/conversations — list conversations for the org

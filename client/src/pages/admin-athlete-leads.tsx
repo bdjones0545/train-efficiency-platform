@@ -87,6 +87,238 @@ function SourceBadge({ source, campaign }: { source?: string | null; campaign?: 
   );
 }
 
+// ─── Convert to Athlete Modal ────────────────────────────────────────────────
+interface ConvertResult {
+  success: boolean;
+  userId: string;
+  athleteCreated: boolean;
+  linkedExisting: boolean;
+  accountInviteCreated: boolean;
+  welcomeDraftCreated: boolean;
+  welcomeDraftId: string | null;
+  pailInitialized: boolean;
+  email: string;
+  athleteName: string;
+}
+
+function ConvertAthleteModal({
+  lead,
+  onClose,
+  onConverted,
+}: {
+  lead: LeadCaptureSubmission;
+  onClose: () => void;
+  onConverted: (result: ConvertResult) => void;
+}) {
+  const { toast } = useToast();
+  const [result, setResult] = useState<ConvertResult | null>(null);
+
+  const convertMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/admin/athlete-leads/${lead.id}/convert`, {});
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Conversion failed");
+      return json as ConvertResult;
+    },
+    onSuccess: (data) => {
+      setResult(data);
+      onConverted(data);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads/stats"] });
+      toast({
+        title: data.athleteCreated ? "Athlete account created" : "Lead linked to existing athlete",
+        description: data.welcomeDraftCreated
+          ? "Welcome draft queued in AI Approvals."
+          : "Conversion complete.",
+      });
+    },
+    onError: (err: Error) => {
+      toast({ title: "Conversion failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const hasEmail = !!lead.email;
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <UserCheck className="h-4 w-4 text-emerald-500" />
+            Convert to Athlete — {lead.athleteName}
+          </DialogTitle>
+        </DialogHeader>
+
+        {!result ? (
+          <div className="space-y-4">
+            {/* Lead summary */}
+            <div className="rounded-lg bg-muted/30 border px-3 py-2.5 text-xs space-y-1.5">
+              <div className="flex items-center gap-3 flex-wrap font-medium">
+                <span data-testid="text-convert-name">{lead.athleteName}</span>
+                {lead.sport && <span className="text-muted-foreground">· {lead.sport}</span>}
+                {lead.age && <span className="text-muted-foreground">· Age {lead.age}</span>}
+                {lead.school && <span className="text-muted-foreground">· {lead.school}</span>}
+              </div>
+              {lead.email && (
+                <div className="flex items-center gap-1.5 text-muted-foreground">
+                  <Mail className="h-3 w-3 shrink-0" />
+                  <span className="font-mono">{lead.email}</span>
+                </div>
+              )}
+              {lead.parentName && (
+                <div className="text-muted-foreground">Parent: {lead.parentName}</div>
+              )}
+            </div>
+
+            {!hasEmail && (
+              <div className="flex items-start gap-2 rounded-md bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 px-3 py-2.5 text-sm text-amber-700 dark:text-amber-400">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>This lead has no email address. An athlete account can't be created without one. You can still proceed, but no account or invite will be sent.</span>
+              </div>
+            )}
+
+            {/* What will happen */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">What will happen</p>
+              <div className="space-y-2">
+                {[
+                  {
+                    icon: <UserCheck className="h-3.5 w-3.5 text-emerald-500" />,
+                    text: "Create or link a CLIENT account (users + user_profiles)",
+                    detail: hasEmail ? `Account will use ${lead.email}` : "Skipped — no email",
+                  },
+                  {
+                    icon: <CheckSquare className="h-3.5 w-3.5 text-blue-500" />,
+                    text: "Mark lead as Enrolled + set convertedAt timestamp",
+                    detail: "leadCaptureSubmissions updated",
+                  },
+                  {
+                    icon: <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />,
+                    text: "Advance intelligence pipeline stage to 'converted'",
+                    detail: "Stage transition audit entry written",
+                  },
+                  {
+                    icon: <Mail className="h-3.5 w-3.5 text-purple-500" />,
+                    text: "Queue AgentMail welcome draft for review",
+                    detail: "Queued in AI Approvals — not auto-sent",
+                  },
+                  {
+                    icon: <Send className="h-3.5 w-3.5 text-teal-500" />,
+                    text: hasEmail ? "Send account invitation email (SendGrid)" : "Skip account invite — no email",
+                    detail: hasEmail ? "\"Create your password\" link, 7-day expiry" : "Manual invite later",
+                  },
+                  {
+                    icon: <Zap className="h-3.5 w-3.5 text-yellow-500" />,
+                    text: "Initialize PAIL athlete intelligence profile",
+                    detail: "Seeded with intake data — grows with session history",
+                  },
+                ].map((item, i) => (
+                  <div key={i} className="flex items-start gap-2.5">
+                    <div className="mt-0.5 shrink-0">{item.icon}</div>
+                    <div>
+                      <p className="text-sm">{item.text}</p>
+                      <p className="text-[11px] text-muted-foreground">{item.detail}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-muted-foreground border-t pt-3">
+              The original lead submission is preserved and linked to the new athlete account.
+              Duplicate emails are detected — existing accounts will be linked, not duplicated.
+            </p>
+
+            <div className="flex gap-2 pt-1">
+              <Button
+                onClick={() => convertMutation.mutate()}
+                disabled={convertMutation.isPending}
+                className="flex-1 gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                data-testid="button-confirm-convert"
+              >
+                {convertMutation.isPending
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Converting…</>
+                  : <><UserCheck className="h-4 w-4" /> Convert to Athlete</>
+                }
+              </Button>
+              <Button variant="outline" onClick={onClose} disabled={convertMutation.isPending} data-testid="button-cancel-convert">
+                Cancel
+              </Button>
+            </div>
+          </div>
+        ) : (
+          /* Success state */
+          <div className="space-y-4">
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 text-center space-y-2">
+              <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto" />
+              <p className="font-semibold text-emerald-700 dark:text-emerald-400">
+                {result.athleteCreated ? "Athlete account created!" : "Lead linked to existing athlete!"}
+              </p>
+              <p className="text-xs text-muted-foreground">{result.email}</p>
+            </div>
+
+            <div className="space-y-2">
+              {[
+                {
+                  ok: result.athleteCreated || result.linkedExisting,
+                  label: result.athleteCreated ? "Athlete account created" : "Linked to existing athlete account",
+                },
+                {
+                  ok: true,
+                  label: "Lead marked Enrolled · convertedAt set · linked to user",
+                },
+                {
+                  ok: true,
+                  label: "Intelligence pipeline stage → converted",
+                },
+                {
+                  ok: result.welcomeDraftCreated,
+                  label: result.welcomeDraftCreated
+                    ? "Welcome draft queued in AI Approvals"
+                    : "Welcome draft not created (draft engine error)",
+                },
+                {
+                  ok: result.accountInviteCreated,
+                  label: result.accountInviteCreated
+                    ? "Account invitation email queued (SendGrid)"
+                    : "Account invite skipped — no email on lead",
+                },
+                {
+                  ok: result.pailInitialized,
+                  label: result.pailInitialized
+                    ? "PAIL athlete intelligence initialized"
+                    : "PAIL initialization skipped (no athlete ID)",
+                },
+              ].map((item, i) => (
+                <div key={i} className="flex items-center gap-2.5 text-sm">
+                  {item.ok
+                    ? <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                    : <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                  }
+                  <span className={item.ok ? "" : "text-muted-foreground"}>{item.label}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="flex gap-2 pt-2 border-t flex-wrap">
+              {result.welcomeDraftCreated && (
+                <Link href="/admin/ai-approvals">
+                  <Button size="sm" variant="outline" className="text-xs gap-1" onClick={onClose} data-testid="link-review-welcome-draft">
+                    <ExternalLink className="h-3 w-3" /> Review Welcome Draft
+                  </Button>
+                </Link>
+              )}
+              <Button size="sm" variant="outline" onClick={onClose} className="ml-auto" data-testid="button-close-convert-success">
+                Done
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── AgentMail Email Draft Modal ─────────────────────────────────────────────
 function EmailDraftModal({
   lead,
@@ -617,6 +849,7 @@ function AthleteLeadCard({
   onEdit,
   onEmail,
   onSchedule,
+  onConvert,
 }: {
   lead: LeadCaptureSubmission;
   onUpdate: (id: string, data: Record<string, any>) => void;
@@ -624,6 +857,7 @@ function AthleteLeadCard({
   onEdit: (lead: LeadCaptureSubmission) => void;
   onEmail: (lead: LeadCaptureSubmission) => void;
   onSchedule: (lead: LeadCaptureSubmission) => void;
+  onConvert: (lead: LeadCaptureSubmission) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const statusCfg = getStatusCfg(lead.bookingStatus);
@@ -704,11 +938,12 @@ function AthleteLeadCard({
           size="sm"
           variant="outline"
           className="h-7 text-xs border-emerald-400 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
-          onClick={() => onUpdate(lead.id, { bookingStatus: "enrolled", convertedAt: new Date().toISOString() })}
+          onClick={() => onConvert(lead)}
           disabled={lead.bookingStatus === "enrolled"}
           data-testid={`button-convert-athlete-${lead.id}`}
         >
-          <UserCheck className="h-3 w-3 mr-1" /> Convert to Athlete
+          <UserCheck className="h-3 w-3 mr-1" />
+          {lead.bookingStatus === "enrolled" ? "Enrolled ✓" : "Convert to Athlete"}
         </Button>
         {lead.email && (
           <Button
@@ -922,6 +1157,7 @@ export default function AdminAthleteLeadsPage() {
   const [editLead, setEditLead] = useState<LeadCaptureSubmission | null>(null);
   const [emailLead, setEmailLead] = useState<LeadCaptureSubmission | null>(null);
   const [scheduleLead, setScheduleLead] = useState<LeadCaptureSubmission | null>(null);
+  const [convertLead, setConvertLead] = useState<LeadCaptureSubmission | null>(null);
 
   const { data: leads, isLoading } = useQuery<LeadCaptureSubmission[]>({
     queryKey: ["/api/admin/athlete-leads"],
@@ -1147,9 +1383,19 @@ export default function AdminAthleteLeadsPage() {
               onEdit={setEditLead}
               onEmail={setEmailLead}
               onSchedule={setScheduleLead}
+              onConvert={setConvertLead}
             />
           ))}
         </div>
+      )}
+
+      {/* ── Convert to Athlete Modal ── */}
+      {convertLead && (
+        <ConvertAthleteModal
+          lead={convertLead}
+          onClose={() => setConvertLead(null)}
+          onConverted={() => setConvertLead(null)}
+        />
       )}
 
       {/* ── Edit Modal ── */}
