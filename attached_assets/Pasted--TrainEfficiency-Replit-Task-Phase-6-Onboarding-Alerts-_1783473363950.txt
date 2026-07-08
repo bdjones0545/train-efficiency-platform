@@ -1,0 +1,423 @@
+# TrainEfficiency Replit Task
+
+## Phase 6 — Onboarding Alerts + CEO Heartbeat Integration
+
+You are working inside the TrainEfficiency codebase.
+
+Phase 5 delivered the **Athlete Onboarding Action Center**:
+
+* `/admin/athlete-onboarding`
+* `GET /api/admin/athlete-onboarding`
+* `PATCH /api/admin/athlete-onboarding/:id`
+* Summary tiles
+* Filters
+* Athlete onboarding cards
+* Checklist progress
+* Manual mark actions
+* Next best action logic
+* Admin sidebar nav
+
+Now implement **Phase 6: Onboarding Alerts + CEO Heartbeat Integration**.
+
+---
+
+# Goal
+
+Prevent converted athletes from getting stuck in onboarding.
+
+The system should automatically detect onboarding risks and surface them in the places an admin actually checks:
+
+* Onboarding Action Center
+* Attention Inbox if available
+* CEO Heartbeat if available
+* Admin dashboard if available
+
+Do not create noisy alerts.
+
+Focus on meaningful blockers.
+
+---
+
+# Core Alert Conditions
+
+Create alert logic for incomplete onboarding records.
+
+Detect these conditions:
+
+## 1. Welcome Draft Stuck
+
+Condition:
+
+* `welcomeDraftQueued = true`
+* `welcomeDraftApproved = false`
+* checklist created more than 24 hours ago
+
+Alert:
+
+> Welcome draft has not been approved for [Athlete Name].
+
+Severity:
+
+* Medium after 24h
+* High after 72h
+
+---
+
+## 2. First Session Not Scheduled
+
+Condition:
+
+* `firstSessionScheduled = false`
+* checklist created more than 24 hours ago
+
+Alert:
+
+> First session has not been scheduled for [Athlete Name].
+
+Severity:
+
+* High after 24h
+* Critical after 72h
+
+---
+
+## 3. Program Not Assigned
+
+Condition:
+
+* `programAssigned = false`
+* checklist created more than 24 hours ago
+
+Alert:
+
+> No training program has been assigned to [Athlete Name].
+
+Severity:
+
+* Medium after 24h
+* High after 72h
+
+---
+
+## 4. Guardian Missing
+
+Condition:
+
+* lead submission has `parentEmail`
+* `guardianLinked = false`
+* checklist created more than 24 hours ago
+
+Alert:
+
+> Parent/guardian account has not been linked for [Athlete Name].
+
+Severity:
+
+* Medium
+
+---
+
+## 5. Onboarding Stuck
+
+Condition:
+
+* `status != "complete"`
+* checklist created more than 3 days ago
+
+Alert:
+
+> Onboarding has been open for [N] days for [Athlete Name].
+
+Severity:
+
+* High after 3 days
+* Critical after 7 days
+
+---
+
+## 6. Optional Billing / Waiver Blockers
+
+Only activate these if the app has existing billing or waiver support enabled.
+
+Do not make fake alerts for systems that do not exist.
+
+Possible alerts:
+
+* Payment setup incomplete
+* Waiver incomplete
+
+---
+
+# Backend Scope
+
+## 1. Central Alert Helper
+
+Create a reusable helper/service for onboarding alerts.
+
+Suggested file:
+
+```txt
+server/services/athlete-onboarding-alerts.ts
+```
+
+Responsibilities:
+
+* Accept onboarding checklist + lead + athlete context.
+* Return normalized alert objects.
+* Compute severity.
+* Compute age in hours/days.
+* Avoid duplicate alert types per athlete.
+* Produce stable alert keys.
+
+Example return shape:
+
+```ts
+{
+  key: "onboarding:first_session_missing:<checklistId>",
+  type: "first_session_missing",
+  severity: "critical" | "high" | "medium" | "low",
+  title: "First session not scheduled",
+  message: "First session has not been scheduled for Marcus Smith.",
+  athleteUserId,
+  checklistId,
+  leadSubmissionId,
+  ageHours,
+  actionLabel: "Schedule Session",
+  actionUrl: "/admin/scheduling-command-center",
+  createdAt,
+}
+```
+
+---
+
+## 2. Add Alerts to Onboarding List API
+
+Update:
+
+```ts
+GET /api/admin/athlete-onboarding
+```
+
+Each record should include:
+
+```ts
+alerts: OnboardingAlert[]
+highestSeverity: "critical" | "high" | "medium" | "low" | null
+alertCount: number
+```
+
+The response summary should include:
+
+```ts
+alertsTotal
+criticalAlerts
+highAlerts
+mediumAlerts
+stuckOnboardingCount
+```
+
+---
+
+## 3. Alerts Endpoint
+
+Add:
+
+```ts
+GET /api/admin/athlete-onboarding/alerts
+```
+
+Supports filters:
+
+```ts
+severity=critical|high|medium|low
+type=welcome_draft_stuck|first_session_missing|program_missing|guardian_missing|onboarding_stuck
+```
+
+Return all active onboarding alerts for the org.
+
+This endpoint should reuse the same central helper.
+
+---
+
+## 4. Attention Inbox Integration
+
+If the app has an Attention Inbox / alerts / tasks table or route:
+
+* Insert or surface onboarding alerts there.
+* Use stable alert keys to avoid duplicates.
+* Resolve or suppress alerts when checklist state improves.
+
+If no such system exists:
+
+* Do not invent a large new one.
+* Return alerts via the onboarding endpoint only.
+* Add a TODO for Attention Inbox integration.
+
+---
+
+## 5. CEO Heartbeat Integration
+
+Find existing CEO Heartbeat / executive heartbeat / institutional memory / agent heartbeat code.
+
+If it has a route or service that gathers org health signals:
+
+* Add onboarding alerts as a signal.
+* Include:
+
+  * number of incomplete onboardings
+  * number of critical/high alerts
+  * top 3 stuck athletes
+  * recommended next action
+* Do not let this integration break heartbeat if onboarding queries fail.
+* Fail open and log warnings.
+
+If CEO Heartbeat integration is complex:
+
+* Add a small helper export that heartbeat can consume later.
+* Include TODO clearly.
+
+---
+
+## 6. Alert Resolution
+
+Alerts should disappear automatically when the checklist is updated.
+
+Examples:
+
+* If `firstSessionScheduled = true`, first-session alert disappears.
+* If `programAssigned = true`, program alert disappears.
+* If `welcomeDraftApproved = true`, draft alert disappears.
+* If `guardianLinked = true`, guardian alert disappears.
+* If status becomes complete, stuck alert disappears.
+
+No manual resolve UI required in this phase unless an existing pattern exists.
+
+---
+
+# Frontend Scope
+
+## 1. Action Center Alert Display
+
+Update `/admin/athlete-onboarding`.
+
+Add:
+
+* Alert summary tile
+* Critical/high count
+* Stuck onboarding count
+* Visual alert badges on athlete cards
+* Highest severity label
+* Alert details inside expanded card
+
+Use clear severity labels:
+
+* Critical
+* High
+* Medium
+* Low
+
+---
+
+## 2. Alert Filtering
+
+Add filter options:
+
+* All alerts
+* Critical
+* High
+* Medium
+* Alert type if easy
+
+Do not overcomplicate.
+
+---
+
+## 3. Next Action Emphasis
+
+If a record has an alert, visually prioritize the alert action over generic checklist actions.
+
+Example:
+
+> Critical: First session not scheduled for 4 days.
+
+Button:
+
+> Schedule Session
+
+---
+
+## 4. Dashboard / Sidebar Badge
+
+If existing sidebar/nav badge patterns exist:
+
+* Add a small badge beside Athlete Onboarding showing critical/high alert count.
+
+If no badge pattern exists:
+
+* Do not force a new design system.
+* Leave this out or implement minimally.
+
+---
+
+# Data Rules
+
+## Avoid Alert Spam
+
+Only one alert per type per checklist.
+
+Do not create multiple alerts for the same missing program every page load.
+
+Prefer computed active alerts unless an existing Attention Inbox requires persistence.
+
+## Severity Rules
+
+Use deterministic severity rules.
+
+Do not use AI to classify severity in this phase.
+
+## Alert Age
+
+Use checklist `createdAt` or `updatedAt` carefully:
+
+* Missing initial onboarding steps should age from checklist `createdAt`.
+* Stuck onboarding should age from checklist `createdAt`.
+* If a step was manually updated, do not reset the entire checklist age unless the schema supports per-step timestamps.
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. Onboarding records with missing first session after 24h show high alert.
+2. Missing first session after 72h shows critical alert.
+3. Welcome draft queued but not approved after 24h shows medium alert.
+4. Program missing after 24h shows medium alert.
+5. Guardian missing only appears when parentEmail exists.
+6. Complete onboarding records show no alerts.
+7. Updating checklist fields removes matching alerts.
+8. Alert summary counts match record-level alerts.
+9. `/api/admin/athlete-onboarding/alerts` returns active alerts.
+10. Frontend displays alert badges and details.
+11. Filters work.
+12. CEO Heartbeat integration either works or fails open safely.
+13. TypeScript passes.
+14. Existing Phase 1–5 workflows still work.
+
+---
+
+# Deliverable
+
+Implement Phase 6 and provide a report:
+
+* Files changed
+* Alert helper/service added
+* Alert conditions implemented
+* API changes
+* Frontend changes
+* Attention Inbox integration status
+* CEO Heartbeat integration status
+* Testing results
+* What remains for Phase 7
+
+Focus on making stuck onboarding impossible to miss.

@@ -17,6 +17,7 @@ import {
 import {
   CheckCircle,
   AlertCircle,
+  AlertTriangle,
   Clock,
   Users,
   Search,
@@ -30,9 +31,28 @@ import {
   Mail,
   UserCheck,
   Trophy,
+  ShieldAlert,
+  Flame,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+
+interface OnboardingAlert {
+  key: string;
+  type: string;
+  severity: "critical" | "high" | "medium" | "low";
+  title: string;
+  message: string;
+  athleteUserId: string;
+  athleteName: string;
+  checklistId: string;
+  leadSubmissionId: string | null;
+  ageHours: number;
+  ageDays: number;
+  actionLabel: string;
+  actionUrl: string;
+  createdAt: string | null;
+}
 
 interface OnboardingRecord {
   id: string;
@@ -63,6 +83,9 @@ interface OnboardingRecord {
   updatedAt: string | null;
   welcomeDraftId: string | null;
   welcomeDraftStatus: string | null;
+  alerts: OnboardingAlert[];
+  alertCount: number;
+  highestSeverity: "critical" | "high" | "medium" | "low" | null;
   links: {
     lead: string | null;
     athleteIntelligence: string;
@@ -76,6 +99,11 @@ interface SummaryStats {
   needsAction: number;
   pending: number;
   complete: number;
+  alertsTotal: number;
+  criticalAlerts: number;
+  highAlerts: number;
+  mediumAlerts: number;
+  stuckOnboardingCount: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -102,6 +130,47 @@ function statusLabel(status: string) {
   return "Pending";
 }
 
+function severityConfig(severity: OnboardingAlert["severity"]) {
+  switch (severity) {
+    case "critical":
+      return {
+        bg: "bg-red-50 dark:bg-red-950/20",
+        border: "border-red-200 dark:border-red-800",
+        text: "text-red-700 dark:text-red-400",
+        badge: "bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400",
+        label: "Critical",
+        icon: ShieldAlert,
+      };
+    case "high":
+      return {
+        bg: "bg-orange-50 dark:bg-orange-950/20",
+        border: "border-orange-200 dark:border-orange-800",
+        text: "text-orange-700 dark:text-orange-400",
+        badge: "bg-orange-100 text-orange-700 dark:bg-orange-900/50 dark:text-orange-400",
+        label: "High",
+        icon: Flame,
+      };
+    case "medium":
+      return {
+        bg: "bg-amber-50 dark:bg-amber-950/20",
+        border: "border-amber-200 dark:border-amber-800",
+        text: "text-amber-700 dark:text-amber-400",
+        badge: "bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400",
+        label: "Medium",
+        icon: AlertTriangle,
+      };
+    default:
+      return {
+        bg: "bg-blue-50 dark:bg-blue-950/20",
+        border: "border-blue-200 dark:border-blue-800",
+        text: "text-blue-700 dark:text-blue-400",
+        badge: "bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400",
+        label: "Low",
+        icon: AlertCircle,
+      };
+  }
+}
+
 function requiredCount(r: OnboardingRecord): number {
   return [r.accountInviteSent, r.welcomeDraftQueued, r.pailContextSeeded, r.firstSessionScheduled, r.programAssigned]
     .filter(Boolean).length;
@@ -125,6 +194,32 @@ function ChecklistItem({ done, needsAction, label }: { done: boolean; needsActio
   );
 }
 
+// ─── Alert Item (in expanded card) ───────────────────────────────────────────
+
+function AlertItem({ alert, onAction }: { alert: OnboardingAlert; onAction?: () => void }) {
+  const cfg = severityConfig(alert.severity);
+  const Icon = cfg.icon;
+  return (
+    <div className={`rounded-md border ${cfg.bg} ${cfg.border} px-3 py-2 flex items-start justify-between gap-2`}>
+      <div className="flex items-start gap-2 min-w-0">
+        <Icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${cfg.text}`} />
+        <div className="min-w-0">
+          <p className={`text-[10px] font-semibold uppercase tracking-wide ${cfg.text}`}>{cfg.label}</p>
+          <p className="text-xs text-foreground mt-0.5">{alert.message}</p>
+          <p className="text-[10px] text-muted-foreground mt-0.5">{alert.ageHours}h since onboarding started</p>
+        </div>
+      </div>
+      {alert.actionUrl && (
+        <Link href={alert.actionUrl}>
+          <Button size="sm" variant="outline" className={`h-6 text-[10px] shrink-0 border ${cfg.border} ${cfg.text}`}>
+            {alert.actionLabel}
+          </Button>
+        </Link>
+      )}
+    </div>
+  );
+}
+
 // ─── Onboarding Card ──────────────────────────────────────────────────────────
 
 function OnboardingCard({
@@ -139,11 +234,15 @@ function OnboardingCard({
   const [expanded, setExpanded] = useState(false);
   const required = requiredCount(record);
   const progressPct = Math.round((required / 5) * 100);
-
   const hasParentContext = !!(record.parentName || record.parentEmail);
+  const topAlert = record.alerts[0] ?? null;
+  const cfg = topAlert ? severityConfig(topAlert.severity) : null;
 
   return (
-    <Card className="border border-border" data-testid={`card-onboarding-${record.id}`}>
+    <Card
+      className={`border ${record.highestSeverity === "critical" ? "border-red-300 dark:border-red-800" : record.highestSeverity === "high" ? "border-orange-300 dark:border-orange-800" : "border-border"}`}
+      data-testid={`card-onboarding-${record.id}`}
+    >
       <CardHeader className="pb-2 pt-4 px-4">
         <div className="flex items-start justify-between gap-3">
           {/* Athlete info */}
@@ -155,6 +254,20 @@ function OnboardingCard({
               <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${statusColors(record.status)}`} data-testid={`badge-status-${record.id}`}>
                 {statusLabel(record.status)}
               </span>
+              {/* Alert severity badge */}
+              {record.highestSeverity && cfg && (
+                <span
+                  className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cfg.badge}`}
+                  data-testid={`badge-alert-severity-${record.id}`}
+                >
+                  {cfg.label}
+                </span>
+              )}
+              {record.alertCount > 0 && (
+                <span className="text-[10px] text-muted-foreground">
+                  {record.alertCount} alert{record.alertCount !== 1 ? "s" : ""}
+                </span>
+              )}
             </div>
             <p className="text-xs text-muted-foreground font-mono mt-0.5">{record.email}</p>
             <div className="flex flex-wrap items-center gap-1.5 mt-1">
@@ -199,7 +312,7 @@ function OnboardingCard({
           </div>
           <div className="h-1.5 bg-muted rounded-full overflow-hidden">
             <div
-              className={`h-full rounded-full transition-all ${record.status === "complete" ? "bg-emerald-500" : "bg-amber-400"}`}
+              className={`h-full rounded-full transition-all ${record.status === "complete" ? "bg-emerald-500" : record.highestSeverity === "critical" ? "bg-red-500" : record.highestSeverity === "high" ? "bg-orange-500" : "bg-amber-400"}`}
               style={{ width: `${progressPct}%` }}
             />
           </div>
@@ -207,47 +320,86 @@ function OnboardingCard({
       </CardHeader>
 
       <CardContent className="px-4 pb-4 pt-0 space-y-3">
-        {/* Next best action */}
-        {record.status !== "complete" && (
+        {/* Top alert (priority callout — shown even when collapsed) */}
+        {topAlert && cfg && (
+          <div className={`rounded-md border ${cfg.bg} ${cfg.border} px-3 py-2`}>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-start gap-2">
+                <cfg.icon className={`h-3.5 w-3.5 mt-0.5 shrink-0 ${cfg.text}`} />
+                <div>
+                  <p className={`text-[10px] font-semibold uppercase tracking-wide ${cfg.text}`}>{cfg.label} Alert</p>
+                  <p className="text-xs text-foreground mt-0.5" data-testid={`text-top-alert-${record.id}`}>{topAlert.message}</p>
+                </div>
+              </div>
+              {topAlert.actionUrl && (
+                <Link href={topAlert.actionUrl}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className={`h-6 text-[10px] shrink-0 border ${cfg.border} ${cfg.text}`}
+                    data-testid={`button-alert-action-${record.id}`}
+                  >
+                    {topAlert.actionLabel}
+                  </Button>
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Generic next action (only if no alert) */}
+        {!topAlert && record.status !== "complete" && (
           <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 px-3 py-2">
             <p className="text-[10px] font-semibold text-blue-600 dark:text-blue-400 uppercase tracking-wide mb-0.5">Next action</p>
             <p className="text-xs text-blue-800 dark:text-blue-300" data-testid={`text-next-action-${record.id}`}>{record.nextBestAction}</p>
           </div>
         )}
-        {record.status === "complete" && (
+
+        {/* Completion banner */}
+        {record.status === "complete" && record.alertCount === 0 && (
           <div className="rounded-md bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-200 dark:border-emerald-800 px-3 py-2 flex items-center gap-2">
             <Trophy className="h-3.5 w-3.5 text-emerald-500" />
             <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium">All required steps complete — athlete is fully onboarded!</p>
           </div>
         )}
 
-        {/* Expanded checklist */}
+        {/* Expanded: full alert list + checklist */}
         {expanded && (
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 pt-1 border-t">
-            <ChecklistItem done={record.accountInviteSent} needsAction={!record.accountInviteSent} label="Account invite" />
-            <ChecklistItem done={record.welcomeDraftQueued} needsAction={!record.welcomeDraftQueued} label="Welcome draft queued" />
-            <ChecklistItem done={record.welcomeDraftApproved} needsAction={record.welcomeDraftQueued && !record.welcomeDraftApproved} label="Welcome draft approved" />
-            <ChecklistItem done={record.pailContextSeeded} needsAction={!record.pailContextSeeded} label="PAIL context seeded" />
-            <ChecklistItem done={record.guardianLinked} needsAction={hasParentContext && !record.guardianLinked} label="Guardian linked" />
-            <ChecklistItem done={record.firstSessionScheduled} needsAction={!record.firstSessionScheduled} label="First session scheduled" />
-            <ChecklistItem done={record.programAssigned} needsAction={!record.programAssigned} label="Program assigned" />
-            <ChecklistItem done={record.paymentSetup} needsAction={false} label="Payment set up" />
-            <ChecklistItem done={record.waiverCompleted} needsAction={false} label="Waiver completed" />
-            <ChecklistItem done={record.firstSessionCompleted} needsAction={false} label="First session done" />
+          <div className="space-y-3 pt-1 border-t">
+            {/* All alerts */}
+            {record.alerts.length > 1 && (
+              <div className="space-y-1.5">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">All Alerts ({record.alertCount})</p>
+                {record.alerts.map(alert => (
+                  <AlertItem key={alert.key} alert={alert} />
+                ))}
+              </div>
+            )}
+
+            {/* Checklist grid */}
+            <div>
+              <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1.5">Checklist</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-1.5">
+                <ChecklistItem done={record.accountInviteSent} needsAction={!record.accountInviteSent} label="Account invite" />
+                <ChecklistItem done={record.welcomeDraftQueued} needsAction={!record.welcomeDraftQueued} label="Welcome draft queued" />
+                <ChecklistItem done={record.welcomeDraftApproved} needsAction={record.welcomeDraftQueued && !record.welcomeDraftApproved} label="Welcome draft approved" />
+                <ChecklistItem done={record.pailContextSeeded} needsAction={!record.pailContextSeeded} label="PAIL context seeded" />
+                <ChecklistItem done={record.guardianLinked} needsAction={hasParentContext && !record.guardianLinked} label="Guardian linked" />
+                <ChecklistItem done={record.firstSessionScheduled} needsAction={!record.firstSessionScheduled} label="First session scheduled" />
+                <ChecklistItem done={record.programAssigned} needsAction={!record.programAssigned} label="Program assigned" />
+                <ChecklistItem done={record.paymentSetup} needsAction={false} label="Payment set up" />
+                <ChecklistItem done={record.waiverCompleted} needsAction={false} label="Waiver completed" />
+                <ChecklistItem done={record.firstSessionCompleted} needsAction={false} label="First session done" />
+              </div>
+            </div>
           </div>
         )}
 
         {/* Action buttons */}
         <div className="flex flex-wrap gap-1.5 pt-1">
-          {/* Navigation links */}
           {record.welcomeDraftQueued && !record.welcomeDraftApproved && (
             <Link href="/admin/ai-approvals">
-              <Button
-                size="sm"
-                variant="outline"
-                className="h-7 text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400"
-                data-testid={`button-review-draft-${record.id}`}
-              >
+              <Button size="sm" variant="outline" className="h-7 text-xs gap-1 border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400" data-testid={`button-review-draft-${record.id}`}>
                 <Mail className="h-3 w-3" /> Review Draft
               </Button>
             </Link>
@@ -271,77 +423,33 @@ function OnboardingCard({
               </Button>
             </Link>
           )}
-
-          {/* Manual mark buttons */}
           {!record.programAssigned && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1"
-              disabled={loading}
-              onClick={() => onUpdate(record.id, { programAssigned: true })}
-              data-testid={`button-mark-program-${record.id}`}
-            >
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={loading} onClick={() => onUpdate(record.id, { programAssigned: true })} data-testid={`button-mark-program-${record.id}`}>
               <UserCheck className="h-3 w-3" /> Mark Program Assigned
             </Button>
           )}
           {!record.firstSessionScheduled && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1"
-              disabled={loading}
-              onClick={() => onUpdate(record.id, { firstSessionScheduled: true })}
-              data-testid={`button-mark-session-scheduled-${record.id}`}
-            >
-              <Calendar className="h-3 w-3" /> Mark Session Scheduled
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={loading} onClick={() => onUpdate(record.id, { firstSessionScheduled: true })} data-testid={`button-mark-session-scheduled-${record.id}`}>
+              <Calendar className="h-3 w-3" /> Mark Scheduled
             </Button>
           )}
           {record.welcomeDraftQueued && !record.welcomeDraftApproved && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1"
-              disabled={loading}
-              onClick={() => onUpdate(record.id, { welcomeDraftApproved: true })}
-              data-testid={`button-mark-draft-approved-${record.id}`}
-            >
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={loading} onClick={() => onUpdate(record.id, { welcomeDraftApproved: true })} data-testid={`button-mark-draft-approved-${record.id}`}>
               <CheckCircle className="h-3 w-3" /> Mark Draft Approved
             </Button>
           )}
           {!record.paymentSetup && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1"
-              disabled={loading}
-              onClick={() => onUpdate(record.id, { paymentSetup: true })}
-              data-testid={`button-mark-payment-${record.id}`}
-            >
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={loading} onClick={() => onUpdate(record.id, { paymentSetup: true })} data-testid={`button-mark-payment-${record.id}`}>
               <CheckCircle className="h-3 w-3" /> Mark Payment Setup
             </Button>
           )}
           {!record.waiverCompleted && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1"
-              disabled={loading}
-              onClick={() => onUpdate(record.id, { waiverCompleted: true })}
-              data-testid={`button-mark-waiver-${record.id}`}
-            >
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={loading} onClick={() => onUpdate(record.id, { waiverCompleted: true })} data-testid={`button-mark-waiver-${record.id}`}>
               <CheckCircle className="h-3 w-3" /> Mark Waiver Complete
             </Button>
           )}
           {record.firstSessionScheduled && !record.firstSessionCompleted && (
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs gap-1"
-              disabled={loading}
-              onClick={() => onUpdate(record.id, { firstSessionCompleted: true })}
-              data-testid={`button-mark-first-session-${record.id}`}
-            >
+            <Button size="sm" variant="outline" className="h-7 text-xs gap-1" disabled={loading} onClick={() => onUpdate(record.id, { firstSessionCompleted: true })} data-testid={`button-mark-first-session-${record.id}`}>
               <Trophy className="h-3 w-3" /> Mark First Session Done
             </Button>
           )}
@@ -353,9 +461,28 @@ function OnboardingCard({
 
 // ─── Summary Tile ─────────────────────────────────────────────────────────────
 
-function SummaryTile({ label, value, icon: Icon, color }: { label: string; value: number; icon: typeof Users; color: string }) {
+function SummaryTile({
+  label,
+  value,
+  icon: Icon,
+  color,
+  active,
+  onClick,
+}: {
+  label: string;
+  value: number;
+  icon: typeof Users;
+  color: string;
+  active?: boolean;
+  onClick?: () => void;
+}) {
   return (
-    <div className="rounded-lg border bg-card p-4 flex items-center gap-3">
+    <button
+      onClick={onClick}
+      disabled={!onClick}
+      className={`rounded-lg border bg-card p-4 flex items-center gap-3 text-left w-full transition-colors ${onClick ? "cursor-pointer hover:border-primary/50" : "cursor-default"} ${active ? "border-primary/60 ring-1 ring-primary/20" : ""}`}
+      data-testid={`stat-tile-${label.toLowerCase().replace(/\s+/g, "-")}`}
+    >
       <div className={`rounded-lg p-2 ${color}`}>
         <Icon className="h-4 w-4" />
       </div>
@@ -363,7 +490,7 @@ function SummaryTile({ label, value, icon: Icon, color }: { label: string; value
         <p className="text-2xl font-bold" data-testid={`stat-${label.toLowerCase().replace(/\s+/g, "-")}`}>{value}</p>
         <p className="text-xs text-muted-foreground">{label}</p>
       </div>
-    </div>
+    </button>
   );
 }
 
@@ -372,6 +499,7 @@ function SummaryTile({ label, value, icon: Icon, color }: { label: string; value
 export default function AdminAthleteOnboardingPage() {
   const [statusFilter, setStatusFilter] = useState("all");
   const [needsFilter, setNeedsFilter] = useState("all");
+  const [alertFilter, setAlertFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
 
@@ -380,11 +508,12 @@ export default function AdminAthleteOnboardingPage() {
     if (statusFilter !== "all") params.set("status", statusFilter);
     if (needsFilter !== "all") params.set("needs", needsFilter);
     if (searchQuery.trim()) params.set("search", searchQuery.trim());
+    if (alertFilter !== "all") params.set("alertSeverity", alertFilter);
     return params.toString();
   };
 
   const { data, isLoading, isError, refetch } = useQuery<{ records: OnboardingRecord[]; summary: SummaryStats }>({
-    queryKey: ["/api/admin/athlete-onboarding", statusFilter, needsFilter, searchQuery],
+    queryKey: ["/api/admin/athlete-onboarding", statusFilter, needsFilter, searchQuery, alertFilter],
     queryFn: async () => {
       const q = buildQuery();
       const url = `/api/admin/athlete-onboarding${q ? `?${q}` : ""}`;
@@ -413,7 +542,12 @@ export default function AdminAthleteOnboardingPage() {
   };
 
   const records = data?.records ?? [];
-  const summary = data?.summary ?? { total: 0, needsAction: 0, pending: 0, complete: 0 };
+  const summary = data?.summary ?? {
+    total: 0, needsAction: 0, pending: 0, complete: 0,
+    alertsTotal: 0, criticalAlerts: 0, highAlerts: 0, mediumAlerts: 0, stuckOnboardingCount: 0,
+  };
+
+  const hasFilters = statusFilter !== "all" || needsFilter !== "all" || alertFilter !== "all" || searchQuery;
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
@@ -425,7 +559,7 @@ export default function AdminAthleteOnboardingPage() {
             Athlete Onboarding
           </h1>
           <p className="text-muted-foreground text-sm mt-1">
-            Track and complete onboarding for every converted athlete — no one falls through the cracks.
+            Track and complete onboarding — alerts surface blockers before athletes fall through.
           </p>
         </div>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5" data-testid="button-refresh">
@@ -433,13 +567,53 @@ export default function AdminAthleteOnboardingPage() {
         </Button>
       </div>
 
-      {/* Summary tiles */}
+      {/* Summary tiles — top row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <SummaryTile label="Total Athletes" value={summary.total} icon={Users} color="bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400" />
-        <SummaryTile label="Needs Action" value={summary.needsAction} icon={AlertCircle} color="bg-amber-100 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400" />
-        <SummaryTile label="Pending" value={summary.pending} icon={Clock} color="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" />
+        <SummaryTile label="In Progress" value={summary.needsAction} icon={Clock} color="bg-amber-100 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400" />
+        <SummaryTile label="Pending" value={summary.pending} icon={AlertCircle} color="bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" />
         <SummaryTile label="Complete" value={summary.complete} icon={Trophy} color="bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" />
       </div>
+
+      {/* Alert summary tiles — only show when there are alerts */}
+      {summary.alertsTotal > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Active Alerts</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <SummaryTile
+              label="Critical Alerts"
+              value={summary.criticalAlerts}
+              icon={ShieldAlert}
+              color="bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400"
+              active={alertFilter === "critical"}
+              onClick={() => setAlertFilter(alertFilter === "critical" ? "all" : "critical")}
+            />
+            <SummaryTile
+              label="High Alerts"
+              value={summary.highAlerts}
+              icon={Flame}
+              color="bg-orange-100 text-orange-600 dark:bg-orange-950/50 dark:text-orange-400"
+              active={alertFilter === "high"}
+              onClick={() => setAlertFilter(alertFilter === "high" ? "all" : "high")}
+            />
+            <SummaryTile
+              label="Medium Alerts"
+              value={summary.mediumAlerts}
+              icon={AlertTriangle}
+              color="bg-amber-100 text-amber-600 dark:bg-amber-950/50 dark:text-amber-400"
+              active={alertFilter === "medium"}
+              onClick={() => setAlertFilter(alertFilter === "medium" ? "all" : "medium")}
+            />
+            <SummaryTile
+              label="Stuck Onboardings"
+              value={summary.stuckOnboardingCount}
+              icon={Clock}
+              color="bg-purple-100 text-purple-600 dark:bg-purple-950/50 dark:text-purple-400"
+              active={false}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 items-center">
@@ -461,9 +635,22 @@ export default function AdminAthleteOnboardingPage() {
           ))}
         </div>
 
+        {/* Alert severity filter */}
+        <Select value={alertFilter} onValueChange={setAlertFilter}>
+          <SelectTrigger className="h-8 w-[155px] text-xs" data-testid="select-alert-filter">
+            <SelectValue placeholder="Alert level..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All alert levels</SelectItem>
+            <SelectItem value="critical">Critical only</SelectItem>
+            <SelectItem value="high">High only</SelectItem>
+            <SelectItem value="medium">Medium only</SelectItem>
+          </SelectContent>
+        </Select>
+
         {/* Needs filter */}
         <Select value={needsFilter} onValueChange={setNeedsFilter}>
-          <SelectTrigger className="h-8 w-[160px] text-xs" data-testid="select-needs-filter">
+          <SelectTrigger className="h-8 w-[150px] text-xs" data-testid="select-needs-filter">
             <SelectValue placeholder="Needs..." />
           </SelectTrigger>
           <SelectContent>
@@ -491,12 +678,12 @@ export default function AdminAthleteOnboardingPage() {
           />
         </div>
 
-        {(statusFilter !== "all" || needsFilter !== "all" || searchQuery) && (
+        {hasFilters && (
           <Button
             variant="ghost"
             size="sm"
             className="h-8 text-xs text-muted-foreground"
-            onClick={() => { setStatusFilter("all"); setNeedsFilter("all"); setSearchQuery(""); }}
+            onClick={() => { setStatusFilter("all"); setNeedsFilter("all"); setAlertFilter("all"); setSearchQuery(""); }}
             data-testid="button-clear-filters"
           >
             Clear filters
@@ -526,16 +713,16 @@ export default function AdminAthleteOnboardingPage() {
           <ClipboardList className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
           <p className="font-medium text-muted-foreground">No onboarding records found</p>
           <p className="text-sm text-muted-foreground/60 mt-1">
-            {statusFilter !== "all" || needsFilter !== "all" || searchQuery
+            {hasFilters
               ? "Try adjusting your filters."
               : "Convert leads to athletes to start tracking onboarding progress."}
           </p>
-          {(statusFilter !== "all" || needsFilter !== "all" || searchQuery) && (
-            <Button variant="outline" size="sm" className="mt-4" onClick={() => { setStatusFilter("all"); setNeedsFilter("all"); setSearchQuery(""); }}>
+          {hasFilters && (
+            <Button variant="outline" size="sm" className="mt-4" onClick={() => { setStatusFilter("all"); setNeedsFilter("all"); setAlertFilter("all"); setSearchQuery(""); }}>
               Clear filters
             </Button>
           )}
-          {!statusFilter && !needsFilter && !searchQuery && (
+          {!hasFilters && (
             <Link href="/admin/athlete-leads">
               <Button size="sm" className="mt-4 gap-1.5">
                 <ExternalLink className="h-3.5 w-3.5" /> Go to Athlete Intake
@@ -547,7 +734,10 @@ export default function AdminAthleteOnboardingPage() {
 
       {!isLoading && !isError && records.length > 0 && (
         <div className="space-y-3">
-          <p className="text-xs text-muted-foreground">{records.length} athlete{records.length !== 1 ? "s" : ""} shown</p>
+          <p className="text-xs text-muted-foreground">
+            {records.length} athlete{records.length !== 1 ? "s" : ""} shown
+            {summary.alertsTotal > 0 && ` · ${summary.alertsTotal} active alert${summary.alertsTotal !== 1 ? "s" : ""}`}
+          </p>
           {records.map((record) => (
             <OnboardingCard
               key={record.id}

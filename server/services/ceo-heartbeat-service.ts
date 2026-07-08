@@ -490,6 +490,64 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
     console.error("[CEO Heartbeat] Priority build error:", err);
   }
 
+  // ── 7. Athlete Onboarding Alerts ──────────────────────────────────────────
+  try {
+    const { computeOnboardingAlertsForOrg } = await import("./athlete-onboarding-alerts");
+    const onboardingAlerts = await computeOnboardingAlertsForOrg(orgId);
+
+    const criticalAlerts = onboardingAlerts.filter(a => a.severity === "critical");
+    const highAlerts = onboardingAlerts.filter(a => a.severity === "high");
+    const stuckAlerts = onboardingAlerts.filter(a => a.type === "onboarding_stuck");
+    const stuckAthletes = [...new Set(stuckAlerts.map(a => a.athleteUserId))];
+
+    if (criticalAlerts.length > 0) {
+      const topNames = [...new Set(criticalAlerts.map(a => a.athleteName))].slice(0, 3).join(", ");
+      priorities.push({
+        id: `${orgId}:onboarding-critical`,
+        priorityScore: calcPriorityScore({ revenuePotential: 70, urgency: 90, risk: 60, confidence: 95, stageImportance: 80, safetyRisk: 20 }),
+        category: "athlete_onboarding",
+        action: `${criticalAlerts.length} critical onboarding alert${criticalAlerts.length > 1 ? "s" : ""} — ${topNames}`,
+        reason: "Critical onboarding blockers detected — athletes risk dropping off before completing their first session",
+        agentSource: "Athlete Onboarding Monitor",
+        requiresApproval: false,
+        estimatedRevenueCents: criticalAlerts.length * 200_00,
+        entityType: "athlete_onboarding_checklist",
+        urgency: "critical",
+      });
+    } else if (highAlerts.length > 0) {
+      const topNames = [...new Set(highAlerts.map(a => a.athleteName))].slice(0, 3).join(", ");
+      priorities.push({
+        id: `${orgId}:onboarding-high`,
+        priorityScore: calcPriorityScore({ revenuePotential: 60, urgency: 75, risk: 40, confidence: 95, stageImportance: 70, safetyRisk: 10 }),
+        category: "athlete_onboarding",
+        action: `${highAlerts.length} high-priority onboarding item${highAlerts.length > 1 ? "s" : ""} need attention — ${topNames}`,
+        reason: "Athletes are missing key onboarding steps — first session scheduling and program assignment should not be delayed",
+        agentSource: "Athlete Onboarding Monitor",
+        requiresApproval: false,
+        estimatedRevenueCents: highAlerts.length * 100_00,
+        entityType: "athlete_onboarding_checklist",
+        urgency: "high",
+      });
+    }
+
+    if (stuckAthletes.length > 0 && criticalAlerts.length === 0) {
+      priorities.push({
+        id: `${orgId}:onboarding-stuck`,
+        priorityScore: calcPriorityScore({ revenuePotential: 55, urgency: 70, risk: 45, confidence: 90, stageImportance: 75, safetyRisk: 15 }),
+        category: "athlete_onboarding",
+        action: `${stuckAthletes.length} athlete${stuckAthletes.length > 1 ? "s" : ""} stuck in onboarding for 3+ days — review action center`,
+        reason: "Long onboarding time increases athlete drop-off risk before their first training session",
+        agentSource: "Athlete Onboarding Monitor",
+        requiresApproval: false,
+        estimatedRevenueCents: stuckAthletes.length * 150_00,
+        entityType: "athlete_onboarding_checklist",
+        urgency: stuckAthletes.length >= 3 ? "high" : "medium",
+      });
+    }
+  } catch (err: any) {
+    console.warn("[CEO Heartbeat] Onboarding alerts error:", err.message);
+  }
+
   // ── Inject top Hermes learnings as advisory priorities ────────────────────
   try {
     const { getTopLearningsForContext } = await import("./hermes-learning-service");

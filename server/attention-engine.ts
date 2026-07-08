@@ -1244,6 +1244,76 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
       }
     }
   }
+
+  // ── Athlete Onboarding Alerts ─────────────────────────────────────────────
+  // Dismiss stale active onboarding alerts, then insert fresh computed ones.
+  // This ensures alerts auto-resolve when checklist conditions improve.
+  try {
+    await db.update(attentionItems)
+      .set({ status: "dismissed", updatedAt: now })
+      .where(
+        and(
+          eq(attentionItems.orgId, orgId),
+          eq(attentionItems.source, "onboarding"),
+          eq(attentionItems.status, "active")
+        )
+      );
+
+    const { computeOnboardingAlertsForOrg } = await import("./services/athlete-onboarding-alerts");
+    const onboardingAlerts = await computeOnboardingAlertsForOrg(orgId);
+
+    if (onboardingAlerts.length > 0) {
+      const onboardingItems: InsertAttentionItem[] = onboardingAlerts.map(alert => {
+        const level = alert.severity === "critical" ? "critical"
+          : alert.severity === "high" ? "important"
+          : "suggested";
+        const defaults = LEVEL_DEFAULTS[level] ?? LEVEL_DEFAULTS["suggested"];
+        return {
+          orgId,
+          level,
+          category: "athlete_onboarding",
+          title: alert.title,
+          body: alert.message,
+          source: "onboarding",
+          sourceId: `${alert.key}:${new Date().toISOString().slice(0, 10)}`,
+          severity: defaults.severity,
+          urgency: defaults.urgency,
+          businessImpact: alert.severity === "critical" ? 85
+            : alert.severity === "high" ? 70
+            : 50,
+          confidence: defaults.confidence,
+          actionUrl: alert.actionUrl,
+          actionLabel: alert.actionLabel,
+          status: "active",
+          metadata: {
+            type: alert.type,
+            athleteUserId: alert.athleteUserId,
+            athleteName: alert.athleteName,
+            checklistId: alert.checklistId,
+            ageHours: alert.ageHours,
+          },
+        };
+      });
+
+      const seenSources = new Set<string>();
+      const deduped = onboardingItems.filter(item => {
+        if (!item.sourceId) return true;
+        if (seenSources.has(item.sourceId)) return false;
+        seenSources.add(item.sourceId);
+        return true;
+      });
+
+      try {
+        await db.insert(attentionItems).values(deduped).onConflictDoNothing();
+      } catch {
+        for (const item of deduped) {
+          try { await db.insert(attentionItems).values(item).onConflictDoNothing(); } catch {}
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn("[Attention] Onboarding alerts sync error:", err.message);
+  }
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

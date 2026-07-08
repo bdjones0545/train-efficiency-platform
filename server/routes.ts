@@ -20283,19 +20283,35 @@ Respond with this exact JSON structure:
         };
       });
 
+      // Compute per-record alerts
+      const { computeOnboardingAlerts, highestSeverity: highestSev } = await import("./services/athlete-onboarding-alerts");
+      const enrichedWithAlerts = enriched.map(r => {
+        const alerts = computeOnboardingAlerts({ ...r, parentEmail: r.parentEmail || null });
+        const hs = highestSev(alerts);
+        return { ...r, alerts, alertCount: alerts.length, highestSeverity: hs };
+      });
+
       // Summary stats (computed before filters)
       const summary = {
-        total: enriched.length,
-        needsAction: enriched.filter(r => r.status === "in_progress").length,
-        pending: enriched.filter(r => r.status === "pending").length,
-        complete: enriched.filter(r => r.status === "complete").length,
+        total: enrichedWithAlerts.length,
+        needsAction: enrichedWithAlerts.filter(r => r.status === "in_progress").length,
+        pending: enrichedWithAlerts.filter(r => r.status === "pending").length,
+        complete: enrichedWithAlerts.filter(r => r.status === "complete").length,
+        alertsTotal: enrichedWithAlerts.reduce((s, r) => s + r.alertCount, 0),
+        criticalAlerts: enrichedWithAlerts.filter(r => r.highestSeverity === "critical").length,
+        highAlerts: enrichedWithAlerts.filter(r => r.highestSeverity === "high").length,
+        mediumAlerts: enrichedWithAlerts.filter(r => r.highestSeverity === "medium").length,
+        stuckOnboardingCount: enrichedWithAlerts.filter(r => r.alerts.some((a: any) => a.type === "onboarding_stuck")).length,
       };
 
       // Apply filters
+      let filtered = [...enrichedWithAlerts];
+      const { alertSeverity } = req.query as Record<string, string>;
+
       if (status && ["pending", "in_progress", "complete"].includes(status)) {
-        enriched = enriched.filter(r => r.status === status);
+        filtered = filtered.filter(r => r.status === status);
       }
-      const needsFilters: Record<string, (r: typeof enriched[0]) => boolean> = {
+      const needsFilters: Record<string, (r: typeof filtered[0]) => boolean> = {
         account: r => !r.accountInviteSent,
         welcome: r => !r.welcomeDraftQueued || !r.welcomeDraftApproved,
         pail: r => !r.pailContextSeeded,
@@ -20305,21 +20321,59 @@ Respond with this exact JSON structure:
         payment: r => !r.paymentSetup,
         waiver: r => !r.waiverCompleted,
       };
-      if (needs && needsFilters[needs]) enriched = enriched.filter(needsFilters[needs]);
+      if (needs && needsFilters[needs]) filtered = filtered.filter(needsFilters[needs]);
       if (search) {
         const q = search.toLowerCase();
-        enriched = enriched.filter(r =>
+        filtered = filtered.filter(r =>
           r.athleteName.toLowerCase().includes(q) ||
           r.email.toLowerCase().includes(q) ||
           (r.sport || "").toLowerCase().includes(q) ||
           (r.school || "").toLowerCase().includes(q)
         );
       }
+      if (alertSeverity && ["critical", "high", "medium", "low"].includes(alertSeverity)) {
+        filtered = filtered.filter(r => r.highestSeverity === alertSeverity);
+      }
 
-      return res.json({ records: enriched, summary });
+      return res.json({ records: filtered, summary });
     } catch (err: any) {
       console.error("[athlete-onboarding] list error:", err);
       res.status(500).json({ message: "Failed to fetch onboarding records", error: err.message });
+    }
+  });
+
+  // GET /api/admin/athlete-onboarding/alerts — flat list of active onboarding alerts for org
+  app.get("/api/admin/athlete-onboarding/alerts", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const adminUserId = req.user.claims.sub ?? req.user.id;
+      const adminProfile = await storage.getUserProfile(adminUserId);
+      if (!adminProfile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = adminProfile.organizationId;
+
+      const { severity, type } = req.query as Record<string, string>;
+
+      const { computeOnboardingAlertsForOrg } = await import("./services/athlete-onboarding-alerts");
+      let alerts = await computeOnboardingAlertsForOrg(orgId);
+
+      if (severity && ["critical", "high", "medium", "low"].includes(severity)) {
+        alerts = alerts.filter(a => a.severity === severity);
+      }
+      if (type) {
+        alerts = alerts.filter(a => a.type === type);
+      }
+
+      const summary = {
+        total: alerts.length,
+        critical: alerts.filter(a => a.severity === "critical").length,
+        high: alerts.filter(a => a.severity === "high").length,
+        medium: alerts.filter(a => a.severity === "medium").length,
+        low: alerts.filter(a => a.severity === "low").length,
+      };
+
+      return res.json({ alerts, summary });
+    } catch (err: any) {
+      console.error("[athlete-onboarding/alerts] error:", err);
+      res.status(500).json({ message: "Failed to fetch onboarding alerts", error: err.message });
     }
   });
 
