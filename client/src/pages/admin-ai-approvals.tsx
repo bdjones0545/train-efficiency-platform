@@ -121,15 +121,57 @@ async function safeFetch(url: string): Promise<any> {
 
 // ─── Feedback Chips ───────────────────────────────────────────────────────────
 
-const FEEDBACK_CHIPS = [
-  "Too long", "Too generic", "Too salesy", "Weak CTA", "Missing scheduling link",
-  "Wrong lead stage", "Wrong tone", "Missing sport context", "Too much hype", "Not personal enough",
-];
+const DOMAIN_FEEDBACK_CHIPS: Record<string, string[]> = {
+  athlete_lead: [
+    "Too formal", "Too casual", "Too long", "Too short",
+    "Mention athlete goals", "Mention sport", "Mention school/grade",
+    "Stronger scheduling language", "Missing scheduling link",
+    "More personal", "Avoid pricing for now", "Too generic",
+  ],
+  parent_lead: [
+    "Needs parent-friendly language", "Mention parent", "Mention athlete goals",
+    "Mention sport", "Too salesy", "Too long", "Warmer tone", "Clearer next step",
+    "More personal", "Too formal",
+  ],
+  evaluation_scheduling: [
+    "Stronger scheduling language", "Missing scheduling link", "Clearer next step",
+    "Too long", "Too formal", "Weak CTA", "Too casual",
+  ],
+  retention: [
+    "Warmer tone", "More personal", "Reference past sessions",
+    "Too aggressive", "Clearer next step", "Too long", "Too formal",
+  ],
+  payment_recovery: [
+    "Too aggressive", "Too salesy", "Too long", "More professional",
+    "Clearer next step", "Too formal", "Warmer tone",
+  ],
+  program_assignment: [
+    "Mention athlete goals", "Mention sport", "Better formatting",
+    "Clearer next step", "Too long", "Too generic",
+  ],
+  win_back: [
+    "More empathetic", "Mention previous relationship", "Too salesy",
+    "Too long", "Clearer next step", "Warmer tone", "Too formal",
+  ],
+  onboarding: [
+    "Too long", "Too formal", "More personal", "Mention athlete goals",
+    "Clearer next step", "Better formatting", "Too generic",
+  ],
+  general: [
+    "Too formal", "Too casual", "Too long", "Too short",
+    "More personal", "Clearer next step", "Too generic", "Weak CTA",
+  ],
+};
 
-function FeedbackChips({ selected, onToggle }: { selected: string[]; onToggle: (chip: string) => void }) {
+function getFeedbackChips(domain?: string | null): string[] {
+  return DOMAIN_FEEDBACK_CHIPS[domain ?? "general"] ?? DOMAIN_FEEDBACK_CHIPS.general;
+}
+
+function FeedbackChips({ selected, onToggle, domain }: { selected: string[]; onToggle: (chip: string) => void; domain?: string | null }) {
+  const chips = getFeedbackChips(domain);
   return (
     <div className="flex flex-wrap gap-1.5 mt-2">
-      {FEEDBACK_CHIPS.map((chip) => (
+      {chips.map((chip) => (
         <button
           key={chip}
           data-testid={`chip-${chip.toLowerCase().replace(/\s+/g, "-")}`}
@@ -712,7 +754,7 @@ function ApprovalReviewDrawer({
                   />
                   <div>
                     <p className="text-xs text-muted-foreground mb-1.5">Quick tags (optional)</p>
-                    <FeedbackChips selected={rejectChips} onToggle={toggleRejectChip} />
+                    <FeedbackChips selected={rejectChips} onToggle={toggleRejectChip} domain={domain} />
                   </div>
                 </div>
               )}
@@ -738,7 +780,7 @@ function ApprovalReviewDrawer({
                   />
                   <div>
                     <p className="text-xs text-muted-foreground mb-1.5">Quick tags</p>
-                    <FeedbackChips selected={regenChips} onToggle={toggleRegenChip} />
+                    <FeedbackChips selected={regenChips} onToggle={toggleRegenChip} domain={domain} />
                   </div>
                 </div>
               )}

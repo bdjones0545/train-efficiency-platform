@@ -235,6 +235,7 @@ async function generateOutreachDraft(
   data: RawIntakeData,
   scoring: ScoringResult,
   aiSummary: string,
+  learningCtx?: string | null,
 ): Promise<{ subject: string; body: string }> {
   const firstName = data.athleteName.split(" ")[0];
   const sportLine = data.sport
@@ -246,8 +247,12 @@ async function generateOutreachDraft(
     : scoring.temperature === "warm" ? "Warm, value-focused, educational. Build trust first."
     : "Friendly, low-pressure, informational.";
 
-  const prompt = `You are a coach at an elite athletic training facility. Write a short, personalized outreach email to a new athlete lead.
+  const learningBlock = learningCtx
+    ? `\nCoaching rules from prior feedback (follow these carefully):\n${learningCtx}\n`
+    : "";
 
+  const prompt = `You are a coach at an elite athletic training facility. Write a short, personalized outreach email to a new athlete lead.
+${learningBlock}
 Athlete context: ${aiSummary}
 
 Guidelines:
@@ -388,13 +393,20 @@ export async function runIntelligentLeadIntakePipeline(data: RawIntakeData): Pro
   let draftSubject = "";
   let draftBody = "";
 
+  const earlyDomain = data.parentName ? "parent_lead" : "athlete_lead";
+  let draftLearningCtx: string | null = null;
+  try {
+    const { getMessageLearningContext } = await import("./message-learning-service");
+    draftLearningCtx = await getMessageLearningContext(data.orgId, earlyDomain);
+  } catch {}
+
   const [summaryResult, draftResult] = await Promise.allSettled([
     generateAiSummary(data, scoring),
     (async () => {
       // draft needs a summary — generate a fast inline one for the draft prompt
       // if summary is still running, the draft uses the same scoring context
       const quickContext = `${data.athleteName}, ${data.sport || "athlete"} (${data.experienceLevel || ""}), goals: ${(data.goals || []).slice(0, 2).join(", ")}`;
-      return generateOutreachDraft(data, scoring, quickContext);
+      return generateOutreachDraft(data, scoring, quickContext, draftLearningCtx);
     })(),
   ]);
 

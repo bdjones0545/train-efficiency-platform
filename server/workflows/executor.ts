@@ -28,6 +28,58 @@ import { getTool } from "../agent-tools/registry";
 const MAX_RECURSION = 20; // safeguard against infinite branch loops
 const LOCK_TTL_SECONDS = 60; // a stale lock older than this is considered dead
 
+const WORKFLOW_DOMAIN_MAP: Record<string, string> = {
+  onboarding_sequence: "onboarding",
+  session_booking: "evaluation_scheduling",
+  reengage_inactive_client: "retention",
+  unpaid_session_recovery: "payment_recovery",
+  program_assignment: "program_assignment",
+  win_back: "win_back",
+  slot_fill_outreach: "athlete_lead",
+  deal_followup: "athlete_lead",
+};
+
+async function refineWorkflowEmailWithLearning(
+  orgId: string,
+  workflowType: string,
+  subject: string,
+  body: string,
+): Promise<{ subject: string; body: string } | null> {
+  try {
+    const domain = WORKFLOW_DOMAIN_MAP[workflowType] ?? "general";
+    const { getMessageLearningContext } = await import("../services/message-learning-service");
+    const learningCtx = await getMessageLearningContext(orgId, domain);
+    if (!learningCtx) return null;
+
+    const { default: OpenAI } = await import("openai");
+    const client = new OpenAI();
+
+    const resp = await client.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: `You are an email refinement assistant. Apply the following coaching rules to improve the draft email while preserving its intent and structure.\n\nCoaching rules:\n${learningCtx}\n\nReturn only JSON: { "subject": "...", "body": "..." }`,
+        },
+        {
+          role: "user",
+          content: `Refine this email draft:\n\nSubject: ${subject}\n\nBody:\n${body}`,
+        },
+      ],
+      response_format: { type: "json_object" },
+      max_tokens: 500,
+    }, { timeout: 30_000 });
+
+    const parsed = JSON.parse(resp.choices[0]?.message?.content ?? "{}");
+    if (parsed.subject && parsed.body) {
+      return { subject: parsed.subject, body: parsed.body };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export type StartWorkflowInput = {
@@ -386,7 +438,15 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
     switch (stepDef.type) {
 
       case "tool_call": {
-        const builtInput = stepDef.buildInput(ctx);
+        let builtInput = stepDef.buildInput(ctx);
+
+        if (stepDef.toolName === "create_email_draft" && builtInput.subject && builtInput.body) {
+          const refined = await refineWorkflowEmailWithLearning(orgId, run.workflowType, builtInput.subject as string, builtInput.body as string);
+          if (refined) {
+            builtInput = { ...builtInput, subject: refined.subject, body: refined.body };
+          }
+        }
+
         const result = await proposeToolCall(orgId, {
           agentName: `workflow:${run.workflowType}`,
           toolName: stepDef.toolName,

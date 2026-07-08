@@ -1,0 +1,340 @@
+# TrainEfficiency Replit Task
+
+## AgentMail Phase A — Close the Learning Loop
+
+You are working inside the TrainEfficiency codebase.
+
+The AgentMail Draft Review & Learning audit found that the learning architecture already exists, but it is not applied consistently to the highest-volume draft generation paths.
+
+The core problem:
+
+> Coaches edit, reject, and regenerate drafts. The system stores learning rules. But most new drafts do not use those rules.
+
+This phase fixes that.
+
+---
+
+# Goal
+
+Make future AgentMail drafts improve from prior coach feedback.
+
+AgentMail should use organization-specific and communication-domain-specific learning context when generating:
+
+* Athlete lead outreach
+* Guardian/parent welcome drafts
+* Hot lead evaluation CTAs
+* Follow-up sequences
+* Workflow-triggered emails
+* Welcome emails
+* Retention emails
+* Win-back emails
+* Payment recovery emails
+* Program assignment emails
+
+---
+
+# Scope
+
+## 1. Wire Learning Context Into Lead Intake Drafts
+
+Update:
+
+```txt
+server/services/intelligent-lead-intake-service.ts
+```
+
+Before generating each draft, call:
+
+```ts
+getMessageLearningContext(orgId, communicationDomain)
+```
+
+Inject that learning context into the system prompt.
+
+Important domains:
+
+* athlete lead outreach → `athlete_lead`
+* parent/guardian outreach → `parent_lead`
+* hot lead evaluation CTA → `evaluation_scheduling`
+* general lead follow-up → `lead_followup`
+
+Rules:
+
+* If no learning context exists, generation should behave exactly as before.
+* If learning context exists, it should guide tone, CTA, length, personalization, and avoid-rules.
+* Learning context should be additive, not destructive.
+* Do not expose internal learning text to the athlete/parent.
+
+---
+
+## 2. Wire Learning Context Into AgentMail Follow-Ups
+
+Update:
+
+```txt
+server/services/agentmail-followup-service.ts
+```
+
+Before generating each follow-up draft, call:
+
+```ts
+getMessageLearningContext(orgId, communicationDomain)
+```
+
+Use the best available domain, for example:
+
+* intake follow-up → `athlete_lead`
+* parent follow-up → `parent_lead`
+* retention follow-up → `retention`
+* win-back follow-up → `win_back`
+* payment follow-up → `payment_recovery`
+
+If the exact domain is unknown, use:
+
+```txt
+general
+```
+
+---
+
+## 3. Wire Learning Context Into Workflow-Triggered Emails
+
+Update:
+
+```txt
+workflows/definitions.ts
+```
+
+or wherever workflow-triggered draft generation occurs.
+
+Map workflow types to communication domains.
+
+Suggested mapping:
+
+```ts
+const WORKFLOW_DOMAIN_MAP = {
+  onboardingSequence: "onboarding",
+  sessionBooking: "evaluation_scheduling",
+  reengageInactiveClient: "retention",
+  unpaidSessionRecovery: "payment_recovery",
+  programAssignment: "program_assignment",
+  winBack: "win_back",
+};
+```
+
+Before generating workflow email drafts:
+
+```ts
+const learningCtx = await getMessageLearningContext(orgId, domain);
+```
+
+Inject into prompts.
+
+---
+
+# 4. Expand Feedback Chips
+
+Update the AI Approvals / AgentMail review UI.
+
+The current feedback chips are too limited.
+
+Add the full expanded set:
+
+Tone:
+
+* Too formal
+* Too casual
+* Wrong tone
+* Warmer tone
+* More professional
+
+Length:
+
+* Too long
+* Too short
+* Make it tighter
+
+Personalization:
+
+* More personal
+* Not personal enough
+* Mention athlete goals
+* Mention sport
+* Mention parent
+* Mention school/grade
+
+CTA:
+
+* Weak CTA
+* Stronger scheduling language
+* Missing scheduling link
+* Clearer next step
+
+Branding / Formatting:
+
+* Better organization branding
+* Better formatting
+* Too much hype
+* Too salesy
+
+Context:
+
+* Wrong lead stage
+* Missing sport context
+* Avoid pricing for now
+* Needs parent-friendly language
+
+---
+
+# 5. Make Feedback Chips Domain-Specific
+
+Do not show the same chips for every email type.
+
+Create a simple domain chip map.
+
+Example:
+
+```ts
+const DOMAIN_FEEDBACK_CHIPS: Record<string, string[]> = {
+  athlete_lead: [
+    "Too formal",
+    "Too casual",
+    "Too long",
+    "Too short",
+    "Mention athlete goals",
+    "Mention sport",
+    "Mention school/grade",
+    "Stronger scheduling language",
+    "Missing scheduling link",
+    "More personal",
+    "Avoid pricing for now",
+  ],
+  parent_lead: [
+    "Needs parent-friendly language",
+    "Mention parent",
+    "Mention athlete goals",
+    "Mention sport",
+    "Too salesy",
+    "Too long",
+    "Warmer tone",
+    "Clearer next step",
+  ],
+  evaluation_scheduling: [
+    "Stronger scheduling language",
+    "Missing scheduling link",
+    "Clearer next step",
+    "Too long",
+    "Too formal",
+  ],
+  retention: [
+    "Warmer tone",
+    "More personal",
+    "Reference past sessions",
+    "Too aggressive",
+    "Clearer next step",
+  ],
+  payment_recovery: [
+    "Too aggressive",
+    "Too salesy",
+    "Too long",
+    "More professional",
+    "Clearer next step",
+  ],
+  program_assignment: [
+    "Mention athlete goals",
+    "Mention sport",
+    "Better formatting",
+    "Clearer next step",
+  ],
+  win_back: [
+    "More empathetic",
+    "Mention previous relationship",
+    "Too salesy",
+    "Too long",
+    "Clearer next step",
+  ],
+  general: [
+    "Too formal",
+    "Too casual",
+    "Too long",
+    "Too short",
+    "More personal",
+    "Clearer next step",
+  ],
+};
+```
+
+Use the draft/proposal `communicationDomain` when available.
+
+Fallback to `general`.
+
+---
+
+# 6. Capture Implicit Learning From Coach Edits
+
+Verify that edited subject/body are captured whenever a coach approves with edits.
+
+If already implemented, document where.
+
+If incomplete:
+
+* Ensure original subject/body are preserved.
+* Ensure edited subject/body are stored.
+* Ensure the feedback extraction service receives both original and edited versions.
+* Ensure subject changes are included, not only body changes.
+* Ensure communication domain is stored with the feedback record.
+
+Goal:
+
+> Every meaningful coach edit becomes a learning signal, even if the coach does not click a feedback chip.
+
+---
+
+# 7. Preserve Safety and Approval Flow
+
+Do not auto-send drafts.
+
+Do not bypass the send guard.
+
+Do not reduce approval requirements.
+
+Do not remove existing reject/regenerate behavior.
+
+The phase only improves generation and feedback capture.
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. Lead outreach drafts call `getMessageLearningContext`.
+2. Parent/guardian drafts call `getMessageLearningContext`.
+3. Hot lead / evaluation scheduling drafts call `getMessageLearningContext`.
+4. Follow-up drafts call `getMessageLearningContext`.
+5. Workflow-triggered emails call `getMessageLearningContext`.
+6. No-learning-context case behaves as before.
+7. Learning context is included in prompts when rules exist.
+8. Feedback chips are expanded.
+9. Feedback chips are domain-specific.
+10. Editing a subject/body before approval creates a feedback learning signal.
+11. Rejecting with feedback still creates a learning signal.
+12. Regenerating with feedback still uses learning context.
+13. TypeScript passes.
+14. Existing AgentMail approval/send guard behavior still works.
+
+---
+
+# Deliverable
+
+Implement AgentMail Phase A and provide a report:
+
+* Files changed
+* Generation paths updated
+* Domain mapping used
+* Feedback chip changes
+* Implicit learning capture status
+* Testing results
+* What remains for Phase B
+
+Focus on closing the learning loop so AgentMail actually improves from coach feedback across all major email generation paths.

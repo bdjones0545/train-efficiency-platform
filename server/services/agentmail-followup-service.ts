@@ -140,6 +140,20 @@ function hoursFromNow(hours: number): Date {
 
 // ─── AI Draft Generator ──────────────────────────────────────────────────────
 
+const CLASSIFICATION_DOMAIN_MAP: Record<string, string> = {
+  new_lead: "athlete_lead",
+  pricing_question: "athlete_lead",
+  booking_request: "evaluation_scheduling",
+  reschedule_request: "evaluation_scheduling",
+  parent_inquiry: "parent_lead",
+  retention_risk: "retention",
+  win_back: "win_back",
+  payment_issue: "payment_recovery",
+  payment_overdue: "payment_recovery",
+  employment_candidate: "general",
+  general_inquiry: "general",
+};
+
 export async function generateFollowupDraft(params: {
   classification: string;
   sequenceName: string;
@@ -152,15 +166,32 @@ export async function generateFollowupDraft(params: {
   originalSubject: string;
   originalInboundBody?: string | null;
   firstReplyBody?: string | null;
+  orgId?: string | null;
+  communicationDomain?: string | null;
 }): Promise<string> {
   try {
     const { default: OpenAI } = await import("openai");
     const client = new OpenAI();
 
+    const domain = params.communicationDomain
+      ?? CLASSIFICATION_DOMAIN_MAP[params.classification]
+      ?? "general";
+
+    let learningBlock = "";
+    if (params.orgId) {
+      try {
+        const { getMessageLearningContext } = await import("./message-learning-service");
+        const learningCtx = await getMessageLearningContext(params.orgId, domain);
+        if (learningCtx) {
+          learningBlock = `\nCoaching rules from prior feedback (follow these carefully):\n${learningCtx}\n`;
+        }
+      } catch {}
+    }
+
     const prompt = `You are ${params.agentName} at TrainEfficiency, a strength and conditioning business platform.
 
 You are writing a follow-up email — step ${params.stepNumber} of the "${params.sequenceName}" sequence (${params.stepLabel}).
-
+${learningBlock}
 Context:
 - Recipient: ${params.recipientName ?? params.recipientEmail}
 - Classification: ${params.classification.replace(/_/g, " ")}
@@ -315,6 +346,7 @@ export async function createFollowupSequence(params: {
       originalSubject: params.originalSubject,
       originalInboundBody: params.originalInboundBody,
       firstReplyBody: params.firstReplyBody,
+      orgId: params.organizationId,
     });
 
     const subjectLine = step.stepNumber === 1
