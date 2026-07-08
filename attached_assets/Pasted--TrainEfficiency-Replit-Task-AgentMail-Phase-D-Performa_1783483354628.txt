@@ -1,0 +1,364 @@
+# TrainEfficiency Replit Task
+
+## AgentMail Phase D — Performance Analytics
+
+You are working inside the TrainEfficiency codebase.
+
+AgentMail Phase A closed the learning loop.
+
+AgentMail Phase B improved draft review trust.
+
+AgentMail Phase C added the Learning Center.
+
+Now implement **AgentMail Phase D: Performance Analytics**.
+
+---
+
+# Goal
+
+Measure whether AgentMail is improving.
+
+The system should answer:
+
+* Which email domains are performing well?
+* Which domains require the most coach editing?
+* Which rules are helping?
+* Which rules are causing friction?
+* Are drafts getting approved faster?
+* Are rejection/regeneration rates going down?
+* Are replies, bookings, conversions, or reactivations improving?
+
+---
+
+# Core Metrics
+
+Track by communication domain:
+
+* Drafts generated
+* Drafts approved
+* Drafts rejected
+* Drafts regenerated
+* Drafts saved for review
+* Approval rate
+* Rejection rate
+* Regeneration rate
+* Edit rate
+* Average time to approval
+* Average edit distance if available
+* Most common feedback chips
+* Most common coaching comments
+* Top active rules
+* Rules most associated with approvals
+* Rules most associated with rejections
+
+---
+
+# Backend Scope
+
+## 1. Analytics Service
+
+Create:
+
+```txt
+server/services/agentmail-analytics-service.ts
+```
+
+It should compute analytics from existing tables:
+
+* `gmail_agent_actions`
+* `agent_message_feedback`
+* `agent_message_learning_rules`
+* `agent_draft_coaching_rules`
+* reply/follow-up tables if useful
+
+Do not invent fake metrics.
+
+If a metric cannot be computed safely, return `null` or omit it.
+
+---
+
+## 2. Summary Endpoint
+
+Add:
+
+```txt
+GET /api/admin/agentmail-analytics/summary
+```
+
+Return:
+
+```ts
+{
+  totals: {
+    draftsGenerated,
+    approved,
+    rejected,
+    regenerated,
+    savedForReview,
+    approvalRate,
+    rejectionRate,
+    regenerationRate,
+    editRate,
+    averageTimeToApprovalHours
+  },
+  byDomain: [
+    {
+      domain,
+      draftsGenerated,
+      approved,
+      rejected,
+      regenerated,
+      savedForReview,
+      approvalRate,
+      editRate,
+      averageTimeToApprovalHours,
+      topFeedbackTags,
+      topRules
+    }
+  ],
+  trends: {
+    last7Days,
+    previous7Days,
+    deltaApprovalRate,
+    deltaEditRate,
+    deltaAverageTimeToApproval
+  }
+}
+```
+
+Support:
+
+```txt
+?range=7d|30d|90d
+?domain=athlete_lead|parent_lead|retention|...
+```
+
+---
+
+## 3. Rule Performance Endpoint
+
+Add:
+
+```txt
+GET /api/admin/agentmail-analytics/rules
+```
+
+Return per-rule analytics where possible:
+
+```ts
+{
+  ruleId,
+  ruleText,
+  ruleType,
+  domain,
+  source: "learned" | "standing_instruction",
+  isActive,
+  confidence,
+  timesApplied,
+  approvalsAfterApplied,
+  rejectionsAfterApplied,
+  editRateAfterApplied,
+  lastAppliedAt,
+  outcomeConfidence
+}
+```
+
+Important:
+
+* If exact rule application tracking does not exist yet, be honest:
+
+  * return available fields
+  * add `trackingAvailable: false`
+  * recommend Phase D.2 instrumentation
+
+Do not fabricate per-rule success.
+
+---
+
+## 4. Feedback Analytics Endpoint
+
+Add:
+
+```txt
+GET /api/admin/agentmail-analytics/feedback
+```
+
+Return:
+
+* most common feedback chips
+* feedback by domain
+* feedback over time
+* most common coaching comments if safe
+* domains with highest correction rate
+
+---
+
+## 5. Instrument Rules Used
+
+If feasible, when a draft is generated, store which learning rules were injected.
+
+Suggested lightweight table:
+
+```sql
+agentmail_rule_applications (
+  id varchar primary key default gen_random_uuid(),
+  org_id varchar not null,
+  action_id varchar not null,
+  rule_source varchar not null, -- learned | standing_instruction
+  rule_id varchar not null,
+  communication_domain varchar not null,
+  applied_at timestamp default now()
+)
+```
+
+This enables rule outcome analytics later.
+
+If this is too risky for this phase:
+
+* Add the endpoint with `trackingAvailable: false`.
+* Add TODO.
+
+---
+
+# Frontend Scope
+
+Create:
+
+```txt
+/admin/agentmail-analytics
+```
+
+or add an Analytics tab inside AgentMail admin.
+
+Page sections:
+
+## 1. Summary Cards
+
+* Drafts generated
+* Approval rate
+* Edit rate
+* Rejection rate
+* Average time to approval
+* Saved for review
+
+## 2. Domain Performance
+
+Table/cards by communication domain:
+
+* domain
+* drafts
+* approval rate
+* edit rate
+* rejection rate
+* avg approval time
+* top feedback tags
+
+## 3. Feedback Insights
+
+Show:
+
+* most common feedback chips
+* domains with highest correction rate
+* common coach feedback themes
+
+## 4. Rule Performance
+
+Show:
+
+* active learned rules
+* standing instructions
+* applied count if available
+* confidence
+* outcome tracking available or not
+* rules needing review
+
+## 5. Trends
+
+Simple comparison:
+
+* last 7/30 days vs previous period
+* approval rate delta
+* edit rate delta
+* time to approval delta
+
+Do not overbuild charts unless existing chart components exist.
+
+---
+
+# CEO Heartbeat Integration
+
+Add a lightweight AgentMail performance signal.
+
+Examples:
+
+* “Parent lead drafts have a 42% edit rate — review learning rules.”
+* “Retention emails have low approval rate this week.”
+* “AgentMail approval time improved by 31% after learning rules were added.”
+* “12 drafts are saved for review and not yet approved.”
+
+Fail open if analytics queries fail.
+
+---
+
+# Attention Inbox Integration
+
+Create attention items for:
+
+* high saved-for-review backlog
+* high rejection rate domain
+* stale drafts waiting approval
+* domain edit rate above threshold
+* learning rules disabled after repeated corrections
+
+Do not spam.
+
+Use stable keys.
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* Full email deliverability analytics
+* Open/click tracking from scratch
+* CRM attribution overhaul
+* Revenue attribution overhaul
+* Complex cohort analytics
+* AI-generated performance judgments
+
+Use deterministic metrics only.
+
+---
+
+# Testing
+
+Verify:
+
+1. Summary endpoint returns org-scoped data.
+2. Date range filters work.
+3. Domain filters work.
+4. Domain performance metrics are accurate.
+5. Feedback analytics use real feedback records.
+6. Rule analytics are honest about tracking availability.
+7. Frontend page loads.
+8. CEO Heartbeat fails open.
+9. Attention Inbox does not duplicate items.
+10. TypeScript passes.
+
+---
+
+# Deliverable
+
+Provide:
+
+* Files changed
+* Routes added
+* Metrics implemented
+* Rule tracking status
+* Frontend analytics behavior
+* CEO Heartbeat additions
+* Attention Inbox additions
+* Remaining Phase D.2 / Phase E recommendations
+
+Focus on making AgentMail measurable without fabricating performance data.

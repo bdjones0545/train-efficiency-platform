@@ -662,6 +662,30 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
     }
   } catch {}
 
+  // ── AgentMail Performance Signal ──────────────────────────────────────────
+  try {
+    const { getAgentmailHeartbeatSignal, generateAgentmailAttentionItems } = await import("./agentmail-analytics-service");
+    const signal = await getAgentmailHeartbeatSignal(orgId);
+    if (signal) {
+      const score = signal.hasIssues
+        ? calcPriorityScore({ revenuePotential: 20, urgency: 50, risk: 30, confidence: 85, stageImportance: 40, safetyRisk: 0 })
+        : calcPriorityScore({ revenuePotential: 10, urgency: 20, risk: 5, confidence: 85, stageImportance: 30, safetyRisk: 0 });
+      priorities.push({
+        id: `${orgId}:agentmail-performance`,
+        priorityScore: score,
+        category: "agentmail_performance",
+        action: signal.summary,
+        reason: signal.details.join(" | "),
+        agentSource: "AgentMail Analytics",
+        requiresApproval: false,
+        estimatedRevenueCents: 0,
+        urgency: signal.hasIssues ? "medium" : "low",
+      });
+    }
+    // Generate attention items async — don't block heartbeat
+    generateAgentmailAttentionItems(orgId).catch(() => {});
+  } catch {}
+
   // Sort by priority score descending
   priorities.sort((a, b) => b.priorityScore - a.priorityScore);
 
