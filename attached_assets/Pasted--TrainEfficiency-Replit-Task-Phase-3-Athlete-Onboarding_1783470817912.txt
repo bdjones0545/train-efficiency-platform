@@ -1,0 +1,300 @@
+# TrainEfficiency Replit Task
+
+## Phase 3 — Athlete Onboarding Enrichment
+
+You are working inside the TrainEfficiency codebase.
+
+Phase 1 made intake actions real:
+
+* Email uses AgentMail drafts instead of `mailto:`
+* Schedule Eval uses the scheduling agent
+* Athlete Leads and Lead Pipeline stay synchronized
+
+Phase 2 made Convert to Athlete real:
+
+* Dedicated `/api/admin/athlete-leads/:id/convert`
+* Creates or links `users`
+* Creates `user_profiles`
+* Preserves and links `leadCaptureSubmissions.linkedUserId`
+* Queues AgentMail welcome draft
+* Sends system account invite separately
+* Triggers PAIL synthesis
+
+Now implement **Phase 3: Athlete Onboarding Enrichment**.
+
+---
+
+# Goal
+
+When a lead is converted into an athlete, the system should not create an empty athlete shell.
+
+It should enrich the athlete record with useful onboarding context from the intake submission so coaches, PAIL, and future AI systems immediately understand:
+
+* Who the athlete is
+* What sport they play
+* What school/grade they are in
+* What their goals are
+* What their training background is
+* Whether a parent/guardian is involved
+* What onboarding steps still need completion
+
+---
+
+# Scope
+
+## 1. Seed Athlete Intelligence / PAIL Context
+
+After conversion, seed athlete intelligence with intake context.
+
+Use existing PAIL / athlete intelligence / context tables if they exist.
+
+Look for existing tables or services such as:
+
+* `athlete_context_objects`
+* `athlete_memory`
+* `athlete_intelligence_profiles`
+* `athlete_learning_engine`
+* `athlete_notes`
+* `coach_notes`
+* `performance_profiles`
+
+Do not create duplicate systems if one already exists.
+
+Seed structured context from:
+
+* Sport
+* Position
+* School
+* Grade
+* Age
+* Goals
+* Experience level
+* Current training status
+* Commitment level
+* Parent/guardian name
+* Lead source
+* Coach/admin notes
+
+Expected behavior:
+
+* New athlete receives useful context immediately.
+* PAIL synthesis should not start from a completely blank state.
+* Intake context should be clearly marked as coming from lead capture.
+* Avoid overwriting future coach-entered data.
+
+---
+
+## 2. Guardian / Parent Linking
+
+Audit existing guardian/parent schema.
+
+Look for:
+
+* `athlete_guardian_links`
+* `guardians`
+* `parents`
+* `family_members`
+* `emergency_contacts`
+* `user_relationships`
+
+If supported:
+
+* Create or link guardian record from parent/guardian fields.
+* Link guardian to athlete.
+* Preserve parent name/email/phone if available.
+* Avoid duplicate guardian records.
+* Do not invent a full parent portal if none exists.
+
+If not supported:
+
+* Store parent/guardian info as athlete context.
+* Return `guardianLinked: false` with a clear reason.
+
+---
+
+## 3. Onboarding Status Checklist
+
+Add lightweight onboarding tracking if a suitable table already exists.
+
+Look for:
+
+* onboarding status fields
+* onboarding checklist table
+* user tasks
+* client onboarding records
+* organization member onboarding state
+
+If supported, initialize checklist items such as:
+
+* Account invite sent
+* Welcome draft queued
+* Evaluation scheduled
+* PAIL context seeded
+* Guardian linked
+* Program assigned
+* Waiver completed
+* Payment setup
+* First session completed
+
+Do not build a full onboarding product yet.
+
+If no existing table exists, return onboarding status in the conversion response only and leave a TODO for a future schema-backed onboarding tracker.
+
+---
+
+## 4. Training Program Assignment Handoff
+
+Do not auto-assign a training program unless the existing app already has a safe default workflow.
+
+Instead:
+
+* Detect whether the athlete already has a program.
+* If not, create a recommended next action for the coach:
+
+  * “Assign first training program”
+  * “Create baseline evaluation”
+  * “Book first session”
+* If there is an existing task/recommendation system, use it.
+* Otherwise surface this in the conversion success response.
+
+---
+
+## 5. Improve Welcome Draft Personalization
+
+Update the AgentMail onboarding welcome draft created in Phase 2.
+
+It should include intake-aware personalization:
+
+* Athlete name
+* Sport
+* Goals
+* School or grade where appropriate
+* Next step after conversion
+* Account setup link if available
+* Evaluation / first session status if known
+* Parent-friendly language if parent data exists
+
+Keep it draft/approval-based.
+
+Do not auto-send coach-style communication.
+
+---
+
+## 6. Conversion Response
+
+Expand the `/convert` route response.
+
+Return structured details:
+
+```ts
+{
+  success: true,
+  userId: string,
+  athleteCreated: boolean,
+  linkedExisting: boolean,
+  accountInviteCreated: boolean,
+  welcomeDraftCreated: boolean,
+  welcomeDraftId: string | null,
+  pailInitialized: boolean,
+  pailContextSeeded: boolean,
+  guardianLinked: boolean,
+  guardianReason?: string,
+  onboardingChecklistCreated: boolean,
+  recommendedNextActions: string[],
+  submissionId: string,
+  email: string,
+  athleteName: string
+}
+```
+
+---
+
+## 7. Frontend Success State
+
+Update `ConvertAthleteModal`.
+
+After conversion, show more useful enrichment results:
+
+* Athlete account created or linked
+* Account invite sent
+* Welcome draft queued
+* PAIL initialized
+* Intake context seeded
+* Guardian linked or stored as context
+* Recommended next actions
+
+Add clear next actions:
+
+* Review Welcome Draft
+* Open Athlete Profile if route exists
+* Assign Program if route exists
+* Schedule First Session if route exists
+
+Do not redesign the whole page.
+
+---
+
+# Important Rules
+
+* Do not create duplicate tables if existing schema already supports this.
+* Do not build Stripe/payment setup yet unless it already exists as a simple optional hook.
+* Do not build full parent portal.
+* Do not build full athlete portal.
+* Do not auto-send AgentMail welcome messages.
+* Do not break Phase 1 email/scheduling.
+* Do not break Phase 2 conversion.
+* Keep system account invite separate from AgentMail.
+* Use existing conventions wherever possible.
+
+---
+
+# Files / Areas To Inspect
+
+Start with:
+
+* `server/routes.ts`
+* `client/src/pages/admin-athlete-leads.tsx`
+* `server/services/athlete-learning-engine.ts`
+* PAIL / athlete intelligence routes and services
+* athlete/user profile schema
+* guardian/parent schema
+* onboarding/task/recommendation schema
+* AgentMail / `gmailAgentActions`
+* `leadCaptureSubmissions`
+* `leadIntelligenceProfiles`
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. Converting a lead still creates or links a user.
+2. Duplicate conversion still avoids duplicate users.
+3. Intake context is seeded into existing athlete intelligence/context system.
+4. Guardian/parent info is linked or preserved.
+5. Welcome draft includes sport/goals/parent-aware details.
+6. Conversion response includes enrichment status fields.
+7. Frontend success modal displays enrichment results.
+8. Existing welcome draft approval flow still works.
+9. PAIL synthesis still runs safely.
+10. TypeScript passes.
+11. Existing Phase 1 and Phase 2 flows still work.
+
+---
+
+# Deliverable
+
+Implement Phase 3 and provide a report:
+
+* Files changed
+* Existing tables/services used
+* How intake context is seeded
+* How guardian info is handled
+* How onboarding status is represented
+* How welcome draft personalization changed
+* New conversion response fields
+* Frontend changes
+* What remains for Phase 4
+
+Focus on turning a converted lead into a useful, context-rich athlete record without overbuilding the portal, billing, or training assignment systems yet.

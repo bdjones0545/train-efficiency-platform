@@ -97,6 +97,11 @@ interface ConvertResult {
   welcomeDraftCreated: boolean;
   welcomeDraftId: string | null;
   pailInitialized: boolean;
+  pailContextSeeded: boolean;
+  guardianLinked: boolean;
+  guardianReason?: string;
+  onboardingChecklistCreated: boolean;
+  recommendedNextActions: string[];
   email: string;
   athleteName: string;
 }
@@ -247,59 +252,104 @@ function ConvertAthleteModal({
             </div>
           </div>
         ) : (
-          /* Success state */
+          /* Success state — Phase 3 enrichment results */
           <div className="space-y-4">
-            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 text-center space-y-2">
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 text-center space-y-1">
               <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto" />
               <p className="font-semibold text-emerald-700 dark:text-emerald-400">
                 {result.athleteCreated ? "Athlete account created!" : "Lead linked to existing athlete!"}
               </p>
-              <p className="text-xs text-muted-foreground">{result.email}</p>
+              <p className="text-xs text-muted-foreground">{result.athleteName} · {result.email}</p>
             </div>
 
-            <div className="space-y-2">
+            {/* Account & lead status */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Account & Lead</p>
               {[
                 {
                   ok: result.athleteCreated || result.linkedExisting,
-                  label: result.athleteCreated ? "Athlete account created" : "Linked to existing athlete account",
+                  label: result.athleteCreated ? "Athlete user account created" : "Linked to existing athlete account",
                 },
-                {
-                  ok: true,
-                  label: "Lead marked Enrolled · convertedAt set · linked to user",
-                },
-                {
-                  ok: true,
-                  label: "Intelligence pipeline stage → converted",
-                },
-                {
-                  ok: result.welcomeDraftCreated,
-                  label: result.welcomeDraftCreated
-                    ? "Welcome draft queued in AI Approvals"
-                    : "Welcome draft not created (draft engine error)",
-                },
+                { ok: true, label: "Lead marked Enrolled — convertedAt set" },
+                { ok: true, label: "Intelligence pipeline stage → converted" },
                 {
                   ok: result.accountInviteCreated,
                   label: result.accountInviteCreated
-                    ? "Account invitation email queued (SendGrid)"
-                    : "Account invite skipped — no email on lead",
-                },
-                {
-                  ok: result.pailInitialized,
-                  label: result.pailInitialized
-                    ? "PAIL athlete intelligence initialized"
-                    : "PAIL initialization skipped (no athlete ID)",
+                    ? "Account setup email queued (SendGrid)"
+                    : "Account invite skipped — lead had no email",
                 },
               ].map((item, i) => (
-                <div key={i} className="flex items-center gap-2.5 text-sm">
+                <div key={i} className="flex items-start gap-2 text-sm">
                   {item.ok
-                    ? <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
-                    : <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0" />
+                    ? <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                    : <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
                   }
                   <span className={item.ok ? "" : "text-muted-foreground"}>{item.label}</span>
                 </div>
               ))}
             </div>
 
+            {/* Intelligence & context */}
+            <div className="space-y-1.5">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Athlete Intelligence</p>
+              {[
+                {
+                  ok: result.pailContextSeeded,
+                  label: result.pailContextSeeded
+                    ? "Intake context seeded into PAIL (sport, position, goals, school, grade)"
+                    : "PAIL context seeding skipped",
+                },
+                {
+                  ok: result.pailInitialized,
+                  label: result.pailInitialized
+                    ? "PAIL memory synthesis triggered (builds on intake context)"
+                    : "PAIL synthesis skipped — no athlete profile linked",
+                },
+                {
+                  ok: result.welcomeDraftCreated,
+                  label: result.welcomeDraftCreated
+                    ? "Personalized welcome draft queued in AI Approvals"
+                    : "Welcome draft not created (draft engine error)",
+                },
+              ].map((item, i) => (
+                <div key={i} className="flex items-start gap-2 text-sm">
+                  {item.ok
+                    ? <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                    : <AlertCircle className="h-3.5 w-3.5 text-amber-500 shrink-0 mt-0.5" />
+                  }
+                  <span className={item.ok ? "" : "text-muted-foreground"}>{item.label}</span>
+                </div>
+              ))}
+              {/* Guardian */}
+              <div className="flex items-start gap-2 text-sm">
+                {result.guardianLinked
+                  ? <CheckCircle className="h-3.5 w-3.5 text-emerald-500 shrink-0 mt-0.5" />
+                  : <AlertCircle className="h-3.5 w-3.5 text-blue-400 shrink-0 mt-0.5" />
+                }
+                <span className={result.guardianLinked ? "" : "text-muted-foreground"}>
+                  {result.guardianLinked
+                    ? "Guardian linked to athlete account"
+                    : result.guardianReason || "No guardian info on submission"}
+                </span>
+              </div>
+            </div>
+
+            {/* Recommended next actions */}
+            {result.recommendedNextActions?.length > 0 && (
+              <div className="space-y-1.5">
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Coach Next Actions</p>
+                <div className="rounded-md border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-950/20 p-3 space-y-1.5">
+                  {result.recommendedNextActions.map((action, i) => (
+                    <div key={i} className="flex items-start gap-2 text-sm text-amber-800 dark:text-amber-300">
+                      <span className="shrink-0 mt-0.5">→</span>
+                      <span>{action}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Action buttons */}
             <div className="flex gap-2 pt-2 border-t flex-wrap">
               {result.welcomeDraftCreated && (
                 <Link href="/admin/ai-approvals">
@@ -308,6 +358,16 @@ function ConvertAthleteModal({
                   </Button>
                 </Link>
               )}
+              <Link href="/admin/athlete-intelligence">
+                <Button size="sm" variant="outline" className="text-xs gap-1" onClick={onClose} data-testid="link-athlete-intelligence">
+                  <ExternalLink className="h-3 w-3" /> Athlete Intelligence
+                </Button>
+              </Link>
+              <Link href="/admin/scheduling-command-center">
+                <Button size="sm" variant="outline" className="text-xs gap-1" onClick={onClose} data-testid="link-schedule-session">
+                  <ExternalLink className="h-3 w-3" /> Schedule Session
+                </Button>
+              </Link>
               <Button size="sm" variant="outline" onClick={onClose} className="ml-auto" data-testid="button-close-convert-success">
                 Done
               </Button>
