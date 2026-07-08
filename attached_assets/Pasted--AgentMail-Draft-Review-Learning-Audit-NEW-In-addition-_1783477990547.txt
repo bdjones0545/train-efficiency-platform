@@ -1,0 +1,176 @@
+# AgentMail Draft Review & Learning Audit (NEW)
+
+In addition to auditing every button, perform a comprehensive audit of the **AgentMail draft review workflow**.
+
+The goal is to determine whether coaches can properly review, edit, approve, reject, and teach the AI before messages are sent.
+
+---
+
+## Current Workflow Audit
+
+For every AI-generated email type, document the current experience.
+
+Examples:
+
+* Lead outreach
+* Welcome email
+* Guardian welcome
+* Evaluation scheduling
+* Follow-up emails
+* Program assignment
+* Retention emails
+* Win-back campaigns
+* General AgentMail drafts
+
+For each type, answer:
+
+* Where is the draft generated?
+* Where is it stored?
+* Can it be opened?
+* Can it be previewed?
+* Can it be edited?
+* Can it be regenerated?
+* Can it be approved?
+* Can it be rejected?
+* Can it be saved without sending?
+* Can it be compared against previous versions?
+
+---
+
+## Draft Preview
+
+Verify whether the user can:
+
+* View the complete subject
+* View the complete email body
+* View merge fields after rendering
+* View personalization
+* View organization branding
+* View attached links
+* View CTA buttons
+* View recipient information
+
+If not, recommend improvements.
+
+---
+
+## Editing
+
+Audit editing capabilities.
+
+Determine whether users can:
+
+* Edit the subject
+* Edit the body
+* Edit CTAs
+* Edit links
+* Edit personalization
+* Edit signatures
+
+If edits are allowed:
+
+* Are edits persisted?
+* Are edits sent?
+* Are edits logged?
+
+---
+
+## Agent Feedback
+
+This is a required capability.
+
+Audit whether coaches can provide structured feedback after reviewing a draft.
+
+The system should support feedback such as:
+
+* Too formal
+* Too casual
+* Too long
+* Too short
+* Too generic
+* More personal
+* Mention athlete goals
+* Mention sport
+* Mention parent
+* Better call-to-action
+* Stronger scheduling language
+* Better organization branding
+* Better formatting
+
+And free-form comments:
+
+> "Mention hockey development more."
+
+> "Don't mention pricing until after the evaluation."
+
+> "Parents prefer shorter emails."
+
+> "Use my normal coaching tone."
+
+---
+
+## Learning Loop
+
+Determine whether feedback currently improves future drafts.
+
+If not:
+
+Recommend an architecture that stores:
+
+* organization
+* draft type
+* feedback category
+* free-text feedback
+* edited subject
+* edited body
+* original draft
+* final sent draft
+* user who approved
+* timestamp
+
+Future AgentMail generations should use this organizational feedback as additional context so the AI continuously adapts to each organization's preferred communication style.
+
+---
+
+## Version History
+
+Audit whether drafts support:
+
+* Original AI draft
+* Edited version
+* Final approved version
+* Sent version
+
+If not, recommend version tracking.
+
+---
+
+## Approval Workflow
+
+Verify:
+
+* Who approved the draft?
+* When?
+* What changes were made?
+* Was it sent?
+* Was it cancelled?
+* Was it regenerated?
+
+---
+
+## Deliverable
+
+Add a dedicated section to the audit report:
+
+### AgentMail Draft Review & Learning
+
+Include:
+
+1. Current capabilities
+2. Missing capabilities
+3. Feedback loop assessment
+4. Learning architecture recommendations
+5. UX recommendations
+6. Priority implementation order
+
+The objective is to evolve AgentMail from a draft generator into a continuously improving communication agent that learns from coach feedback while preserving human approval before messages are sent.
