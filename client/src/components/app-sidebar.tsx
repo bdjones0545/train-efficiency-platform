@@ -610,6 +610,12 @@ export function AppSidebar() {
               icon: Brain,
               testId: "nav-athlete-intelligence",
             },
+            {
+              title: "Athlete Onboarding",
+              url: "/admin/athlete-onboarding",
+              icon: ClipboardList,
+              testId: "nav-athlete-onboarding",
+            },
           ]
         : []),
       ...(isAdmin && isPlatformAdminOrg(organization?.name)

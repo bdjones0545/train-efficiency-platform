@@ -1,0 +1,408 @@
+# TrainEfficiency Replit Task
+
+## Phase 5 — Onboarding Action Center
+
+You are working inside the TrainEfficiency codebase.
+
+Phase 1 made intake card actions real.
+
+Phase 2 made **Convert to Athlete** create/link a real athlete user.
+
+Phase 3 enriched converted athletes with intake context, PAIL seed data, AgentMail welcome drafts, and coach next actions.
+
+Phase 4 added:
+
+* `lead_capture_submissions.parent_email`
+* real guardian linking
+* `athlete_onboarding_checklists`
+* persistent onboarding state
+* selective athlete memory merge
+* expanded conversion response
+* frontend checklist visibility in the conversion success modal
+
+Now implement **Phase 5: Onboarding Action Center**.
+
+---
+
+# Phase 5 Goal
+
+Turn onboarding from a hidden checklist into an operational workflow.
+
+Coaches/admins should be able to:
+
+* View all converted athletes with incomplete onboarding
+* See what each athlete still needs
+* Take one-click actions on missing steps
+* Filter by status
+* Open the source lead, athlete intelligence, scheduling, and AgentMail draft
+* Resolve stuck onboarding before athletes fall through the cracks
+
+---
+
+# Core Product Concept
+
+Create an admin-facing onboarding command center.
+
+Suggested route:
+
+```ts
+/admin/athlete-onboarding
+```
+
+Suggested sidebar label:
+
+```txt
+Athlete Onboarding
+```
+
+This should be operational, not cosmetic.
+
+It should answer:
+
+> “Which new athletes are not fully onboarded, and what do I need to do next?”
+
+---
+
+# Backend Scope
+
+## 1. List Onboarding Records
+
+Add a route such as:
+
+```ts
+GET /api/admin/athlete-onboarding
+```
+
+Return onboarding checklist records joined with:
+
+* athlete user
+* user profile
+* linked lead submission
+* guardian info if available
+* welcome draft ID/status if available
+* latest intelligence profile/stage if available
+* recommended next actions if available
+
+Support filters:
+
+```ts
+status=pending|in_progress|complete
+needs=guardian|program|session|payment|waiver|welcome|account|pail
+search=name|email|sport|school
+```
+
+Return useful fields:
+
+```ts
+{
+  id,
+  athleteUserId,
+  leadSubmissionId,
+  athleteName,
+  email,
+  phone,
+  sport,
+  school,
+  grade,
+  parentName,
+  parentEmail,
+  guardianLinked,
+  accountInviteSent,
+  welcomeDraftQueued,
+  welcomeDraftApproved,
+  pailContextSeeded,
+  firstSessionScheduled,
+  programAssigned,
+  paymentSetup,
+  waiverCompleted,
+  firstSessionCompleted,
+  nextBestAction,
+  status,
+  createdAt,
+  updatedAt,
+  recommendedNextActions,
+  links: {
+    lead,
+    athleteIntelligence,
+    aiApprovals,
+    scheduling,
+    athleteProfile
+  }
+}
+```
+
+---
+
+## 2. Update Checklist Items
+
+Add a route such as:
+
+```ts
+PATCH /api/admin/athlete-onboarding/:id
+```
+
+Allow admins to update checklist booleans manually when appropriate:
+
+* paymentSetup
+* waiverCompleted
+* firstSessionCompleted
+* programAssigned
+* firstSessionScheduled
+* welcomeDraftApproved
+
+Rules:
+
+* Recalculate `status` after every update:
+
+  * `complete` if all required items are complete
+  * `in_progress` if at least one step is complete
+  * `pending` if nothing meaningful is complete
+* Recalculate `nextBestAction`
+* Do not allow unsafe mutation of identity fields from this route.
+
+---
+
+## 3. One-Click Action Helpers
+
+Where existing routes already exist, add helper actions or deep links.
+
+Examples:
+
+### Review Welcome Draft
+
+If `welcomeDraftId` exists:
+
+* Link to `/admin/ai-approvals`
+* Or filter/focus on that draft if existing UI supports it
+
+### Schedule First Session
+
+Link to:
+
+```txt
+/admin/scheduling-command-center
+```
+
+or call the existing scheduling modal/workflow if reusable.
+
+### Open Athlete Intelligence
+
+Link to:
+
+```txt
+/admin/athlete-intelligence
+```
+
+### Assign Program
+
+If a program assignment route already exists, link to it.
+
+If not, expose as next action only.
+
+Do not build a full program assignment system from scratch in this phase.
+
+---
+
+## 4. Recommended Next Action Logic
+
+Create a small centralized helper that determines `nextBestAction`.
+
+Priority order suggestion:
+
+1. Account invite not sent
+2. Welcome draft not queued/reviewed
+3. PAIL context not seeded
+4. Guardian not linked when parent email exists
+5. First session not scheduled
+6. Program not assigned
+7. Payment setup incomplete
+8. Waiver incomplete
+9. First session not completed
+10. Onboarding complete
+
+This helper should be reusable by:
+
+* conversion route
+* onboarding list route
+* checklist update route
+
+---
+
+# Frontend Scope
+
+## 1. New Page
+
+Create:
+
+```txt
+client/src/pages/admin-athlete-onboarding.tsx
+```
+
+or follow the project’s existing page naming conventions.
+
+The page should show:
+
+* Summary tiles:
+
+  * Total onboarding athletes
+  * Needs action
+  * Complete
+  * Stuck / overdue if timestamps support it
+* Filter controls:
+
+  * Status
+  * Needs
+  * Search
+* Athlete onboarding cards or table rows
+
+Each athlete should show:
+
+* Name
+* Sport / school / grade
+* Parent/guardian status
+* Checklist progress
+* Next best action
+* Last updated
+* Action buttons
+
+---
+
+## 2. Checklist Display
+
+For each athlete, display the checklist clearly:
+
+* Account invite
+* Welcome draft
+* PAIL context
+* Guardian
+* First session
+* Program
+* Payment
+* Waiver
+* First session completed
+
+Use simple status labels:
+
+* Completed
+* Needs action
+* Not required
+* Not available
+
+---
+
+## 3. Action Buttons
+
+Add contextual buttons:
+
+* Review Welcome Draft
+* Open Athlete Intelligence
+* Schedule Session
+* Assign Program
+* Mark Waiver Complete
+* Mark Payment Setup
+* Mark First Session Complete
+* Open Source Lead if route exists
+
+Only show buttons when relevant.
+
+Do not show fake buttons that do nothing.
+
+---
+
+## 4. Sidebar Navigation
+
+Add **Athlete Onboarding** to the appropriate admin sidebar section.
+
+Suggested placement:
+
+* Under Athletes
+* Or near Athlete Intake Pipeline
+
+Do not expose to non-admin users unless existing role patterns allow coaches to manage onboarding.
+
+Follow existing authorization patterns.
+
+---
+
+# Data / Logic Rules
+
+## Required vs Optional Items
+
+Not every item should block completion for every org.
+
+For Phase 5, use conservative defaults:
+
+Required for complete:
+
+* accountInviteSent
+* welcomeDraftQueued
+* pailContextSeeded
+* firstSessionScheduled
+* programAssigned
+
+Optional / manual:
+
+* guardianLinked only required if `parentEmail` exists
+* paymentSetup only required if billing is enabled or if no safe billing detection exists, mark as optional/manual
+* waiverCompleted only required if waiver system exists
+* firstSessionCompleted should remain incomplete until after first session
+
+If the existing app does not support billing/waiver yet, do not make onboarding impossible to complete because of those placeholders.
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* Full athlete portal
+* Full parent portal
+* Full billing system
+* Full waiver system
+* Full program assignment wizard
+* Full scheduling redesign
+* Full AI approvals redesign
+
+Do not auto-send AgentMail welcome drafts.
+
+Do not break existing intake, conversion, scheduling, or PAIL flows.
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. `/admin/athlete-onboarding` loads.
+2. It lists converted athletes with onboarding checklists.
+3. Filters work by status, needs, and search.
+4. Summary tiles match returned data.
+5. Checklist progress is accurate.
+6. One-click manual updates persist.
+7. Status recalculates after checklist updates.
+8. `nextBestAction` recalculates after checklist updates.
+9. Links/actions route to real existing pages.
+10. Sidebar nav item appears only for authorized admin users.
+11. Phase 1 Email still works.
+12. Phase 1 Schedule Eval still works.
+13. Phase 2 Convert still works.
+14. Phase 3 PAIL context seeding still works.
+15. TypeScript passes.
+
+---
+
+# Deliverable
+
+Implement Phase 5 and provide a report:
+
+* Files changed
+* Routes added
+* Helper functions added
+* Sidebar changes
+* How onboarding records are listed
+* How checklist updates work
+* How next best action is calculated
+* Frontend page behavior
+* What remains for Phase 6
+
+Focus on making onboarding visible, actionable, and operational.

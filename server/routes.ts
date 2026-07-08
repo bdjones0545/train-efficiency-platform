@@ -20152,6 +20152,249 @@ Respond with this exact JSON structure:
     }
   });
 
+  // ─── Athlete Onboarding Routes ───────────────────────────────────────────────
+
+  // GET /api/admin/athlete-onboarding — list all onboarding records for org with joins
+  app.get("/api/admin/athlete-onboarding", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const adminUserId = req.user.claims.sub ?? req.user.id;
+      const adminProfile = await storage.getUserProfile(adminUserId);
+      if (!adminProfile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = adminProfile.organizationId;
+
+      const { status, needs, search } = req.query as Record<string, string>;
+
+      const { db } = await import("./db");
+      const { athleteOnboardingChecklists, leadCaptureSubmissions, gmailAgentActions, athleteGuardianLinks } = await import("@shared/schema");
+      const { users: usersTable } = await import("@shared/models/auth");
+      const { eq, and, like } = await import("drizzle-orm");
+
+      // Main join: checklists + users + lead submissions
+      const rows = await db.select({
+        id: athleteOnboardingChecklists.id,
+        athleteUserId: athleteOnboardingChecklists.athleteUserId,
+        leadSubmissionId: athleteOnboardingChecklists.leadSubmissionId,
+        accountInviteSent: athleteOnboardingChecklists.accountInviteSent,
+        welcomeDraftQueued: athleteOnboardingChecklists.welcomeDraftQueued,
+        welcomeDraftApproved: athleteOnboardingChecklists.welcomeDraftApproved,
+        pailContextSeeded: athleteOnboardingChecklists.pailContextSeeded,
+        guardianLinked: athleteOnboardingChecklists.guardianLinked,
+        firstSessionScheduled: athleteOnboardingChecklists.firstSessionScheduled,
+        programAssigned: athleteOnboardingChecklists.programAssigned,
+        paymentSetup: athleteOnboardingChecklists.paymentSetup,
+        waiverCompleted: athleteOnboardingChecklists.waiverCompleted,
+        firstSessionCompleted: athleteOnboardingChecklists.firstSessionCompleted,
+        nextBestAction: athleteOnboardingChecklists.nextBestAction,
+        status: athleteOnboardingChecklists.status,
+        createdAt: athleteOnboardingChecklists.createdAt,
+        updatedAt: athleteOnboardingChecklists.updatedAt,
+        email: usersTable.email,
+        firstName: usersTable.firstName,
+        lastName: usersTable.lastName,
+        phone: usersTable.phone,
+        sport: leadCaptureSubmissions.sport,
+        school: leadCaptureSubmissions.school,
+        grade: leadCaptureSubmissions.grade,
+        parentName: leadCaptureSubmissions.parentName,
+        parentEmail: leadCaptureSubmissions.parentEmail,
+      })
+      .from(athleteOnboardingChecklists)
+      .leftJoin(usersTable, eq(usersTable.id, athleteOnboardingChecklists.athleteUserId))
+      .leftJoin(leadCaptureSubmissions, eq(leadCaptureSubmissions.id, athleteOnboardingChecklists.leadSubmissionId))
+      .where(eq(athleteOnboardingChecklists.orgId, orgId))
+      .orderBy(athleteOnboardingChecklists.updatedAt);
+
+      // Welcome drafts keyed by leadId
+      const welcomeDrafts = await db.select({ leadId: gmailAgentActions.leadId, id: gmailAgentActions.id, status: gmailAgentActions.status })
+        .from(gmailAgentActions)
+        .where(and(
+          eq(gmailAgentActions.orgId, orgId),
+          like(gmailAgentActions.actionType, "propose_draft:onboarding_welcome%"),
+        ));
+      const draftMap = new Map<string, { id: string; status: string }>();
+      for (const d of welcomeDrafts) {
+        if (d.leadId && !draftMap.has(d.leadId)) draftMap.set(d.leadId, { id: d.id, status: d.status || "proposed" });
+      }
+
+      // Guardian emails keyed by athleteUserId
+      const guardianLinksRows = await db.select({ athleteUserId: athleteGuardianLinks.athleteUserId, inviteEmail: athleteGuardianLinks.inviteEmail })
+        .from(athleteGuardianLinks)
+        .where(eq(athleteGuardianLinks.orgId, orgId));
+      const guardianEmailMap = new Map<string, string>();
+      for (const gl of guardianLinksRows) {
+        if (!guardianEmailMap.has(gl.athleteUserId)) guardianEmailMap.set(gl.athleteUserId, gl.inviteEmail || "");
+      }
+
+      // nextBestAction inline calculator
+      const calcNBA = (r: typeof rows[0]): string => {
+        if (!r.accountInviteSent) return "Send account invite email to athlete";
+        if (!r.welcomeDraftQueued) return "Queue welcome email draft in AI Approvals";
+        if (!r.welcomeDraftApproved) return "Review and approve welcome draft";
+        if (!r.pailContextSeeded) return "Seed PAIL athlete intelligence context";
+        if (!r.guardianLinked && (r as any).parentEmail) return "Link parent/guardian account";
+        if (!r.firstSessionScheduled) return "Schedule baseline evaluation session";
+        if (!r.programAssigned) return "Assign first training program";
+        if (!r.paymentSetup) return "Set up billing / payment for athlete";
+        if (!r.waiverCompleted) return "Complete athlete waiver";
+        if (!r.firstSessionCompleted) return "Mark first session completed";
+        return "Onboarding complete!";
+      };
+
+      // Enrich records
+      let enriched = rows.map((r) => {
+        const draft = r.leadSubmissionId ? draftMap.get(r.leadSubmissionId) : undefined;
+        const guardianEmail = guardianEmailMap.get(r.athleteUserId) || null;
+        const athleteName = `${r.firstName || ""} ${r.lastName || ""}`.trim() || r.email || "Unknown Athlete";
+        return {
+          id: r.id,
+          athleteUserId: r.athleteUserId,
+          leadSubmissionId: r.leadSubmissionId,
+          athleteName,
+          email: r.email || "",
+          phone: r.phone || null,
+          sport: r.sport || null,
+          school: r.school || null,
+          grade: r.grade || null,
+          parentName: r.parentName || null,
+          parentEmail: (r as any).parentEmail || null,
+          guardianEmail,
+          guardianLinked: r.guardianLinked,
+          accountInviteSent: r.accountInviteSent,
+          welcomeDraftQueued: r.welcomeDraftQueued,
+          welcomeDraftApproved: r.welcomeDraftApproved,
+          pailContextSeeded: r.pailContextSeeded,
+          firstSessionScheduled: r.firstSessionScheduled,
+          programAssigned: r.programAssigned,
+          paymentSetup: r.paymentSetup,
+          waiverCompleted: r.waiverCompleted,
+          firstSessionCompleted: r.firstSessionCompleted,
+          nextBestAction: calcNBA(r),
+          status: r.status as "pending" | "in_progress" | "complete",
+          createdAt: r.createdAt?.toISOString() || null,
+          updatedAt: r.updatedAt?.toISOString() || null,
+          welcomeDraftId: draft?.id || null,
+          welcomeDraftStatus: draft?.status || null,
+          links: {
+            lead: r.leadSubmissionId ? "/admin/athlete-leads" : null,
+            athleteIntelligence: "/admin/athlete-intelligence",
+            aiApprovals: "/admin/ai-approvals",
+            scheduling: "/admin/scheduling-command-center",
+          },
+        };
+      });
+
+      // Summary stats (computed before filters)
+      const summary = {
+        total: enriched.length,
+        needsAction: enriched.filter(r => r.status === "in_progress").length,
+        pending: enriched.filter(r => r.status === "pending").length,
+        complete: enriched.filter(r => r.status === "complete").length,
+      };
+
+      // Apply filters
+      if (status && ["pending", "in_progress", "complete"].includes(status)) {
+        enriched = enriched.filter(r => r.status === status);
+      }
+      const needsFilters: Record<string, (r: typeof enriched[0]) => boolean> = {
+        account: r => !r.accountInviteSent,
+        welcome: r => !r.welcomeDraftQueued || !r.welcomeDraftApproved,
+        pail: r => !r.pailContextSeeded,
+        guardian: r => !r.guardianLinked && !!(r.parentEmail),
+        session: r => !r.firstSessionScheduled,
+        program: r => !r.programAssigned,
+        payment: r => !r.paymentSetup,
+        waiver: r => !r.waiverCompleted,
+      };
+      if (needs && needsFilters[needs]) enriched = enriched.filter(needsFilters[needs]);
+      if (search) {
+        const q = search.toLowerCase();
+        enriched = enriched.filter(r =>
+          r.athleteName.toLowerCase().includes(q) ||
+          r.email.toLowerCase().includes(q) ||
+          (r.sport || "").toLowerCase().includes(q) ||
+          (r.school || "").toLowerCase().includes(q)
+        );
+      }
+
+      return res.json({ records: enriched, summary });
+    } catch (err: any) {
+      console.error("[athlete-onboarding] list error:", err);
+      res.status(500).json({ message: "Failed to fetch onboarding records", error: err.message });
+    }
+  });
+
+  // PATCH /api/admin/athlete-onboarding/:id — update safe boolean fields + recalc status/nextBestAction
+  app.patch("/api/admin/athlete-onboarding/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const adminUserId = req.user.claims.sub ?? req.user.id;
+      const adminProfile = await storage.getUserProfile(adminUserId);
+      if (!adminProfile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = adminProfile.organizationId;
+      const checklistId = req.params.id;
+
+      const { db } = await import("./db");
+      const { athleteOnboardingChecklists, leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const [existing] = await db.select().from(athleteOnboardingChecklists)
+        .where(and(eq(athleteOnboardingChecklists.id, checklistId), eq(athleteOnboardingChecklists.orgId, orgId)))
+        .limit(1);
+      if (!existing) return res.status(404).json({ message: "Onboarding record not found" });
+
+      const safeFields = ["paymentSetup", "waiverCompleted", "firstSessionCompleted", "programAssigned", "firstSessionScheduled", "welcomeDraftApproved", "guardianLinked", "accountInviteSent", "welcomeDraftQueued", "pailContextSeeded"];
+      const updates: Record<string, boolean> = {};
+      for (const field of safeFields) {
+        if (field in req.body && typeof req.body[field] === "boolean") updates[field] = req.body[field] as boolean;
+      }
+      if (Object.keys(updates).length === 0) return res.status(400).json({ message: "No valid boolean fields to update" });
+
+      // Get parentEmail from lead submission for nextBestAction
+      let parentEmail: string | null = null;
+      if (existing.leadSubmissionId) {
+        const [ls] = await db.select({ parentEmail: leadCaptureSubmissions.parentEmail })
+          .from(leadCaptureSubmissions).where(eq(leadCaptureSubmissions.id, existing.leadSubmissionId)).limit(1);
+        parentEmail = (ls as any)?.parentEmail || null;
+      }
+
+      const merged = { ...existing, ...updates };
+
+      // Recalculate status (required items only)
+      const newStatus: "pending" | "in_progress" | "complete" = (() => {
+        const required = [merged.accountInviteSent, merged.welcomeDraftQueued, merged.pailContextSeeded, merged.firstSessionScheduled, merged.programAssigned];
+        if (required.every(Boolean)) return "complete";
+        if (required.some(Boolean)) return "in_progress";
+        return "pending";
+      })();
+
+      // Recalculate nextBestAction
+      const newNextBestAction = (() => {
+        if (!merged.accountInviteSent) return "Send account invite email to athlete";
+        if (!merged.welcomeDraftQueued) return "Queue welcome email draft in AI Approvals";
+        if (!merged.welcomeDraftApproved) return "Review and approve welcome draft";
+        if (!merged.pailContextSeeded) return "Seed PAIL athlete intelligence context";
+        if (!merged.guardianLinked && parentEmail) return "Link parent/guardian account";
+        if (!merged.firstSessionScheduled) return "Schedule baseline evaluation session";
+        if (!merged.programAssigned) return "Assign first training program";
+        if (!merged.paymentSetup) return "Set up billing / payment for athlete";
+        if (!merged.waiverCompleted) return "Complete athlete waiver";
+        if (!merged.firstSessionCompleted) return "Mark first session completed";
+        return "Onboarding complete!";
+      })();
+
+      const [updated] = await db.update(athleteOnboardingChecklists).set({
+        ...updates,
+        status: newStatus,
+        nextBestAction: newNextBestAction,
+        updatedAt: new Date(),
+      }).where(eq(athleteOnboardingChecklists.id, checklistId)).returning();
+
+      return res.json({ success: true, record: updated, newStatus, nextBestAction: newNextBestAction });
+    } catch (err: any) {
+      console.error("[athlete-onboarding] patch error:", err);
+      res.status(500).json({ message: "Failed to update onboarding record", error: err.message });
+    }
+  });
+
   // ─── Gmail Agent Routes ────────────────────────────────────────────────────
 
   // GET /api/org/gmail/conversations — list conversations for the org
