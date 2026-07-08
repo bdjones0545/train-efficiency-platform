@@ -1,0 +1,280 @@
+# TrainEfficiency Replit Task
+
+## Phase 1 — Complete Athlete Intake Pipeline Workflow
+
+You are working inside the TrainEfficiency codebase.
+
+This task is **Phase 1** of hardening the Athlete Intake Pipeline.
+
+Use the existing audit findings as context:
+
+* `/admin/athlete-leads` renders the intake cards.
+* `Email` currently uses a `mailto:` link.
+* `Schedule Eval` currently only updates `bookingStatus = "evaluation_booked"`.
+* `Convert to Athlete` currently only updates `bookingStatus = "enrolled"`.
+* `/admin/athlete-leads` and `/admin/lead-pipeline` are not fully synchronized.
+* AI outreach drafts already exist through `leadIntelligenceProfiles` and `gmailAgentActions`.
+* Scheduling agent routes already exist.
+* AgentMail should be the communication layer for coach/customer conversations.
+* Transactional system emails may still use infrastructure email.
+
+---
+
+# Architectural Rule
+
+Use **AgentMail** for all organization-to-lead / coach-to-athlete communication.
+
+Examples that should use AgentMail:
+
+* Lead outreach
+* Evaluation scheduling
+* Follow-ups
+* Parent communication
+* Coach replies
+* AI-generated intake drafts
+
+Do **not** use AgentMail for infrastructure/system emails.
+
+Examples that may remain infrastructure email:
+
+* Password reset
+* Account verification
+* Magic link
+* Account invitation
+* Payment receipt
+* Security alerts
+
+Do **not** replace those in this phase.
+
+---
+
+# Phase 1 Goal
+
+Make the Athlete Intake Pipeline actually usable from the card actions.
+
+The user should be able to:
+
+1. Open/send an AgentMail-backed intake email from the lead card.
+2. Start a real evaluation scheduling flow from the lead card.
+3. Keep `/admin/athlete-leads` and `/admin/lead-pipeline` synchronized when lead status changes.
+
+Do **not** redesign the whole UI.
+
+Do **not** build the full athlete onboarding flow yet.
+
+Do **not** create athlete accounts in this phase.
+
+---
+
+# Scope
+
+## 1. Replace `mailto:` Email Button With AgentMail
+
+Current behavior:
+
+* `Email` button opens native browser `mailto:`.
+
+Target behavior:
+
+* `Email` opens an AgentMail-backed composer/draft flow.
+
+Implementation expectations:
+
+* If an AI draft already exists for the lead:
+
+  * Load the existing draft from `gmailAgentActions` / lead intelligence draft data.
+  * Show subject/body in an editable modal or existing AgentMail composer.
+* If no draft exists:
+
+  * Generate or create a draft using the existing intake AI draft workflow.
+  * Save it as an AgentMail/Gmail agent action.
+  * Open it for review.
+* Sending should go through the existing AgentMail approval/send path.
+* Do not send automatically unless the existing AgentMail workflow explicitly requires approval and the admin confirms.
+* Remove `mailto:` from the Athlete Intake card workflow.
+
+Acceptance criteria:
+
+* No `mailto:` link remains for the lead card Email action.
+* Email action surfaces an editable AI/intake draft.
+* Draft is associated with the lead/submission.
+* Draft appears in or is compatible with the existing AgentMail approval system.
+* Sending/logging follows existing AgentMail conventions.
+
+---
+
+## 2. Make `Schedule Eval` Start a Real Scheduling Flow
+
+Current behavior:
+
+* Button only calls `PATCH /api/admin/athlete-leads/:id`
+* Sets:
+
+  * `bookingStatus = "evaluation_booked"`
+  * `evaluationBookedAt = now`
+
+Target behavior:
+
+* `Schedule Eval` should initiate the scheduling agent workflow.
+
+Use existing routes where possible:
+
+* `GET /api/org/scheduling-agent/contexts/:submissionId`
+* `POST /api/org/scheduling-agent/find-slots`
+* `POST /api/org/scheduling-agent/offer-slots`
+* `POST /api/org/scheduling-agent/confirm-booking`
+
+Implementation expectations:
+
+* Clicking `Schedule Eval` should not falsely mark the eval as booked before a booking exists.
+* It should open a scheduling modal or flow.
+* The admin should be able to:
+
+  * View suggested slots
+  * Offer slots to the lead through AgentMail
+  * Or confirm a selected slot if one is chosen
+* Scheduling communications should use AgentMail, not raw SendGrid.
+* Only set `bookingStatus = "evaluation_booked"` after a slot is actually confirmed.
+* If slots are merely offered, set an appropriate intermediate state if available, or update the intelligence pipeline stage to `scheduling`.
+
+Acceptance criteria:
+
+* `Schedule Eval` no longer only flips a status field.
+* The flow uses existing scheduling agent routes.
+* Scheduling email/draft is AgentMail-backed.
+* `bookingStatus = "evaluation_booked"` is only set after real confirmation.
+* Pipeline stage is updated appropriately.
+
+---
+
+## 3. Synchronize `/admin/athlete-leads` and `/admin/lead-pipeline`
+
+Problem:
+
+* `/admin/athlete-leads` reads mostly from `leadCaptureSubmissions`.
+* `/admin/lead-pipeline` reads from `leadIntelligenceProfiles`.
+* Actions in one view do not reliably update the other.
+
+Target behavior:
+
+Status changes from the Athlete Leads card should update both systems.
+
+Map actions:
+
+### Archive
+
+When a lead is archived:
+
+* Set `leadCaptureSubmissions.bookingStatus = "archived"`
+* Update corresponding `leadIntelligenceProfiles` record:
+
+  * `pipelineStage = "lost"` or suppressed/archived equivalent
+  * Add stage transition audit entry if existing patterns support it
+  * Preserve existing suppression semantics if already implemented
+
+### Schedule Eval / Offer Scheduling
+
+When scheduling is started:
+
+* Update lead intelligence stage to:
+
+  * `scheduling`
+
+When a booking is confirmed:
+
+* Set:
+
+  * `bookingStatus = "evaluation_booked"`
+  * `evaluationBookedAt`
+* Update lead intelligence stage to:
+
+  * `booked`
+
+### Convert to Athlete
+
+When converted:
+
+* Set:
+
+  * `bookingStatus = "enrolled"`
+  * `convertedAt`
+* Update lead intelligence stage to:
+
+  * `converted`
+
+Do **not** create a real athlete record yet. That belongs to Phase 2.
+
+Acceptance criteria:
+
+* Status changes in `/admin/athlete-leads` are reflected in `/admin/lead-pipeline`.
+* Intelligence stage changes maintain existing audit/logging conventions where possible.
+* No dual-view drift after Archive, Schedule, or Convert actions.
+* Existing APIs remain backwards-compatible.
+
+---
+
+# Important Constraints
+
+* Do not delete existing intelligence pipeline functionality.
+* Do not remove existing SendGrid transactional/system emails.
+* Do not migrate password reset, invite, verification, billing, or security email flows.
+* Do not create athlete user accounts yet.
+* Do not initialize PAIL yet.
+* Do not build billing or payment flow yet.
+* Do not redesign the entire page.
+* Keep this as a focused Phase 1 wiring and workflow hardening task.
+
+---
+
+# Files / Areas To Inspect
+
+Start with:
+
+* `client/src/pages/admin-athlete-leads.tsx`
+* `client/src/pages/admin-lead-pipeline.tsx`
+* `server/routes.ts`
+* `server/services/intelligent-lead-intake-service.ts`
+* `server/services/lead-recovery-cron.ts`
+* AgentMail-related routes/services
+* Scheduling-agent routes/services
+* `gmailAgentActions` database schema and related approval/send paths
+* `leadCaptureSubmissions`
+* `leadIntelligenceProfiles`
+
+---
+
+# Testing / Verification
+
+After implementation, verify:
+
+1. New lead appears in `/admin/athlete-leads`.
+2. Clicking `Email` opens AgentMail/intake draft instead of `mailto:`.
+3. Existing AI draft is reused when present.
+4. Missing draft can be generated or created.
+5. Draft is associated with the correct lead.
+6. Clicking `Schedule Eval` opens a real scheduling workflow.
+7. Offering slots creates an AgentMail-backed draft/message.
+8. Confirming a slot sets `bookingStatus = "evaluation_booked"`.
+9. Confirming a slot updates lead intelligence stage to `booked`.
+10. Archiving updates both lead submission and intelligence profile.
+11. Converting updates both lead submission and intelligence profile.
+12. No transactional/system emails are broken.
+13. TypeScript passes.
+14. Existing tests pass or are updated if behavior intentionally changed.
+
+---
+
+# Deliverable
+
+Implement Phase 1 and provide a clear report:
+
+* Files changed
+* Routes added/updated
+* Components updated
+* How Email now works
+* How Schedule Eval now works
+* How status synchronization works
+* What was intentionally left for Phase 2
+* Any risks or follow-up recommendations
+
+Focus on making the existing workflow real, connected, and internally consistent.

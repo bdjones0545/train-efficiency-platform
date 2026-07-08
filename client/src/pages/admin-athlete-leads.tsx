@@ -16,6 +16,7 @@ import {
   ChevronDown, ChevronUp, Phone, Mail, MapPin, Clock, Loader2,
   Trash2, Edit2, UserCheck, ClipboardList, DollarSign, BarChart2,
   Building2, Zap, ArrowRight, ExternalLink, X as XIcon, Star,
+  Send, CalendarDays, CheckSquare, AlertCircle, RefreshCw,
 } from "lucide-react";
 import type { LeadCaptureSubmission } from "@shared/schema";
 
@@ -86,17 +87,543 @@ function SourceBadge({ source, campaign }: { source?: string | null; campaign?: 
   );
 }
 
+// ─── AgentMail Email Draft Modal ─────────────────────────────────────────────
+function EmailDraftModal({
+  lead,
+  onClose,
+}: {
+  lead: LeadCaptureSubmission;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [draftSource, setDraftSource] = useState<"existing" | "created" | null>(null);
+  const [sendSuccess, setSendSuccess] = useState(false);
+
+  const { isLoading: draftLoading, error: draftError } = useQuery<{
+    draft: { id: string; subject: string | null; bodyPreview: string | null; result: any; recipientEmail: string | null; actionType: string };
+    intelProfileId: string | null;
+    source: "existing" | "created";
+  }>({
+    queryKey: [`/api/admin/athlete-leads/${lead.id}/draft`],
+    refetchOnWindowFocus: false,
+    retry: false,
+    // @ts-ignore — using select to set state as a side-effect (safe here)
+    select: (data: any) => {
+      if (!draftId) {
+        setDraftId(data.draft.id);
+        setDraftSource(data.source);
+        const fullBody = data.draft.result?.fullBody || data.draft.bodyPreview || "";
+        setSubject(data.draft.subject || "");
+        setBody(fullBody);
+      }
+      return data;
+    },
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async () => {
+      if (!draftId) throw new Error("No draft ID");
+      const res = await apiRequest("POST", `/api/ai-approvals/${draftId}/approve`, {
+        subject: subject.trim(),
+        body: body.trim(),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Send failed");
+      return json;
+    },
+    onSuccess: () => {
+      setSendSuccess(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads"] });
+      toast({ title: "Email sent via AgentMail", description: `Draft sent to ${lead.email}` });
+    },
+    onError: (err: Error) => {
+      const isGmailErr = err.message.toLowerCase().includes("gmail") || err.message.toLowerCase().includes("oauth");
+      if (isGmailErr) {
+        toast({
+          title: "Gmail not connected",
+          description: "Connect Gmail in Settings to send emails through AgentMail.",
+          variant: "destructive",
+        });
+      } else {
+        toast({ title: "Send failed", description: err.message, variant: "destructive" });
+      }
+    },
+  });
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Mail className="h-4 w-4 text-blue-500" />
+            AgentMail Draft — {lead.athleteName}
+          </DialogTitle>
+        </DialogHeader>
+
+        {draftLoading && (
+          <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Loading AI draft…</span>
+          </div>
+        )}
+
+        {draftError && !draftLoading && (
+          <div className="flex items-center gap-2 text-sm text-red-600 py-4">
+            <AlertCircle className="h-4 w-4 shrink-0" />
+            Failed to load draft. Please try again.
+          </div>
+        )}
+
+        {sendSuccess && (
+          <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 text-center space-y-2">
+            <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto" />
+            <p className="font-semibold text-emerald-700 dark:text-emerald-400">Email sent!</p>
+            <p className="text-xs text-muted-foreground">Sent to {lead.email} via AgentMail.</p>
+            <Button size="sm" variant="outline" onClick={onClose} className="mt-2">Close</Button>
+          </div>
+        )}
+
+        {!draftLoading && !draftError && !sendSuccess && draftId && (
+          <div className="space-y-4">
+            {draftSource === "existing" && (
+              <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded px-2.5 py-1.5 border border-blue-200 dark:border-blue-800">
+                <Zap className="h-3 w-3 shrink-0" />
+                AI draft loaded from intake pipeline — edit before sending.
+              </div>
+            )}
+            {draftSource === "created" && (
+              <div className="flex items-center gap-2 text-xs text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30 rounded px-2.5 py-1.5 border border-purple-200 dark:border-purple-800">
+                <Zap className="h-3 w-3 shrink-0" />
+                New draft created from submission data — edit before sending.
+              </div>
+            )}
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">To</p>
+              <div className="text-sm bg-muted/40 border rounded px-3 py-2 font-mono text-muted-foreground">
+                {lead.email}
+                {lead.parentName && (
+                  <span className="ml-2 text-[11px] text-muted-foreground/70">(parent: {lead.parentName})</span>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Subject</p>
+              <Input
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                className="text-sm"
+                placeholder="Subject line…"
+                data-testid="input-email-subject"
+              />
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Message</p>
+              <Textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                className="text-sm min-h-[180px] resize-none font-mono"
+                placeholder="Email body…"
+                data-testid="textarea-email-body"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap pt-2 border-t">
+              <Button
+                onClick={() => sendMutation.mutate()}
+                disabled={sendMutation.isPending || !subject.trim() || !body.trim()}
+                className="gap-1.5"
+                data-testid="button-send-email"
+              >
+                {sendMutation.isPending
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</>
+                  : <><Send className="h-3.5 w-3.5" /> Send via AgentMail</>
+                }
+              </Button>
+              <Button
+                variant="outline"
+                onClick={onClose}
+                disabled={sendMutation.isPending}
+                data-testid="button-save-draft-queue"
+              >
+                Save to Queue
+              </Button>
+              <Link href="/admin/ai-approvals">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="text-xs gap-1 text-muted-foreground"
+                  onClick={onClose}
+                  data-testid="link-view-all-drafts"
+                >
+                  <ExternalLink className="h-3 w-3" /> All Drafts
+                </Button>
+              </Link>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Sending goes through AgentMail — logged, tracked, and tied to this lead's pipeline record.
+              "Save to Queue" keeps the draft in AI Approvals for later.
+            </p>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── Schedule Eval Modal ──────────────────────────────────────────────────────
+function ScheduleEvalModal({
+  lead,
+  onBooked,
+  onClose,
+}: {
+  lead: LeadCaptureSubmission;
+  onBooked: () => void;
+  onClose: () => void;
+}) {
+  const { toast } = useToast();
+  const [step, setStep] = useState<"initial" | "finding" | "slots_found" | "offering" | "offered" | "confirming" | "confirmed">("initial");
+  const [slots, setSlots] = useState<any[]>([]);
+  const [offeredSlots, setOfferedSlots] = useState<any[]>([]);
+  const [replyText, setReplyText] = useState("");
+  const [intelProfileId, setIntelProfileId] = useState<string | null>(null);
+  const [schedCtx, setSchedCtx] = useState<any>(null);
+  const [confirmResult, setConfirmResult] = useState<any>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load intel profile for this submission (to get intelProfileId as leadId)
+  const { isLoading: intelLoading } = useQuery<any>({
+    queryKey: [`/api/lead-capture/intelligence/${lead.id}`],
+    refetchOnWindowFocus: false,
+    retry: false,
+    // @ts-ignore
+    select: (data: any) => {
+      if (data?.id && !intelProfileId) setIntelProfileId(data.id);
+      return data;
+    },
+  });
+
+  // Load existing scheduling context if any
+  const { isLoading: ctxLoading } = useQuery<any>({
+    queryKey: [`/api/org/scheduling-agent/contexts/${lead.id}`],
+    refetchOnWindowFocus: false,
+    retry: false,
+    // @ts-ignore
+    select: (data: any) => {
+      if (data && !schedCtx) {
+        setSchedCtx(data);
+        if (data.offeredSlots?.length && data.status === "slots_offered") {
+          setOfferedSlots(data.offeredSlots);
+          setStep("offered");
+        }
+      }
+      return data;
+    },
+  });
+
+  const isInitialLoading = intelLoading || ctxLoading;
+
+  async function handleFindAndOffer() {
+    if (!intelProfileId) {
+      setError("AI lead profile not ready yet. Try again in a moment.");
+      return;
+    }
+    setError(null);
+    setStep("finding");
+    try {
+      const res = await apiRequest("POST", "/api/org/scheduling-agent/find-slots", {
+        submissionId: lead.id,
+        durationMin: 60,
+        lookAheadDays: 14,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Failed to find slots");
+      if (!json.slots?.length) {
+        setError("No available slots found in the next 14 days. Make sure coaches have availability set up.");
+        setStep("initial");
+        return;
+      }
+      setSlots(json.slots);
+      setStep("slots_found");
+    } catch (err: any) {
+      setError(err.message);
+      setStep("initial");
+    }
+  }
+
+  async function handleOfferSlots() {
+    if (!intelProfileId) return;
+    setError(null);
+    setStep("offering");
+    try {
+      const res = await apiRequest("POST", "/api/org/scheduling-agent/offer-slots", {
+        submissionId: lead.id,
+        leadId: intelProfileId,
+        durationMin: 60,
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Failed to offer slots");
+      setOfferedSlots(json.offeredSlots || slots);
+      setStep("offered");
+      toast({
+        title: "Slots offered via AgentMail",
+        description: "An email draft with time options has been created and queued for review.",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads"] });
+    } catch (err: any) {
+      setError(err.message);
+      setStep("slots_found");
+    }
+  }
+
+  async function handleConfirmBooking() {
+    if (!replyText.trim()) return;
+    setError(null);
+    setStep("confirming");
+    try {
+      const res = await apiRequest("POST", "/api/org/scheduling-agent/confirm-booking", {
+        submissionId: lead.id,
+        replyText: replyText.trim(),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Failed to confirm booking");
+      setConfirmResult(json);
+      if (json.success) {
+        setStep("confirmed");
+        onBooked();
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads"] });
+        queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads/stats"] });
+      } else {
+        setError(json.message || "Could not auto-confirm. Low confidence — please mark manually or try a clearer reply.");
+        setStep("offered");
+      }
+    } catch (err: any) {
+      setError(err.message);
+      setStep("offered");
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <CalendarDays className="h-4 w-4 text-indigo-500" />
+            Schedule Evaluation — {lead.athleteName}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Lead summary */}
+          <div className="rounded-lg bg-muted/30 border px-3 py-2.5 text-xs space-y-1">
+            <div className="flex items-center gap-4 flex-wrap">
+              <span><span className="text-muted-foreground">Email:</span> {lead.email}</span>
+              {lead.sport && <span><span className="text-muted-foreground">Sport:</span> {lead.sport}</span>}
+              {lead.age && <span><span className="text-muted-foreground">Age:</span> {lead.age}</span>}
+            </div>
+          </div>
+
+          {error && (
+            <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded px-3 py-2 border border-red-200 dark:border-red-800">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          {/* ── Step: Initial ── */}
+          {(step === "initial") && (
+            <div className="space-y-3">
+              {isInitialLoading ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading scheduling context…
+                </div>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    Find available evaluation slots and send them to the athlete via AgentMail.
+                    The athlete will reply to confirm their preferred time.
+                  </p>
+                  <Button
+                    onClick={handleFindAndOffer}
+                    disabled={!intelProfileId}
+                    className="w-full gap-2"
+                    data-testid="button-find-slots"
+                  >
+                    <Calendar className="h-4 w-4" />
+                    Find Available Slots
+                  </Button>
+                  {!intelProfileId && (
+                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                      AI profile is still processing — refresh and try again in a moment.
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Step: Finding slots ── */}
+          {step === "finding" && (
+            <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm">Searching coach availability…</span>
+            </div>
+          )}
+
+          {/* ── Step: Slots found ── */}
+          {step === "slots_found" && (
+            <div className="space-y-3">
+              <p className="text-sm font-medium">{slots.length} slot{slots.length !== 1 ? "s" : ""} found</p>
+              <div className="space-y-2">
+                {slots.map((slot: any, i: number) => (
+                  <div key={i} className="rounded-md border px-3 py-2 text-sm bg-muted/20">
+                    <p className="font-medium">{slot.displayDate || slot.date}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {slot.displayTime || `${slot.startTime}–${slot.endTime}`}
+                      {slot.coachName && ` · ${slot.coachName}`}
+                      {slot.durationMin && ` · ${slot.durationMin} min`}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <Button
+                onClick={handleOfferSlots}
+                className="w-full gap-2"
+                data-testid="button-offer-slots"
+              >
+                <Send className="h-3.5 w-3.5" />
+                Send Slot Options via AgentMail
+              </Button>
+              <p className="text-[11px] text-muted-foreground">
+                An email draft with these time options will be queued in AI Approvals for review before sending.
+              </p>
+            </div>
+          )}
+
+          {/* ── Step: Offering ── */}
+          {step === "offering" && (
+            <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm">Creating AgentMail draft…</span>
+            </div>
+          )}
+
+          {/* ── Step: Slots offered / confirm booking ── */}
+          {step === "offered" && (
+            <div className="space-y-4">
+              <div className="rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 p-3 space-y-1">
+                <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 text-sm font-medium">
+                  <CheckSquare className="h-4 w-4" />
+                  Slots sent via AgentMail
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  The athlete will reply with their preferred time. Paste their reply below to confirm the booking.
+                </p>
+              </div>
+
+              {offeredSlots.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Offered times</p>
+                  {offeredSlots.map((slot: any, i: number) => (
+                    <div key={i} className="rounded border px-2.5 py-1.5 text-xs text-muted-foreground bg-muted/20">
+                      {slot.displayDate || slot.date} · {slot.displayTime || slot.startTime}
+                      {slot.coachName && ` · ${slot.coachName}`}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div>
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">
+                  Athlete's reply (paste here to auto-confirm)
+                </p>
+                <Textarea
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder={`e.g. "Thursday at 4pm works great!"`}
+                  className="text-sm min-h-[80px] resize-none"
+                  data-testid="textarea-reply-text"
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button
+                  onClick={handleConfirmBooking}
+                  disabled={!replyText.trim()}
+                  className="flex-1 gap-2"
+                  data-testid="button-confirm-booking"
+                >
+                  <CheckCircle className="h-3.5 w-3.5" />
+                  Parse & Confirm Booking
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={handleFindAndOffer}
+                  className="gap-1.5 text-xs"
+                  data-testid="button-resend-slots"
+                >
+                  <RefreshCw className="h-3 w-3" /> New Slots
+                </Button>
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                AI will match the reply to an offered slot. If confidence is too low, you'll be prompted to confirm manually.
+              </p>
+            </div>
+          )}
+
+          {/* ── Step: Confirming ── */}
+          {step === "confirming" && (
+            <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <span className="text-sm">Parsing reply and confirming booking…</span>
+            </div>
+          )}
+
+          {/* ── Step: Confirmed ── */}
+          {step === "confirmed" && (
+            <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 text-center space-y-2">
+              <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto" />
+              <p className="font-semibold text-emerald-700 dark:text-emerald-400">Booking Confirmed!</p>
+              {confirmResult?.selectedSlot && (
+                <p className="text-sm text-muted-foreground">
+                  {confirmResult.selectedSlot.displayDate} · {confirmResult.selectedSlot.displayTime}
+                  {confirmResult.selectedSlot.coachName && ` · ${confirmResult.selectedSlot.coachName}`}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Lead status updated to <strong>Eval Scheduled</strong> and pipeline stage set to <strong>booked</strong>.
+                A confirmation email draft has been queued in AI Approvals.
+              </p>
+              <Button size="sm" variant="outline" onClick={onClose} className="mt-2">Close</Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // ─── Athlete Lead Card ───────────────────────────────────────────────────────
 function AthleteLeadCard({
   lead,
   onUpdate,
   onDelete,
   onEdit,
+  onEmail,
+  onSchedule,
 }: {
   lead: LeadCaptureSubmission;
   onUpdate: (id: string, data: Record<string, any>) => void;
   onDelete: (id: string) => void;
   onEdit: (lead: LeadCaptureSubmission) => void;
+  onEmail: (lead: LeadCaptureSubmission) => void;
+  onSchedule: (lead: LeadCaptureSubmission) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const statusCfg = getStatusCfg(lead.bookingStatus);
@@ -166,11 +693,12 @@ function AthleteLeadCard({
           size="sm"
           variant="outline"
           className="h-7 text-xs border-indigo-300 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-indigo-950/30"
-          onClick={() => onUpdate(lead.id, { bookingStatus: "evaluation_booked", evaluationBookedAt: new Date().toISOString() })}
-          disabled={lead.bookingStatus === "evaluation_booked" || lead.bookingStatus === "enrolled"}
+          onClick={() => onSchedule(lead)}
+          disabled={lead.bookingStatus === "enrolled"}
           data-testid={`button-schedule-eval-${lead.id}`}
         >
-          <Calendar className="h-3 w-3 mr-1" /> Schedule Eval
+          <Calendar className="h-3 w-3 mr-1" />
+          {lead.bookingStatus === "evaluation_booked" ? "Reschedule Eval" : "Schedule Eval"}
         </Button>
         <Button
           size="sm"
@@ -183,11 +711,15 @@ function AthleteLeadCard({
           <UserCheck className="h-3 w-3 mr-1" /> Convert to Athlete
         </Button>
         {lead.email && (
-          <a href={`mailto:${lead.email}`} data-testid={`link-email-athlete-${lead.id}`}>
-            <Button size="sm" variant="ghost" className="h-7 text-xs">
-              <Mail className="h-3 w-3 mr-1" /> Email
-            </Button>
-          </a>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => onEmail(lead)}
+            data-testid={`button-email-athlete-${lead.id}`}
+          >
+            <Mail className="h-3 w-3 mr-1" /> Email
+          </Button>
         )}
         {lead.phone && (
           <a href={`tel:${lead.phone}`} data-testid={`link-phone-athlete-${lead.id}`}>
@@ -388,6 +920,8 @@ export default function AdminAthleteLeadsPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterSport, setFilterSport] = useState("all");
   const [editLead, setEditLead] = useState<LeadCaptureSubmission | null>(null);
+  const [emailLead, setEmailLead] = useState<LeadCaptureSubmission | null>(null);
+  const [scheduleLead, setScheduleLead] = useState<LeadCaptureSubmission | null>(null);
 
   const { data: leads, isLoading } = useQuery<LeadCaptureSubmission[]>({
     queryKey: ["/api/admin/athlete-leads"],
@@ -599,16 +1133,8 @@ export default function AdminAthleteLeadsPage() {
       ) : filtered.length === 0 ? (
         <Card className="p-10 text-center text-muted-foreground">
           <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm font-medium">
-            {(leads || []).length === 0
-              ? "No athlete applications yet"
-              : "No leads match your filters"}
-          </p>
-          <p className="text-xs mt-1 max-w-xs mx-auto">
-            {(leads || []).length === 0
-              ? "Athlete applications submitted through your landing pages will appear here."
-              : "Try adjusting your search or filters."}
-          </p>
+          <p className="text-sm font-medium">No leads match your filters</p>
+          <p className="text-xs mt-1">Try adjusting the search or status filter.</p>
         </Card>
       ) : (
         <div className="space-y-3">
@@ -619,18 +1145,42 @@ export default function AdminAthleteLeadsPage() {
               onUpdate={(id, data) => updateMutation.mutate({ id, data })}
               onDelete={(id) => deleteMutation.mutate(id)}
               onEdit={setEditLead}
+              onEmail={setEmailLead}
+              onSchedule={setScheduleLead}
             />
           ))}
         </div>
       )}
 
-      {/* Edit modal */}
+      {/* ── Edit Modal ── */}
       {editLead && (
         <EditLeadModal
           lead={editLead}
           onClose={() => setEditLead(null)}
           onSave={(id, data) => updateMutation.mutate({ id, data })}
           isSaving={updateMutation.isPending}
+        />
+      )}
+
+      {/* ── Email Draft Modal ── */}
+      {emailLead && (
+        <EmailDraftModal
+          lead={emailLead}
+          onClose={() => setEmailLead(null)}
+        />
+      )}
+
+      {/* ── Schedule Eval Modal ── */}
+      {scheduleLead && (
+        <ScheduleEvalModal
+          lead={scheduleLead}
+          onClose={() => setScheduleLead(null)}
+          onBooked={() => {
+            updateMutation.mutate({
+              id: scheduleLead.id,
+              data: { bookingStatus: "evaluation_booked", evaluationBookedAt: new Date().toISOString() },
+            });
+          }}
         />
       )}
     </div>

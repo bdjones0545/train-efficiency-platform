@@ -19577,7 +19577,7 @@ Respond with this exact JSON structure:
       const profile = await storage.getUserProfile(userId);
       if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
       const { db } = await import("./db");
-      const { leadCaptureSubmissions } = await import("@shared/schema");
+      const { leadCaptureSubmissions, leadIntelligenceProfiles } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
       const allowed = ["bookingStatus", "notes", "sequenceStatus", "evaluationBookedAt", "convertedAt", "lostAt"];
       const updates: Record<string, any> = {};
@@ -19591,6 +19591,40 @@ Respond with this exact JSON structure:
         .returning();
       if (!updated) return res.status(404).json({ message: "Lead not found" });
       res.json(updated);
+      // Sync intelligence profile stage based on bookingStatus change (fire-and-forget after response)
+      (async () => {
+        try {
+          const { buildStageTransition } = await import("./services/intelligent-lead-intake-service");
+          const [intel] = await db
+            .select({ id: leadIntelligenceProfiles.id, pipelineStage: leadIntelligenceProfiles.pipelineStage, stageTransitions: leadIntelligenceProfiles.stageTransitions })
+            .from(leadIntelligenceProfiles)
+            .where(and(eq(leadIntelligenceProfiles.submissionId, req.params.id), eq(leadIntelligenceProfiles.orgId, profile.organizationId)))
+            .limit(1);
+          if (!intel) return;
+          let newStage: string | null = null;
+          let reason = "";
+          if (updates.bookingStatus === "archived" || updates.bookingStatus === "lost") {
+            newStage = "lost"; reason = "Lead archived by admin";
+          } else if (updates.bookingStatus === "enrolled" || updates.convertedAt) {
+            newStage = "converted"; reason = "Lead converted to athlete by admin";
+          } else if (updates.bookingStatus === "evaluation_booked" || updates.evaluationBookedAt) {
+            if (intel.pipelineStage !== "booked" && intel.pipelineStage !== "converted") {
+              newStage = "booked"; reason = "Evaluation booking confirmed by admin";
+            }
+          }
+          if (newStage && newStage !== intel.pipelineStage) {
+            const transition = buildStageTransition(intel.pipelineStage, newStage, reason, "manual_admin", 1.0);
+            const existing = (intel.stageTransitions as any[]) || [];
+            await db.update(leadIntelligenceProfiles).set({
+              pipelineStage: newStage as any,
+              stageTransitions: [...existing, transition] as any,
+              updatedAt: new Date(),
+            }).where(eq(leadIntelligenceProfiles.id, intel.id));
+          }
+        } catch (syncErr: any) {
+          console.warn("[athlete-leads-patch] intel sync warning:", syncErr.message);
+        }
+      })();
     } catch (err: any) {
       console.error("[athlete-leads-patch] error:", err);
       res.status(500).json({ message: "Failed to update lead" });
@@ -19611,6 +19645,96 @@ Respond with this exact JSON structure:
     } catch (err: any) {
       console.error("[athlete-leads-delete] error:", err);
       res.status(500).json({ message: "Failed to delete lead" });
+    }
+  });
+
+  // GET /api/admin/athlete-leads/:id/draft — get or create an AgentMail intake draft for a lead
+  app.get("/api/admin/athlete-leads/:id/draft", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const submissionId = req.params.id;
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles, gmailAgentActions, leadCaptureSubmissions } = await import("@shared/schema");
+      const { eq, and, inArray } = await import("drizzle-orm");
+
+      const [intelProfile] = await db.select()
+        .from(leadIntelligenceProfiles)
+        .where(and(eq(leadIntelligenceProfiles.submissionId, submissionId), eq(leadIntelligenceProfiles.orgId, orgId)))
+        .limit(1);
+
+      // Return existing proposed draft linked on the intel profile
+      if (intelProfile?.gmailDraftActionId) {
+        const [existingLinked] = await db.select()
+          .from(gmailAgentActions)
+          .where(and(eq(gmailAgentActions.id, intelProfile.gmailDraftActionId), eq(gmailAgentActions.orgId, orgId)))
+          .limit(1);
+        if (existingLinked && existingLinked.status === "proposed") {
+          return res.json({ draft: existingLinked, intelProfileId: intelProfile.id, source: "existing" });
+        }
+      }
+
+      // Fallback: find any other proposed intake draft for this submission by leadId
+      const [anyExisting] = await db.select()
+        .from(gmailAgentActions)
+        .where(and(
+          eq(gmailAgentActions.orgId, orgId),
+          eq(gmailAgentActions.leadId, submissionId),
+          eq(gmailAgentActions.status, "proposed"),
+          inArray(gmailAgentActions.actionType, ["propose_draft:intake_outreach", "propose_draft:followup_24h", "propose_draft:followup_72h", "propose_draft:followup_7d"]),
+        ))
+        .limit(1);
+
+      if (anyExisting) {
+        return res.json({ draft: anyExisting, intelProfileId: intelProfile?.id ?? null, source: "existing" });
+      }
+
+      // No proposed draft — create one from intel profile draft data or fallback text
+      const [submission] = await db.select()
+        .from(leadCaptureSubmissions)
+        .where(and(eq(leadCaptureSubmissions.id, submissionId), eq(leadCaptureSubmissions.orgId, orgId)))
+        .limit(1);
+
+      if (!submission) return res.status(404).json({ message: "Submission not found" });
+
+      const firstName = submission.athleteName?.split(" ")[0] || "there";
+      const draftSubject = intelProfile?.initialDraftSubject
+        || `${submission.athleteName} — your application is under review`;
+      const draftBody = (intelProfile?.initialDraftBody as string | null | undefined)
+        || `Hi ${firstName},\n\nThank you for applying! We've reviewed your application and are excited to connect.\n\nWe have a few evaluation spots opening up this week. Reply here or let us know a time that works for a quick call so we can discuss your goals and next steps.\n\nLooking forward to it!`;
+
+      const [newAction] = await db.insert(gmailAgentActions).values({
+        orgId,
+        actionType: "propose_draft:intake_outreach",
+        leadId: submissionId,
+        recipientEmail: submission.email,
+        subject: draftSubject,
+        bodyPreview: draftBody.slice(0, 500),
+        riskLevel: "low",
+        approvalRequired: true,
+        status: "proposed",
+        createdByAgent: "athlete_intake_card",
+        communicationDomain: submission.parentName ? "parent_lead" : "athlete_lead",
+        result: {
+          fullBody: draftBody,
+          athleteName: submission.athleteName,
+          programId: intelProfile?.programId ?? null,
+          createdFrom: "athlete_leads_card",
+        },
+      }).returning();
+
+      if (intelProfile && !intelProfile.gmailDraftActionId) {
+        await db.update(leadIntelligenceProfiles)
+          .set({ gmailDraftActionId: newAction.id, updatedAt: new Date() })
+          .where(eq(leadIntelligenceProfiles.id, intelProfile.id));
+      }
+
+      return res.json({ draft: newAction, intelProfileId: intelProfile?.id ?? null, source: "created" });
+    } catch (err: any) {
+      console.error("[athlete-leads/draft] error:", err);
+      res.status(500).json({ message: "Failed to get or create draft" });
     }
   });
 
