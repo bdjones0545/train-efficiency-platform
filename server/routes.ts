@@ -32667,5 +32667,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerPulseAgentRoutes } = await import("./agents/pulse-agent-routes");
   registerPulseAgentRoutes(app);
 
+  // ─── AgentMail Learning Center routes ──────────────────────────────────────
+  const { registerAgentmailLearningRoutes } = await import("./agentmail-learning-routes");
+  registerAgentmailLearningRoutes(app, isAuthenticated, requireRole);
+
   return httpServer;
 }

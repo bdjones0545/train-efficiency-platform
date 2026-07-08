@@ -181,13 +181,35 @@ export async function getMessageLearningContext(
 ): Promise<string> {
   const domain = leadContext?.domain ?? "athlete_lead";
 
-  const rules = await db.select().from(agentMessageLearningRules)
-    .where(and(eq(agentMessageLearningRules.orgId, orgId), eq(agentMessageLearningRules.status, "active")))
-    .orderBy(desc(agentMessageLearningRules.confidence));
+  const [rules, coachingRules] = await Promise.all([
+    db.select().from(agentMessageLearningRules)
+      .where(and(eq(agentMessageLearningRules.orgId, orgId), eq(agentMessageLearningRules.status, "active")))
+      .orderBy(desc(agentMessageLearningRules.confidence)),
+    (async () => {
+      try {
+        const { agentDraftCoachingRules } = await import("@shared/schema");
+        return await db.select().from(agentDraftCoachingRules)
+          .where(and(eq(agentDraftCoachingRules.orgId, orgId), eq(agentDraftCoachingRules.isActive, true)))
+          .orderBy(agentDraftCoachingRules.createdAt);
+      } catch {
+        return [];
+      }
+    })(),
+  ]);
 
-  if (rules.length === 0) return "";
+  // ── Coach-authored standing instructions (highest priority) ──────────────
+  // Domain-specific first, then general
+  const standingInstructions = [
+    ...coachingRules.filter((r) => r.communicationDomain === domain),
+    ...coachingRules.filter((r) => r.communicationDomain === "general"),
+  ].slice(0, 8);
 
-  // Priority: same domain+type > same domain > global
+  const hasLearnedRules = rules.length > 0;
+  const hasStanding = standingInstructions.length > 0;
+
+  if (!hasLearnedRules && !hasStanding) return "";
+
+  // ── Learned rules (priority: same domain+type > same domain > global) ────
   const specific = rules.filter((r) => r.messageType === messageType && (r.communicationDomain === domain || !r.communicationDomain));
   const domainRules = rules.filter((r) => r.communicationDomain === domain && r.messageType !== messageType);
   const global = rules.filter((r) => r.appliesGlobally);
@@ -204,7 +226,18 @@ export async function getMessageLearningContext(
   const ctaRules = pick("cta", 3);
   const lengthRules = pick("length", 2);
 
-  const sections: string[] = ["Follow these learned communication rules for this organization:"];
+  const sections: string[] = ["Follow these communication rules for this organization:"];
+
+  // Standing instructions come first — they are coach-owned and highest priority
+  if (hasStanding) {
+    const instructionLines = standingInstructions.map((r) => {
+      const prefix = r.ruleType !== "instruction" ? `[${r.ruleType.toUpperCase()}] ` : "";
+      return `• ${prefix}${r.ruleText}`;
+    });
+    sections.push(`STANDING INSTRUCTIONS (coach-authored — follow exactly):\n${instructionLines.join("\n")}`);
+  }
+
+  // Learned rules follow
   if (doRules.length) sections.push(`DO:\n${doRules.join("\n")}`);
   if (avoidRules.length) sections.push(`AVOID:\n${avoidRules.join("\n")}`);
   if (toneRules.length) sections.push(`TONE:\n${toneRules.join("\n")}`);

@@ -539,6 +539,13 @@ function ApprovalReviewDrawer({
     enabled: open && !!proposalId,
   });
 
+  const drawerDomain = (detail?.proposal?.communicationDomain) ?? "athlete_lead";
+  const { data: learningContext } = useQuery<any>({
+    queryKey: ["/api/admin/agentmail-learning/context", drawerDomain],
+    queryFn: () => fetch(`/api/admin/agentmail-learning/context?domain=${drawerDomain}`, { credentials: "include" }).then((r) => r.json()),
+    enabled: open && !!drawerDomain,
+  });
+
   const proposal = detail?.proposal;
   const lead = detail?.lead;
   const org = detail?.org as { name?: string; logoUrl?: string | null; primaryColor?: string | null; emailPrimaryColor?: string | null; tagline?: string | null } | null;
@@ -732,6 +739,71 @@ function ApprovalReviewDrawer({
                   </div>
                 </div>
               )}
+
+              {/* ── Rules Used Panel ── */}
+              {(() => {
+                const allRules = [
+                  ...(learningContext?.standingInstructions ?? []).map((r: any) => ({ ...r, source: "standing" })),
+                  ...(learningContext?.learnedRules ?? []).map((r: any) => ({ ...r, source: "learned" })),
+                ];
+                const totalRules = learningContext?.totalRules ?? 0;
+                const RULE_TYPE_COLORS: Record<string, string> = {
+                  do: "bg-green-50 text-green-700 border border-green-200",
+                  avoid: "bg-red-50 text-red-700 border border-red-200",
+                  tone: "bg-purple-50 text-purple-700 border border-purple-200",
+                  cta: "bg-blue-50 text-blue-700 border border-blue-200",
+                  length: "bg-yellow-50 text-yellow-700 border border-yellow-200",
+                  instruction: "bg-indigo-50 text-indigo-700 border border-indigo-200",
+                };
+                return (
+                  <Collapsible>
+                    <CollapsibleTrigger asChild>
+                      <button className="w-full rounded-lg border bg-muted/20 p-3 flex items-center justify-between text-left hover:bg-muted/40 transition-colors" data-testid="button-rules-used-toggle">
+                        <span className="flex items-center gap-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                          <Brain className="w-3.5 h-3.5 text-purple-500" />
+                          Learning Rules Influencing This Draft
+                          {totalRules > 0 && (
+                            <span className="bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-300 rounded-full px-1.5 py-0.5 text-xs font-bold">{totalRules}</span>
+                          )}
+                        </span>
+                        <ChevronDown className="w-3.5 h-3.5 text-muted-foreground" />
+                      </button>
+                    </CollapsibleTrigger>
+                    <CollapsibleContent>
+                      <div className="border border-t-0 rounded-b-lg p-3 space-y-2">
+                        {allRules.length === 0 ? (
+                          <p className="text-xs text-muted-foreground italic">No active learning rules for this domain yet.</p>
+                        ) : (
+                          <>
+                            <div className="space-y-1.5">
+                              {allRules.slice(0, 5).map((r: any, i: number) => (
+                                <div key={r.id ?? i} className="flex items-start gap-2 text-xs">
+                                  <span className={`px-1.5 py-0.5 rounded font-medium shrink-0 mt-0.5 ${RULE_TYPE_COLORS[r.ruleType] ?? RULE_TYPE_COLORS.instruction}`}>
+                                    {r.ruleType}
+                                  </span>
+                                  <span className="text-sm leading-snug flex-1">{r.ruleText}</span>
+                                  {r.source === "standing" && (
+                                    <span className="shrink-0 text-xs text-blue-500 font-medium">coach</span>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                            {totalRules > 5 && (
+                              <p className="text-xs text-muted-foreground">+{totalRules - 5} more rule{totalRules - 5 !== 1 ? "s" : ""}</p>
+                            )}
+                          </>
+                        )}
+                        <div className="pt-1.5">
+                          <a href="/admin/agentmail-learning" className="text-xs text-primary hover:underline flex items-center gap-1">
+                            <BookOpen className="w-3 h-3" />
+                            {allRules.length > 0 ? "Manage learning rules" : "Add standing instructions"} →
+                          </a>
+                        </div>
+                      </div>
+                    </CollapsibleContent>
+                  </Collapsible>
+                );
+              })()}
 
               {/* ── Recipient / Lead Context Panel ── */}
               <div className="rounded-lg border p-4 space-y-3">

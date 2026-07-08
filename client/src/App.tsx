@@ -204,6 +204,7 @@ import AdminSoftwareImprovementPage from "@/pages/admin-software-improvement";
 import AdminGmailDraftReviewPage from "@/pages/admin-gmail-draft-review";
 import AdminSlackAlertReviewPage from "@/pages/admin-slack-alert-review";
 import AdminAgentMailPage from "@/pages/admin-agentmail";
+import AdminAgentmailLearningPage from "@/pages/admin-agentmail-learning";
 import AdminAiInfrastructurePage from "@/pages/admin-ai-infrastructure";
 import AdminAthleteIntelligencePage from "@/pages/admin-athlete-intelligence";
 import AdminCoachCapacityPage from "@/pages/admin-coach-capacity";
@@ -682,6 +683,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/gmail-draft-review" component={AdminGmailDraftReviewPage} />
                   <Route path="/admin/slack-alert-review" component={AdminSlackAlertReviewPage} />
                   <Route path="/admin/agentmail" component={AdminAgentMailPage} />
+                  <Route path="/admin/agentmail-learning" component={AdminAgentmailLearningPage} />
                   <Route path="/admin/athlete-intelligence" component={AdminAthleteIntelligencePage} />
                   <Route path="/admin/coach-capacity" component={AdminCoachCapacityPage} />
                   <Route path="/admin/scheduling-command-center" component={AdminSchedulingCommandCenterPage} />

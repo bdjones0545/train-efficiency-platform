@@ -1,0 +1,370 @@
+# TrainEfficiency Replit Task
+
+## AgentMail Phase C — Learning Center
+
+You are working inside the TrainEfficiency codebase.
+
+AgentMail Phase A closed the learning loop:
+
+* Learning context now flows into lead intake drafts.
+* Learning context now flows into follow-up sequences.
+* Learning context now flows into workflow-triggered emails.
+* Feedback chips are domain-specific.
+* Coach edits already create implicit learning signals.
+
+AgentMail Phase B added draft review trust:
+
+* Rendered preview
+* Lead/guardian context panel
+* Save & Review Later
+* Full-body source fix
+* Safer review workflow
+
+Now implement **AgentMail Phase C: Learning Center**.
+
+---
+
+# Goal
+
+Make AgentMail learning visible, editable, and coach-controllable.
+
+Right now, AgentMail learns from edits, rejections, and regeneration feedback, but coaches cannot easily see:
+
+* What the AI has learned
+* Which rules are active
+* Which communication domain a rule belongs to
+* Which rules are helping or hurting
+* How to teach the AI proactively
+
+This phase turns the hidden learning system into a transparent **AgentMail Learning Center**.
+
+---
+
+# Scope
+
+## 1. Learning Rules Viewer
+
+Create an admin UI where coaches can view learned rules.
+
+Suggested route:
+
+```txt
+/admin/agentmail-learning
+```
+
+or a new tab inside existing AgentMail Admin.
+
+Show rules from:
+
+```txt
+agent_message_learning_rules
+```
+
+Group/filter by communication domain:
+
+* athlete_lead
+* parent_lead
+* evaluation_scheduling
+* onboarding
+* retention
+* payment_recovery
+* program_assignment
+* win_back
+* general
+
+Display for each rule:
+
+* Rule text
+* Rule type: do / avoid / tone / cta / length / formatting / personalization
+* Communication domain
+* Confidence score
+* Reinforcement count, if available
+* Last reinforced / updated date
+* Created date
+* Active/inactive status
+* Source if available: edit, reject, regenerate, saved_for_review
+
+Actions:
+
+* Toggle active/inactive
+* Edit rule text if safe
+* Delete/archive rule if safe
+* Filter by type/domain/status/search
+
+Do not expose this to non-admin users.
+
+---
+
+## 2. Standing Instructions / Teach the AI
+
+Add a way for coaches to manually create organization-level communication rules.
+
+Suggested table if none exists:
+
+```sql
+agent_draft_coaching_rules (
+  id varchar primary key default gen_random_uuid(),
+  org_id varchar not null,
+  communication_domain varchar not null default 'general',
+  rule_type varchar not null default 'instruction',
+  rule_text text not null,
+  authored_by varchar not null,
+  is_active boolean not null default true,
+  created_at timestamp default now(),
+  updated_at timestamp default now()
+)
+```
+
+Purpose:
+
+These are direct coach-authored instructions, separate from inferred learned rules.
+
+Examples:
+
+* “For lead outreach, always mention the athlete’s sport in the first paragraph.”
+* “For parent emails, keep messages under 150 words.”
+* “Never mention pricing until after the evaluation.”
+* “Use a warm, direct coaching tone.”
+* “End scheduling emails with one clear next step.”
+
+UI:
+
+* Add instruction
+* Choose domain
+* Choose type
+* Save
+* Toggle active/inactive
+* Edit
+* Delete/archive
+
+---
+
+## 3. Merge Standing Instructions Into Learning Context
+
+Update:
+
+```txt
+getMessageLearningContext()
+```
+
+So it returns both:
+
+1. Learned rules from `agent_message_learning_rules`
+2. Coach-authored standing instructions from `agent_draft_coaching_rules`
+
+Ordering:
+
+* Standing instructions first
+* High-confidence learned rules second
+* Recent/reinforced learned rules next
+
+If there are too many:
+
+* Limit total length
+* Prefer active standing rules
+* Prefer high-confidence learned rules
+* Prefer domain-specific rules over general rules
+
+Rules:
+
+* Domain-specific context should include:
+
+  * active rules for that exact domain
+  * active global/general rules if appropriate
+* Inactive rules must not be included.
+* Deleted/archived rules must not be included.
+
+---
+
+## 4. Show “Rules Used” in Draft Review
+
+Update AI Approvals drawer.
+
+For each draft, show:
+
+* Communication domain
+* A small “Rules influencing this draft” section
+
+This should show the active rules that would be injected for that draft’s domain.
+
+If possible, add a route:
+
+```txt
+GET /api/agentmail/learning/context?domain=athlete_lead
+```
+
+Return:
+
+```ts
+{
+  domain: "athlete_lead",
+  standingInstructions: [],
+  learnedRules: [],
+  totalRules: number
+}
+```
+
+In the drawer:
+
+* Show top 3–5 rules
+* Link to full Learning Center
+
+If no rules exist:
+
+> No active learning rules for this domain yet.
+
+---
+
+## 5. Learning Metrics
+
+On the Learning Center page, add summary cards:
+
+* Total active rules
+* Learned rules
+* Standing instructions
+* Domains with rules
+* Rules disabled
+* Most corrected domain
+* Most common feedback type
+
+Use existing data if possible.
+
+Do not overbuild analytics.
+
+---
+
+# Backend API
+
+Add routes similar to:
+
+```txt
+GET /api/admin/agentmail-learning/rules
+PATCH /api/admin/agentmail-learning/rules/:id
+DELETE /api/admin/agentmail-learning/rules/:id
+
+GET /api/admin/agentmail-learning/instructions
+POST /api/admin/agentmail-learning/instructions
+PATCH /api/admin/agentmail-learning/instructions/:id
+DELETE /api/admin/agentmail-learning/instructions/:id
+
+GET /api/admin/agentmail-learning/context?domain=athlete_lead
+GET /api/admin/agentmail-learning/summary
+```
+
+Use existing auth and org scoping.
+
+All reads/writes must be scoped to the authenticated organization.
+
+---
+
+# Data Safety
+
+* Never allow one org to view another org’s rules.
+* Do not delete learning history unless existing patterns allow hard delete.
+* Prefer soft-disable / archive over destructive delete.
+* Do not expose internal prompts.
+* Do not expose private athlete/guardian data in rules.
+* Sanitize user-authored instruction text.
+* Keep rule text concise.
+
+---
+
+# Frontend
+
+Create a Learning Center page or tab.
+
+Suggested sections:
+
+## Summary
+
+Cards:
+
+* Active Rules
+* Standing Instructions
+* Learned Rules
+* Disabled Rules
+* Most Corrected Domain
+
+## Filters
+
+* Domain
+* Rule type
+* Source
+* Active status
+* Search
+
+## Learned Rules
+
+List/table of inferred rules.
+
+Each row/card:
+
+* Rule text
+* Domain badge
+* Rule type badge
+* Confidence
+* Reinforcement count
+* Last reinforced
+* Active toggle
+* Edit
+* Archive
+
+## Standing Instructions
+
+List/table of coach-authored rules.
+
+Each row/card:
+
+* Instruction text
+* Domain
+* Rule type
+* Created by
+* Active toggle
+* Edit
+* Archive
+
+## Add Instruction
+
+Small form:
+
+* Domain dropdown
+* Rule type dropdown
+* Textarea
+* Save
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. Learning Center loads for admin.
+2. Non-admin users cannot access it.
+3. Learned rules are org-scoped.
+4. Standing instructions can be created.
+5. Standing instructions can be edited.
+6. Standing instructions can be disabled.
+7. Learned rules can be toggled active/inactive.
+8. Inactive rules are excluded from `getMessageLearningContext`.
+9. Standing instructions are included in new draft generation.
+10. AI Approvals drawer shows rules influencing current draft.
+11. Existing Phase A/B functionality still works.
+12. TypeScript passes.
+
+---
+
+# Deliverable
+
+Implement Phase C and provide a report:
+
+* Files changed
+* Schema/table changes
+* Routes added
+* Learning Center UI behavior
+* Standing instruction behavior
+* getMessageLearningContext changes
+* AI Approvals drawer changes
+* Testing results
+* Remaining work for Phase D
+
+Focus on making AgentMail’s learning transparent, controllable, and coach-owned.

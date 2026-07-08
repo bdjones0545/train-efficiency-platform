@@ -3757,6 +3757,24 @@ export const agentMessageRevisions = pgTable("agent_message_revisions", {
 });
 export type AgentMessageRevision = typeof agentMessageRevisions.$inferSelect;
 
+// ─── Agent Draft Coaching Rules ───────────────────────────────────────────────
+// Coach-authored standing instructions that are injected directly into prompts.
+// Separate from inferred learning rules so coaches have full ownership.
+export const agentDraftCoachingRules = pgTable("agent_draft_coaching_rules", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  communicationDomain: text("communication_domain").notNull().default("general"),
+  ruleType: text("rule_type").notNull().default("instruction"),
+  ruleText: text("rule_text").notNull(),
+  authoredBy: text("authored_by").notNull(),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+export const insertAgentDraftCoachingRuleSchema = createInsertSchema(agentDraftCoachingRules).omit({ id: true, createdAt: true, updatedAt: true });
+export type AgentDraftCoachingRule = typeof agentDraftCoachingRules.$inferSelect;
+export type InsertAgentDraftCoachingRule = z.infer<typeof insertAgentDraftCoachingRuleSchema>;
+
 // ─── Agent Autonomy Settings ──────────────────────────────────────────────────
 // Per-org, per-message-type autonomy level controls.
 
