@@ -1,0 +1,324 @@
+# TrainEfficiency Replit Task
+
+## Phase 7 — Program + First Session Handoff
+
+You are working inside the TrainEfficiency codebase.
+
+Phase 6 completed:
+
+* Onboarding alert service
+* Alert summaries in Athlete Onboarding
+* Attention Inbox integration
+* CEO Heartbeat onboarding priorities
+* Deterministic stuck-onboarding alerts
+
+Now implement **Phase 7: Program + First Session Handoff**.
+
+---
+
+# Goal
+
+Move a converted athlete from “onboarded” to “actively training.”
+
+The onboarding system should help the coach complete two critical handoff steps:
+
+1. Assign the athlete’s first training program.
+2. Schedule and/or confirm the athlete’s first training session.
+
+This phase should connect onboarding to existing program and scheduling systems without building a full training assignment wizard from scratch.
+
+---
+
+# Scope
+
+## 1. Detect Program Assignment
+
+Audit existing schema/routes for athlete program assignment.
+
+Look for existing concepts such as:
+
+* `workout_programs`
+* `training_programs`
+* `athlete_programs`
+* `program_assignments`
+* `user_programs`
+* `training_systems`
+* `assigned_program_id`
+* `workout_program_assignments`
+
+Implement a reusable helper:
+
+```ts
+hasAssignedProgram(orgId, athleteUserId)
+```
+
+Use the real existing schema.
+
+Do not create a duplicate assignment system unless absolutely necessary.
+
+---
+
+## 2. Detect First Session Scheduled
+
+Use existing scheduling / booking / attendance schema.
+
+Look for:
+
+* `athleticBookings`
+* `bookings`
+* `sessions`
+* `appointments`
+* `attendance`
+* `checkIns`
+
+Implement a reusable helper:
+
+```ts
+hasFirstSessionScheduled(orgId, athleteUserId)
+```
+
+This should return true when the athlete has at least one future or confirmed training/evaluation/session booking.
+
+---
+
+## 3. Detect First Session Completed
+
+Use existing attendance/check-in/session completion data.
+
+Implement:
+
+```ts
+hasFirstSessionCompleted(orgId, athleteUserId)
+```
+
+Return true when the athlete has at least one completed attended session.
+
+If attendance data cannot reliably identify this yet, leave it false and document why.
+
+---
+
+## 4. Auto-Sync Checklist From Real Data
+
+Update onboarding checklist fields from real data:
+
+* `programAssigned`
+* `firstSessionScheduled`
+* `firstSessionCompleted`
+
+This should happen:
+
+* When GET `/api/admin/athlete-onboarding` runs
+* When GET `/api/admin/athlete-onboarding/alerts` runs
+* After conversion if appropriate
+* After checklist manual update if appropriate
+
+Rules:
+
+* Real data should be authoritative.
+* Do not mark true fields false unless you are confident the underlying assignment/session no longer exists.
+* Avoid noisy writes on every GET if nothing changed.
+* Recalculate status and nextBestAction after sync.
+
+---
+
+## 5. Recommend First Program
+
+Do not auto-assign a program unless there is a safe existing mechanism.
+
+Instead, create a recommendation helper:
+
+```ts
+recommendFirstProgramFromIntake(submission, memoryProfile, availablePrograms)
+```
+
+Inputs:
+
+* Sport
+* Goals
+* Position
+* Grade/age
+* Experience level
+* Training status
+* Existing program templates if available
+
+Output:
+
+```ts
+{
+  recommendedProgramId?: string,
+  recommendedProgramName?: string,
+  reason: string,
+  confidence: number,
+  actionUrl?: string
+}
+```
+
+Rules:
+
+* Deterministic first.
+* No AI needed for Phase 7.
+* Example logic:
+
+  * sport contains football/baseball/basketball/hockey/volleyball → sport performance / speed / power template
+  * goals contain speed/agility/vertical/explosive → speed/power template
+  * beginner/novice → foundation template
+  * advanced/elite → performance template
+* If no matching program exists, return a coach action:
+
+  * “Create or assign first training program.”
+
+---
+
+## 6. Program Assignment Action
+
+If an existing safe program assignment route exists:
+
+* Add a button in Athlete Onboarding:
+
+  * “Assign Recommended Program”
+* Call the existing assignment route.
+* On success, update checklist `programAssigned = true`.
+
+If no safe route exists:
+
+* Add a contextual action button:
+
+  * “Open Program Builder”
+  * or “Open Athlete Intelligence”
+* Do not create fake assignment behavior.
+
+---
+
+## 7. First Session Action
+
+Connect the onboarding action center to existing scheduling.
+
+For athletes missing first session:
+
+* Show “Schedule First Session.”
+* Link to existing scheduling command center or open reusable scheduling modal if available.
+* If a booking is created/confirmed for that athlete:
+
+  * update `firstSessionScheduled = true`
+  * recalculate onboarding status
+  * remove related alerts
+
+If full inline scheduling is risky, start with deep link + manual mark button.
+
+---
+
+## 8. Update Alerts
+
+Update Phase 6 alert logic so:
+
+* Program missing alert disappears when real program assignment exists.
+* First session missing alert disappears when real session booking exists.
+* First session completed is tracked if attendance exists.
+* Onboarding stuck logic respects real handoff progress.
+
+---
+
+# Backend API Changes
+
+Update:
+
+```ts
+GET /api/admin/athlete-onboarding
+GET /api/admin/athlete-onboarding/alerts
+PATCH /api/admin/athlete-onboarding/:id
+```
+
+Optional new endpoints only if needed:
+
+```ts
+POST /api/admin/athlete-onboarding/:id/sync
+POST /api/admin/athlete-onboarding/:id/assign-recommended-program
+```
+
+Do not add endpoints unless they actually do useful real work.
+
+---
+
+# Frontend Changes
+
+Update `/admin/athlete-onboarding`.
+
+Each athlete card should show:
+
+* Program assignment status
+* First session status
+* First session completed status
+* Recommended program if available
+* Reason for recommendation
+* Confidence
+* Action button:
+
+  * Assign Recommended Program, if safe route exists
+  * Open Program Builder / Athlete Intelligence otherwise
+* Action button:
+
+  * Schedule First Session
+  * Mark First Session Complete when appropriate
+
+The page should make it obvious when the athlete is ready to train.
+
+Suggested readiness states:
+
+* Needs Program
+* Needs First Session
+* Ready to Train
+* Actively Training
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* Full program assignment wizard
+* Full training program builder
+* Full calendar redesign
+* Full attendance system
+* Full athlete portal
+
+Do not auto-assign programs unless the system already has safe assignment semantics.
+
+Do not auto-complete first session unless attendance data clearly confirms it.
+
+Do not break prior phases.
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. Onboarding detects real program assignment.
+2. Onboarding detects real future/confirmed session.
+3. Onboarding detects completed session if attendance exists.
+4. Checklist sync updates only when needed.
+5. Program missing alert disappears after assignment.
+6. First session missing alert disappears after scheduling.
+7. Recommended program appears based on sport/goals/experience.
+8. Recommended program action is real or clearly links to the correct existing page.
+9. Ready-to-train state appears when required handoff steps are complete.
+10. CEO Heartbeat and Attention Inbox alert counts still match.
+11. TypeScript passes.
+12. Phase 1–6 workflows still work.
+
+---
+
+# Deliverable
+
+Implement Phase 7 and provide a report:
+
+* Files changed
+* Existing program/session tables used
+* Detection helpers added
+* Checklist sync behavior
+* Program recommendation logic
+* Frontend changes
+* Alert updates
+* What remains for Phase 8
+
+Focus on closing the gap between “converted athlete” and “actively training athlete.”

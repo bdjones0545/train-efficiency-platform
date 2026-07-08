@@ -20197,6 +20197,10 @@ Respond with this exact JSON structure:
         grade: leadCaptureSubmissions.grade,
         parentName: leadCaptureSubmissions.parentName,
         parentEmail: leadCaptureSubmissions.parentEmail,
+        goals: leadCaptureSubmissions.goals,
+        experienceLevel: leadCaptureSubmissions.experienceLevel,
+        currentTrainingStatus: leadCaptureSubmissions.currentTrainingStatus,
+        position: leadCaptureSubmissions.position,
       })
       .from(athleteOnboardingChecklists)
       .leftJoin(usersTable, eq(usersTable.id, athleteOnboardingChecklists.athleteUserId))
@@ -20257,6 +20261,10 @@ Respond with this exact JSON structure:
           grade: r.grade || null,
           parentName: r.parentName || null,
           parentEmail: (r as any).parentEmail || null,
+          goals: (r as any).goals || [],
+          experienceLevel: (r as any).experienceLevel || null,
+          currentTrainingStatus: (r as any).currentTrainingStatus || null,
+          position: (r as any).position || null,
           guardianEmail,
           guardianLinked: r.guardianLinked,
           accountInviteSent: r.accountInviteSent,
@@ -20282,6 +20290,64 @@ Respond with this exact JSON structure:
           },
         };
       });
+
+      // ── Phase 7: Batch-sync real data + compute recommendations ───────────
+      try {
+        const {
+          batchSyncFromRealData,
+          getOrgPrograms,
+          recommendFirstProgramFromIntake,
+          calcReadinessState,
+        } = await import("./services/athlete-handoff-service");
+
+        const athleteIds = [...new Set(enriched.map(r => r.athleteUserId))];
+        const [realDataMap, orgPrograms] = await Promise.all([
+          batchSyncFromRealData(orgId, athleteIds),
+          getOrgPrograms(orgId),
+        ]);
+
+        const dbUpdates: Promise<any>[] = [];
+
+        enriched = enriched.map(r => {
+          const real = realDataMap.get(r.athleteUserId) ??
+            { programAssigned: false, firstSessionScheduled: false, firstSessionCompleted: false };
+
+          // Real data wins when true; manual overrides preserved when real is false
+          const programAssigned = r.programAssigned || real.programAssigned;
+          const firstSessionScheduled = r.firstSessionScheduled || real.firstSessionScheduled;
+          const firstSessionCompleted = r.firstSessionCompleted || real.firstSessionCompleted;
+
+          const changed = programAssigned !== r.programAssigned ||
+            firstSessionScheduled !== r.firstSessionScheduled ||
+            firstSessionCompleted !== r.firstSessionCompleted;
+
+          if (changed) {
+            dbUpdates.push(
+              db.update(athleteOnboardingChecklists)
+                .set({ programAssigned, firstSessionScheduled, firstSessionCompleted, updatedAt: new Date() })
+                .where(eq(athleteOnboardingChecklists.id, r.id))
+                .catch((e: any) => console.warn("[onboarding sync]", e.message))
+            );
+          }
+
+          const recommendation = recommendFirstProgramFromIntake(
+            r.sport || null,
+            r.goals || [],
+            r.experienceLevel || null,
+            r.currentTrainingStatus || null,
+            r.grade || null,
+            orgPrograms
+          );
+
+          const readinessState = calcReadinessState(programAssigned, firstSessionScheduled, firstSessionCompleted);
+
+          return { ...r, programAssigned, firstSessionScheduled, firstSessionCompleted, recommendation, readinessState };
+        });
+
+        if (dbUpdates.length > 0) Promise.all(dbUpdates).catch(() => {});
+      } catch (err: any) {
+        console.warn("[athlete-onboarding GET] Phase 7 sync error:", err.message);
+      }
 
       // Compute per-record alerts
       const { computeOnboardingAlerts, highestSeverity: highestSev } = await import("./services/athlete-onboarding-alerts");
@@ -20374,6 +20440,60 @@ Respond with this exact JSON structure:
     } catch (err: any) {
       console.error("[athlete-onboarding/alerts] error:", err);
       res.status(500).json({ message: "Failed to fetch onboarding alerts", error: err.message });
+    }
+  });
+
+  // POST /api/admin/athlete-onboarding/:id/sync — force real-data sync for one checklist
+  app.post("/api/admin/athlete-onboarding/:id/sync", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const adminUserId = req.user.claims.sub ?? req.user.id;
+      const adminProfile = await storage.getUserProfile(adminUserId);
+      if (!adminProfile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const orgId = adminProfile.organizationId;
+      const { id } = req.params;
+
+      const { db: dbConn } = await import("./db");
+      const { athleteOnboardingChecklists: ocTable } = await import("@shared/schema");
+      const { eq: eqOp, and: andOp } = await import("drizzle-orm");
+
+      const rows = await dbConn.select().from(ocTable).where(andOp(
+        eqOp(ocTable.id, id),
+        eqOp(ocTable.orgId, orgId)
+      )).limit(1);
+
+      if (rows.length === 0) return res.status(404).json({ message: "Checklist not found" });
+      const current = rows[0];
+
+      const { batchSyncFromRealData } = await import("./services/athlete-handoff-service");
+      const realDataMap = await batchSyncFromRealData(orgId, [current.athleteUserId]);
+      const real = realDataMap.get(current.athleteUserId) ??
+        { programAssigned: false, firstSessionScheduled: false, firstSessionCompleted: false };
+
+      const programAssigned = current.programAssigned || real.programAssigned;
+      const firstSessionScheduled = current.firstSessionScheduled || real.firstSessionScheduled;
+      const firstSessionCompleted = current.firstSessionCompleted || real.firstSessionCompleted;
+
+      const changed = programAssigned !== current.programAssigned ||
+        firstSessionScheduled !== current.firstSessionScheduled ||
+        firstSessionCompleted !== current.firstSessionCompleted;
+
+      if (changed) {
+        await dbConn.update(ocTable)
+          .set({ programAssigned, firstSessionScheduled, firstSessionCompleted, updatedAt: new Date() })
+          .where(eqOp(ocTable.id, id));
+      }
+
+      return res.json({
+        id,
+        synced: changed,
+        programAssigned,
+        firstSessionScheduled,
+        firstSessionCompleted,
+        realData: real,
+      });
+    } catch (err: any) {
+      console.error("[athlete-onboarding/sync]", err);
+      res.status(500).json({ message: "Sync failed", error: err.message });
     }
   });
 
