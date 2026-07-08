@@ -15694,6 +15694,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerReadinessRoutes } = await import("./readiness-routes");
   registerReadinessRoutes(app);
 
+  // ── Athlete / Guardian First-Login Onboarding (Phase 10) ─────────────────
+  const { registerClientOnboardingRoutes } = await import("./client-onboarding-routes");
+  registerClientOnboardingRoutes(app);
+
   // ── Adaptive Intervention Workflows + Action Engine ─────────────────────────
   const { registerAdaptiveWorkflowRoutes } = await import("./adaptive-workflow-routes");
   registerAdaptiveWorkflowRoutes(app);

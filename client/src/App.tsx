@@ -184,6 +184,8 @@ import ExerciseMediaManagerPage from "@/pages/exercise-media-manager";
 import AthleteProfilePage from "@/pages/athlete-profile";
 import OrgGuardianPage from "@/pages/org-guardian";
 import CoachGuardianManagementPage from "@/pages/coach-guardian-management";
+import ClientOnboardingPage from "@/pages/client-onboarding";
+import GuardianOnboardingPage from "@/pages/guardian-onboarding";
 import OrgProfilePage from "@/pages/org-profile";
 import CoachTeamsPage from "@/pages/coach-teams";
 import CoachTeamDetailPage from "@/pages/coach-team-detail";
@@ -269,8 +271,31 @@ function PlatformAdminRoute({ component: Component }: { component: React.Compone
 
 function SmartHome() {
   const perms = usePermissions();
+  const { user } = useAuth();
+  const [, navigate] = useLocation();
+
+  const isClientUser = !perms.isHydrating && !perms.canViewRevenue && !!user;
+
+  const { data: onboardingCheck, isLoading: checkLoading } = useQuery<{
+    isFirstLogin: boolean;
+    redirectTo: string;
+  }>({
+    queryKey: ["/api/client/onboarding/check"],
+    enabled: isClientUser,
+    staleTime: 1000 * 60 * 5,
+    retry: false,
+  });
+
+  useEffect(() => {
+    if (!isClientUser || !onboardingCheck) return;
+    if (onboardingCheck.isFirstLogin) {
+      navigate(onboardingCheck.redirectTo);
+    }
+  }, [isClientUser, onboardingCheck, navigate]);
+
   if (perms.isHydrating) return null;
   if (perms.canViewRevenue) return <HomePage />;
+  if (isClientUser && checkLoading) return null;
   return <BookFastPage />;
 }
 
@@ -445,6 +470,8 @@ function OrgLayout({ orgSlug }: { orgSlug: string }) {
                 <Route path="/org/:slug/coach/workflows" component={CoachWorkflowsPage} />
                 <Route path="/org/:slug/guardian" component={OrgGuardianPage} />
                 <Route path="/org/:slug/coach/guardians" component={CoachGuardianManagementPage} />
+                <Route path="/client/onboarding" component={ClientOnboardingPage} />
+                <Route path="/guardian/onboarding" component={GuardianOnboardingPage} />
                 <Route path="/org/:slug/coach/intelligence" component={OrgIntelligencePage} />
                 <Route path="/org/:slug/coach/command-center" component={CoachCommandCenterPage} />
                 <Route path="/org/:slug/coach/communications-center" component={CoachCommunicationsCenterPage} />

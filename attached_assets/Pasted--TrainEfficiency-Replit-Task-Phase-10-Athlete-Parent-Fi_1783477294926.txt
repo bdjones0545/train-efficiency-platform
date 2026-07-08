@@ -1,0 +1,427 @@
+# TrainEfficiency Replit Task
+
+## Phase 10 — Athlete / Parent First Login Experience
+
+You are working inside the TrainEfficiency codebase.
+
+Phases 1–9 completed:
+
+* Intake pipeline actions
+* AgentMail communication
+* Scheduling workflow
+* Lead → athlete conversion
+* PAIL context seeding
+* Guardian management
+* Onboarding Action Center
+* CEO Heartbeat onboarding alerts
+* Program + first session handoff
+* Billing + waiver readiness
+
+Now implement **Phase 10: Athlete / Parent First Login Experience**.
+
+---
+
+# Goal
+
+When an athlete or parent logs in for the first time, they should not land in an empty app.
+
+They should see a simple onboarding experience that explains:
+
+* Who they are connected to
+* What has already been completed
+* What still needs action
+* What happens next
+* How to contact the coach or organization
+
+This is **not** a full athlete portal redesign.
+
+This is a first-login onboarding layer.
+
+---
+
+# Core Experience
+
+Create a lightweight first-login dashboard for athletes and guardians.
+
+Suggested routes:
+
+```text
+/client/onboarding
+/guardian/onboarding
+```
+
+or reuse existing authenticated client routes if they already exist.
+
+The page should answer:
+
+> “What do I need to do before training starts?”
+
+---
+
+# User Types
+
+## Athlete
+
+Show:
+
+* Profile summary
+* Organization name
+* Sport / position / school / grade
+* Next session if scheduled
+* Program assignment status
+* Readiness checklist
+* Contact coach / organization action
+* Account setup completion
+
+## Guardian / Parent
+
+Show:
+
+* Linked athlete or athletes
+* Each athlete's onboarding readiness
+* Upcoming session if available
+* Program assignment status
+* Missing items
+* Communication preferences
+* Contact organization action
+
+---
+
+# Backend Scope
+
+## 1. Authenticated Onboarding Summary
+
+Add route(s):
+
+```text
+GET /api/client/onboarding
+GET /api/guardian/onboarding
+```
+
+Use the authenticated user.
+
+Return only records the user is allowed to see.
+
+For athlete:
+
+```ts
+{
+  userType: "athlete",
+  organization,
+  athlete,
+  profile,
+  onboardingChecklist,
+  readiness,
+  nextSession,
+  assignedProgram,
+  missingItems,
+  nextBestAction,
+  contactOptions
+}
+```
+
+For guardian:
+
+```ts
+{
+  userType: "guardian",
+  guardian,
+  organization,
+  linkedAthletes: [
+    {
+      athlete,
+      onboardingChecklist,
+      readiness,
+      nextSession,
+      assignedProgram,
+      missingItems,
+      nextBestAction
+    }
+  ],
+  communicationPreferences,
+  contactOptions
+}
+```
+
+Rules:
+
+* Athletes can only see their own record.
+* Guardians can only see linked athletes.
+* No admin-only notes should leak.
+* Do not expose internal AI summaries unless explicitly safe.
+* Do not expose revenue/billing internals beyond user-safe readiness wording.
+
+---
+
+## 2. First Login Detection
+
+Audit existing user schema.
+
+Look for:
+
+* lastLoginAt
+* onboardingCompletedAt
+* firstLoginCompleted
+* profileCompletedAt
+* client onboarding state
+
+If fields exist, use them.
+
+If not, add lightweight fields safely, such as:
+
+```text
+users.firstLoginCompletedAt
+users.profileConfirmedAt
+```
+
+or use a profile/onboarding table if one already exists.
+
+The system should know whether this is the first login.
+
+---
+
+## 3. User-Safe Readiness Mapping
+
+Do not show internal labels like:
+
+* PAIL
+* billing blocked
+* waiver blocker
+* operational readiness score
+* onboarding alert severity
+
+Translate into friendly language:
+
+Internal:
+
+```text
+needs_program
+```
+
+User-facing:
+
+```text
+Your coach is preparing your training plan.
+```
+
+Internal:
+
+```text
+needs_first_session
+```
+
+User-facing:
+
+```text
+Your first session still needs to be scheduled.
+```
+
+Internal:
+
+```text
+needs_billing
+```
+
+User-facing:
+
+```text
+Payment setup is needed before training starts.
+```
+
+Internal:
+
+```text
+ready_to_train
+```
+
+User-facing:
+
+```text
+You're ready for your first training session.
+```
+
+---
+
+## 4. Profile Confirmation
+
+Allow athlete/guardian to confirm or update basic safe profile info.
+
+Athlete fields:
+
+* phone
+* school
+* grade
+* sport
+* position
+* goals
+
+Guardian fields:
+
+* phone
+* preferred contact method
+* communication preferences
+
+Do not allow users to edit admin-only notes, billing internals, or role fields.
+
+---
+
+## 5. Contact Organization
+
+Provide a simple contact action.
+
+Options:
+
+* Create AgentMail draft / message to organization
+* mailto fallback only if no AgentMail user-facing pathway exists
+* existing support/contact route if available
+
+Preferred:
+
+```text
+Contact Coach
+```
+
+This should create or open an AgentMail-backed conversation if supported.
+
+If not supported, link to org contact email.
+
+---
+
+## 6. Mark Onboarding Viewed / Profile Confirmed
+
+Add action route(s):
+
+```text
+POST /api/client/onboarding/confirm-profile
+POST /api/guardian/onboarding/confirm-profile
+POST /api/client/onboarding/mark-viewed
+POST /api/guardian/onboarding/mark-viewed
+```
+
+These should update first-login / profile confirmation fields.
+
+---
+
+# Frontend Scope
+
+## 1. Athlete First Login Page
+
+Create or update client onboarding page.
+
+Sections:
+
+1. Welcome header
+2. Organization card
+3. Athlete profile summary
+4. Readiness checklist
+5. Next session card
+6. Training program card
+7. Missing items / next best action
+8. Contact coach button
+
+---
+
+## 2. Guardian First Login Page
+
+Create or update guardian onboarding page.
+
+Sections:
+
+1. Welcome parent/guardian header
+2. Linked athletes
+3. Each athlete's onboarding status
+4. Upcoming sessions
+5. Program status
+6. Communication preferences
+7. Contact organization button
+
+---
+
+## 3. Redirect Logic
+
+If this is the user's first login:
+
+* Athlete goes to athlete onboarding route.
+* Guardian goes to guardian onboarding route.
+
+Do not break admin login.
+
+Admins should continue to land in admin dashboard.
+
+---
+
+## 4. Completion State
+
+When all required user-facing steps are complete:
+
+Show:
+
+```text
+You're all set.
+```
+
+Then provide:
+
+* Go to dashboard
+* View schedule
+* View program
+* Contact coach
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* Full athlete portal redesign
+* Parent billing portal
+* Full messaging app
+* Full scheduling self-service
+* Full program viewer if not already available
+* Waiver signing platform
+* Payment checkout
+
+Do not expose:
+
+* Internal alerts
+* CEO Heartbeat
+* AI summaries meant for coaches
+* Revenue estimates
+* Admin notes
+* Internal readiness scores unless translated safely
+
+---
+
+# Testing
+
+Verify:
+
+1. Athlete can access only their onboarding data.
+2. Guardian can access only linked athletes.
+3. Admin-only data does not leak.
+4. First-login redirect does not affect admins.
+5. User-facing readiness messages are friendly and accurate.
+6. Profile confirmation persists.
+7. Communication preferences persist.
+8. Missing items display correctly.
+9. Contact coach action works or falls back safely.
+10. Existing admin onboarding system remains intact.
+11. TypeScript passes.
+
+---
+
+# Deliverable
+
+Provide:
+
+* Files changed
+* Routes added
+* First-login detection implementation
+* Athlete onboarding response shape
+* Guardian onboarding response shape
+* Frontend pages created
+* Redirect behavior
+* Data privacy safeguards
+* What remains for Phase 11
+
+Focus on closing the loop between the admin-side onboarding system and the athlete/parent's first experience after account creation.
