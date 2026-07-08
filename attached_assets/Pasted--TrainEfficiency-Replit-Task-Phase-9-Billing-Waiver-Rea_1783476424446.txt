@@ -1,0 +1,517 @@
+# TrainEfficiency Replit Task
+
+## Phase 9 — Billing & Waiver Readiness
+
+You are working inside the TrainEfficiency codebase.
+
+Phases 1–8 completed:
+
+* Athlete Intake Pipeline
+* AgentMail integration
+* Scheduling workflow
+* Lead → Athlete conversion
+* PAIL context seeding
+* Guardian management
+* Athlete Onboarding Action Center
+* CEO Heartbeat onboarding monitoring
+* Program assignment handoff
+* Parent/Guardian Experience
+
+Now implement **Phase 9: Billing & Waiver Readiness**.
+
+---
+
+# Goal
+
+An athlete should not silently begin training when critical business requirements are incomplete.
+
+This phase makes onboarding financially and legally ready without building a full billing or waiver platform.
+
+The system should answer:
+
+* Is this athlete financially ready?
+* Has a waiver been completed?
+* Is the athlete blocked from training?
+* What should the coach/admin do next?
+
+---
+
+# Product Philosophy
+
+Separate:
+
+### Operational Readiness
+
+Can this athlete begin training?
+
+### Financial Readiness
+
+Can this athlete be billed?
+
+### Legal Readiness
+
+Has required documentation been completed?
+
+These become independent readiness dimensions.
+
+---
+
+# Scope
+
+## 1. Billing Readiness Detection
+
+Audit existing billing/payment schema.
+
+Look for:
+
+* Stripe customer IDs
+* subscriptions
+* payment methods
+* invoices
+* packages
+* memberships
+* athlete billing records
+
+Create a reusable helper:
+
+```ts
+computeBillingReadiness(orgId, athleteUserId)
+```
+
+Return:
+
+```ts
+{
+  ready: boolean,
+  stripeCustomerExists: boolean,
+  activeMembership: boolean,
+  packageAssigned: boolean,
+  paymentMethodOnFile: boolean,
+  outstandingBalance: number,
+  reason?: string
+}
+```
+
+Use existing schema wherever possible.
+
+Do not invent billing tables if they already exist.
+
+---
+
+## 2. Waiver Readiness
+
+Audit the codebase.
+
+Determine whether waivers already exist.
+
+Possible locations:
+
+* documents
+* agreements
+* signed forms
+* uploads
+* participant waivers
+
+If supported:
+
+Create:
+
+```ts
+computeWaiverReadiness()
+```
+
+Return:
+
+```ts
+{
+    required: boolean,
+    signed: boolean,
+    signedAt?: Date,
+    expiresAt?: Date,
+    reason?: string
+}
+```
+
+If waivers do not yet exist:
+
+Do not build a complete waiver platform.
+
+Instead:
+
+* Add lightweight placeholder readiness.
+* Return:
+
+```ts
+required: false
+```
+
+with a clear TODO.
+
+---
+
+## 3. Operational Readiness
+
+Create one reusable helper:
+
+```ts
+computeOperationalReadiness()
+```
+
+Evaluate:
+
+* Athlete account
+* Program assigned
+* First session scheduled
+* Guardian requirements (if youth athlete)
+* Billing
+* Waiver
+* PAIL initialized
+
+Return:
+
+```ts
+{
+    readyToTrain: boolean,
+    blockingItems: [],
+    warnings: [],
+    readinessScore: number
+}
+```
+
+Score:
+
+0–100
+
+Deterministic only.
+
+No AI.
+
+---
+
+## 4. Onboarding Checklist Integration
+
+Extend:
+
+`athlete_onboarding_checklists`
+
+Track:
+
+* Billing Ready
+* Waiver Ready
+* Operational Ready
+
+Do not duplicate information.
+
+Use helper outputs.
+
+Automatically update checklist when:
+
+* Billing changes
+* Program assigned
+* Session scheduled
+* Waiver signed
+
+---
+
+## 5. Athlete Readiness State
+
+Replace simple readiness with richer states.
+
+States:
+
+```text
+Needs Onboarding
+
+Needs Billing
+
+Needs Waiver
+
+Needs Program
+
+Needs First Session
+
+Ready to Train
+
+Actively Training
+```
+
+Compute automatically.
+
+Expose in:
+
+* Athlete Onboarding
+* Athlete Profile
+* Guardian Detail
+* CEO Heartbeat
+
+---
+
+## 6. Readiness Dashboard
+
+Update:
+
+`/admin/athlete-onboarding`
+
+Add new summary tiles:
+
+* Ready to Train
+* Billing Issues
+* Waiver Issues
+* Operational Blocks
+
+Each tile filters the page.
+
+---
+
+## 7. Athlete Card Enhancements
+
+Every athlete card should show:
+
+### Financial
+
+* Stripe
+* Membership
+* Payment
+
+### Legal
+
+* Waiver
+
+### Operational
+
+* Program
+* First Session
+* Guardian
+* PAIL
+
+Display:
+
+✅ Ready
+
+⚠ Needs Action
+
+⛔ Blocking
+
+---
+
+## 8. CEO Heartbeat
+
+Add readiness metrics.
+
+Examples:
+
+* Athletes blocked by billing
+* Athletes blocked by waiver
+* Athletes operationally ready
+* Athletes converted but unable to train
+* Average onboarding readiness score
+
+CEO priorities:
+
+Example:
+
+> 7 athletes are fully onboarded but cannot train due to incomplete payment setup.
+
+or
+
+> 3 athletes are blocked because required waivers have not been completed.
+
+Estimate potential revenue at risk using existing onboarding value assumptions.
+
+---
+
+## 9. Attention Inbox
+
+Generate attention items:
+
+Billing missing
+
+Payment method missing
+
+Package missing
+
+Waiver missing
+
+Operationally blocked athlete
+
+Automatically resolve when helpers return ready.
+
+---
+
+## 10. Future Stripe Hook
+
+If Stripe customer creation already exists:
+
+Link readiness automatically.
+
+If not:
+
+Do NOT implement Stripe from scratch.
+
+Instead:
+
+Return:
+
+```text
+Billing integration not yet configured
+```
+
+and surface a recommended action.
+
+---
+
+# Backend API
+
+Extend:
+
+```text
+GET /api/admin/athlete-onboarding
+```
+
+Each athlete should now include:
+
+```ts
+billingReadiness
+
+waiverReadiness
+
+operationalReadiness
+
+readinessState
+
+readinessScore
+```
+
+---
+
+Add:
+
+```text
+GET /api/admin/readiness
+```
+
+Return:
+
+Organization-wide readiness summary.
+
+---
+
+# Frontend
+
+Update Athlete Onboarding.
+
+Summary:
+
+Total Athletes
+
+Ready to Train
+
+Billing Blocked
+
+Waiver Blocked
+
+Operationally Blocked
+
+Average Readiness
+
+---
+
+Each athlete card:
+
+Readiness badge
+
+Readiness score
+
+Financial section
+
+Legal section
+
+Operational section
+
+Blocking reasons
+
+Recommended next action
+
+---
+
+# Data Rules
+
+Everything should be deterministic.
+
+Never infer billing.
+
+Never infer waivers.
+
+If data does not exist:
+
+Return:
+
+Unknown
+
+Not Configured
+
+or
+
+Not Required
+
+Do not fabricate readiness.
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* Stripe checkout
+* Subscription management
+* Invoice system
+* Waiver editor
+* Digital signature platform
+* Payment portal
+* Parent billing portal
+
+Do not break:
+
+* Intake
+* Conversion
+* Scheduling
+* Guardian experience
+* CEO Heartbeat
+* Attention Inbox
+* Program assignment
+* PAIL
+
+---
+
+# Testing
+
+Verify:
+
+1. Billing readiness reflects existing billing data.
+2. Waiver readiness reflects existing waiver data.
+3. Operational readiness updates automatically.
+4. Readiness score is deterministic.
+5. Athlete cards display readiness correctly.
+6. Dashboard filters work.
+7. CEO Heartbeat surfaces readiness risks.
+8. Attention Inbox generates readiness alerts.
+9. Existing onboarding workflow still functions.
+10. TypeScript passes.
+
+---
+
+# Deliverable
+
+Provide:
+
+* Files changed
+* Existing billing schema used
+* Existing waiver schema used
+* Readiness helper implementations
+* Checklist integration
+* Frontend changes
+* CEO Heartbeat additions
+* Attention Inbox additions
+* Remaining work for Phase 10
+
+The objective is to evolve onboarding into a complete **Athlete Readiness System**, where coaches can immediately understand whether an athlete is truly ready to begin training and what is preventing them from doing so.

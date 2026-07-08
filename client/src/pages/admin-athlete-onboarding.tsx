@@ -40,6 +40,11 @@ import {
   Play,
   ArrowRight,
   RotateCcw,
+  CreditCard,
+  FileText,
+  Activity,
+  XCircle,
+  TrendingUp,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -70,7 +75,38 @@ interface ProgramRecommendation {
   actionLabel: string;
 }
 
-type ReadinessState = "needs_program" | "needs_first_session" | "ready_to_train" | "actively_training";
+type ReadinessState =
+  | "needs_onboarding"
+  | "needs_billing"
+  | "needs_waiver"
+  | "needs_program"
+  | "needs_first_session"
+  | "ready_to_train"
+  | "actively_training";
+
+interface BillingReadiness {
+  ready: boolean;
+  stripeCustomerExists: boolean;
+  activeMembership: boolean;
+  packageAssigned: boolean;
+  paymentMethodOnFile: boolean;
+  outstandingBalance: number;
+  reason?: string;
+}
+
+interface WaiverReadiness {
+  required: boolean;
+  signed: boolean;
+  signedAt?: string;
+  reason?: string;
+}
+
+interface OperationalReadiness {
+  readyToTrain: boolean;
+  blockingItems: string[];
+  warnings: string[];
+  readinessScore: number;
+}
 
 interface OnboardingRecord {
   id: string;
@@ -110,6 +146,10 @@ interface OnboardingRecord {
   highestSeverity: "critical" | "high" | "medium" | "low" | null;
   recommendation?: ProgramRecommendation;
   readinessState?: ReadinessState;
+  readinessScore?: number;
+  billingReadiness?: BillingReadiness;
+  waiverReadiness?: WaiverReadiness;
+  operationalReadiness?: OperationalReadiness;
   links: {
     lead: string | null;
     athleteIntelligence: string;
@@ -128,6 +168,13 @@ interface SummaryStats {
   highAlerts: number;
   mediumAlerts: number;
   stuckOnboardingCount: number;
+  // Phase 9 readiness
+  readyToTrain?: number;
+  activelyTraining?: number;
+  billingBlocked?: number;
+  waiverBlocked?: number;
+  operationallyBlocked?: number;
+  averageReadinessScore?: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -155,6 +202,24 @@ function statusLabel(status: string) {
 }
 
 const readinessConfig: Record<ReadinessState, { label: string; color: string; icon: typeof Dumbbell; description: string }> = {
+  needs_onboarding: {
+    label: "Needs Onboarding",
+    color: "bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300",
+    icon: UserCheck,
+    description: "Account invite not yet sent — onboarding hasn't started",
+  },
+  needs_billing: {
+    label: "Needs Billing",
+    color: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400",
+    icon: CreditCard,
+    description: "Billing not set up — payment method, membership, or package required",
+  },
+  needs_waiver: {
+    label: "Needs Waiver",
+    color: "bg-yellow-100 text-yellow-700 dark:bg-yellow-950/40 dark:text-yellow-400",
+    icon: FileText,
+    description: "Waiver not completed — required legal documentation is missing",
+  },
   needs_program: {
     label: "Needs Program",
     color: "bg-orange-100 text-orange-700 dark:bg-orange-950/40 dark:text-orange-400",
@@ -171,7 +236,7 @@ const readinessConfig: Record<ReadinessState, { label: string; color: string; ic
     label: "Ready to Train",
     color: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400",
     icon: Zap,
-    description: "Program assigned and session scheduled — athlete is ready",
+    description: "Program assigned, session scheduled, billing and waiver complete — athlete is ready",
   },
   actively_training: {
     label: "Actively Training",
@@ -204,6 +269,24 @@ function confidenceColor(confidence: number): string {
   return "text-slate-500";
 }
 
+// ─── Readiness Dot ────────────────────────────────────────────────────────────
+
+function ReadinessDot({ label, value, blocking }: { label: string; value?: boolean | null; blocking?: boolean }) {
+  const icon = value
+    ? <CheckCircle className="h-2.5 w-2.5 text-emerald-500 shrink-0" />
+    : blocking
+      ? <XCircle className="h-2.5 w-2.5 text-red-500 shrink-0" />
+      : <AlertCircle className="h-2.5 w-2.5 text-amber-400 shrink-0" />;
+  return (
+    <div className="flex items-center gap-1">
+      {icon}
+      <span className={`text-[9px] ${value ? "text-foreground" : blocking ? "text-red-600 dark:text-red-400 font-medium" : "text-muted-foreground"}`}>
+        {label}
+      </span>
+    </div>
+  );
+}
+
 // ─── Checklist Item ───────────────────────────────────────────────────────────
 
 function ChecklistItem({ done, needsAction, label }: { done: boolean; needsAction: boolean; label: string }) {
@@ -224,15 +307,68 @@ function ChecklistItem({ done, needsAction, label }: { done: boolean; needsActio
 
 // ─── Readiness Banner ─────────────────────────────────────────────────────────
 
-function ReadinessBanner({ state, recommendation, onSchedule, onSync, syncLoading }: {
+function ReadinessBanner({ state, recommendation, billingReadiness, waiverReadiness, operationalReadiness, onSchedule, onSync, syncLoading }: {
   state: ReadinessState;
   recommendation?: ProgramRecommendation;
+  billingReadiness?: BillingReadiness;
+  waiverReadiness?: WaiverReadiness;
+  operationalReadiness?: OperationalReadiness;
   onSchedule?: () => void;
   onSync?: () => void;
   syncLoading?: boolean;
 }) {
   const cfg = readinessConfig[state];
   const Icon = cfg.icon;
+
+  if (state === "needs_onboarding") {
+    return (
+      <div className="rounded-md bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-700 px-3 py-2.5 flex items-center gap-2">
+        <UserCheck className="h-4 w-4 text-slate-500 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">Onboarding Not Started</p>
+          <p className="text-[11px] text-slate-600/80 dark:text-slate-400/70">Send the account invite to begin the onboarding journey.</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "needs_billing") {
+    return (
+      <div className="rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 px-3 py-2.5">
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex items-start gap-2">
+            <CreditCard className="h-4 w-4 text-red-500 mt-0.5 shrink-0" />
+            <div>
+              <p className="text-xs font-semibold text-red-700 dark:text-red-400">Billing Required</p>
+              <p className="text-[11px] text-red-600/80 dark:text-red-400/70">
+                {billingReadiness?.reason ?? "Payment method, membership, or package must be set up before training."}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => onSync?.()}
+            disabled={syncLoading}
+            className="text-[10px] text-red-500 hover:text-red-600 flex items-center gap-0.5 shrink-0"
+            title="Re-check billing"
+          >
+            <RefreshCw className="h-3 w-3" />
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (state === "needs_waiver") {
+    return (
+      <div className="rounded-md bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 px-3 py-2.5 flex items-center gap-2">
+        <FileText className="h-4 w-4 text-yellow-600 shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-semibold text-yellow-700 dark:text-yellow-400">Waiver Incomplete</p>
+          <p className="text-[11px] text-yellow-600/80 dark:text-yellow-400/70">Mark waiver as completed on the checklist when the athlete has signed.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (state === "actively_training") {
     return (
@@ -399,11 +535,15 @@ function OnboardingCard({
     ? "border-red-300 dark:border-red-800"
     : record.highestSeverity === "high"
       ? "border-orange-300 dark:border-orange-800"
-      : readiness === "actively_training"
-        ? "border-purple-200 dark:border-purple-800"
-        : readiness === "ready_to_train"
-          ? "border-emerald-200 dark:border-emerald-800"
-          : "border-border";
+      : readiness === "needs_billing"
+        ? "border-red-200 dark:border-red-900"
+        : readiness === "needs_waiver"
+          ? "border-yellow-200 dark:border-yellow-900"
+          : readiness === "actively_training"
+            ? "border-purple-200 dark:border-purple-800"
+            : readiness === "ready_to_train"
+              ? "border-emerald-200 dark:border-emerald-800"
+              : "border-border";
 
   return (
     <Card className={`border ${borderClass}`} data-testid={`card-onboarding-${record.id}`}>
@@ -489,6 +629,8 @@ function OnboardingCard({
               className={`h-full rounded-full transition-all ${
                 readiness === "actively_training" ? "bg-purple-500"
                 : readiness === "ready_to_train" ? "bg-emerald-500"
+                : readiness === "needs_billing" ? "bg-red-500"
+                : readiness === "needs_waiver" ? "bg-yellow-400"
                 : record.highestSeverity === "critical" ? "bg-red-500"
                 : record.highestSeverity === "high" ? "bg-orange-500"
                 : "bg-amber-400"
@@ -505,8 +647,80 @@ function OnboardingCard({
           <ReadinessBanner
             state={readiness}
             recommendation={record.recommendation}
+            billingReadiness={record.billingReadiness}
+            waiverReadiness={record.waiverReadiness}
+            operationalReadiness={record.operationalReadiness}
+            onSync={() => onSync(record.id)}
             syncLoading={syncLoading}
           />
+        )}
+
+        {/* Phase 9 — Readiness score + dimensions */}
+        {record.readinessScore !== undefined && (
+          <div className="rounded-md border bg-muted/30 px-3 py-2.5 space-y-2">
+            {/* Score bar */}
+            <div className="flex items-center gap-3">
+              <Activity className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide">Readiness Score</span>
+                  <span className={`text-xs font-bold ${record.readinessScore >= 80 ? "text-emerald-600 dark:text-emerald-400" : record.readinessScore >= 55 ? "text-amber-600 dark:text-amber-400" : "text-red-600 dark:text-red-400"}`} data-testid={`text-readiness-score-${record.id}`}>
+                    {record.readinessScore}/100
+                  </span>
+                </div>
+                <div className="h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${record.readinessScore >= 80 ? "bg-emerald-500" : record.readinessScore >= 55 ? "bg-amber-400" : "bg-red-500"}`}
+                    style={{ width: `${record.readinessScore}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Readiness dimensions grid */}
+            <div className="grid grid-cols-3 gap-2 pt-0.5">
+              {/* Financial */}
+              <div className="space-y-0.5">
+                <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-0.5">
+                  <CreditCard className="h-2.5 w-2.5" /> Financial
+                </p>
+                <ReadinessDot label="Stripe" value={record.billingReadiness?.stripeCustomerExists} />
+                <ReadinessDot label="Membership" value={record.billingReadiness?.activeMembership} />
+                <ReadinessDot label="Payment" value={record.billingReadiness?.paymentMethodOnFile} blocking={!record.billingReadiness?.ready} />
+              </div>
+              {/* Legal */}
+              <div className="space-y-0.5">
+                <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-0.5">
+                  <FileText className="h-2.5 w-2.5" /> Legal
+                </p>
+                <ReadinessDot label="Waiver" value={record.waiverReadiness?.signed} blocking={record.waiverReadiness?.required && !record.waiverReadiness?.signed} />
+                {!record.waiverReadiness?.required && (
+                  <span className="text-[9px] text-muted-foreground/50 italic">Not required</span>
+                )}
+              </div>
+              {/* Operational */}
+              <div className="space-y-0.5">
+                <p className="text-[9px] font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-0.5">
+                  <TrendingUp className="h-2.5 w-2.5" /> Operational
+                </p>
+                <ReadinessDot label="Program" value={record.programAssigned} blocking={!record.programAssigned} />
+                <ReadinessDot label="Session" value={record.firstSessionScheduled} blocking={!record.firstSessionScheduled && record.programAssigned} />
+                <ReadinessDot label="Guardian" value={record.guardianLinked || !record.parentEmail} />
+              </div>
+            </div>
+
+            {/* Blocking items */}
+            {(record.operationalReadiness?.blockingItems?.length ?? 0) > 0 && (
+              <div className="pt-1 border-t">
+                <p className="text-[9px] font-semibold text-red-600 dark:text-red-400 uppercase tracking-wide mb-0.5 flex items-center gap-0.5">
+                  <XCircle className="h-2.5 w-2.5" /> Blocking
+                </p>
+                {record.operationalReadiness!.blockingItems.map((item, i) => (
+                  <p key={i} className="text-[10px] text-red-700 dark:text-red-400/80">• {item}</p>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* Top alert callout */}
@@ -766,7 +980,10 @@ export default function AdminAthleteOnboardingPage() {
   };
 
   const rawRecords = data?.records ?? [];
-  const readinessCounts = {
+  const readinessCounts: Record<ReadinessState, number> = {
+    needs_onboarding: rawRecords.filter(r => r.readinessState === "needs_onboarding").length,
+    needs_billing: rawRecords.filter(r => r.readinessState === "needs_billing").length,
+    needs_waiver: rawRecords.filter(r => r.readinessState === "needs_waiver").length,
     needs_program: rawRecords.filter(r => r.readinessState === "needs_program").length,
     needs_first_session: rawRecords.filter(r => r.readinessState === "needs_first_session").length,
     ready_to_train: rawRecords.filter(r => r.readinessState === "ready_to_train").length,
@@ -801,12 +1018,51 @@ export default function AdminAthleteOnboardingPage() {
         <SummaryTile label="Complete" value={summary.complete} icon={Trophy} color="bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400" />
       </div>
 
-      {/* Readiness state breakdown */}
+      {/* Phase 9 readiness summary tiles */}
       {summary.total > 0 && (
         <div className="space-y-2">
-          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Readiness Breakdown</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Readiness Overview</p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {(["needs_program", "needs_first_session", "ready_to_train", "actively_training"] as ReadinessState[]).map(state => {
+            <SummaryTile
+              label="Ready to Train"
+              value={readinessCounts.ready_to_train}
+              icon={Zap}
+              color="bg-emerald-100 text-emerald-600 dark:bg-emerald-950/50 dark:text-emerald-400"
+              active={readinessFilter === "ready_to_train"}
+              onClick={() => setReadinessFilter(readinessFilter === "ready_to_train" ? "all" : "ready_to_train")}
+            />
+            <SummaryTile
+              label="Billing Issues"
+              value={readinessCounts.needs_billing}
+              icon={CreditCard}
+              color="bg-red-100 text-red-600 dark:bg-red-950/50 dark:text-red-400"
+              active={readinessFilter === "needs_billing"}
+              onClick={() => setReadinessFilter(readinessFilter === "needs_billing" ? "all" : "needs_billing")}
+            />
+            <SummaryTile
+              label="Waiver Issues"
+              value={readinessCounts.needs_waiver}
+              icon={FileText}
+              color="bg-yellow-100 text-yellow-600 dark:bg-yellow-950/50 dark:text-yellow-400"
+              active={readinessFilter === "needs_waiver"}
+              onClick={() => setReadinessFilter(readinessFilter === "needs_waiver" ? "all" : "needs_waiver")}
+            />
+            <SummaryTile
+              label="Avg Readiness"
+              value={summary.averageReadinessScore ?? 0}
+              icon={Activity}
+              color="bg-blue-100 text-blue-600 dark:bg-blue-950/50 dark:text-blue-400"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Readiness state breakdown (all 7 states) */}
+      {summary.total > 0 && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Training Pipeline</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {(["needs_onboarding", "needs_program", "needs_first_session", "actively_training"] as ReadinessState[]).map(state => {
               const cfg = readinessConfig[state];
               const Icon = cfg.icon;
               const count = readinessCounts[state];

@@ -15690,6 +15690,10 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   const { registerAthleteReadinessRoutes } = await import("./athlete-readiness-routes");
   registerAthleteReadinessRoutes(app);
 
+  // ── Billing & Waiver Readiness (Phase 9) ─────────────────────────────────
+  const { registerReadinessRoutes } = await import("./readiness-routes");
+  registerReadinessRoutes(app);
+
   // ── Adaptive Intervention Workflows + Action Engine ─────────────────────────
   const { registerAdaptiveWorkflowRoutes } = await import("./adaptive-workflow-routes");
   registerAdaptiveWorkflowRoutes(app);
@@ -20349,6 +20353,35 @@ Respond with this exact JSON structure:
         console.warn("[athlete-onboarding GET] Phase 7 sync error:", err.message);
       }
 
+      // ── Phase 9: Billing & Waiver Readiness ─────────────────────────────────
+      try {
+        const { computeBillingReadiness, computeWaiverReadiness, computeOperationalReadiness, computeEnrichedReadinessState } = await import("./services/readiness-service");
+        const readinessBundles = await Promise.all(enriched.map(async (r: any) => {
+          const snapshot = {
+            accountInviteSent: r.accountInviteSent, welcomeDraftApproved: r.welcomeDraftApproved,
+            pailContextSeeded: r.pailContextSeeded, guardianLinked: r.guardianLinked,
+            programAssigned: r.programAssigned, firstSessionScheduled: r.firstSessionScheduled,
+            firstSessionCompleted: r.firstSessionCompleted, paymentSetup: r.paymentSetup,
+            waiverCompleted: r.waiverCompleted, parentEmail: r.parentEmail ?? null,
+          };
+          const [billing, waiver] = await Promise.all([
+            computeBillingReadiness(orgId, r.athleteUserId, snapshot),
+            computeWaiverReadiness(orgId, r.athleteUserId, snapshot),
+          ]);
+          const operational = computeOperationalReadiness(snapshot, billing, waiver);
+          const enrichedState = computeEnrichedReadinessState(snapshot, billing, waiver);
+          return { id: r.id, billing, waiver, operational, enrichedState, score: operational.readinessScore };
+        }));
+        const bundleMap = new Map(readinessBundles.map((b: any) => [b.id, b]));
+        enriched = enriched.map((r: any) => {
+          const b = bundleMap.get(r.id);
+          if (!b) return r;
+          return { ...r, readinessState: b.enrichedState, readinessScore: b.score, billingReadiness: b.billing, waiverReadiness: b.waiver, operationalReadiness: b.operational };
+        });
+      } catch (err: any) {
+        console.warn("[athlete-onboarding GET] Phase 9 readiness error:", err.message);
+      }
+
       // Compute per-record alerts
       const { computeOnboardingAlerts, highestSeverity: highestSev } = await import("./services/athlete-onboarding-alerts");
       const enrichedWithAlerts = enriched.map(r => {
@@ -20358,6 +20391,7 @@ Respond with this exact JSON structure:
       });
 
       // Summary stats (computed before filters)
+      const allScores = enrichedWithAlerts.map((r: any) => r.readinessScore ?? 0);
       const summary = {
         total: enrichedWithAlerts.length,
         needsAction: enrichedWithAlerts.filter(r => r.status === "in_progress").length,
@@ -20368,6 +20402,13 @@ Respond with this exact JSON structure:
         highAlerts: enrichedWithAlerts.filter(r => r.highestSeverity === "high").length,
         mediumAlerts: enrichedWithAlerts.filter(r => r.highestSeverity === "medium").length,
         stuckOnboardingCount: enrichedWithAlerts.filter(r => r.alerts.some((a: any) => a.type === "onboarding_stuck")).length,
+        // Phase 9 readiness
+        readyToTrain: enrichedWithAlerts.filter((r: any) => r.readinessState === "ready_to_train").length,
+        activelyTraining: enrichedWithAlerts.filter((r: any) => r.readinessState === "actively_training").length,
+        billingBlocked: enrichedWithAlerts.filter((r: any) => r.readinessState === "needs_billing").length,
+        waiverBlocked: enrichedWithAlerts.filter((r: any) => r.readinessState === "needs_waiver").length,
+        operationallyBlocked: enrichedWithAlerts.filter((r: any) => !["ready_to_train","actively_training"].includes((r as any).readinessState ?? "") && (!(r as any).programAssigned || !(r as any).firstSessionScheduled)).length,
+        averageReadinessScore: enrichedWithAlerts.length > 0 ? Math.round(allScores.reduce((a: number, b: number) => a + b, 0) / enrichedWithAlerts.length) : 0,
       };
 
       // Apply filters

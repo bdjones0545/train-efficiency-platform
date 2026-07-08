@@ -588,6 +588,59 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
     console.warn("[CEO Heartbeat] Guardian metrics error:", err.message);
   }
 
+  // ── 9. Billing & Waiver Readiness ─────────────────────────────────────────
+  try {
+    const { computeOrgReadinessSummary } = await import("./readiness-service");
+    const rs = await computeOrgReadinessSummary(orgId);
+
+    if (rs.needsBilling >= 3) {
+      priorities.push({
+        id: `${orgId}:readiness-billing-blocked`,
+        priorityScore: calcPriorityScore({ revenuePotential: 80, urgency: 85, risk: 70, confidence: 95, stageImportance: 75, safetyRisk: 0 }),
+        category: "athlete_onboarding",
+        action: `${rs.needsBilling} athlete${rs.needsBilling > 1 ? "s are" : " is"} fully onboarded but cannot train — payment setup is missing`,
+        reason: "Athletes blocked by missing billing represent direct revenue at risk. Each uncollected session is a potential loss.",
+        agentSource: "Billing Readiness Monitor",
+        requiresApproval: false,
+        estimatedRevenueCents: rs.estimatedRevenueAtRiskCents,
+        entityType: "athlete_onboarding_checklist",
+        urgency: rs.needsBilling >= 7 ? "high" : "medium",
+      });
+    }
+
+    if (rs.needsWaiver >= 2) {
+      priorities.push({
+        id: `${orgId}:readiness-waiver-blocked`,
+        priorityScore: calcPriorityScore({ revenuePotential: 40, urgency: 75, risk: 80, confidence: 95, stageImportance: 60, safetyRisk: 30 }),
+        category: "athlete_onboarding",
+        action: `${rs.needsWaiver} athlete${rs.needsWaiver > 1 ? "s have" : " has"} incomplete waivers — legal requirements not yet satisfied`,
+        reason: "Training athletes without signed waivers creates liability exposure. Resolve before first session.",
+        agentSource: "Waiver Compliance Monitor",
+        requiresApproval: false,
+        estimatedRevenueCents: 0,
+        entityType: "athlete_onboarding_checklist",
+        urgency: "high",
+      });
+    }
+
+    if (rs.averageReadinessScore < 55 && rs.totalAthletes >= 3) {
+      priorities.push({
+        id: `${orgId}:readiness-low-average`,
+        priorityScore: calcPriorityScore({ revenuePotential: 50, urgency: 60, risk: 50, confidence: 85, stageImportance: 55, safetyRisk: 0 }),
+        category: "athlete_onboarding",
+        action: `Average onboarding readiness score is ${rs.averageReadinessScore}/100 across ${rs.totalAthletes} athletes — pipeline has blockers`,
+        reason: "Low average readiness means most athletes are missing key steps. Review the onboarding dashboard to resolve blockers.",
+        agentSource: "Operational Readiness Monitor",
+        requiresApproval: false,
+        estimatedRevenueCents: rs.operationallyBlocked * 100_00,
+        entityType: "athlete_onboarding_checklist",
+        urgency: "medium",
+      });
+    }
+  } catch (err: any) {
+    console.warn("[CEO Heartbeat] Readiness metrics error:", err.message);
+  }
+
   // ── Inject top Hermes learnings as advisory priorities ────────────────────
   try {
     const { getTopLearningsForContext } = await import("./hermes-learning-service");
