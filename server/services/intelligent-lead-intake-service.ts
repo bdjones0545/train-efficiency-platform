@@ -395,9 +395,12 @@ export async function runIntelligentLeadIntakePipeline(data: RawIntakeData): Pro
 
   const earlyDomain = data.parentName ? "parent_lead" : "athlete_lead";
   let draftLearningCtx: string | null = null;
+  let draftAppliedRules: import("./message-learning-service").AppliedRuleMetadata[] = [];
   try {
-    const { getMessageLearningContext } = await import("./message-learning-service");
-    draftLearningCtx = await getMessageLearningContext(data.orgId, earlyDomain);
+    const { getMessageLearningContextWithRules } = await import("./message-learning-service");
+    const result = await getMessageLearningContextWithRules(data.orgId, earlyDomain, { domain: earlyDomain });
+    draftLearningCtx = result.contextText;
+    draftAppliedRules = result.rules;
   } catch {}
 
   const [summaryResult, draftResult] = await Promise.allSettled([
@@ -533,6 +536,13 @@ export async function runIntelligentLeadIntakePipeline(data: RawIntakeData): Pro
         })
         .returning();
       gmailDraftActionId = gmailAction.id;
+
+      // Record which rules were applied — non-blocking
+      if (draftAppliedRules.length > 0) {
+        import("./agentmail-analytics-service").then(({ recordAgentMailRuleApplications }) =>
+          recordAgentMailRuleApplications({ orgId: data.orgId, actionId: gmailAction.id, communicationDomain: earlyDomain, rules: draftAppliedRules })
+        ).catch(() => {});
+      }
 
       if (profileId) {
         await db

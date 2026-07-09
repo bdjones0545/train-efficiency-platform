@@ -215,9 +215,9 @@ export async function generateDomainDraft(opts: GenerateDomainDraftOpts): Promis
   const mtConfig = config.messageTypes[messageType];
   if (!mtConfig) throw new Error(`Unknown messageType "${messageType}" for domain "${domain}"`);
 
-  // Get domain-aware learning context
-  const { getMessageLearningContext } = await import("./message-learning-service");
-  const learningCtx = await getMessageLearningContext(orgId, messageType, { domain });
+  // Get domain-aware learning context with rule tracking
+  const { getMessageLearningContextWithRules } = await import("./message-learning-service");
+  const { contextText: learningCtx, rules: _appliedRules } = await getMessageLearningContextWithRules(orgId, messageType, { domain });
 
   const contextBlock = buildContextBlock(domain, context);
 
@@ -264,6 +264,13 @@ Write the best possible outreach email for this situation. Return ONLY valid JSO
       learningApplied: learningCtx.length > 0,
     } as any,
   } as any).returning();
+
+  // Record which rules were applied — non-blocking, fail-open
+  if (_appliedRules.length > 0) {
+    import("./agentmail-analytics-service").then(({ recordAgentMailRuleApplications }) =>
+      recordAgentMailRuleApplications({ orgId, actionId: action.id, communicationDomain: domain, rules: _appliedRules })
+    ).catch(() => {});
+  }
 
   return { subject, body, actionId: action.id, domain, messageType };
 }

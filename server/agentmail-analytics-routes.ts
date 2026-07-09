@@ -33,6 +33,11 @@ async function ensureRuleApplicationsTable() {
       applied_at timestamp DEFAULT now()
     )
   `);
+  // Idempotency index — ON CONFLICT DO NOTHING relies on this
+  await db.execute(drizzleSql`
+    CREATE UNIQUE INDEX IF NOT EXISTS agentmail_rule_apps_dedup
+      ON agentmail_rule_applications (action_id, rule_source, rule_id)
+  `);
 }
 
 export function registerAgentmailAnalyticsRoutes(

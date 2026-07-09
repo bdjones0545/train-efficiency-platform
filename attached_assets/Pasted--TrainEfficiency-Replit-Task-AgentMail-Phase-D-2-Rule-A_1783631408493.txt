@@ -1,0 +1,331 @@
+# TrainEfficiency Replit Task
+
+## AgentMail Phase D.2 — Rule Application Instrumentation
+
+You are working inside the TrainEfficiency codebase.
+
+AgentMail Phase D is complete:
+
+* `/admin/agentmail-analytics`
+* AgentMail analytics summary
+* Feedback analytics
+* Rule analytics
+* CEO Heartbeat performance signal
+* Attention Inbox performance alerts
+* `agentmail_rule_applications` table exists on startup
+* Current rule analytics correctly reports `trackingAvailable: false`
+
+Now implement **Phase D.2: Rule Application Instrumentation**.
+
+---
+
+# Goal
+
+Track which learning rules and standing instructions are injected into each generated draft.
+
+This unlocks real per-rule performance analytics.
+
+The system should be able to answer:
+
+* Which rules were used on this draft?
+* Which rules correlate with approval?
+* Which rules correlate with editing?
+* Which rules correlate with rejection?
+* Which standing instructions are actually useful?
+* Which learned rules may be hurting performance?
+
+---
+
+# Scope
+
+## 1. Return Rule IDs From Learning Context
+
+Update:
+
+```txt
+server/services/message-learning-service.ts
+```
+
+Current:
+
+```ts
+getMessageLearningContext(orgId, communicationDomain)
+```
+
+It returns prompt text.
+
+Update it so callers can also get structured metadata about the rules used.
+
+Recommended:
+
+```ts
+getMessageLearningContextWithRules(orgId, communicationDomain)
+```
+
+Return:
+
+```ts
+{
+  contextText: string,
+  rules: [
+    {
+      ruleId: string,
+      source: "learned" | "standing_instruction",
+      communicationDomain: string,
+      ruleType: string,
+      ruleText: string
+    }
+  ]
+}
+```
+
+Keep the existing `getMessageLearningContext()` function for backward compatibility by having it call the new function and return only `contextText`.
+
+Rules:
+
+* Preserve current behavior when no rules exist.
+* Include only active rules.
+* Include standing instructions first.
+* Include domain-specific before general.
+* Do not expose private data.
+
+---
+
+## 2. Record Rule Applications
+
+Create a reusable helper:
+
+```ts
+recordAgentMailRuleApplications({
+  orgId,
+  actionId,
+  communicationDomain,
+  rules
+})
+```
+
+Insert rows into:
+
+```txt
+agentmail_rule_applications
+```
+
+Fields:
+
+* org_id
+* action_id
+* rule_source
+* rule_id
+* communication_domain
+* applied_at
+
+Rules:
+
+* Idempotent per `(action_id, rule_source, rule_id)` if possible.
+* Do not crash draft generation if insert fails.
+* Log warning and continue.
+* Skip insert if no rules.
+* Skip insert if no actionId.
+* Ensure org scoping.
+
+---
+
+## 3. Wire Instrumentation Into Draft Generation Paths
+
+Update every path that used learning context in Phase A.
+
+### Lead Intake
+
+```txt
+server/services/intelligent-lead-intake-service.ts
+```
+
+After draft action is created and actionId is known:
+
+* Record the rules applied.
+* Domain:
+
+  * athlete_lead
+  * parent_lead
+  * evaluation_scheduling
+  * lead_followup where appropriate
+
+### AgentMail Follow-Ups
+
+```txt
+server/services/agentmail-followup-service.ts
+```
+
+After follow-up draft/action is created:
+
+* Record rules applied.
+* Use resolved communication domain.
+
+### Workflow-Triggered Emails
+
+```txt
+server/workflows/executor.ts
+```
+
+After `gmail_agent_actions` proposal/action is created:
+
+* Record rules applied.
+* Use workflow domain map.
+
+### Regenerate Path
+
+If regenerate uses learning context and creates/replaces a draft:
+
+* Record applied rules against the regenerated action if actionId exists.
+* If the same action row is updated rather than new action created, record rules against that actionId.
+
+---
+
+## 4. Update Analytics Rule Endpoint
+
+Update:
+
+```txt
+GET /api/admin/agentmail-analytics/rules
+```
+
+Now return:
+
+```ts
+trackingAvailable: true
+```
+
+when application rows exist.
+
+For each rule:
+
+```ts
+{
+  ruleId,
+  source,
+  timesApplied,
+  approvalsAfterApplied,
+  rejectionsAfterApplied,
+  savedForReviewAfterApplied,
+  editsAfterApplied,
+  approvalRateAfterApplied,
+  rejectionRateAfterApplied,
+  editRateAfterApplied,
+  lastAppliedAt,
+  outcomeConfidence
+}
+```
+
+Outcome logic:
+
+Join `agentmail_rule_applications.action_id` to `gmail_agent_actions.id`.
+
+Count outcomes based on action status / executedAt / feedback:
+
+* approved/sent
+* rejected
+* saved_for_review
+* edited before approval if feedback row has edited body/subject
+* regenerated if feedback or action metadata indicates regenerate
+
+If exact outcome is not available:
+
+* Return null.
+* Do not fabricate.
+
+---
+
+## 5. Update Learning Center / Analytics UI
+
+Update `/admin/agentmail-analytics` rule performance tab.
+
+Show:
+
+* Tracking active
+* Times applied
+* Approval rate after applied
+* Edit rate after applied
+* Rejection rate after applied
+* Last applied
+* Outcome confidence
+
+Add labels:
+
+* High confidence: 10+ applications
+* Medium confidence: 5–9
+* Low confidence: 1–4
+* No data: 0
+
+Update `/admin/agentmail-learning` if useful:
+
+* Show “applied X times” on learned rules / standing instructions.
+* Optional: link to analytics.
+
+---
+
+# Data Integrity
+
+## Idempotency
+
+Avoid duplicate rows if the same draft generation retries.
+
+Preferred:
+
+* Unique index on:
+
+  * `action_id`
+  * `rule_source`
+  * `rule_id`
+
+If index does not exist, create it safely.
+
+## Failure Safety
+
+Rule tracking must never block:
+
+* draft generation
+* approval
+* sending
+* regeneration
+* workflows
+* heartbeat
+
+All instrumentation should fail open.
+
+---
+
+# Testing / Verification
+
+Verify:
+
+1. `getMessageLearningContext()` still works for existing callers.
+2. New structured helper returns context + rules.
+3. Drafts generated with rules create `agentmail_rule_applications` rows.
+4. Drafts generated without rules create no rows and do not error.
+5. Duplicate generation does not duplicate rule application rows.
+6. Lead outreach records applied rules.
+7. Follow-ups record applied rules.
+8. Workflow emails record applied rules.
+9. Regenerated drafts record applied rules.
+10. Rule analytics endpoint reports `trackingAvailable: true` when data exists.
+11. Per-rule counts are based on real application rows.
+12. Frontend analytics shows times applied and confidence labels.
+13. TypeScript passes.
+14. Existing AgentMail behavior remains unchanged.
+
+---
+
+# Deliverable
+
+Implement Phase D.2 and provide a report:
+
+* Files changed
+* Schema/index changes
+* New helper functions
+* Generation paths instrumented
+* Analytics endpoint changes
+* UI changes
+* Testing results
+* What remains for Phase E
+
+Focus on measuring which AgentMail rules are actually used and how those rules perform.

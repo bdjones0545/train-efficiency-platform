@@ -351,6 +351,83 @@ function FeedbackInsightsTab({ range }: { range: string }) {
   );
 }
 
+// ─── Confidence badge helper ──────────────────────────────────────────────────
+
+function ConfidenceBadge({ level, count }: { level: string; count: number }) {
+  const cfg: Record<string, { label: string; cls: string }> = {
+    high:   { label: "High confidence", cls: "bg-green-100 text-green-700 border border-green-200" },
+    medium: { label: "Medium confidence", cls: "bg-amber-50 text-amber-700 border border-amber-200" },
+    low:    { label: "Low confidence", cls: "bg-gray-100 text-gray-600 border border-gray-200" },
+    none:   { label: "No data yet", cls: "bg-muted text-muted-foreground border" },
+  };
+  const { label, cls } = cfg[level] ?? cfg.none;
+  return (
+    <span className={`text-xs px-1.5 py-0.5 rounded-full ${cls}`} title={`${count} application${count !== 1 ? "s" : ""} recorded`}>
+      {level === "none" ? label : `${label} (${count}×)`}
+    </span>
+  );
+}
+
+// ─── Rule row component ───────────────────────────────────────────────────────
+
+function RuleRow({ r, typeClass, trackingAvailable }: { r: any; typeClass: string; trackingAvailable: boolean }) {
+  const hasOutcome = r.approvalRateAfterApplied != null || r.rejectionRateAfterApplied != null;
+  return (
+    <div
+      className={`border rounded-lg p-3 space-y-2 ${!r.isActive ? "opacity-50" : ""}`}
+      data-testid={`row-rule-${r.ruleId}`}
+    >
+      <div className="flex items-start gap-2">
+        <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${typeClass}`}>{r.ruleType}</span>
+        <span className="flex-1 text-sm leading-snug">{r.ruleText}</span>
+        <span className={`text-xs px-1.5 py-0.5 rounded-full shrink-0 ${DOMAIN_BADGE[r.domain] ?? DOMAIN_BADGE.general}`}>
+          {domainLabel(r.domain)}
+        </span>
+        {!r.isActive && <Badge variant="outline" className="text-xs shrink-0">Disabled</Badge>}
+      </div>
+
+      {/* Tracking stats row */}
+      <div className="flex items-center gap-3 flex-wrap pl-0.5">
+        {trackingAvailable ? (
+          <>
+            <ConfidenceBadge level={r.outcomeConfidence ?? "none"} count={r.timesApplied ?? 0} />
+            {hasOutcome ? (
+              <>
+                {r.approvalRateAfterApplied != null && (
+                  <span className={`text-xs flex items-center gap-0.5 ${pctColor(r.approvalRateAfterApplied)}`}>
+                    <CheckCircle2 className="w-3 h-3" />{r.approvalRateAfterApplied}% approval
+                  </span>
+                )}
+                {r.editRateAfterApplied != null && (
+                  <span className={`text-xs flex items-center gap-0.5 ${pctColor(r.editRateAfterApplied, true)}`}>
+                    <Edit3 className="w-3 h-3" />{r.editRateAfterApplied}% edit
+                  </span>
+                )}
+                {r.rejectionRateAfterApplied != null && (
+                  <span className={`text-xs flex items-center gap-0.5 ${pctColor(r.rejectionRateAfterApplied, true)}`}>
+                    <XCircle className="w-3 h-3" />{r.rejectionRateAfterApplied}% reject
+                  </span>
+                )}
+              </>
+            ) : (
+              r.timesApplied > 0 && (
+                <span className="text-xs text-muted-foreground">Applied {r.timesApplied}× — outcomes pending review</span>
+              )
+            )}
+            {r.lastAppliedAt && (
+              <span className="text-xs text-muted-foreground ml-auto">
+                Last used {new Date(r.lastAppliedAt).toLocaleDateString("en", { month: "short", day: "numeric" })}
+              </span>
+            )}
+          </>
+        ) : (
+          <span className="text-xs text-muted-foreground italic">Application tracking not yet active for this rule</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Rule Performance Tab ─────────────────────────────────────────────────────
 
 function RulePerformanceTab() {
@@ -371,6 +448,7 @@ function RulePerformanceTab() {
 
   const s = data?.summary ?? {};
   const highRejection = data?.highRejectionDomains ?? [];
+  const trackingAvailable = data?.trackingAvailable ?? false;
 
   return (
     <div className="space-y-5">
@@ -378,13 +456,13 @@ function RulePerformanceTab() {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Active Learned Rules", value: s.activeLearnedRules ?? 0, total: s.totalLearnedRules ?? 0 },
-          { label: "Active Standing Instructions", value: s.activeStandingInstructions ?? 0, total: s.totalStandingInstructions ?? 0 },
-          { label: "Total Learned Rules", value: s.totalLearnedRules ?? 0 },
-          { label: "Total Instructions", value: s.totalStandingInstructions ?? 0 },
-        ].map((c) => (
+          { label: "Active Instructions", value: s.activeStandingInstructions ?? 0, total: s.totalStandingInstructions ?? 0 },
+          { label: "Applications Recorded", value: s.totalApplicationsRecorded ?? 0, highlight: (s.totalApplicationsRecorded ?? 0) > 0 },
+          { label: "Tracking Status", value: trackingAvailable ? "Active" : "Pending", highlight: trackingAvailable },
+        ].map((c: any) => (
           <Card key={c.label} className="p-3">
             <p className="text-xs text-muted-foreground mb-1">{c.label}</p>
-            <p className="text-xl font-bold">{c.value}</p>
+            <p className={`text-xl font-bold ${c.highlight ? "text-green-600" : ""}`}>{c.value}</p>
             {c.total !== undefined && c.total !== c.value && (
               <p className="text-xs text-muted-foreground">of {c.total} total</p>
             )}
@@ -392,13 +470,22 @@ function RulePerformanceTab() {
         ))}
       </div>
 
-      {/* Tracking note */}
-      {!data?.trackingAvailable && (
+      {/* Tracking status banner */}
+      {trackingAvailable ? (
+        <Card className="border-green-200 bg-green-50 dark:bg-green-950/20 dark:border-green-900 p-4">
+          <p className="text-sm text-green-800 dark:text-green-300 flex items-start gap-2">
+            <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5" />
+            <span>
+              <strong>Rule application tracking is active.</strong> {s.totalApplicationsRecorded ?? 0} rule applications recorded so far. Approval/rejection rates will appear as more drafts are reviewed. Confidence: <strong>High</strong> ≥10, <strong>Medium</strong> 5–9, <strong>Low</strong> 1–4.
+            </span>
+          </p>
+        </Card>
+      ) : (
         <Card className="border-blue-100 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900 p-4">
           <p className="text-sm text-blue-800 dark:text-blue-300 flex items-start gap-2">
             <Info className="w-4 h-4 shrink-0 mt-0.5" />
             <span>
-              <strong>Per-rule outcome tracking not yet instrumented.</strong> The system records which rules exist and their status, but does not yet track which specific rules were injected into each individual draft. Enable Phase D.2 instrumentation to unlock per-rule approval/rejection rates.
+              <strong>Rule tracking instrumented — waiting for first drafts.</strong> The next draft generated with active learning rules will record which rules were applied. Per-rule outcome rates appear here once data accumulates.
             </span>
           </p>
         </Card>
@@ -442,12 +529,12 @@ function RulePerformanceTab() {
           <CardContent>
             <div className="space-y-2">
               {data.standingInstructions.slice(0, 10).map((r: any) => (
-                <div key={r.ruleId} className={`flex items-start gap-2 text-sm ${!r.isActive ? "opacity-50" : ""}`} data-testid={`row-instruction-${r.ruleId}`}>
-                  <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${RULE_TYPE_BADGE[r.ruleType] ?? RULE_TYPE_BADGE.instruction}`}>{r.ruleType}</span>
-                  <span className="flex-1 leading-snug">{r.ruleText}</span>
-                  <span className={`text-xs px-1.5 py-0.5 rounded-full shrink-0 ${DOMAIN_BADGE[r.domain] ?? DOMAIN_BADGE.general}`}>{domainLabel(r.domain)}</span>
-                  {!r.isActive && <Badge variant="outline" className="text-xs shrink-0">Disabled</Badge>}
-                </div>
+                <RuleRow
+                  key={r.ruleId}
+                  r={r}
+                  typeClass={RULE_TYPE_BADGE[r.ruleType] ?? RULE_TYPE_BADGE.instruction}
+                  trackingAvailable={trackingAvailable}
+                />
               ))}
             </div>
           </CardContent>
@@ -466,15 +553,12 @@ function RulePerformanceTab() {
           <CardContent>
             <div className="space-y-2">
               {data.learnedRules.slice(0, 15).map((r: any) => (
-                <div key={r.ruleId} className={`flex items-start gap-2 text-sm ${!r.isActive ? "opacity-50" : ""}`} data-testid={`row-rule-${r.ruleId}`}>
-                  <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${RULE_TYPE_BADGE[r.ruleType] ?? RULE_TYPE_BADGE.instruction}`}>{r.ruleType}</span>
-                  <span className="flex-1 leading-snug">{r.ruleText}</span>
-                  <div className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
-                    {r.confidence != null && <span>{r.confidence}%</span>}
-                    <span className={`px-1.5 py-0.5 rounded-full ${DOMAIN_BADGE[r.domain] ?? DOMAIN_BADGE.general}`}>{domainLabel(r.domain)}</span>
-                  </div>
-                  {!r.isActive && <Badge variant="outline" className="text-xs shrink-0">Inactive</Badge>}
-                </div>
+                <RuleRow
+                  key={r.ruleId}
+                  r={r}
+                  typeClass={RULE_TYPE_BADGE[r.ruleType] ?? RULE_TYPE_BADGE.instruction}
+                  trackingAvailable={trackingAvailable}
+                />
               ))}
             </div>
           </CardContent>

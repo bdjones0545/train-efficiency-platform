@@ -5,7 +5,8 @@
  */
 
 import { db } from "../db";
-import { eq, and, gte, sql as drizzleSql, desc, inArray } from "drizzle-orm";
+import { eq, and, gte, sql as drizzleSql, desc } from "drizzle-orm";
+import type { AppliedRuleMetadata } from "./message-learning-service";
 import {
   gmailAgentActions,
   agentMessageFeedback,
@@ -241,6 +242,30 @@ export async function getAgentmailSummary(
   };
 }
 
+// ─── Public: Record Rule Applications ────────────────────────────────────────
+
+export async function recordAgentMailRuleApplications(opts: {
+  orgId: string;
+  actionId: string;
+  communicationDomain: string;
+  rules: AppliedRuleMetadata[];
+}): Promise<void> {
+  if (!opts.actionId || opts.rules.length === 0) return;
+  try {
+    for (const rule of opts.rules) {
+      await db.execute(drizzleSql`
+        INSERT INTO agentmail_rule_applications
+          (org_id, action_id, rule_source, rule_id, communication_domain, applied_at)
+        VALUES
+          (${opts.orgId}, ${opts.actionId}, ${rule.source}, ${rule.ruleId}, ${opts.communicationDomain}, now())
+        ON CONFLICT (action_id, rule_source, rule_id) DO NOTHING
+      `);
+    }
+  } catch (err: any) {
+    console.warn("[agentmail-analytics] recordRuleApplications failed (non-fatal):", err.message);
+  }
+}
+
 // ─── Public: Rule Performance ─────────────────────────────────────────────────
 
 export async function getAgentmailRulePerformance(orgId: string) {
@@ -260,42 +285,137 @@ export async function getAgentmailRulePerformance(orgId: string) {
     }).from(agentMessageFeedback).where(eq(agentMessageFeedback.orgId, orgId)),
   ]);
 
-  // Per-rule application tracking doesn't exist yet — honest about this
-  const trackingAvailable = false;
+  // ── Per-rule application stats from instrumentation table ────────────────
+  // Join rule_applications → gmail_agent_actions → feedback to get real outcomes
+  let appRows: Array<{
+    rule_id: string;
+    rule_source: string;
+    times_applied: number;
+    last_applied_at: Date | null;
+  }> = [];
+  let outcomeRows: Array<{
+    rule_id: string;
+    rule_source: string;
+    decision: string | null;
+    status: string | null;
+  }> = [];
 
-  const learned = learnedRules.map((r) => ({
-    ruleId: r.id,
-    ruleText: r.ruleText,
-    ruleType: r.ruleType,
-    domain: r.communicationDomain ?? "athlete_lead",
-    source: "learned" as const,
-    isActive: r.status === "active",
-    confidence: r.confidence ? Math.round(Number(r.confidence) * 100) : null,
-    timesApplied: r.timesApplied ?? 0,
-    successCount: r.successCount ?? 0,
-    rejectionCount: r.rejectionCount ?? 0,
-    lastAppliedAt: r.lastAppliedAt,
-    createdAt: r.createdAt,
-    trackingAvailable,
-    note: trackingAvailable ? null : "Per-rule outcome tracking not yet instrumented. Enable Phase D.2 to track which rules are applied to each draft.",
-  }));
+  try {
+    const raw = await db.execute(drizzleSql`
+      SELECT
+        ra.rule_id,
+        ra.rule_source,
+        COUNT(*)::int          AS times_applied,
+        MAX(ra.applied_at)     AS last_applied_at
+      FROM agentmail_rule_applications ra
+      WHERE ra.org_id = ${orgId}
+      GROUP BY ra.rule_id, ra.rule_source
+    `);
+    appRows = (Array.isArray(raw) ? raw : (raw as any).rows ?? []) as typeof appRows;
+  } catch { /* table may be empty or missing — gracefully skip */ }
 
-  const standing = coachingRules.map((r) => ({
-    ruleId: r.id,
-    ruleText: r.ruleText,
-    ruleType: r.ruleType,
-    domain: r.communicationDomain,
-    source: "standing_instruction" as const,
-    isActive: r.isActive,
-    confidence: null,
-    timesApplied: null,
-    successCount: null,
-    rejectionCount: null,
-    lastAppliedAt: null,
-    createdAt: r.createdAt,
-    trackingAvailable,
-    note: "Coach-authored standing instruction. Applied to every draft for its domain while active.",
-  }));
+  try {
+    const raw = await db.execute(drizzleSql`
+      SELECT
+        ra.rule_id,
+        ra.rule_source,
+        f.decision,
+        g.status
+      FROM agentmail_rule_applications ra
+      JOIN gmail_agent_actions g ON g.id = ra.action_id
+      LEFT JOIN agent_message_feedback f ON f.proposal_id = ra.action_id
+      WHERE ra.org_id = ${orgId}
+    `);
+    outcomeRows = (Array.isArray(raw) ? raw : (raw as any).rows ?? []) as typeof outcomeRows;
+  } catch { /* gracefully skip */ }
+
+  // Compute per-rule outcome stats
+  const appMap = new Map<string, { timesApplied: number; lastAppliedAt: Date | null }>();
+  appRows.forEach((r) => {
+    appMap.set(`${r.rule_source}:${r.rule_id}`, {
+      timesApplied: r.times_applied,
+      lastAppliedAt: r.last_applied_at,
+    });
+  });
+
+  const outcomeMap = new Map<string, { approved: number; rejected: number; edited: number; total: number }>();
+  outcomeRows.forEach((r) => {
+    const key = `${r.rule_source}:${r.rule_id}`;
+    if (!outcomeMap.has(key)) outcomeMap.set(key, { approved: 0, rejected: 0, edited: 0, total: 0 });
+    const m = outcomeMap.get(key)!;
+    m.total++;
+    const dec = r.decision ?? "";
+    if (dec === "approved") m.approved++;
+    else if (dec === "edited_and_approved") { m.approved++; m.edited++; }
+    else if (dec === "rejected") m.rejected++;
+  });
+
+  const trackingAvailable = appRows.length > 0;
+
+  function ruleStats(key: string): {
+    timesApplied: number; lastAppliedAt: Date | null;
+    approvalsAfterApplied: number | null; rejectionsAfterApplied: number | null;
+    editsAfterApplied: number | null;
+    approvalRateAfterApplied: number | null; rejectionRateAfterApplied: number | null;
+    editRateAfterApplied: number | null;
+    outcomeConfidence: "high" | "medium" | "low" | "none";
+  } {
+    const app = appMap.get(key);
+    const outcomes = outcomeMap.get(key);
+    const ta = app?.timesApplied ?? 0;
+    const confidence: "high" | "medium" | "low" | "none" =
+      ta >= 10 ? "high" : ta >= 5 ? "medium" : ta >= 1 ? "low" : "none";
+    if (!app) {
+      return { timesApplied: 0, lastAppliedAt: null, approvalsAfterApplied: null, rejectionsAfterApplied: null, editsAfterApplied: null, approvalRateAfterApplied: null, rejectionRateAfterApplied: null, editRateAfterApplied: null, outcomeConfidence: "none" };
+    }
+    return {
+      timesApplied: ta,
+      lastAppliedAt: app.lastAppliedAt,
+      approvalsAfterApplied: outcomes?.approved ?? null,
+      rejectionsAfterApplied: outcomes?.rejected ?? null,
+      editsAfterApplied: outcomes?.edited ?? null,
+      approvalRateAfterApplied: outcomes && outcomes.total > 0 ? Math.round((outcomes.approved / outcomes.total) * 100) : null,
+      rejectionRateAfterApplied: outcomes && outcomes.total > 0 ? Math.round((outcomes.rejected / outcomes.total) * 100) : null,
+      editRateAfterApplied: outcomes && outcomes.total > 0 ? Math.round((outcomes.edited / outcomes.total) * 100) : null,
+      outcomeConfidence: confidence,
+    };
+  }
+
+  const learned = learnedRules.map((r) => {
+    const key = `learned:${r.id}`;
+    const stats = ruleStats(key);
+    return {
+      ruleId: r.id,
+      ruleText: r.ruleText,
+      ruleType: r.ruleType,
+      domain: r.communicationDomain ?? "athlete_lead",
+      source: "learned" as const,
+      isActive: r.status === "active",
+      confidence: r.confidence ? Math.round(Number(r.confidence) * 100) : null,
+      lastAppliedAt: r.lastAppliedAt,
+      createdAt: r.createdAt,
+      trackingAvailable,
+      ...stats,
+    };
+  });
+
+  const standing = coachingRules.map((r) => {
+    const key = `standing_instruction:${r.id}`;
+    const stats = ruleStats(key);
+    return {
+      ruleId: r.id,
+      ruleText: r.ruleText,
+      ruleType: r.ruleType,
+      domain: r.communicationDomain,
+      source: "standing_instruction" as const,
+      isActive: r.isActive,
+      confidence: null,
+      lastAppliedAt: null,
+      createdAt: r.createdAt,
+      trackingAvailable,
+      ...stats,
+    };
+  });
 
   // Domains with poor performance (high rejection) — suggest rule review
   const domainRejections: Record<string, { rejected: number; total: number }> = {};
@@ -324,8 +444,8 @@ export async function getAgentmailRulePerformance(orgId: string) {
       activeLearnedRules: learned.filter((r) => r.isActive).length,
       totalStandingInstructions: standing.length,
       activeStandingInstructions: standing.filter((r) => r.isActive).length,
+      totalApplicationsRecorded: appRows.reduce((s, r) => s + r.times_applied, 0),
     },
-    phase2Recommendation: "Instrument agentmail_rule_applications table to track per-rule outcomes. Wire recording into getMessageLearningContext() call sites.",
   };
 }
 

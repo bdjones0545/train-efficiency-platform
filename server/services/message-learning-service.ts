@@ -174,11 +174,28 @@ Rules must be specific, actionable, and written as instructions for an AI. Max 3
 
 // ─── Get learning context for message generation ──────────────────────────────
 
-export async function getMessageLearningContext(
+// ─── Structured rule type for instrumentation ─────────────────────────────────
+
+export interface AppliedRuleMetadata {
+  ruleId: string;
+  source: "learned" | "standing_instruction";
+  communicationDomain: string;
+  ruleType: string;
+  ruleText: string;
+}
+
+export interface LearningContextWithRules {
+  contextText: string;
+  rules: AppliedRuleMetadata[];
+}
+
+// ─── Core implementation (returns both text + structured rules) ───────────────
+
+export async function getMessageLearningContextWithRules(
   orgId: string,
   messageType: string,
   leadContext?: { sport?: string; leadType?: string; program?: string; domain?: string },
-): Promise<string> {
+): Promise<LearningContextWithRules> {
   const domain = leadContext?.domain ?? "athlete_lead";
 
   const [rules, coachingRules] = await Promise.all([
@@ -207,18 +224,21 @@ export async function getMessageLearningContext(
   const hasLearnedRules = rules.length > 0;
   const hasStanding = standingInstructions.length > 0;
 
-  if (!hasLearnedRules && !hasStanding) return "";
+  if (!hasLearnedRules && !hasStanding) return { contextText: "", rules: [] };
 
   // ── Learned rules (priority: same domain+type > same domain > global) ────
   const specific = rules.filter((r) => r.messageType === messageType && (r.communicationDomain === domain || !r.communicationDomain));
   const domainRules = rules.filter((r) => r.communicationDomain === domain && r.messageType !== messageType);
   const global = rules.filter((r) => r.appliesGlobally);
+  const candidatePool = [...specific, ...domainRules, ...global];
 
-  const pick = (type: string, limit: number) =>
-    [...specific, ...domainRules, ...global]
-      .filter((r) => r.ruleType === type)
-      .slice(0, limit)
-      .map((r) => `• ${r.ruleText}`);
+  // Track which learned rules are actually included
+  const includedLearnedRuleIds = new Set<string>();
+  const pick = (type: string, limit: number) => {
+    const selected = candidatePool.filter((r) => r.ruleType === type).slice(0, limit);
+    selected.forEach((r) => includedLearnedRuleIds.add(r.id));
+    return selected.map((r) => `• ${r.ruleText}`);
+  };
 
   const doRules = pick("do", 5);
   const avoidRules = pick("avoid", 5);
@@ -254,7 +274,42 @@ export async function getMessageLearningContext(
     // outcome service not yet populated — skip
   }
 
-  return sections.join("\n\n");
+  const contextText = sections.join("\n\n");
+
+  // Build structured rules metadata
+  const appliedRules: AppliedRuleMetadata[] = [
+    // Standing instructions first
+    ...standingInstructions.map((r) => ({
+      ruleId: r.id,
+      source: "standing_instruction" as const,
+      communicationDomain: r.communicationDomain ?? domain,
+      ruleType: r.ruleType ?? "instruction",
+      ruleText: r.ruleText,
+    })),
+    // Included learned rules
+    ...candidatePool
+      .filter((r) => includedLearnedRuleIds.has(r.id))
+      .map((r) => ({
+        ruleId: r.id,
+        source: "learned" as const,
+        communicationDomain: r.communicationDomain ?? domain,
+        ruleType: r.ruleType ?? "do",
+        ruleText: r.ruleText,
+      })),
+  ];
+
+  return { contextText, rules: appliedRules };
+}
+
+// ─── Backward-compatible wrapper (existing callers unchanged) ─────────────────
+
+export async function getMessageLearningContext(
+  orgId: string,
+  messageType: string,
+  leadContext?: { sport?: string; leadType?: string; program?: string; domain?: string },
+): Promise<string> {
+  const { contextText } = await getMessageLearningContextWithRules(orgId, messageType, leadContext);
+  return contextText;
 }
 
 // ─── Regenerate a draft with admin feedback ────────────────────────────────────
@@ -271,7 +326,7 @@ export async function regenerateDraftWithFeedback(opts: {
   leadContext?: Record<string, any>;
   userId: string;
 }): Promise<{ subject: string; body: string; revisionId: string }> {
-  const learningContext = await getMessageLearningContext(
+  const { contextText: learningContext, rules: _regenAppliedRules } = await getMessageLearningContextWithRules(
     opts.orgId,
     opts.messageType,
     { domain: opts.domain ?? "athlete_lead", ...opts.leadContext },
@@ -322,6 +377,19 @@ Return ONLY valid JSON: { "subject": "...", "body": "..." }`;
     createdBy: opts.userId,
     communicationDomain: opts.domain ?? "athlete_lead",
   }).returning();
+
+  // Record which rules were applied to the regenerated draft — non-blocking
+  // proposalId references the original gmail_agent_actions row
+  if (_regenAppliedRules.length > 0) {
+    import("./agentmail-analytics-service").then(({ recordAgentMailRuleApplications }) =>
+      recordAgentMailRuleApplications({
+        orgId: opts.orgId,
+        actionId: opts.proposalId,
+        communicationDomain: opts.domain ?? "athlete_lead",
+        rules: _regenAppliedRules,
+      })
+    ).catch(() => {});
+  }
 
   return { subject: revisedSubject, body: revisedBody, revisionId: rev.id };
 }

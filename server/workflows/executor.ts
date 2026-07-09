@@ -44,11 +44,11 @@ async function refineWorkflowEmailWithLearning(
   workflowType: string,
   subject: string,
   body: string,
-): Promise<{ subject: string; body: string } | null> {
+): Promise<{ subject: string; body: string; appliedRules: import("../services/message-learning-service").AppliedRuleMetadata[] } | null> {
   try {
     const domain = WORKFLOW_DOMAIN_MAP[workflowType] ?? "general";
-    const { getMessageLearningContext } = await import("../services/message-learning-service");
-    const learningCtx = await getMessageLearningContext(orgId, domain);
+    const { getMessageLearningContextWithRules } = await import("../services/message-learning-service");
+    const { contextText: learningCtx, rules: appliedRules } = await getMessageLearningContextWithRules(orgId, domain);
     if (!learningCtx) return null;
 
     const { default: OpenAI } = await import("openai");
@@ -72,7 +72,7 @@ async function refineWorkflowEmailWithLearning(
 
     const parsed = JSON.parse(resp.choices[0]?.message?.content ?? "{}");
     if (parsed.subject && parsed.body) {
-      return { subject: parsed.subject, body: parsed.body };
+      return { subject: parsed.subject, body: parsed.body, appliedRules };
     }
     return null;
   } catch {
@@ -440,10 +440,12 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
       case "tool_call": {
         let builtInput = stepDef.buildInput(ctx);
 
+        let _workflowAppliedRules: import("../services/message-learning-service").AppliedRuleMetadata[] = [];
         if (stepDef.toolName === "create_email_draft" && builtInput.subject && builtInput.body) {
           const refined = await refineWorkflowEmailWithLearning(orgId, run.workflowType, builtInput.subject as string, builtInput.body as string);
           if (refined) {
             builtInput = { ...builtInput, subject: refined.subject, body: refined.body };
+            _workflowAppliedRules = refined.appliedRules;
           }
         }
 
@@ -459,6 +461,14 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
           sourceRecommendationId: run.sourceRecommendationId ?? undefined,
           sourceRevenueActionId: run.sourceRevenueActionId ?? undefined,
         });
+
+        // Record rule applications for email drafts — non-blocking, fail-open
+        if (stepDef.toolName === "create_email_draft" && _workflowAppliedRules.length > 0 && result.toolCallId) {
+          const _wfDomain = WORKFLOW_DOMAIN_MAP[run.workflowType] ?? "general";
+          import("../services/agentmail-analytics-service").then(({ recordAgentMailRuleApplications }) =>
+            recordAgentMailRuleApplications({ orgId, actionId: result.toolCallId!, communicationDomain: _wfDomain, rules: _workflowAppliedRules })
+          ).catch(() => {});
+        }
 
         if (result.requiresConfirmation) {
           // Store the draft content in step output for review
