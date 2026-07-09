@@ -1,0 +1,468 @@
+Act as a world-renowned software architect, principal full-stack engineer, Apple-level product designer, and enterprise UX specialist.
+
+We are conducting a production-grade page-by-page audit of TrainEfficiency.
+
+This is the next audit.
+
+# Page
+
+**Coach Dashboard** under **Schedule** in the left sidebar.
+
+This page should help coaches understand their day, manage sessions, identify schedule issues, and act quickly without unnecessary navigation.
+
+Do not redesign TrainEfficiency.
+
+Do not remove functionality.
+
+Do not create mock functionality.
+
+Improve the existing page with taste, precision, and production safety.
+
+The interface should feel smooth, calm, fast, Apple-like, and premium while preserving TrainEfficiency’s neon green and black identity.
+
+---
+
+## Primary Goal
+
+When a coach opens this page, they should immediately understand:
+
+* What sessions do I have today?
+* Who is attending?
+* What needs my attention?
+* Are there schedule conflicts?
+* Are there underfilled or overbooked sessions?
+* What actions should I take next?
+* Is an AI agent recommending anything useful?
+
+This page should feel like the coach’s operational cockpit for the day.
+
+---
+
+## UX Audit
+
+Audit the page for:
+
+* First impression
+* Information hierarchy
+* Daily schedule clarity
+* Session card clarity
+* Coach workload visibility
+* Athlete attendance visibility
+* Schedule conflict visibility
+* Mobile responsiveness
+* Touch-friendly controls
+* Visual polish
+* Typography
+* Spacing
+* Empty states
+* Loading states
+* Error states
+* Hover states
+* Accessibility
+
+Determine whether the page is simple enough for a coach to use between sessions.
+
+Reduce visible complexity without removing power.
+
+---
+
+## Functional Audit
+
+Inspect every interactive element, including:
+
+* Buttons
+* Session cards
+* Calendar controls
+* Date navigation
+* Filters
+* Coach selectors
+* Athlete links
+* Attendance actions
+* Check-in actions
+* Edit actions
+* Cancel/reschedule actions
+* View details actions
+* Quick actions
+* Modals
+* Drawers
+* Dropdowns
+* Search
+* Tabs
+* Status badges
+* Navigation links
+
+For each interaction determine:
+
+* Does it work?
+* Is it wired to real functionality?
+* Does it respect permissions?
+* Does it show loading feedback?
+* Does it show success feedback?
+* Does it show error feedback?
+* Does it handle empty data?
+* Does it handle overloaded schedules?
+* Does it handle no sessions?
+* Does it handle conflicts?
+* Does it handle mobile?
+
+Fix production-safe issues directly.
+
+Do not add fake functionality.
+
+If backend functionality exists, wire it properly.
+
+If functionality does not exist, use a disabled state, tooltip, or clear TODO rather than pretending it works.
+
+---
+
+## Scheduling Intelligence Audit
+
+Determine whether this page clearly surfaces:
+
+* Today’s coach workload
+* Upcoming sessions
+* Session capacity
+* Underfilled sessions
+* Overfilled sessions
+* No-show risk
+* Athlete attendance risk
+* Booking conflicts
+* Coach availability issues
+* Revenue opportunities
+* Follow-up opportunities
+* Manual tasks requiring action
+
+The dashboard should prioritize action, not just display data.
+
+---
+
+## Agent Utilization Audit
+
+Review which intelligent systems should participate here.
+
+Including but not limited to:
+
+* Scheduling Agent
+* Revenue Agent
+* Retention Agent
+* Client Success Agent
+* Athlete Intelligence
+* AgentMail
+* CEO Heartbeat
+* Attention Inbox
+* Hermes Learning Engine
+* Future coach workflow agents
+
+Determine:
+
+* Which agents belong directly on this page?
+* Which agents should remain in the background?
+* Which recommendations should surface?
+* Which actions should require human approval?
+* Which buttons should be agent-powered?
+* Are agent-powered actions labeled naturally?
+* Are there duplicate recommendations?
+* Are there missing agent opportunities?
+
+Examples of useful agent-powered actions:
+
+* Optimize Schedule
+* Fill Open Spots
+* Notify Waitlist
+* Draft Follow-Up
+* Detect Attendance Risk
+* Review Session Conflicts
+* Summarize Coach Day
+* Recommend Athlete Move
+* Generate Session Brief
+* Prepare Client Notes
+
+Only wire actions to real backend functionality.
+
+---
+
+## Agent Intelligence & Closed-Loop Learning Assessment
+
+Audit every intelligent workflow on this page.
+
+### Learning Loop
+
+Determine whether each AI capability:
+
+* Learns from explicit coach feedback
+* Learns from implicit coach behavior
+* Learns from attendance patterns
+* Learns from schedule changes
+* Learns from no-shows, cancellations, and reschedules
+* Stores learning at the correct organization scope
+* Allows administrators to review learned behavior
+* Allows correction or reinforcement
+* Improves future recommendations
+
+Recommend production-safe improvements where gaps exist.
+
+---
+
+### Closed-Loop Intelligence
+
+Verify whether intelligent workflows include:
+
+1. Observation
+2. Recommendation
+3. Human Review
+4. Human Decision
+5. Execution
+6. Business Outcome
+7. Outcome Measurement
+8. Learning
+9. Future Improvement
+
+Identify missing stages and recommend safe implementation.
+
+---
+
+### Outcome Measurement
+
+For every recommendation or agent-powered action determine:
+
+* Can success be measured?
+* Can failure be measured?
+* Is the outcome associated with the originating recommendation?
+* Are no-shows, fills, cancellations, reschedules, attendance changes, and revenue impact measured?
+* Are analytics based on deterministic evidence?
+
+Use careful wording:
+
+* Associated outcomes
+* Correlated outcomes
+* Observed improvements
+
+Do not fabricate causal attribution.
+
+---
+
+### Agent Memory
+
+For every relevant agent determine:
+
+* What should it remember about coach preferences?
+* What should it remember about athlete attendance patterns?
+* What should it remember about session capacity?
+* What should it remember about communication preferences?
+* What should it never remember?
+* Is memory organization-scoped?
+* Can memory be reviewed, corrected, or retired?
+
+---
+
+### Explainability
+
+Every recommendation should answer:
+
+* Why was this surfaced?
+* Which schedule, attendance, capacity, or athlete data influenced it?
+* What is the expected impact?
+* How confident is the system, if confidence exists?
+* What should the coach do next?
+
+Do not expose internal prompts or hidden reasoning.
+
+---
+
+### Human-in-the-Loop
+
+Verify that significant actions allow users to:
+
+* Review
+* Edit
+* Approve
+* Reject
+* Save
+* Regenerate
+* Undo where appropriate
+
+Important scheduling or messaging actions should not bypass coach/admin approval unless explicitly intended.
+
+---
+
+### Cross-Agent Coordination
+
+Determine whether agents coordinate correctly.
+
+Examples:
+
+* Scheduling Agent identifies underfilled session
+* Revenue Agent estimates missed revenue
+* Retention Agent flags at-risk athlete
+* Client Success Agent recommends follow-up
+* AgentMail drafts the outreach
+* CEO Heartbeat receives operational signal
+* Attention Inbox surfaces the action
+
+Verify:
+
+* No duplicate alerts
+* No conflicting recommendations
+* Clear ownership
+* Shared context
+* Consistent data ownership
+* Proper prioritization
+
+---
+
+### Operational Intelligence
+
+Determine whether the page supports:
+
+* Monitoring coach workload
+* Detecting schedule problems automatically
+* Measuring fill effectiveness
+* Tracking no-show trends
+* Tracking cancellation trends
+* Tracking follow-up success
+* Reporting meaningful signals to CEO Heartbeat
+* Surfacing urgent issues through Attention Inbox
+
+---
+
+### Production Readiness Classification
+
+Classify each intelligent workflow as:
+
+🟢 Production Ready
+
+🟡 Needs Hardening
+
+🔴 Misleading or Incomplete
+
+⚫ Placeholder / Not Production Ready
+
+Provide clear steps to improve each workflow.
+
+---
+
+## Visual Polish
+
+Improve:
+
+* Session cards
+* Schedule timeline
+* KPI cards
+* Empty states
+* Coach workload indicators
+* Capacity badges
+* Attendance badges
+* Conflict warnings
+* Quick actions
+* Icons
+* Spacing
+* Typography
+* Responsive layout
+* Micro-interactions
+* Hover states
+* Button consistency
+
+Use neon green intentionally for:
+
+* Primary action
+* Success
+* AI recommendation
+* Active state
+* Progress
+
+Avoid neon overload.
+
+---
+
+## Performance & Maintainability
+
+Review:
+
+* Query efficiency
+* State management
+* Component size
+* Re-render risk
+* Date handling
+* Filtering logic
+* API usage
+* Mobile rendering
+* Type safety
+* Test IDs
+* Maintainability
+
+Avoid unnecessary architecture rewrites.
+
+---
+
+## Deliverables
+
+Return:
+
+### 1. UX Audit
+
+Strengths
+Weaknesses
+Improvements made
+Remaining opportunities
+
+---
+
+### 2. Functional Audit
+
+Interactive elements reviewed
+Issues found
+Fixes implemented
+Dead/fake/incomplete actions
+Remaining risks
+
+---
+
+### 3. Scheduling Intelligence Audit
+
+Signals surfaced
+Signals missing
+Prioritization improvements
+Operational risks
+
+---
+
+### 4. Agent Intelligence & Closed-Loop Learning Assessment
+
+Strengths
+Weaknesses
+Missing learning loops
+Missing outcome measurement
+Agent memory gaps
+Explainability gaps
+Cross-agent opportunities
+Recommended implementation order
+
+---
+
+### 5. Production Readiness Score
+
+Score each from 1–10:
+
+* UX
+* Functionality
+* Scheduling Intelligence
+* Agent Utilization
+* Closed-Loop Learning
+* Explainability
+* Cross-Agent Coordination
+* Operational Intelligence
+* Performance
+* Production Readiness
+
+---
+
+### 6. Implementation Summary
+
+Files changed
+Architecture changes
+Production-safe improvements
+Agent/AI improvements
+Remaining TODOs
+TypeScript/build results
+
+This is a production audit. Preserve TrainEfficiency’s existing scheduling power while making the Coach Dashboard feel like a world-class daily command center for coaches.
