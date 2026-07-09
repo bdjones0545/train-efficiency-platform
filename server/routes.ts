@@ -29965,6 +29965,135 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to mark notification read" }); }
   });
 
+  // POST /api/command-center/approvals/:id/approve
+  app.post("/api/command-center/approvals/:id/approve", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { approvalType } = req.body; // "agent" | "workflow"
+      const userId = req.user?.id ?? req.user?.claims?.sub;
+      const { gmailAgentActions: gmailTbl } = await import("@shared/schema");
+
+      if (approvalType === "workflow") {
+        await db.execute(sql`
+          UPDATE autonomous_action_queue
+          SET status = 'approved', updated_at = NOW()
+          WHERE id = ${id}
+        `).catch(() => null);
+      } else {
+        await db.update(gmailTbl)
+          .set({ status: "approved", approvedBy: userId } as any)
+          .where(eq(gmailTbl.id, id))
+          .catch(() => null);
+      }
+
+      await db.execute(sql`
+        INSERT INTO admin_action_audit_log (id, actor_id, action_type, target_id, target_type, notes, created_at)
+        VALUES (gen_random_uuid(), ${userId ?? "system"}, 'command_center_approve', ${id}, ${approvalType ?? "agent"}, 'Approved from Command Center', NOW())
+      `).catch(() => null);
+
+      res.json({ success: true, id, approvedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to approve action" }); }
+  });
+
+  // POST /api/command-center/approvals/:id/reject
+  app.post("/api/command-center/approvals/:id/reject", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { approvalType, reason } = req.body;
+      const userId = req.user?.id ?? req.user?.claims?.sub;
+      const { gmailAgentActions: gmailTbl } = await import("@shared/schema");
+
+      if (approvalType === "workflow") {
+        await db.execute(sql`
+          UPDATE autonomous_action_queue
+          SET status = 'rejected', updated_at = NOW()
+          WHERE id = ${id}
+        `).catch(() => null);
+      } else {
+        await db.update(gmailTbl)
+          .set({ status: "rejected", approvedBy: userId } as any)
+          .where(eq(gmailTbl.id, id))
+          .catch(() => null);
+      }
+
+      await db.execute(sql`
+        INSERT INTO admin_action_audit_log (id, actor_id, action_type, target_id, target_type, notes, created_at)
+        VALUES (gen_random_uuid(), ${userId ?? "system"}, 'command_center_reject', ${id}, ${approvalType ?? "agent"}, ${reason ?? 'Rejected from Command Center'}, NOW())
+      `).catch(() => null);
+
+      res.json({ success: true, id, rejectedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to reject action" }); }
+  });
+
+  // POST /api/command-center/approvals/bulk-approve
+  app.post("/api/command-center/approvals/bulk-approve", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const { ids, approvalType } = req.body as { ids: string[]; approvalType?: string };
+      if (!Array.isArray(ids) || ids.length === 0) return res.status(400).json({ message: "ids array required" });
+      const userId = req.user?.id ?? req.user?.claims?.sub;
+      const { gmailAgentActions: gmailTbl } = await import("@shared/schema");
+      let approved = 0;
+      for (const id of ids) {
+        try {
+          if (approvalType === "workflow") {
+            await db.execute(sql`UPDATE autonomous_action_queue SET status = 'approved', updated_at = NOW() WHERE id = ${id}`);
+          } else {
+            await db.update(gmailTbl).set({ status: "approved", approvedBy: userId } as any).where(eq(gmailTbl.id, id));
+          }
+          approved++;
+        } catch { /* continue */ }
+      }
+      res.json({ success: true, approved, total: ids.length });
+    } catch (e: any) { res.status(500).json({ message: "Failed to bulk approve" }); }
+  });
+
+  // GET /api/command-center/agent-activity
+  app.get("/api/command-center/agent-activity", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await resolveOrgIdOrThrow(req);
+      const since4h = new Date(Date.now() - 4 * 3600_000);
+
+      const [recentActions, heartbeatRun] = await Promise.all([
+        db.execute(sql`
+          SELECT
+            created_by_agent as agent_name,
+            COUNT(*) as action_count,
+            MAX(created_at) as last_active,
+            COUNT(*) FILTER (WHERE status = 'proposed') as pending_count,
+            COUNT(*) FILTER (WHERE status = 'executed' OR status = 'sent') as completed_count
+          FROM gmail_agent_actions
+          WHERE org_id = ${orgId} AND created_at > ${since4h.toISOString()}
+          GROUP BY created_by_agent
+          ORDER BY action_count DESC
+          LIMIT 8
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT status, started_at, completed_at
+          FROM ceo_heartbeat_runs
+          WHERE organization_id = ${orgId}
+          ORDER BY started_at DESC LIMIT 1
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const getRows = (r: any) => Array.isArray(r) ? r : (r?.rows ?? []);
+      const agents = getRows(recentActions).map((row: any) => ({
+        name: row.agent_name ?? "Unknown Agent",
+        actionCount: Number(row.action_count ?? 0),
+        lastActive: row.last_active,
+        pendingCount: Number(row.pending_count ?? 0),
+        completedCount: Number(row.completed_count ?? 0),
+        isActive: row.last_active && (Date.now() - new Date(row.last_active).getTime()) < 3600_000,
+      }));
+
+      const hb = getRows(heartbeatRun)[0];
+      const ceoHeartbeatStatus = hb
+        ? { status: hb.status, lastRun: hb.started_at, isRunning: hb.status === "running" }
+        : null;
+
+      res.json({ agents, ceoHeartbeatStatus, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load agent activity" }); }
+  });
+
   // ═══════════════════════════════════════════════════════════════
   // CUSTOMER SUCCESS OS — Phase 16
   // ═══════════════════════════════════════════════════════════════
