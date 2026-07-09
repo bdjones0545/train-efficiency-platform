@@ -1,0 +1,646 @@
+Act as a world-renowned software architect, principal AI systems engineer, Apple-level product designer, and enterprise UX specialist.
+
+We are conducting a production-grade audit of TrainEfficiency.
+
+This is the highest-priority page in the platform.
+
+# Page
+
+**Command Center**
+
+The Command Center is the operational brain of TrainEfficiency.
+
+It is not another dashboard.
+
+It is not another analytics page.
+
+It is the place where owners, administrators, and managers understand exactly what is happening across their organization and approve AI-powered actions.
+
+This page should feel like mission control for an AI operating system.
+
+Do not redesign TrainEfficiency.
+
+Do not remove existing functionality.
+
+Do not create fake AI.
+
+Do not add placeholder buttons.
+
+Preserve TrainEfficiency's architecture, backend intelligence, and neon green/black identity.
+
+Improve the experience while making every intelligent workflow measurable, explainable, and production-ready.
+
+---
+
+# Core Objective
+
+Within five seconds the user should know:
+
+• What requires immediate attention?
+• Which AI agents are actively working?
+• Which recommendations require approval?
+• Which business opportunities exist?
+• Which operational problems exist?
+• Which automations succeeded?
+• Which automations failed?
+• Which departments are healthy?
+• Which departments need intervention?
+
+The Command Center should answer these questions without overwhelming the user.
+
+---
+
+# Executive Workflow Audit
+
+Audit whether the page supports the natural operating rhythm of an organization.
+
+The workflow should be:
+
+Observe
+
+↓
+
+Understand
+
+↓
+
+Approve
+
+↓
+
+Execute
+
+↓
+
+Measure
+
+↓
+
+Learn
+
+↓
+
+Improve
+
+If the page skips any step, recommend production-safe improvements.
+
+---
+
+# UX Audit
+
+Audit:
+
+• Information hierarchy
+• Cognitive load
+• Visual hierarchy
+• Typography
+• Card organization
+• Dashboard density
+• Progressive disclosure
+• Color usage
+• White space
+• Navigation
+• Mobile responsiveness
+• Accessibility
+• Empty states
+• Loading states
+• Error states
+• Success feedback
+
+The interface should feel calm despite managing a tremendous amount of operational complexity.
+
+---
+
+# Functional Audit
+
+Review every interaction.
+
+Buttons
+
+Cards
+
+Filters
+
+Search
+
+Tabs
+
+Approval actions
+
+Dismiss actions
+
+Expand actions
+
+Timeline
+
+Activity feed
+
+Notifications
+
+Drawers
+
+Modals
+
+Tables
+
+Charts
+
+Links
+
+Every AI recommendation
+
+Every workflow
+
+Determine:
+
+Does it work?
+
+Is it connected to real functionality?
+
+Does it have loading?
+
+Does it have success?
+
+Does it have failure handling?
+
+Does it have undo where appropriate?
+
+Are permissions respected?
+
+Are there dead buttons?
+
+Are there duplicated workflows?
+
+Are there fake AI interactions?
+
+Fix production-safe issues only.
+
+---
+
+# Department Intelligence Audit
+
+Review every operational department represented in Command Center.
+
+Including:
+
+CEO Heartbeat
+
+Executive Agent
+
+Revenue Agent
+
+Scheduling Agent
+
+Growth Agent
+
+Retention Agent
+
+Client Success Agent
+
+Athlete Intelligence
+
+PAIL
+
+AgentMail
+
+Hermes Learning Engine
+
+Attention Inbox
+
+Future AI departments
+
+Determine:
+
+Should this department appear here?
+
+Is it surfacing the correct information?
+
+Is it duplicating another department?
+
+Does ownership make sense?
+
+Is responsibility clear?
+
+Can recommendations be approved in one click?
+
+Should the department remain background-only?
+
+---
+
+# Agent Intelligence & Closed-Loop Learning Assessment
+
+This is the primary purpose of the Command Center.
+
+Audit every intelligent workflow.
+
+---
+
+## Learning Loop
+
+For every department determine:
+
+Does it learn from explicit feedback?
+
+Does it learn from administrator actions?
+
+Does it learn from approvals?
+
+Does it learn from rejections?
+
+Does it learn from ignored recommendations?
+
+Does it improve future prioritization?
+
+Is learning organization-scoped?
+
+Can administrators inspect learned behavior?
+
+Can learning be corrected?
+
+Can obsolete learning be retired?
+
+---
+
+## Closed-Loop Intelligence
+
+Every recommendation should complete:
+
+Observation
+
+↓
+
+Analysis
+
+↓
+
+Recommendation
+
+↓
+
+Human Review
+
+↓
+
+Human Decision
+
+↓
+
+Execution
+
+↓
+
+Business Outcome
+
+↓
+
+Outcome Measurement
+
+↓
+
+Learning
+
+↓
+
+Future Improvement
+
+Identify missing stages.
+
+Recommend safe implementation.
+
+---
+
+## Outcome Measurement
+
+Determine whether every recommendation measures:
+
+Success
+
+Failure
+
+Associated outcomes
+
+Observed improvements
+
+Business value
+
+Time saved
+
+Revenue impact
+
+Retention impact
+
+Operational efficiency
+
+Never fabricate attribution.
+
+Only recommend deterministic measurement.
+
+---
+
+## Explainability
+
+Every recommendation should answer:
+
+Why did this appear?
+
+Which signals influenced it?
+
+Which agent created it?
+
+What confidence exists?
+
+What business value is expected?
+
+What happens if ignored?
+
+What should the user do next?
+
+Recommendations should feel trustworthy.
+
+Never expose hidden prompts.
+
+---
+
+## Human-in-the-Loop
+
+Every important recommendation should allow:
+
+Review
+
+Expand
+
+Approve
+
+Reject
+
+Edit
+
+Save
+
+Undo where appropriate
+
+Bulk approval when safe
+
+No critical workflow should bypass human oversight unless intentionally autonomous.
+
+---
+
+## Cross-Agent Coordination
+
+Determine whether agents collaborate effectively.
+
+Examples:
+
+CEO Heartbeat receives signals from every department.
+
+Revenue Agent collaborates with Scheduling.
+
+Scheduling collaborates with Retention.
+
+Retention collaborates with Client Success.
+
+Client Success collaborates with AgentMail.
+
+Hermes Learning improves future recommendations.
+
+Attention Inbox surfaces the highest-priority work.
+
+Verify:
+
+Shared context
+
+No duplicated recommendations
+
+No conflicting recommendations
+
+Clear ownership
+
+Consistent data ownership
+
+Proper prioritization
+
+Intelligent escalation
+
+---
+
+## Operational Intelligence
+
+Determine whether Command Center allows leadership to answer:
+
+Is the business healthier today?
+
+Are agents becoming more effective?
+
+Which automations create measurable value?
+
+Which recommendations are ignored?
+
+Which agents require tuning?
+
+Which departments create the most value?
+
+Which departments need attention?
+
+The page should continuously improve organizational operations.
+
+---
+
+# AI Interaction Design
+
+AI should never feel like a chatbot.
+
+Instead it should feel like highly competent department heads.
+
+Every recommendation should be:
+
+Short
+
+Actionable
+
+Explainable
+
+Measurable
+
+Approachable
+
+One-click executable
+
+Trustworthy
+
+---
+
+# Performance Audit
+
+Review:
+
+Query efficiency
+
+Rendering
+
+Component organization
+
+State management
+
+Polling
+
+Realtime updates
+
+Caching
+
+Large datasets
+
+Type safety
+
+Maintainability
+
+Avoid architecture rewrites.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Executive summary
+
+Department cards
+
+Attention hierarchy
+
+Approval workflows
+
+Recommendation cards
+
+Status indicators
+
+Priority colors
+
+Animations
+
+Micro-interactions
+
+Spacing
+
+Typography
+
+Accessibility
+
+Hover states
+
+Icons
+
+Transitions
+
+Preserve TrainEfficiency branding.
+
+Neon green should indicate confidence, success, AI approval, and primary actions—not dominate the interface.
+
+---
+
+# Deliverables
+
+Return:
+
+1. Executive UX Audit
+
+Strengths
+
+Weaknesses
+
+Improvements implemented
+
+Remaining opportunities
+
+---
+
+2. Functional Audit
+
+Every interactive element reviewed
+
+Issues discovered
+
+Fixes implemented
+
+Remaining risks
+
+---
+
+3. Department Intelligence Audit
+
+Department responsibilities
+
+Duplicate intelligence
+
+Missing intelligence
+
+Workflow improvements
+
+---
+
+4. Agent Intelligence & Closed-Loop Learning Assessment
+
+Learning loops
+
+Outcome measurement
+
+Explainability
+
+Human-in-the-loop
+
+Cross-agent coordination
+
+Operational intelligence
+
+Recommended implementation order
+
+---
+
+5. Production Readiness Score
+
+Score:
+
+UX
+
+Functionality
+
+Department Intelligence
+
+Agent Utilization
+
+Closed-Loop Learning
+
+Explainability
+
+Cross-Agent Coordination
+
+Operational Intelligence
+
+Performance
+
+Overall Production Readiness
+
+---
+
+6. Implementation Summary
+
+Files changed
+
+Architecture changes
+
+Production-safe improvements
+
+Remaining TODOs
+
+TypeScript/build results
+
+This page is the brain of TrainEfficiency.
+
+Treat it as the executive operating system for the entire organization.
+
+Every recommendation should create measurable business value.
+
+Every agent should have a clearly defined responsibility.
+
+Every intelligent workflow should improve continuously over time.
+
+The final result should represent one of the most sophisticated AI command centers in enterprise SaaS while remaining calm, intuitive, trustworthy, and production-ready.
