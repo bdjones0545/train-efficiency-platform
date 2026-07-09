@@ -188,10 +188,25 @@ export async function generateFollowupDraft(params: {
       } catch {}
     }
 
+    let priorContactBlock = "";
+    if (params.orgId) {
+      try {
+        const { getPriorContactContext } = await import("./agentmail-prior-contact-context-service");
+        const priorCtx = await getPriorContactContext({
+          orgId: params.orgId,
+          recipientEmail: params.recipientEmail,
+          communicationDomain: domain,
+        });
+        if (priorCtx.hasPriorContact && priorCtx.promptBlock) {
+          priorContactBlock = `\n${priorCtx.promptBlock}\n`;
+        }
+      } catch {}
+    }
+
     const prompt = `You are ${params.agentName} at TrainEfficiency, a strength and conditioning business platform.
 
 You are writing a follow-up email — step ${params.stepNumber} of the "${params.sequenceName}" sequence (${params.stepLabel}).
-${learningBlock}
+${learningBlock}${priorContactBlock}
 Context:
 - Recipient: ${params.recipientName ?? params.recipientEmail}
 - Classification: ${params.classification.replace(/_/g, " ")}

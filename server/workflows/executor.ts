@@ -44,27 +44,41 @@ async function refineWorkflowEmailWithLearning(
   workflowType: string,
   subject: string,
   body: string,
+  recipientEmail?: string,
 ): Promise<{ subject: string; body: string; appliedRules: import("../services/message-learning-service").AppliedRuleMetadata[] } | null> {
   try {
     const domain = WORKFLOW_DOMAIN_MAP[workflowType] ?? "general";
     const { getMessageLearningContextWithRules } = await import("../services/message-learning-service");
     const { contextText: learningCtx, rules: appliedRules } = await getMessageLearningContextWithRules(orgId, domain);
-    if (!learningCtx) return null;
+
+    let priorContactBlock = "";
+    if (recipientEmail) {
+      try {
+        const { getPriorContactContext } = await import("../services/agentmail-prior-contact-context-service");
+        const priorCtx = await getPriorContactContext({ orgId, recipientEmail, communicationDomain: domain });
+        if (priorCtx.hasPriorContact && priorCtx.promptBlock) {
+          priorContactBlock = `\n${priorCtx.promptBlock}\n`;
+        }
+      } catch {}
+    }
+
+    if (!learningCtx && !priorContactBlock) return null;
 
     const { default: OpenAI } = await import("openai");
     const client = new OpenAI();
 
+    const systemContent = [
+      "You are an email refinement assistant. Improve the draft email while preserving its intent and structure.",
+      learningCtx ? `\nCoaching rules:\n${learningCtx}` : "",
+      priorContactBlock,
+      "\nReturn only JSON: { \"subject\": \"...\", \"body\": \"...\" }",
+    ].join("");
+
     const resp = await client.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content: `You are an email refinement assistant. Apply the following coaching rules to improve the draft email while preserving its intent and structure.\n\nCoaching rules:\n${learningCtx}\n\nReturn only JSON: { "subject": "...", "body": "..." }`,
-        },
-        {
-          role: "user",
-          content: `Refine this email draft:\n\nSubject: ${subject}\n\nBody:\n${body}`,
-        },
+        { role: "system", content: systemContent },
+        { role: "user", content: `Refine this email draft:\n\nSubject: ${subject}\n\nBody:\n${body}` },
       ],
       response_format: { type: "json_object" },
       max_tokens: 500,
@@ -442,7 +456,8 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
 
         let _workflowAppliedRules: import("../services/message-learning-service").AppliedRuleMetadata[] = [];
         if (stepDef.toolName === "create_email_draft" && builtInput.subject && builtInput.body) {
-          const refined = await refineWorkflowEmailWithLearning(orgId, run.workflowType, builtInput.subject as string, builtInput.body as string);
+          const _wfRecipient = (builtInput.to ?? builtInput.recipientEmail ?? ctx.entityEmail ?? undefined) as string | undefined;
+          const refined = await refineWorkflowEmailWithLearning(orgId, run.workflowType, builtInput.subject as string, builtInput.body as string, _wfRecipient);
           if (refined) {
             builtInput = { ...builtInput, subject: refined.subject, body: refined.body };
             _workflowAppliedRules = refined.appliedRules;

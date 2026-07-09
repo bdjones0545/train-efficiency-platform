@@ -707,6 +707,30 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
     }
   } catch {}
 
+  // ── AgentMail Lead-Level Closed Loop Signal ────────────────────────────────
+  try {
+    const { getAgentmailLeadLevelSignal } = await import("./agentmail-prior-contact-context-service");
+    const llSignal = await getAgentmailLeadLevelSignal(orgId);
+    const issueCount = llSignal.noReplyAfter3Emails + llSignal.repliedButNoEval + llSignal.convertedStillReceivingLeadEmails;
+    if (issueCount > 0) {
+      const details: string[] = [];
+      if (llSignal.noReplyAfter3Emails > 0) details.push(`${llSignal.noReplyAfter3Emails} lead${llSignal.noReplyAfter3Emails === 1 ? "" : "s"} received 3+ emails without reply — consider changing follow-up strategy`);
+      if (llSignal.repliedButNoEval > 0) details.push(`${llSignal.repliedButNoEval} lead${llSignal.repliedButNoEval === 1 ? "" : "s"} replied but still have no evaluation scheduled`);
+      if (llSignal.convertedStillReceivingLeadEmails > 0) details.push(`${llSignal.convertedStillReceivingLeadEmails} converted athlete${llSignal.convertedStillReceivingLeadEmails === 1 ? "" : "s"} still receiving lead-style emails — review AgentMail domain routing`);
+      priorities.push({
+        id: `${orgId}:agentmail-lead-loop`,
+        priorityScore: calcPriorityScore({ revenuePotential: 50, urgency: 55, risk: 30, confidence: 80, stageImportance: 55, safetyRisk: 0 }),
+        category: "agentmail_lead_loop",
+        action: `AgentMail Lead Loop: ${details[0]}`,
+        reason: details.join(" | "),
+        agentSource: "AgentMail Relationship Engine",
+        requiresApproval: false,
+        estimatedRevenueCents: 0,
+        urgency: "medium",
+      });
+    }
+  } catch {}
+
   // ── AgentMail Learning Performance Signal ──────────────────────────────────
   try {
     const { getAgentmailOutcomeLearningSignal } = await import("./agentmail-outcome-correlation-service");

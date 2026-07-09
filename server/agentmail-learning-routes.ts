@@ -283,5 +283,33 @@ export function registerAgentmailLearningRoutes(
     }
   });
 
+  // ─── GET prior contact context for a recipient ─────────────────────────────
+  app.get("/api/admin/agentmail-learning/prior-contact", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const email = String(req.query.email ?? "").trim();
+      if (!email) return res.status(400).json({ message: "email required" });
+      const { getPriorContactContext } = await import("./services/agentmail-prior-contact-context-service");
+      const ctx = await getPriorContactContext({ orgId, recipientEmail: email });
+      res.json(ctx);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch prior contact context" });
+    }
+  });
+
+  // ─── GET prior context analytics ────────────────────────────────────────────
+  app.get("/api/admin/agentmail-learning/prior-context-analytics", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Not authorized" });
+      const { getAgentmailPriorContextAnalytics } = await import("./services/agentmail-prior-contact-context-service");
+      const analytics = await getAgentmailPriorContextAnalytics(orgId);
+      res.json(analytics);
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to fetch prior context analytics" });
+    }
+  });
+
   console.log("[AgentmailLearning] Routes registered");
 }

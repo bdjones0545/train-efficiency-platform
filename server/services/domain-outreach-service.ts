@@ -219,12 +219,23 @@ export async function generateDomainDraft(opts: GenerateDomainDraftOpts): Promis
   const { getMessageLearningContextWithRules } = await import("./message-learning-service");
   const { contextText: learningCtx, rules: _appliedRules } = await getMessageLearningContextWithRules(orgId, messageType, { domain });
 
+  let priorContactBlock = "";
+  if (recipientEmail) {
+    try {
+      const { getPriorContactContext } = await import("./agentmail-prior-contact-context-service");
+      const priorCtx = await getPriorContactContext({ orgId, recipientEmail, communicationDomain: domain });
+      if (priorCtx.hasPriorContact && priorCtx.promptBlock) {
+        priorContactBlock = `\n${priorCtx.promptBlock}\n`;
+      }
+    } catch {}
+  }
+
   const contextBlock = buildContextBlock(domain, context);
 
   const userPrompt = `${contextBlock ? contextBlock + "\n\n" : ""}Message type: ${messageType}
 Goal: ${mtConfig.goal}
 Tone: ${mtConfig.tone}
-${learningCtx ? "\n" + learningCtx + "\n" : ""}
+${learningCtx ? "\n" + learningCtx + "\n" : ""}${priorContactBlock}
 Write the best possible outreach email for this situation. Return ONLY valid JSON: { "subject": "...", "body": "..." }`;
 
   const resp = await openai.chat.completions.create({

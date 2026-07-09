@@ -1,0 +1,323 @@
+# TrainEfficiency Replit Task
+
+## AgentMail Phase G — Lead-Level Closed Loop
+
+You are working inside the TrainEfficiency codebase.
+
+AgentMail now has:
+
+* Phase A — learning context injected into all major draft generation paths
+* Phase B — rendered draft preview, context panel, save without sending
+* Phase C — Learning Center and standing instructions
+* Phase D — performance analytics
+* Phase D.2 — rule application instrumentation
+* Phase E — outcome correlation
+* Phase F — outcome feedback loop into rule effectiveness
+
+Now implement **AgentMail Phase G: Lead-Level Closed Loop**.
+
+---
+
+# Goal
+
+Make AgentMail aware of the individual relationship history with each lead, athlete, guardian, or client.
+
+AgentMail should not only learn from organization-wide rules.
+
+It should also understand:
+
+* Have we emailed this person before?
+* Did they reply?
+* Did they schedule?
+* Did they convert?
+* What was the last message?
+* What happened after the last message?
+* What should we avoid repeating?
+* What is the best next step for this specific relationship?
+
+---
+
+# Core Idea
+
+Before generating a new draft, AgentMail should retrieve a short, safe **prior contact context** block.
+
+Example:
+
+```text
+Prior contact context:
+- 2 previous emails sent to this lead.
+- Last email was sent 3 days ago.
+- Lead replied once, but no evaluation has been scheduled.
+- Do not repeat the original welcome message.
+- Use a concise scheduling CTA.
+```
+
+This should be injected into the draft prompt alongside:
+
+* organization learning rules
+* communication domain
+* lead/guardian/athlete data
+
+---
+
+# Scope
+
+## 1. Create Prior Contact Context Service
+
+Create:
+
+```txt
+server/services/agentmail-prior-contact-context-service.ts
+```
+
+Responsibilities:
+
+Given:
+
+```ts
+{
+  orgId,
+  recipientEmail,
+  leadId?,
+  athleteUserId?,
+  guardianUserId?,
+  communicationDomain?
+}
+```
+
+Return:
+
+```ts
+{
+  hasPriorContact: boolean,
+  sentCount: number,
+  replyCount: number,
+  lastSentAt?: string,
+  lastOutcome?: string,
+  lastSubject?: string,
+  lastDomain?: string,
+  evaluationScheduled: boolean,
+  converted: boolean,
+  firstSessionScheduled: boolean,
+  programAssigned: boolean,
+  paymentRecovered: boolean,
+  recommendedTone?: string,
+  recommendedCTA?: string,
+  avoidRepeating?: string[],
+  promptBlock: string
+}
+```
+
+Use existing tables:
+
+* `gmail_agent_actions`
+* `agentmail_outcome_events`
+* `agent_communication_outcomes`
+* `leadCaptureSubmissions`
+* `leadIntelligenceProfiles`
+* `athlete_onboarding_checklists`
+* `bookings`
+* `agent_mail_reply_queue`
+* `agent_mail_followups`
+
+Do not fabricate data.
+
+If no history exists:
+
+```ts
+hasPriorContact: false
+promptBlock: ""
+```
+
+---
+
+## 2. Context Rules
+
+Use deterministic rules.
+
+Examples:
+
+### If previous email sent and no reply after 48h
+
+Recommended CTA:
+
+```text
+Use a short follow-up with one clear next step.
+```
+
+### If reply received but no evaluation scheduled
+
+Recommended CTA:
+
+```text
+Move the conversation toward scheduling an evaluation.
+```
+
+### If evaluation scheduled
+
+Recommended CTA:
+
+```text
+Do not ask them to schedule again. Reference the upcoming evaluation if appropriate.
+```
+
+### If converted
+
+Recommended CTA:
+
+```text
+Do not write as if they are still a lead. Use onboarding or training language.
+```
+
+### If first session scheduled
+
+Recommended CTA:
+
+```text
+Reference the upcoming first session and ask if they have questions.
+```
+
+### If payment recovered
+
+Recommended CTA:
+
+```text
+Do not ask about payment again unless a new issue exists.
+```
+
+---
+
+## 3. Wire Prior Context Into Draft Generation
+
+Inject the prior contact context into all major generation paths:
+
+* `intelligent-lead-intake-service.ts`
+* `agentmail-followup-service.ts`
+* `workflows/executor.ts`
+* `domain-outreach-service.ts`
+* regenerate path if available
+
+Ordering inside prompt:
+
+1. System role / safety
+2. Organization standing instructions + learned rules
+3. Prior contact context
+4. Current lead/athlete/guardian context
+5. Task-specific instructions
+
+Important:
+
+* Prior contact context should not override system safety or explicit coach instructions.
+* It should prevent repetitive or stale emails.
+* If context is empty, behavior remains unchanged.
+
+---
+
+## 4. Show Prior Contact Context in Draft Review
+
+Update the AI Approvals drawer.
+
+Add a section:
+
+```text
+Prior Contact Context
+```
+
+Show:
+
+* Previous emails sent
+* Last sent date
+* Last outcome
+* Reply count
+* Evaluation scheduled?
+* Converted?
+* First session scheduled?
+* Recommended next step
+
+If no history:
+
+```text
+No prior AgentMail contact found for this recipient.
+```
+
+---
+
+## 5. Analytics
+
+Add lightweight metrics to AgentMail Analytics:
+
+* Drafts with prior contact context
+* Reply rate when prior context exists
+* Conversion rate when prior context exists
+* Domains with repeated no-reply follow-ups
+* Leads contacted 3+ times without reply
+
+Do not overbuild.
+
+---
+
+## 6. CEO Heartbeat Signal
+
+Add a small signal:
+
+Examples:
+
+* “12 leads have received 3+ emails without reply — consider changing follow-up strategy.”
+* “5 leads replied but still have no evaluation scheduled.”
+* “4 converted athletes are still receiving lead-style emails — review AgentMail domain routing.”
+
+Fail open.
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* full CRM thread viewer
+* AI autonomous follow-up decisions
+* open/click tracking
+* deliverability analytics
+* automatic send optimization
+
+Do not auto-send.
+
+Do not bypass human approval.
+
+Do not expose private context to athletes/parents.
+
+---
+
+# Testing
+
+Verify:
+
+1. Prior context returns empty for new recipients.
+2. Prior context finds previous sent drafts by recipient email.
+3. Reply outcomes are counted correctly.
+4. Evaluation scheduled state is detected.
+5. Converted state is detected.
+6. First session scheduled/program assigned state is detected when linked.
+7. Prompt includes prior context when available.
+8. Prompt omits prior context when unavailable.
+9. Draft review drawer displays prior contact context.
+10. No admin-only context leaks to non-admin users.
+11. TypeScript passes.
+12. Existing AgentMail learning, preview, save, approval, and analytics flows still work.
+
+---
+
+# Deliverable
+
+Implement Phase G and provide a report:
+
+* Files changed
+* Prior contact service behavior
+* Generation paths updated
+* Draft review UI updates
+* Analytics additions
+* CEO Heartbeat additions
+* Known limitations
+* Recommended Phase H
+
+Focus on making AgentMail relationship-aware at the individual lead/athlete/guardian level while keeping all outbound messages human-approved.

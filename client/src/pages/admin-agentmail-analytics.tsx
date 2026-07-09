@@ -630,6 +630,75 @@ function RulePerformanceTab() {
   );
 }
 
+// ─── Lead Context Tab ─────────────────────────────────────────────────────────
+
+function LeadContextTab() {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/agentmail-learning/prior-context-analytics"],
+  });
+
+  if (isLoading) return <div className="flex justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+
+  const d = data ?? {};
+  const repeatedNR: { domain: string; count: number }[] = d.repeatedNoReplyDomains ?? [];
+
+  const kpis = [
+    { label: "Drafts with Prior Context", value: d.draftsWithPriorContext ?? 0, icon: <Brain className="w-4 h-4 text-blue-500" />, desc: "Drafts where relationship history was injected into the prompt" },
+    { label: "Reply Rate (with context)", value: d.replyRateWithPriorContext != null ? `${d.replyRateWithPriorContext}%` : "—", icon: <MessageSquare className="w-4 h-4 text-green-500" />, desc: "Reply/outcome rate for drafts that used prior contact context" },
+    { label: "Conversion Rate (with context)", value: d.conversionRateWithPriorContext != null ? `${d.conversionRateWithPriorContext}%` : "—", icon: <Target className="w-4 h-4 text-orange-500" />, desc: "Conversion rate for drafts with prior contact context" },
+    { label: "Leads: 3+ Emails, No Reply", value: d.leadsContactedWithoutReply ?? 0, icon: <AlertTriangle className="w-4 h-4 text-amber-500" />, highlight: (d.leadsContactedWithoutReply ?? 0) > 0, desc: "Recipients contacted 3+ times without any reply" },
+  ];
+
+  return (
+    <div className="space-y-5">
+      <Card className="border-blue-100 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900 p-3">
+        <p className="text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2">
+          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>AgentMail Phase G tracks <strong>individual relationship history</strong> per lead. Prior contact context is injected into draft prompts to prevent repetitive emails and guide the appropriate next step.</span>
+        </p>
+      </Card>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {kpis.map((k) => (
+          <Card key={k.label} className={`p-3 ${k.highlight ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20" : ""}`} data-testid={`kpi-lead-context-${k.label.toLowerCase().replace(/\s+/g, "-")}`}>
+            <div className="flex items-center gap-2 mb-1">{k.icon}<p className="text-xs text-muted-foreground">{k.label}</p></div>
+            <p className={`text-2xl font-bold ${k.highlight ? "text-amber-600" : ""}`}>{k.value}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{k.desc}</p>
+          </Card>
+        ))}
+      </div>
+
+      {repeatedNR.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500" /> Domains with Repeated No-Reply Follow-ups
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {repeatedNR.map((r) => (
+                <div key={r.domain} className="flex items-center justify-between text-sm border-b last:border-0 pb-2 last:pb-0" data-testid={`row-noreply-domain-${r.domain}`}>
+                  <span className="capitalize text-muted-foreground">{r.domain.replace(/_/g, " ")}</span>
+                  <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">{r.count} lead{r.count === 1 ? "" : "s"}</Badge>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {(d.draftsWithPriorContext ?? 0) === 0 && (
+        <Card className="p-6 text-center">
+          <Brain className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+          <p className="text-sm font-medium">No prior contact context yet</p>
+          <p className="text-xs text-muted-foreground mt-1">Once AgentMail generates drafts for recipients who have prior email history, relationship intelligence will appear here.</p>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ─── Outcomes Tab ─────────────────────────────────────────────────────────────
 
 const OUTCOME_ICONS: Record<string, React.ReactNode> = {
@@ -936,6 +1005,7 @@ export default function AdminAgentmailAnalyticsPage() {
           <TabsTrigger value="feedback" className="text-xs" data-testid="tab-feedback">Feedback Insights</TabsTrigger>
           <TabsTrigger value="rules" className="text-xs" data-testid="tab-rules">Rule Performance</TabsTrigger>
           <TabsTrigger value="outcomes" className="text-xs" data-testid="tab-outcomes">Outcomes</TabsTrigger>
+          <TabsTrigger value="lead-context" className="text-xs" data-testid="tab-lead-context">Lead Context</TabsTrigger>
         </TabsList>
 
         <TabsContent value="summary" className="mt-4">
@@ -956,6 +1026,10 @@ export default function AdminAgentmailAnalyticsPage() {
 
         <TabsContent value="outcomes" className="mt-4">
           <OutcomesTab range={range} domain={domain} />
+        </TabsContent>
+
+        <TabsContent value="lead-context" className="mt-4">
+          <LeadContextTab />
         </TabsContent>
       </Tabs>
     </div>

@@ -251,8 +251,17 @@ async function generateOutreachDraft(
     ? `\nCoaching rules from prior feedback (follow these carefully):\n${learningCtx}\n`
     : "";
 
+  let priorContactBlock = "";
+  try {
+    const { getPriorContactContext } = await import("./agentmail-prior-contact-context-service");
+    const priorCtx = await getPriorContactContext({ orgId: data.orgId, recipientEmail: data.email, communicationDomain: "athlete_lead" });
+    if (priorCtx.hasPriorContact && priorCtx.promptBlock) {
+      priorContactBlock = `\n${priorCtx.promptBlock}\n`;
+    }
+  } catch {}
+
   const prompt = `You are a coach at an elite athletic training facility. Write a short, personalized outreach email to a new athlete lead.
-${learningBlock}
+${learningBlock}${priorContactBlock}
 Athlete context: ${aiSummary}
 
 Guidelines:

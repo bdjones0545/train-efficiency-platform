@@ -295,6 +295,12 @@ function FollowupDetailDialog({
             </div>
           </div>
         </div>
+        <div className="space-y-2 pt-2 border-t">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+            <Link2 className="h-3 w-3 text-blue-500" /> Prior Contact Context
+          </p>
+          <PriorContactPanel email={followup.recipient_email} />
+        </div>
         <div className="space-y-3 pt-3 border-t">
           <div className="flex flex-wrap gap-2 items-center">
             {canEdit && !editMode && (
@@ -347,6 +353,77 @@ function FollowupDetailDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+// ─── Prior Contact Panel ─────────────────────────────────────────────────────
+
+function PriorContactPanel({ email }: { email: string }) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/admin/agentmail-learning/prior-contact", email],
+    queryFn: () =>
+      fetch(`/api/admin/agentmail-learning/prior-contact?email=${encodeURIComponent(email)}`, { credentials: "include" }).then((r) => r.json()),
+    enabled: !!email,
+    staleTime: 60_000,
+  });
+
+  if (isLoading) return (
+    <div className="flex items-center gap-2 text-xs text-muted-foreground py-2">
+      <Loader2 className="h-3 w-3 animate-spin" /> Loading contact history…
+    </div>
+  );
+
+  const d = data ?? {};
+
+  if (!d.hasPriorContact) {
+    return (
+      <div className="bg-muted/30 rounded-lg px-3 py-2 text-xs text-muted-foreground flex items-center gap-2">
+        <MessageSquare className="h-3.5 w-3.5 shrink-0" />
+        No prior AgentMail contact found for this recipient.
+      </div>
+    );
+  }
+
+  const rows: { label: string; value: string; highlight?: boolean }[] = [
+    { label: "Previous emails", value: `${d.sentCount} sent via AgentMail` },
+    { label: "Replies received", value: String(d.replyCount ?? 0) },
+    ...(d.lastSentAt ? [{ label: "Last sent", value: new Date(d.lastSentAt).toLocaleDateString("en", { month: "short", day: "numeric", year: "numeric" }) }] : []),
+    ...(d.lastSubject ? [{ label: "Last subject", value: d.lastSubject.slice(0, 60) }] : []),
+    ...(d.lastOutcome ? [{ label: "Last outcome", value: d.lastOutcome.replace(/_/g, " ") }] : []),
+  ];
+
+  const statusItems: { label: string; value: boolean; positive?: boolean }[] = [
+    { label: "Evaluation scheduled", value: d.evaluationScheduled, positive: true },
+    { label: "Converted", value: d.converted, positive: true },
+    { label: "First session scheduled", value: d.firstSessionScheduled, positive: true },
+    { label: "Program assigned", value: d.programAssigned, positive: true },
+    { label: "Payment recovered", value: d.paymentRecovered, positive: true },
+  ];
+
+  return (
+    <div className="space-y-2" data-testid="prior-contact-panel">
+      <div className="bg-muted/40 rounded-lg p-3 space-y-1.5 text-xs">
+        {rows.map((r) => (
+          <div key={r.label} className="flex items-start gap-2">
+            <span className="text-muted-foreground shrink-0 min-w-[110px]">{r.label}:</span>
+            <span className={`font-medium ${r.highlight ? "text-amber-600" : ""}`}>{r.value}</span>
+          </div>
+        ))}
+        <div className="pt-1 flex flex-wrap gap-1.5">
+          {statusItems.filter((s) => s.value).map((s) => (
+            <Badge key={s.label} className="text-xs bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/30 dark:text-green-400">
+              <CheckCircle className="h-2.5 w-2.5 mr-1" />{s.label}
+            </Badge>
+          ))}
+        </div>
+      </div>
+      {d.recommendedCTA && (
+        <div className="bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 rounded-lg px-3 py-2 text-xs">
+          <span className="font-semibold text-blue-700 dark:text-blue-300">Recommended next step: </span>
+          <span className="text-blue-800 dark:text-blue-200">{d.recommendedCTA}</span>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -414,6 +491,12 @@ function ReplyDetailDialog({
               {reply.edited_body && !editMode && <Badge className="text-xs bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"><Edit3 className="h-2.5 w-2.5 mr-1" />Edited</Badge>}
             </div>
           </div>
+        </div>
+        <div className="space-y-2 pt-2 border-t">
+          <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+            <Link2 className="h-3 w-3 text-blue-500" /> Prior Contact Context
+          </p>
+          <PriorContactPanel email={reply.recipient_email} />
         </div>
         <div className="space-y-3 pt-2 border-t">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3" /> Audit Trail</p>
