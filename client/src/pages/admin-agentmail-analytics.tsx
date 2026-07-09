@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,9 +9,11 @@ import {
   BarChart3, TrendingUp, TrendingDown, CheckCircle2, XCircle,
   RefreshCw, Brain, BookOpen, AlertTriangle, ChevronRight,
   MessageSquare, Zap, Target, Clock, Edit3, Activity,
-  ArrowUpRight, ArrowDownRight, Minus, Info,
+  ArrowUpRight, ArrowDownRight, Minus, Info, Link2,
+  Users, CalendarCheck, TrendingUp as TrendUp, DollarSign,
 } from "lucide-react";
 import { Link } from "wouter";
+import { apiRequest } from "@/lib/queryClient";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -583,6 +585,237 @@ function RulePerformanceTab() {
   );
 }
 
+// ─── Outcomes Tab ─────────────────────────────────────────────────────────────
+
+const OUTCOME_ICONS: Record<string, React.ReactNode> = {
+  reply_received:         <MessageSquare className="w-3.5 h-3.5" />,
+  evaluation_scheduled:   <CalendarCheck className="w-3.5 h-3.5" />,
+  evaluation_completed:   <CheckCircle2 className="w-3.5 h-3.5" />,
+  lead_converted:         <Users className="w-3.5 h-3.5" />,
+  first_session_scheduled:<Target className="w-3.5 h-3.5" />,
+  program_assigned:       <BookOpen className="w-3.5 h-3.5" />,
+  payment_recovered:      <DollarSign className="w-3.5 h-3.5" />,
+  booking_created:        <Clock className="w-3.5 h-3.5" />,
+};
+
+const OUTCOME_LABELS: Record<string, string> = {
+  reply_received: "Reply Received", evaluation_scheduled: "Evaluation Scheduled",
+  evaluation_completed: "Evaluation Completed", lead_converted: "Lead Converted",
+  first_session_scheduled: "First Session Scheduled", program_assigned: "Program Assigned",
+  payment_recovered: "Payment Recovered", booking_created: "Booking Created",
+};
+
+function OutcomesTab({ range, domain }: { range: string; domain: string }) {
+  const qc = useQueryClient();
+  const { data, isLoading, refetch } = useQuery<any>({
+    queryKey: ["/api/admin/agentmail-outcomes/summary", range, domain],
+    queryFn: () => fetch(`/api/admin/agentmail-outcomes/summary?range=${range}&domain=${domain}`, { credentials: "include" }).then((r) => r.json()),
+  });
+
+  const recomputeMut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/admin/agentmail-outcomes/recompute"),
+    onSuccess: () => { refetch(); qc.invalidateQueries({ queryKey: ["/api/admin/agentmail-outcomes/summary"] }); },
+  });
+
+  if (isLoading) return <div className="flex justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
+
+  const t = data?.totals ?? {};
+  const sent = t.sentMessages ?? 0;
+  const hasData = data?.dataAvailable ?? false;
+
+  const kpiCards = [
+    { label: "Emails Sent", value: sent, icon: <MessageSquare className="w-4 h-4 text-blue-500" /> },
+    { label: "Associated Replies", value: t.replies ?? 0, pct: sent, icon: <MessageSquare className="w-4 h-4 text-green-500" /> },
+    { label: "Evaluations Scheduled", value: t.evaluationsScheduled ?? 0, pct: sent, icon: <CalendarCheck className="w-4 h-4 text-purple-500" /> },
+    { label: "Lead Conversions", value: t.conversions ?? 0, pct: sent, icon: <Users className="w-4 h-4 text-orange-500" /> },
+    { label: "First Sessions", value: t.firstSessionsScheduled ?? 0, pct: sent, icon: <Target className="w-4 h-4 text-cyan-500" /> },
+    { label: "Programs Assigned", value: t.programsAssigned ?? 0, pct: sent, icon: <BookOpen className="w-4 h-4 text-indigo-500" /> },
+  ];
+
+  return (
+    <div className="space-y-5">
+      {/* Disclaimer */}
+      <Card className="border-amber-100 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 p-3">
+        <p className="text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+          <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+          <span>These are <strong>associated outcomes</strong> — platform events that occurred after an email was sent to the same lead. They do not imply causation. Use as directional signal only.</span>
+        </p>
+      </Card>
+
+      {/* KPI grid */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        {kpiCards.map((c) => (
+          <Card key={c.label} className="p-3">
+            <div className="flex items-center gap-2 mb-1">
+              {c.icon}
+              <p className="text-xs text-muted-foreground">{c.label}</p>
+            </div>
+            <p className="text-2xl font-bold">{c.value}</p>
+            {c.pct != null && c.pct > 0 && (
+              <p className="text-xs text-muted-foreground">{Math.round((c.value / c.pct) * 100)}% rate</p>
+            )}
+          </Card>
+        ))}
+      </div>
+
+      {/* Outcome breakdown */}
+      {(data?.byOutcomeType?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Link2 className="w-4 h-4 text-primary" /> Outcome Breakdown (after {range})
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {data.byOutcomeType.filter((o: any) => o.count > 0).map((o: any) => (
+                <div key={o.outcomeType} className="flex items-center gap-3" data-testid={`outcome-row-${o.outcomeType}`}>
+                  <span className="text-muted-foreground shrink-0">{OUTCOME_ICONS[o.outcomeType]}</span>
+                  <span className="text-sm flex-1">{o.label}</span>
+                  <div className="flex-1 max-w-[120px] h-1.5 bg-muted rounded-full overflow-hidden">
+                    <div className="bg-primary h-full rounded-full" style={{ width: `${Math.min(100, o.rate * 5)}%` }} />
+                  </div>
+                  <span className="text-sm font-medium w-8 text-right">{o.count}</span>
+                  <span className="text-xs text-muted-foreground w-12 text-right">{o.rate}%</span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Domain breakdown */}
+      {(data?.byDomain?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Activity className="w-4 h-4" /> Outcomes by Domain
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-muted-foreground border-b">
+                    <th className="text-left pb-1.5 font-medium">Domain</th>
+                    <th className="text-right pb-1.5 font-medium">Sent</th>
+                    <th className="text-right pb-1.5 font-medium">Replies</th>
+                    <th className="text-right pb-1.5 font-medium">Evals</th>
+                    <th className="text-right pb-1.5 font-medium">Conversions</th>
+                    <th className="text-right pb-1.5 font-medium">Sessions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.byDomain.map((d: any) => (
+                    <tr key={d.domain} className="border-b last:border-0" data-testid={`domain-outcome-${d.domain}`}>
+                      <td className="py-1.5">
+                        <span className={`px-1.5 py-0.5 rounded-full text-xs ${DOMAIN_BADGE[d.domain] ?? DOMAIN_BADGE.general}`}>{d.label}</span>
+                      </td>
+                      <td className="text-right py-1.5">{d.sentCount}</td>
+                      <td className="text-right py-1.5">{d.counts?.reply_received ?? 0}</td>
+                      <td className="text-right py-1.5">{d.counts?.evaluation_scheduled ?? 0}</td>
+                      <td className="text-right py-1.5">{d.counts?.lead_converted ?? 0}</td>
+                      <td className="text-right py-1.5">{d.counts?.first_session_scheduled ?? 0}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Rule-associated outcomes */}
+      {(data?.byRule?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Brain className="w-4 h-4 text-purple-600" /> Rule-Associated Outcomes
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">Outcomes observed in emails where each rule was applied. Not causal.</p>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {data.byRule.filter((r: any) => r.timesApplied > 0).slice(0, 12).map((r: any) => (
+                <div key={r.ruleId} className="flex items-start gap-2 text-sm border rounded-lg p-2" data-testid={`rule-outcome-${r.ruleId}`}>
+                  <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 mt-0.5 ${r.ruleSource === "standing_instruction" ? "bg-indigo-50 text-indigo-700 border border-indigo-200" : "bg-purple-50 text-purple-700 border border-purple-200"}`}>
+                    {r.ruleSource === "standing_instruction" ? "instruction" : "learned"}
+                  </span>
+                  <span className="flex-1 leading-snug text-xs">{r.ruleText}</span>
+                  <div className="text-right shrink-0 text-xs space-y-0.5">
+                    <p className="text-muted-foreground">{r.timesApplied}× applied</p>
+                    <p className={r.associatedOutcomes > 0 ? "text-green-600 font-medium" : "text-muted-foreground"}>
+                      {r.associatedOutcomes} outcomes
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Recent events */}
+      {(data?.recentEvents?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Clock className="w-4 h-4" /> Recent Correlated Events
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-1.5">
+              {data.recentEvents.slice(0, 10).map((e: any, i: number) => (
+                <div key={i} className="flex items-center gap-3 text-xs" data-testid={`recent-event-${i}`}>
+                  <span className="text-muted-foreground shrink-0">{OUTCOME_ICONS[e.outcomeType]}</span>
+                  <span className="font-medium shrink-0">{OUTCOME_LABELS[e.outcomeType] ?? e.outcomeType}</span>
+                  <span className={`px-1.5 py-0.5 rounded-full shrink-0 ${DOMAIN_BADGE[e.communicationDomain] ?? DOMAIN_BADGE.general}`}>{domainLabel(e.communicationDomain)}</span>
+                  {e.recipientEmail && <span className="text-muted-foreground truncate">{e.recipientEmail}</span>}
+                  <span className="ml-auto text-muted-foreground shrink-0">
+                    {e.detectedAt ? new Date(e.detectedAt).toLocaleDateString("en", { month: "short", day: "numeric" }) : ""}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {!hasData && (
+        <div className="text-center py-12 text-muted-foreground">
+          <Link2 className="w-8 h-8 mx-auto mb-3 opacity-30" />
+          <p className="text-sm font-medium mb-1">No outcome data yet</p>
+          <p className="text-xs mb-4">Run recompute to correlate sent emails with platform events.</p>
+          <Button size="sm" onClick={() => recomputeMut.mutate()} disabled={recomputeMut.isPending} data-testid="btn-recompute-empty">
+            {recomputeMut.isPending ? <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5 mr-1.5" />}
+            Recompute Outcomes
+          </Button>
+        </div>
+      )}
+
+      {/* Controls */}
+      <div className="flex items-center justify-between gap-3">
+        <div className="text-xs text-muted-foreground">
+          {data?.lastRecomputedAt
+            ? `Last correlated: ${new Date(data.lastRecomputedAt).toLocaleString()}`
+            : "Not yet correlated"}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => recomputeMut.mutate()}
+          disabled={recomputeMut.isPending}
+          data-testid="btn-recompute-outcomes"
+        >
+          {recomputeMut.isPending
+            ? <><RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />Correlating…</>
+            : <><RefreshCw className="w-3.5 h-3.5 mr-1.5" />Recompute Outcomes</>}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminAgentmailAnalyticsPage() {
@@ -657,6 +890,7 @@ export default function AdminAgentmailAnalyticsPage() {
           <TabsTrigger value="domains" className="text-xs" data-testid="tab-domains">Domain Performance</TabsTrigger>
           <TabsTrigger value="feedback" className="text-xs" data-testid="tab-feedback">Feedback Insights</TabsTrigger>
           <TabsTrigger value="rules" className="text-xs" data-testid="tab-rules">Rule Performance</TabsTrigger>
+          <TabsTrigger value="outcomes" className="text-xs" data-testid="tab-outcomes">Outcomes</TabsTrigger>
         </TabsList>
 
         <TabsContent value="summary" className="mt-4">
@@ -673,6 +907,10 @@ export default function AdminAgentmailAnalyticsPage() {
 
         <TabsContent value="rules" className="mt-4">
           <RulePerformanceTab />
+        </TabsContent>
+
+        <TabsContent value="outcomes" className="mt-4">
+          <OutcomesTab range={range} domain={domain} />
         </TabsContent>
       </Tabs>
     </div>

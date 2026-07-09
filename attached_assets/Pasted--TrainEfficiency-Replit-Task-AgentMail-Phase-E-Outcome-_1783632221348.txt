@@ -1,0 +1,345 @@
+# TrainEfficiency Replit Task
+
+## AgentMail Phase E — Outcome Correlation
+
+You are working inside the TrainEfficiency codebase.
+
+AgentMail now has:
+
+* Learning context injection
+* Draft preview and review
+* Save without sending
+* Learning Center
+* Performance Analytics
+* Rule application tracking
+
+Now implement **AgentMail Phase E: Outcome Correlation**.
+
+---
+
+# Goal
+
+Connect AgentMail messages to downstream business outcomes.
+
+The platform should answer:
+
+> “Which emails actually create replies, evaluations, conversions, reactivations, payment recovery, and revenue?”
+
+---
+
+# Outcomes to Track
+
+Track deterministic outcomes only:
+
+* Reply received
+* Evaluation scheduled
+* Evaluation completed
+* Lead converted to athlete
+* Guardian invite accepted
+* First session scheduled
+* Program assigned
+* Inactive athlete reactivated
+* Payment recovered
+* Revenue influenced
+
+Do not fabricate outcomes.
+
+---
+
+# Backend Scope
+
+## 1. Create Outcome Correlation Service
+
+Create:
+
+```txt
+server/services/agentmail-outcome-correlation-service.ts
+```
+
+It should correlate sent AgentMail drafts with known platform events.
+
+Use existing data:
+
+* `gmail_agent_actions`
+* `agentmail_rule_applications`
+* `agent_message_feedback`
+* `leadCaptureSubmissions`
+* `leadIntelligenceProfiles`
+* `athlete_onboarding_checklists`
+* `bookings`
+* `workout_program_assignments`
+* `guardian` tables
+* billing/payment/subscription tables if available
+
+---
+
+## 2. Outcome Table
+
+If no existing table exists, create:
+
+```sql
+agent_communication_outcomes (
+  id varchar primary key default gen_random_uuid(),
+  org_id varchar not null,
+  action_id varchar not null,
+  recipient_email text,
+  communication_domain varchar,
+  outcome_type varchar not null,
+  outcome_value numeric,
+  related_entity_type varchar,
+  related_entity_id varchar,
+  detected_at timestamp default now(),
+  source varchar not null,
+  confidence numeric default 1.0,
+  metadata jsonb default '{}',
+  created_at timestamp default now()
+)
+```
+
+Add unique protection:
+
+```sql
+unique(org_id, action_id, outcome_type, related_entity_type, related_entity_id)
+```
+
+---
+
+## 3. Correlation Rules
+
+Implement deterministic rules.
+
+Examples:
+
+### Reply Received
+
+If an inbound reply exists after the sent email:
+
+```txt
+outcome_type = reply_received
+```
+
+### Evaluation Scheduled
+
+If linked lead has booking/evaluation status after email sent:
+
+```txt
+outcome_type = evaluation_scheduled
+```
+
+### Lead Converted
+
+If linked lead becomes enrolled after email sent:
+
+```txt
+outcome_type = lead_converted
+```
+
+### First Session Scheduled
+
+If onboarding checklist firstSessionScheduled becomes true after email sent:
+
+```txt
+outcome_type = first_session_scheduled
+```
+
+### Program Assigned
+
+If programAssigned becomes true after email sent:
+
+```txt
+outcome_type = program_assigned
+```
+
+### Payment Recovered
+
+If payment recovery email is followed by paid invoice / wallet balance resolution / payment setup:
+
+```txt
+outcome_type = payment_recovered
+```
+
+Only implement this if real billing data exists.
+
+Otherwise return not configured.
+
+---
+
+## 4. Correlation Job / Endpoint
+
+Add endpoint:
+
+```txt
+POST /api/admin/agentmail-outcomes/recompute
+```
+
+For admin-triggered recompute.
+
+Also add read endpoint:
+
+```txt
+GET /api/admin/agentmail-outcomes/summary?range=7d|30d|90d&domain=
+```
+
+Return:
+
+```ts
+{
+  totals: {
+    sentMessages,
+    replies,
+    evaluationsScheduled,
+    conversions,
+    firstSessionsScheduled,
+    programsAssigned,
+    paymentsRecovered,
+    revenueInfluenced
+  },
+  byDomain: [],
+  byRule: [],
+  byOutcomeType: []
+}
+```
+
+---
+
+## 5. Analytics Integration
+
+Update AgentMail Analytics.
+
+Add new tab:
+
+```txt
+Outcomes
+```
+
+Show:
+
+* Reply rate
+* Evaluation scheduled rate
+* Conversion rate
+* First session scheduled rate
+* Program assignment rate
+* Payment recovery count if supported
+* Revenue influenced if supported
+
+Break down by:
+
+* communication domain
+* email type
+* learning rule
+* standing instruction
+
+---
+
+## 6. Rule Outcome Analytics
+
+Use `agentmail_rule_applications`.
+
+For each rule:
+
+* messages sent with rule
+* replies after rule
+* conversions after rule
+* booking outcomes after rule
+* payment outcomes after rule if available
+
+Do not claim causation.
+
+Label clearly:
+
+> “Associated outcomes after use”
+
+Not:
+
+> “This rule caused revenue”
+
+---
+
+## 7. CEO Heartbeat Integration
+
+Add AgentMail outcome priorities.
+
+Examples:
+
+* “Athlete lead emails converted 6 leads this month.”
+* “Parent lead emails have high reply rate.”
+* “Payment recovery emails have low recovery rate.”
+* “Scheduling emails are getting replies but not bookings.”
+
+Fail open.
+
+---
+
+# Frontend Scope
+
+Update:
+
+```txt
+/admin/agentmail-analytics
+```
+
+Add Outcomes tab.
+
+Sections:
+
+* Outcome summary cards
+* Domain outcome table
+* Rule-associated outcomes
+* Recent outcome events
+* Recompute outcomes button
+
+Use honest labels:
+
+* Associated replies
+* Associated conversions
+* Associated bookings
+* Revenue influenced
+
+Avoid implying causation.
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* full attribution engine
+* open/click tracking
+* revenue forecasting
+* CRM overhaul
+* AI causal inference
+
+Use deterministic event matching only.
+
+---
+
+# Testing
+
+Verify:
+
+1. Outcome table is created safely.
+2. Recompute endpoint runs without duplication.
+3. Sent messages correlate to linked lead conversions.
+4. Scheduling outcomes are detected when real bookings exist.
+5. Payment outcomes only appear if billing data exists.
+6. Rule outcome analytics use real rule application rows.
+7. Analytics UI shows outcomes honestly.
+8. CEO Heartbeat fails open.
+9. TypeScript passes.
+
+---
+
+# Deliverable
+
+Provide:
+
+* Files changed
+* Tables added
+* Correlation rules implemented
+* Endpoints added
+* Analytics UI changes
+* CEO Heartbeat changes
+* Known limitations
+* Recommended Phase F
+
+Focus on turning AgentMail from a communication tool into a measurable business-outcome system.

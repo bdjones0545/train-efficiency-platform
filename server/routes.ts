@@ -32674,5 +32674,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerAgentmailAnalyticsRoutes } = await import("./agentmail-analytics-routes");
   registerAgentmailAnalyticsRoutes(app, isAuthenticated, requireRole);
 
+  const { registerAgentmailOutcomeRoutes } = await import("./agentmail-outcome-routes");
+  await registerAgentmailOutcomeRoutes(app, isAuthenticated, requireRole);
+
   return httpServer;
 }

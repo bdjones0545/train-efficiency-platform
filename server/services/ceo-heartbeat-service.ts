@@ -686,6 +686,27 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
     generateAgentmailAttentionItems(orgId).catch(() => {});
   } catch {}
 
+  // ── AgentMail Outcome Correlation Signal ───────────────────────────────────
+  try {
+    const { getAgentmailOutcomeHeartbeatSignal } = await import("./agentmail-outcome-correlation-service");
+    const outcomeSignal = await getAgentmailOutcomeHeartbeatSignal(orgId);
+    if (outcomeSignal) {
+      priorities.push({
+        id: `${orgId}:agentmail-outcomes`,
+        priorityScore: outcomeSignal.hasIssues
+          ? calcPriorityScore({ revenuePotential: 50, urgency: 60, risk: 40, confidence: 90, stageImportance: 55, safetyRisk: 0 })
+          : calcPriorityScore({ revenuePotential: 30, urgency: 25, risk: 5, confidence: 85, stageImportance: 35, safetyRisk: 0 }),
+        category: "agentmail_outcomes",
+        action: outcomeSignal.summary,
+        reason: outcomeSignal.details.join(" | "),
+        agentSource: "AgentMail Outcome Correlation",
+        requiresApproval: false,
+        estimatedRevenueCents: 0,
+        urgency: outcomeSignal.hasIssues ? "medium" : "low",
+      });
+    }
+  } catch {}
+
   // Sort by priority score descending
   priorities.sort((a, b) => b.priorityScore - a.priorityScore);
 
