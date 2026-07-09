@@ -1,0 +1,86 @@
+Now perform a focused Phase 1B hardening pass on the Home Dashboard only.
+
+Do not redesign the page.
+
+Do not change the new layout unless there is a clear production issue.
+
+Focus only on closing the remaining intelligence and production gaps identified in the audit.
+
+Audit and improve:
+
+1. Recommendation Skip / Next behavior
+
+* The old dead Skip button is now fixed as "Next recommendation."
+* Determine whether this interaction should log a lightweight feedback event.
+* If a safe existing analytics/event system exists, wire the event.
+* If no safe system exists, add a clearly scoped TODO and avoid fake tracking.
+* Do not invent attribution.
+
+2. Recommendation Explainability
+   Each Best Action recommendation should clearly answer:
+
+* Why this recommendation appeared
+* Which business signal influenced it
+* Expected impact
+* Confidence, if available
+* Recommended next step
+
+If the data exists, surface it.
+If not, add safe fallback copy without pretending the system knows more than it does.
+
+3. Attention Inbox / Recommendation Deduplication
+   Review whether the same issue can appear both as a Best Action and an Attention item.
+   If duplicate display can happen:
+
+* Prefer one primary surface
+* Add contextual linking
+* Avoid overwhelming the user with the same alert twice
+* Do not rewrite backend logic unless necessary
+
+4. Org Memory Usefulness
+   The Org Memory section currently shows counts but little daily value.
+   Improve it so the section answers:
+
+* What did the system learn?
+* Why does it matter?
+* Is anything new, stale, or actionable?
+* Should the user review or correct memory?
+
+If the backend only supports counts, keep it honest and improve the empty/state messaging.
+
+5. Agent Intelligence & Closed-Loop Learning Assessment
+   For each dashboard intelligence surface, classify:
+
+* 🟢 Production Ready
+* 🟡 Needs Hardening
+* 🔴 Misleading or Incomplete
+* ⚫ Placeholder / Not Production Ready
+
+Focus on:
+
+* CEO Heartbeat
+* Best Action Today
+* Attention Inbox
+* AI Workforce
+* AgentMail status
+* Hermes Learning / Org Memory
+* System Health
+
+6. Production Safety
+   Preserve:
+
+* Existing queries
+* Existing permissions
+* Existing test IDs
+* Existing API contracts
+* Current successful TypeScript status
+
+Run TypeScript/build checks after changes.
+
+Return:
+
+* Files changed
+* Intelligence improvements made
+* Tracking or learning events added, if any
+* Remaining TODOs
+* Production readiness score after Phase 1B

@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { useLocation } from "wouter";
 import { usePermissions } from "@/hooks/use-permissions";
 import { useAuth } from "@/hooks/use-auth";
@@ -144,6 +145,15 @@ interface AttentionItem {
   actionLabel: string;
   status: string;
   score?: number;
+  confidence?: number;
+  businessImpact?: number;
+  metadata?: {
+    estimatedValue?: number;
+    estimatedAnnualValue?: number;
+    clientName?: string;
+    daysSinceLast?: number;
+    [key: string]: unknown;
+  };
 }
 
 interface Recommendation {
@@ -214,6 +224,9 @@ interface HermesStats {
   queuedForReview24h?: number;
   successRate?: number;
   confidenceAverage?: number;
+  failures24h?: number;
+  signalsProcessed24h?: number;
+  generatedAt?: string | null;
 }
 
 interface ApprovalsMetrics {
@@ -257,6 +270,78 @@ interface TimelineEntry {
 interface TimelineResponse {
   entries?: TimelineEntry[];
   total?: number;
+}
+
+// ─── Recommendation type → human-readable signal source ──────────────────────
+
+const REC_TYPE_SIGNALS: Record<string, { label: string; signal: string }> = {
+  workflow:    { label: "Workflow",    signal: "Missing workflow detected" },
+  integration: { label: "Integration", signal: "Integration gap detected" },
+  governance:  { label: "Governance",  signal: "Governance policy review" },
+  approval:    { label: "Approvals",   signal: "Pending approval backlog" },
+  agent:       { label: "Agent",       signal: "Agent configuration gap" },
+  automation:  { label: "Automation",  signal: "Automation opportunity" },
+};
+
+// ─── Org Memory health assessment ─────────────────────────────────────────────
+
+function assessMemoryHealth(
+  sources: MemoryCaptureSource[],
+  hermes: HermesStats | undefined
+): { status: "active" | "stale" | "empty"; headline: string; detail: string } {
+  const totalEntries = sources.reduce((s, src) => s + (src.count ?? 0), 0);
+  if (totalEntries === 0) {
+    return {
+      status: "empty",
+      headline: "Building organizational memory",
+      detail:
+        "Learnings, decisions, and AI reports will appear here as the platform generates activity.",
+    };
+  }
+
+  if (hermes?.lastInsightAt) {
+    const daysSince = Math.floor(
+      (Date.now() - new Date(hermes.lastInsightAt).getTime()) / 86_400_000
+    );
+    const confStr = hermes.confidenceAverage
+      ? ` · Avg confidence ${hermes.confidenceAverage}%`
+      : "";
+    const rateStr =
+      hermes.successRate != null ? ` · ${hermes.successRate}% approval rate (7d)` : "";
+    if (daysSince <= 1) {
+      return {
+        status: "active",
+        headline: `${totalEntries} entries — actively learning`,
+        detail: `Last insight ${relativeTime(hermes.lastInsightAt)}${confStr}${rateStr}`,
+      };
+    }
+    if (daysSince <= 7) {
+      return {
+        status: "active",
+        headline: `${totalEntries} entries — learning regularly`,
+        detail: `Last insight ${daysSince}d ago${confStr}${rateStr}`,
+      };
+    }
+    return {
+      status: "stale",
+      headline: `${totalEntries} entries — memory may be stale`,
+      detail: `No new insights in ${daysSince}d — check whether Hermes is running`,
+    };
+  }
+
+  const lastUpdatedDates = sources
+    .map((s) => s.lastUpdated)
+    .filter(Boolean)
+    .sort()
+    .reverse();
+  const mostRecent = lastUpdatedDates[0] ?? null;
+  return {
+    status: "active",
+    headline: `${totalEntries} memory entries captured`,
+    detail: mostRecent
+      ? `Last updated ${relativeTime(mostRecent)}`
+      : "Entries present — last update unknown",
+  };
 }
 
 // ─── Shared sub-components ────────────────────────────────────────────────────
@@ -547,8 +632,18 @@ export default function HomePage() {
   const isAdmin = perms.canManageAI;
   const isCoach = perms.canViewRevenue;
 
-  // Track which recommendation index is shown (for Skip)
+  // Track which recommendation index is shown (for Skip/Next)
   const [recIndex, setRecIndex] = useState(0);
+
+  // Feedback mutations — real endpoints, real signal, no fabricated attribution
+  const dismissRecMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/recommendations/${id}/dismiss`),
+  });
+  const acceptRecMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/recommendations/${id}/accept`),
+  });
 
   // Profile + org
   const { data: profile } = useQuery<{ organizationId?: string }>({
@@ -726,7 +821,14 @@ export default function HomePage() {
     (a) => a.level === "low" || a.level === "info"
   ).length;
 
-  const topAttnItems = attnSorted.slice(0, 5);
+  // Deduplication: when topAttn is used as the hero fallback (no rec available),
+  // exclude it from the attention list below so the same alert doesn't appear twice.
+  const usingAttnAsFallback = !bestRec && !!topAttn;
+  const topAttnItems = (
+    usingAttnAsFallback
+      ? attnSorted.filter((a) => a.id !== topAttn!.id)
+      : attnSorted
+  ).slice(0, 5);
 
   // Best action fallback to top attention item
   const showRecCard = !recQ.isLoading && (bestRec || topAttn);
@@ -895,6 +997,17 @@ export default function HomePage() {
                   <Zap className="h-4 w-4 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
+                  {/* Explainability: signal source badge */}
+                  {bestRec?.type && REC_TYPE_SIGNALS[bestRec.type] && (
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant="outline" className="text-xs h-5 px-1.5" data-testid="badge-rec-type">
+                        {REC_TYPE_SIGNALS[bestRec.type].label}
+                      </Badge>
+                      <span className="text-xs text-muted-foreground" data-testid="text-rec-signal">
+                        {REC_TYPE_SIGNALS[bestRec.type].signal}
+                      </span>
+                    </div>
+                  )}
                   <p
                     className="font-semibold text-base leading-snug"
                     data-testid="text-best-action-title"
@@ -913,14 +1026,17 @@ export default function HomePage() {
                     </p>
                   )}
                   {cardConfidence !== undefined && (
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Confidence: {cardConfidence}%
+                    <p className="text-xs text-muted-foreground mt-1" data-testid="text-rec-confidence">
+                      AI confidence: {cardConfidence}%
                     </p>
                   )}
                   <div className="flex items-center gap-2 mt-4">
                     <Button
                       size="sm"
-                      onClick={() => setLocation(cardActionUrl)}
+                      onClick={() => {
+                        if (bestRec?.id) acceptRecMutation.mutate(bestRec.id);
+                        setLocation(cardActionUrl);
+                      }}
                       data-testid="button-best-action-primary"
                     >
                       {cardActionLabel}
@@ -930,7 +1046,10 @@ export default function HomePage() {
                         size="sm"
                         variant="ghost"
                         className="text-muted-foreground"
-                        onClick={() => setRecIndex((i) => i + 1)}
+                        onClick={() => {
+                          if (bestRec?.id) dismissRecMutation.mutate(bestRec.id);
+                          setRecIndex((i) => i + 1);
+                        }}
                         data-testid="button-best-action-skip"
                       >
                         Next recommendation
@@ -1649,65 +1768,82 @@ export default function HomePage() {
           ) : (
             <Card data-testid="card-org-memory-summary">
               <CardContent className="pt-5 pb-5">
-                {memorySources.length > 0 ? (
-                  <>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
-                      {[
-                        {
-                          label: "Hermes Learnings",
-                          data: memHermes,
-                          testId: "mem-hermes",
-                        },
-                        {
-                          label: "Decisions Captured",
-                          data: memDecisions,
-                          testId: "mem-decisions",
-                        },
-                        {
-                          label: "Software KB",
-                          data: memSoftwareKb,
-                          testId: "mem-software-kb",
-                        },
-                        {
-                          label: "Heartbeat Reports",
-                          data: memHeartbeat,
-                          testId: "mem-heartbeat",
-                        },
-                      ].map((item) => (
-                        <div key={item.label} data-testid={item.testId}>
-                          <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
-                            {item.label}
-                          </p>
-                          <p className="text-2xl font-bold">{item.data?.count ?? 0}</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            {item.data?.lastUpdated
-                              ? `Last: ${relativeTime(item.data.lastUpdated)}`
-                              : "No entries yet"}
+                {(() => {
+                  const memHealth = assessMemoryHealth(memorySources, hermesStatsQ.data);
+                  return (
+                    <>
+                      {/* Health headline */}
+                      <div className="flex items-center gap-2 mb-4">
+                        <span className={`h-2 w-2 rounded-full shrink-0 ${
+                          memHealth.status === "active"
+                            ? "bg-green-500"
+                            : memHealth.status === "stale"
+                            ? "bg-amber-500"
+                            : "bg-muted-foreground/40"
+                        }`} />
+                        <p className="text-sm font-medium" data-testid="text-memory-headline">
+                          {memHealth.headline}
+                        </p>
+                      </div>
+                      <p className="text-xs text-muted-foreground mb-4" data-testid="text-memory-detail">
+                        {memHealth.detail}
+                      </p>
+
+                      {/* Per-source counts — only shown when there's real data */}
+                      {memorySources.length > 0 && (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-3 border-t">
+                          {[
+                            { label: "Hermes Learnings", data: memHermes, testId: "mem-hermes" },
+                            { label: "Decisions", data: memDecisions, testId: "mem-decisions" },
+                            { label: "Software KB", data: memSoftwareKb, testId: "mem-software-kb" },
+                            { label: "Heartbeat Reports", data: memHeartbeat, testId: "mem-heartbeat" },
+                          ].map((item) => (
+                            <div key={item.label} data-testid={item.testId}>
+                              <p className="text-xs text-muted-foreground uppercase tracking-wide mb-1">
+                                {item.label}
+                              </p>
+                              <p className="text-2xl font-bold">{item.data?.count ?? 0}</p>
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {item.data?.count
+                                  ? item.data.lastUpdated
+                                    ? relativeTime(item.data.lastUpdated)
+                                    : "Active"
+                                  : "No entries yet"}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Stale warning CTA */}
+                      {memHealth.status === "stale" && (
+                        <div className="mt-4 pt-3 border-t flex items-start gap-2">
+                          <AlertCircle className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                          <p className="text-xs text-muted-foreground">
+                            Memory may be outdated. Review the{" "}
+                            <button
+                              className="font-medium text-foreground underline underline-offset-2"
+                              onClick={() => setLocation("/admin/ceo-heartbeat")}
+                            >
+                              CEO Heartbeat
+                            </button>{" "}
+                            to confirm Hermes is running on schedule.
                           </p>
                         </div>
-                      ))}
-                    </div>
-                    {hermesStatsQ.data?.lastInsightAt && (
-                      <p className="text-xs text-muted-foreground border-t pt-3">
-                        Last learning captured{" "}
-                        <span className="font-medium text-foreground">
-                          {relativeTime(hermesStatsQ.data.lastInsightAt)}
-                        </span>
-                        {hermesStatsQ.data.confidenceAverage
-                          ? ` · Avg confidence ${hermesStatsQ.data.confidenceAverage}%`
-                          : ""}
-                      </p>
-                    )}
-                  </>
-                ) : (
-                  <div className="flex items-center gap-3">
-                    <Brain className="h-5 w-5 text-muted-foreground shrink-0" />
-                    <p className="text-sm text-muted-foreground">
-                      The AI is building your organizational memory. Learnings, decisions, and
-                      knowledge entries will appear here as your platform generates activity.
-                    </p>
-                  </div>
-                )}
+                      )}
+
+                      {/* Empty state */}
+                      {memHealth.status === "empty" && (
+                        <div className="flex items-center gap-3">
+                          <Brain className="h-5 w-5 text-muted-foreground shrink-0" />
+                          <p className="text-sm text-muted-foreground">
+                            {memHealth.detail}
+                          </p>
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
               </CardContent>
             </Card>
           )}
