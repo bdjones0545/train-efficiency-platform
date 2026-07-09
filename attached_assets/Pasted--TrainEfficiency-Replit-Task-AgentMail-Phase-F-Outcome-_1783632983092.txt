@@ -1,0 +1,362 @@
+# TrainEfficiency Replit Task
+
+## AgentMail Phase F — Outcome Feedback Loop
+
+You are working inside the TrainEfficiency codebase.
+
+AgentMail now has:
+
+* Phase A — learning context injected into draft generation
+* Phase B — draft preview, context panel, save without sending
+* Phase C — Learning Center and standing instructions
+* Phase D — AgentMail performance analytics
+* Phase D.2 — rule application instrumentation
+* Phase E — deterministic outcome correlation
+
+Now implement **AgentMail Phase F: Outcome Feedback Loop**.
+
+---
+
+# Goal
+
+Use correlated outcomes to improve future AgentMail drafts.
+
+AgentMail should not only learn from coach edits, rejects, and regeneration feedback.
+
+It should also learn from what happens after messages are sent:
+
+* Did the recipient reply?
+* Did the lead schedule an evaluation?
+* Did the lead convert?
+* Did the athlete schedule a first session?
+* Did a program get assigned?
+* Did payment get recovered?
+
+This phase closes the loop:
+
+```text
+draft → send → outcome → rule effectiveness → better future drafts
+```
+
+---
+
+# Core Principle
+
+Do **not** claim causation.
+
+Use language such as:
+
+* “associated with”
+* “followed by”
+* “correlated outcome”
+* “outcome-weighted”
+
+Do not say:
+
+* “caused”
+* “guaranteed”
+* “increased revenue by X because of this rule”
+
+---
+
+# Scope
+
+## 1. Upgrade Communication Outcome Statuses
+
+Phase E created `agentmail_outcome_events`.
+
+Now use those events to update existing communication outcome/status tracking where appropriate.
+
+Find existing tables/services such as:
+
+* `agent_communication_outcomes`
+* `outcome-intelligence-service.ts`
+* `recalculateRuleEffectivenessForOrg`
+* `agentmail_outcome_events`
+
+When a Phase E outcome event is detected:
+
+* Update matching communication outcome status when a reliable mapping exists.
+* Preserve event history.
+* Do not overwrite stronger statuses with weaker ones.
+
+Suggested status hierarchy:
+
+```text
+sent < opened < replied < meeting_booked < converted < revenue_recovered
+```
+
+Example mappings:
+
+```text
+reply_received → replied
+evaluation_scheduled → meeting_booked
+lead_converted → converted
+payment_recovered → revenue_recovered
+```
+
+If no matching status row exists:
+
+* Create one only if the existing system expects that.
+* Otherwise skip and log a safe note.
+
+---
+
+## 2. Recalculate Rule Effectiveness After Outcome Correlation
+
+After:
+
+```text
+POST /api/admin/agentmail-outcomes/recompute
+```
+
+successfully correlates outcomes, call existing effectiveness recalculation if available:
+
+```ts
+recalculateRuleEffectivenessForOrg(orgId)
+```
+
+Rules:
+
+* Fail open.
+* Do not block recompute response if recalculation fails.
+* Log warnings.
+* Return response field:
+
+```ts
+effectivenessRecalculated: boolean
+```
+
+---
+
+## 3. Outcome-Weighted Learning Context
+
+Update `getMessageLearningContextWithRules()`.
+
+It should prioritize rules not only by confidence/reinforcement, but also by outcome effectiveness if available.
+
+Priority order:
+
+1. Active standing instructions
+2. High-performing learned rules for the exact communication domain
+3. High-confidence learned rules for the exact communication domain
+4. High-performing general rules
+5. High-confidence general rules
+
+If rule effectiveness data exists, include a short note in metadata, not necessarily the prompt.
+
+Example metadata:
+
+```ts
+{
+  ruleId,
+  outcomeScore,
+  associatedApprovals,
+  associatedReplies,
+  associatedConversions,
+  associatedRevenue,
+  source
+}
+```
+
+Prompt wording should remain simple:
+
+```text
+High-performing learned rules:
+- Mention the athlete's sport in the first paragraph.
+- Keep parent emails under 150 words.
+```
+
+Avoid exposing analytics jargon inside the generated email prompt.
+
+---
+
+## 4. De-Emphasize Poor Performing Learned Rules
+
+If a learned rule is repeatedly associated with poor outcomes, reduce its priority.
+
+Do not auto-delete rules.
+
+Do not auto-disable rules unless there is already a strong pattern for that.
+
+Instead:
+
+* Lower rank in learning context
+* Surface in Learning Center as “Needs Review”
+* Surface in analytics as “Low-performing rule”
+
+Suggested thresholds:
+
+```text
+10+ applications
+rejection rate > 50%
+approval rate < 30%
+or edit rate > 75%
+```
+
+---
+
+## 5. Learning Center Enhancements
+
+Update `/admin/agentmail-learning`.
+
+Add rule performance labels:
+
+* High performing
+* Stable
+* Needs review
+* Insufficient data
+
+For each rule, show if available:
+
+* Times applied
+* Associated approval rate
+* Associated reply rate
+* Associated conversion rate
+* Associated rejection rate
+* Outcome confidence
+
+Add filters:
+
+* Performance status
+* Needs review only
+
+Do not hide low-performing rules; make them visible.
+
+---
+
+## 6. Analytics Enhancements
+
+Update `/admin/agentmail-analytics`.
+
+In Outcomes / Rules sections:
+
+* Show outcome-weighted rule score if available
+* Show top performing rules
+* Show rules needing review
+* Show domains improving or degrading over time
+
+Keep labels honest:
+
+* “Associated conversion rate”
+* “Associated reply rate”
+* “After rule use”
+* “Needs review”
+
+---
+
+## 7. CEO Heartbeat Integration
+
+Add an AgentMail learning-performance signal.
+
+Examples:
+
+* “Athlete lead emails are improving: approval rate up 14% and conversion-associated outcomes up 3 this period.”
+* “Parent lead emails need review: 61% edit rate and low reply-associated outcomes.”
+* “3 learned rules are repeatedly associated with rejected drafts — review AgentMail Learning Center.”
+
+Fail open.
+
+---
+
+## 8. Attention Inbox Integration
+
+Create attention items for:
+
+* rules needing review
+* domains degrading
+* saved drafts with high-performing rules still unsent
+* repeated rejection of drafts using the same rule
+
+Use stable keys.
+
+Do not spam.
+
+---
+
+# Backend API Changes
+
+Extend existing endpoints:
+
+```text
+POST /api/admin/agentmail-outcomes/recompute
+```
+
+Return:
+
+```ts
+{
+  success: true,
+  outcomesCreated: number,
+  statusesUpdated: number,
+  effectivenessRecalculated: boolean
+}
+```
+
+Extend:
+
+```text
+GET /api/admin/agentmail-analytics/rules
+GET /api/admin/agentmail-learning/rules
+GET /api/admin/agentmail-learning/context
+```
+
+Return performance metadata when available.
+
+---
+
+# Non-Goals
+
+Do not build:
+
+* causal attribution engine
+* multi-touch attribution
+* open/click tracking
+* revenue forecasting
+* automated disabling of learned rules
+* fully autonomous send optimization
+
+Do not auto-send.
+
+Do not bypass human approval.
+
+Do not expose internal analytics to athletes/parents.
+
+---
+
+# Testing
+
+Verify:
+
+1. Recompute creates outcome events idempotently.
+2. Recompute updates communication statuses where safe.
+3. Recompute triggers rule effectiveness recalculation.
+4. `effectivenessRecalculated` is returned accurately.
+5. Learning context still includes standing instructions first.
+6. High-performing learned rules are prioritized.
+7. Poor-performing learned rules are de-emphasized.
+8. Learning Center shows performance labels.
+9. Analytics shows rule outcome metrics.
+10. CEO Heartbeat fails open.
+11. Attention Inbox items deduplicate.
+12. TypeScript passes.
+13. Existing AgentMail approval/send flow still works.
+
+---
+
+# Deliverable
+
+Implement Phase F and provide a report:
+
+* Files changed
+* Status update behavior
+* Rule effectiveness recalculation behavior
+* Learning context ranking changes
+* Learning Center changes
+* Analytics changes
+* CEO Heartbeat additions
+* Attention Inbox additions
+* Known limitations
+* Recommended Phase G
+
+Focus on turning correlated outcomes into safer, more effective future AgentMail drafts while keeping humans in control.

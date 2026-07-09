@@ -707,6 +707,27 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
     }
   } catch {}
 
+  // ── AgentMail Learning Performance Signal ──────────────────────────────────
+  try {
+    const { getAgentmailOutcomeLearningSignal } = await import("./agentmail-outcome-correlation-service");
+    const learningSignal = await getAgentmailOutcomeLearningSignal(orgId);
+    if (learningSignal) {
+      priorities.push({
+        id: `${orgId}:agentmail-learning-perf`,
+        priorityScore: learningSignal.hasIssues
+          ? calcPriorityScore({ revenuePotential: 40, urgency: 50, risk: 35, confidence: 85, stageImportance: 50, safetyRisk: 0 })
+          : calcPriorityScore({ revenuePotential: 20, urgency: 20, risk: 5, confidence: 80, stageImportance: 30, safetyRisk: 0 }),
+        category: "agentmail_learning",
+        action: learningSignal.summary,
+        reason: learningSignal.details.join(" | "),
+        agentSource: "AgentMail Learning Engine",
+        requiresApproval: false,
+        estimatedRevenueCents: 0,
+        urgency: learningSignal.hasIssues ? "medium" : "low",
+      });
+    }
+  } catch {}
+
   // Sort by priority score descending
   priorities.sort((a, b) => b.priorityScore - a.priorityScore);
 

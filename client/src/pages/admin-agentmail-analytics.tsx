@@ -372,6 +372,19 @@ function ConfidenceBadge({ level, count }: { level: string; count: number }) {
 
 // ─── Rule row component ───────────────────────────────────────────────────────
 
+const PERF_LABEL_MAP: Record<string, string> = {
+  high_performing:   "bg-green-100 text-green-800 border-green-200",
+  stable:            "bg-blue-100 text-blue-800 border-blue-200",
+  needs_review:      "bg-amber-100 text-amber-800 border-amber-200",
+  insufficient_data: "bg-gray-100 text-gray-600 border-gray-200",
+};
+const PERF_LABEL_MAP_LABEL: Record<string, string> = {
+  high_performing:   "High Performing",
+  stable:            "Stable",
+  needs_review:      "Needs Review",
+  insufficient_data: "Insufficient Data",
+};
+
 function RuleRow({ r, typeClass, trackingAvailable }: { r: any; typeClass: string; trackingAvailable: boolean }) {
   const hasOutcome = r.approvalRateAfterApplied != null || r.rejectionRateAfterApplied != null;
   return (
@@ -387,6 +400,31 @@ function RuleRow({ r, typeClass, trackingAvailable }: { r: any; typeClass: strin
         </span>
         {!r.isActive && <Badge variant="outline" className="text-xs shrink-0">Disabled</Badge>}
       </div>
+
+      {/* Performance label + outcome rates */}
+      {r.performanceLabel && (
+        <div className="flex items-center gap-2 flex-wrap pl-0.5">
+          {r.performanceLabel !== "insufficient_data" && (
+            <span className={`text-xs px-1.5 py-0.5 rounded border font-medium ${PERF_LABEL_MAP[r.performanceLabel] ?? ""}`} data-testid={`perf-label-${r.ruleId}`}>
+              {PERF_LABEL_MAP_LABEL[r.performanceLabel] ?? r.performanceLabel}
+            </span>
+          )}
+          {r.outcomeRates?.totalOutcomes > 0 && (
+            <span className="text-xs text-green-600 flex items-center gap-0.5">
+              <Link2 className="w-3 h-3" />{r.outcomeRates.totalOutcomes} associated outcome{r.outcomeRates.totalOutcomes === 1 ? "" : "s"}
+            </span>
+          )}
+          {r.outcomeRates?.replyCount > 0 && (
+            <span className="text-xs text-muted-foreground">{r.outcomeRates.replyCount} reply</span>
+          )}
+          {r.outcomeRates?.evalCount > 0 && (
+            <span className="text-xs text-muted-foreground">{r.outcomeRates.evalCount} eval</span>
+          )}
+          {r.outcomeRates?.conversionCount > 0 && (
+            <span className="text-xs text-emerald-600 font-medium">{r.outcomeRates.conversionCount} conversion{r.outcomeRates.conversionCount === 1 ? "" : "s"}</span>
+          )}
+        </div>
+      )}
 
       {/* Tracking stats row */}
       <div className="flex items-center gap-3 flex-wrap pl-0.5">
@@ -452,19 +490,26 @@ function RulePerformanceTab() {
   const highRejection = data?.highRejectionDomains ?? [];
   const trackingAvailable = data?.trackingAvailable ?? false;
 
+  const PERF_LABEL: Record<string, { label: string; cls: string }> = {
+    high_performing:   { label: "High Performing",   cls: "bg-green-100 text-green-800 border-green-200" },
+    stable:            { label: "Stable",             cls: "bg-blue-100 text-blue-800 border-blue-200" },
+    needs_review:      { label: "Needs Review",       cls: "bg-amber-100 text-amber-800 border-amber-200" },
+    insufficient_data: { label: "Insufficient Data",  cls: "bg-gray-100 text-gray-600 border-gray-200" },
+  };
+
   return (
     <div className="space-y-5">
       {/* Summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: "Active Learned Rules", value: s.activeLearnedRules ?? 0, total: s.totalLearnedRules ?? 0 },
-          { label: "Active Instructions", value: s.activeStandingInstructions ?? 0, total: s.totalStandingInstructions ?? 0 },
+          { label: "High Performing", value: s.highPerformingCount ?? 0, highlight: (s.highPerformingCount ?? 0) > 0, color: "text-green-600" },
+          { label: "Needs Review", value: s.needsReviewCount ?? 0, highlight: (s.needsReviewCount ?? 0) > 0, color: "text-amber-600" },
           { label: "Applications Recorded", value: s.totalApplicationsRecorded ?? 0, highlight: (s.totalApplicationsRecorded ?? 0) > 0 },
-          { label: "Tracking Status", value: trackingAvailable ? "Active" : "Pending", highlight: trackingAvailable },
         ].map((c: any) => (
           <Card key={c.label} className="p-3">
             <p className="text-xs text-muted-foreground mb-1">{c.label}</p>
-            <p className={`text-xl font-bold ${c.highlight ? "text-green-600" : ""}`}>{c.value}</p>
+            <p className={`text-xl font-bold ${c.color ?? (c.highlight ? "text-green-600" : "")}`}>{c.value}</p>
             {c.total !== undefined && c.total !== c.value && (
               <p className="text-xs text-muted-foreground">of {c.total} total</p>
             )}

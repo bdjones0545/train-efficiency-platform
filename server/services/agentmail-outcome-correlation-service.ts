@@ -240,6 +240,145 @@ export async function recomputeOutcomesForOrg(orgId: string): Promise<{
   return { processed, inserted, errors };
 }
 
+// ─── Status hierarchy & sync ───────────────────────────────────────────────────
+
+const STATUS_RANK: Record<string, number> = {
+  sent: 1, opened: 2, replied: 3,
+  meeting_booked: 4, booked_session: 4,
+  converted: 5, hired: 5, contract_signed: 5,
+  revenue_recovered: 6,
+};
+
+const OUTCOME_TO_STATUS: Record<string, string> = {
+  reply_received:       "replied",
+  evaluation_scheduled: "meeting_booked",
+  lead_converted:       "converted",
+  payment_recovered:    "revenue_recovered",
+};
+
+/**
+ * After recompute, upgrade `agent_communication_outcomes.outcome_status`
+ * using the correlated outcome events. Only upgrades — never downgrades.
+ * Returns the number of rows actually updated.
+ */
+export async function syncOutcomeStatusesForOrg(orgId: string): Promise<number> {
+  let updated = 0;
+  try {
+    if (!(await tableExists())) return 0;
+
+    // Load all outcome events for this org that have a status mapping
+    const evtRows = rows(await db.execute(sql`
+      SELECT action_id, outcome_type
+      FROM agentmail_outcome_events
+      WHERE org_id = ${orgId}
+        AND outcome_type = ANY(ARRAY['reply_received','evaluation_scheduled','lead_converted','payment_recovered'])
+    `));
+
+    // Load matching communication outcomes keyed by gmailActionId
+    const actionIds = [...new Set(evtRows.map((r: any) => r.action_id as string))];
+    if (actionIds.length === 0) return 0;
+
+    const outcomeRows = rows(await db.execute(sql`
+      SELECT id, gmail_action_id, outcome_status
+      FROM agent_communication_outcomes
+      WHERE org_id = ${orgId}
+        AND gmail_action_id = ANY(${sql`ARRAY[${actionIds.map((id) => sql`${id}`).reduce((a, b) => sql`${a},${b}`)}]`})
+    `));
+
+    const outcomeByAction = new Map<string, { id: string; status: string }>();
+    for (const row of outcomeRows as any[]) {
+      outcomeByAction.set(row.gmail_action_id, { id: row.id, status: row.outcome_status ?? "sent" });
+    }
+
+    for (const evt of evtRows as any[]) {
+      const targetStatus = OUTCOME_TO_STATUS[evt.outcome_type];
+      if (!targetStatus) continue;
+      const existing = outcomeByAction.get(evt.action_id);
+      if (!existing) continue;
+
+      const currentRank = STATUS_RANK[existing.status] ?? 0;
+      const targetRank = STATUS_RANK[targetStatus] ?? 0;
+      if (targetRank <= currentRank) continue; // never downgrade
+
+      try {
+        await db.execute(sql`
+          UPDATE agent_communication_outcomes
+          SET outcome_status = ${targetStatus}, updated_at = now()
+          WHERE id = ${existing.id}
+        `);
+        existing.status = targetStatus; // update in-map for subsequent events
+        updated++;
+      } catch { /* skip if update fails */ }
+    }
+  } catch (err: any) {
+    console.warn("[agentmail-outcome-sync] syncOutcomeStatuses error:", err.message);
+  }
+  return updated;
+}
+
+// ─── Learning performance signal for CEO heartbeat ────────────────────────────
+
+export async function getAgentmailOutcomeLearningSignal(orgId: string): Promise<{
+  summary: string;
+  details: string[];
+  hasIssues: boolean;
+} | null> {
+  try {
+    if (!(await tableExists())) return null;
+
+    // Count rules needing review via rule application stats
+    const ruleRows = rows(await db.execute(sql`
+      SELECT
+        ra.rule_id,
+        COUNT(*)::int AS times_applied,
+        COUNT(CASE WHEN f.decision = 'rejected' THEN 1 END)::int AS rejections,
+        COUNT(CASE WHEN f.decision = 'approved' THEN 1 END)::int AS approvals
+      FROM agentmail_rule_applications ra
+      JOIN gmail_agent_actions g ON g.id = ra.action_id
+      LEFT JOIN agent_message_feedback f ON f.proposal_id = ra.action_id
+      WHERE ra.org_id = ${orgId}
+      GROUP BY ra.rule_id
+      HAVING COUNT(*) >= 10
+    `));
+
+    const needsReviewRules = (ruleRows as any[]).filter((r) => {
+      const total = r.times_applied;
+      const rejectPct = total > 0 ? (r.rejections / total) * 100 : 0;
+      const approvePct = total > 0 ? (r.approvals / total) * 100 : 0;
+      return rejectPct >= 50 || approvePct < 30;
+    });
+
+    // Count outcome events in last 30 days
+    const outcomeCount = rows(await db.execute(sql`
+      SELECT COUNT(*)::int AS cnt FROM agentmail_outcome_events
+      WHERE org_id = ${orgId} AND created_at >= now() - interval '30 days'
+    `));
+    const totalOutcomes = Number((outcomeCount as any[])[0]?.cnt ?? 0);
+
+    const details: string[] = [];
+    let hasIssues = false;
+
+    if (needsReviewRules.length > 0) {
+      details.push(`${needsReviewRules.length} learned rule${needsReviewRules.length === 1 ? "" : "s"} associated with repeated rejections — review AgentMail Learning Center`);
+      hasIssues = true;
+    }
+
+    if (totalOutcomes > 0) {
+      details.push(`AgentMail outcome correlation: ${totalOutcomes} events tracked in last 30 days`);
+    }
+
+    if (details.length === 0) return null;
+
+    const summary = hasIssues
+      ? `AgentMail Learning: ${needsReviewRules.length} rule${needsReviewRules.length === 1 ? "" : "s"} need${needsReviewRules.length === 1 ? "s" : ""} review — associated with high rejection rates`
+      : `AgentMail Learning: ${totalOutcomes} outcome events correlated — rules performing well`;
+
+    return { summary, details, hasIssues };
+  } catch {
+    return null;
+  }
+}
+
 // ─── Outcome summary ───────────────────────────────────────────────────────────
 
 const DOMAIN_LABELS: Record<string, string> = {

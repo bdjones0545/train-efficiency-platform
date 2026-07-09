@@ -230,6 +230,29 @@ export async function getMessageLearningContextWithRules(
   const specific = rules.filter((r) => r.messageType === messageType && (r.communicationDomain === domain || !r.communicationDomain));
   const domainRules = rules.filter((r) => r.communicationDomain === domain && r.messageType !== messageType);
   const global = rules.filter((r) => r.appliesGlobally);
+
+  // Load effectiveness scores — sort by score first, then confidence
+  let effectivenessMap = new Map<string, number>();
+  try {
+    const { agentRuleEffectiveness } = await import("@shared/schema");
+    const { eq: eqFn } = await import("drizzle-orm");
+    const effRows = await db.select({ ruleId: agentRuleEffectiveness.ruleId, score: agentRuleEffectiveness.effectivenessScore })
+      .from(agentRuleEffectiveness)
+      .where(eqFn(agentRuleEffectiveness.orgId, orgId));
+    effRows.forEach((r) => effectivenessMap.set(r.ruleId, Number(r.score ?? 0)));
+  } catch { /* effectiveness table may not be populated yet */ }
+
+  const sortByEffectiveness = (a: typeof rules[number], b: typeof rules[number]) => {
+    const sa = effectivenessMap.get(a.id) ?? 0;
+    const sb = effectivenessMap.get(b.id) ?? 0;
+    if (sb !== sa) return sb - sa;
+    return Number(b.confidence ?? 0) - Number(a.confidence ?? 0);
+  };
+
+  specific.sort(sortByEffectiveness);
+  domainRules.sort(sortByEffectiveness);
+  global.sort(sortByEffectiveness);
+
   const candidatePool = [...specific, ...domainRules, ...global];
 
   // Track which learned rules are actually included

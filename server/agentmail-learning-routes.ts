@@ -147,11 +147,26 @@ export function registerAgentmailLearningRoutes(
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
-      const { agentMessageLearningRules } = await import("@shared/schema");
-      const rules = await db.select().from(agentMessageLearningRules)
-        .where(eq(agentMessageLearningRules.orgId, orgId))
-        .orderBy(desc(agentMessageLearningRules.createdAt));
-      res.json(rules);
+      // Return enriched rules with performance labels (Phase F)
+      try {
+        const { getAgentmailRulePerformance } = await import("./services/agentmail-analytics-service");
+        const perf = await getAgentmailRulePerformance(orgId);
+        // Merge DB fields with performance metadata
+        const { agentMessageLearningRules } = await import("@shared/schema");
+        const dbRules = await db.select().from(agentMessageLearningRules)
+          .where(eq(agentMessageLearningRules.orgId, orgId))
+          .orderBy(desc(agentMessageLearningRules.createdAt));
+        const perfMap = new Map(perf.learnedRules.map((r: any) => [r.ruleId, r]));
+        const enriched = dbRules.map((r) => ({ ...r, ...((perfMap.get(r.id) as any) ?? {}) }));
+        return res.json(enriched);
+      } catch {
+        // Fall back to raw DB query
+        const { agentMessageLearningRules } = await import("@shared/schema");
+        const rules = await db.select().from(agentMessageLearningRules)
+          .where(eq(agentMessageLearningRules.orgId, orgId))
+          .orderBy(desc(agentMessageLearningRules.createdAt));
+        return res.json(rules);
+      }
     } catch (e: any) {
       res.status(500).json({ message: "Failed to fetch rules" });
     }

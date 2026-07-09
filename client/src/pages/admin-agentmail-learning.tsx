@@ -14,7 +14,7 @@ import {
   Brain, BookOpen, Lightbulb, CheckCircle2, XCircle, RefreshCw,
   Trash2, Edit3, Plus, ToggleLeft, ToggleRight, Search, Eye,
   TrendingUp, Users, Zap, Filter, ChevronDown, Save, X,
-  MessageSquare, Award, Target,
+  MessageSquare, Award, Target, AlertTriangle, Star, HelpCircle,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -181,12 +181,20 @@ function OverviewTab() {
 
 // ─── Learned Rules Tab ────────────────────────────────────────────────────────
 
+const PERF_LABEL_CONFIG: Record<string, { label: string; badge: string; icon: React.ReactNode }> = {
+  high_performing:    { label: "High Performing",    badge: "bg-green-100 text-green-800 border border-green-200",  icon: <Star className="w-3 h-3" /> },
+  stable:             { label: "Stable",              badge: "bg-blue-100 text-blue-800 border border-blue-200",     icon: <CheckCircle2 className="w-3 h-3" /> },
+  needs_review:       { label: "Needs Review",        badge: "bg-amber-100 text-amber-800 border border-amber-200",  icon: <AlertTriangle className="w-3 h-3" /> },
+  insufficient_data:  { label: "Insufficient Data",   badge: "bg-gray-100 text-gray-600 border border-gray-200",    icon: <HelpCircle className="w-3 h-3" /> },
+};
+
 function LearnedRulesTab() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [domainFilter, setDomainFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [perfFilter, setPerfFilter] = useState("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
@@ -231,9 +239,12 @@ function LearnedRulesTab() {
     if (domainFilter !== "all" && r.communicationDomain !== domainFilter) return false;
     if (typeFilter !== "all" && r.ruleType !== typeFilter) return false;
     if (statusFilter !== "all" && r.status !== statusFilter) return false;
+    if (perfFilter !== "all" && r.performanceLabel !== perfFilter) return false;
     if (searchQuery && !r.ruleText.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     return true;
   });
+
+  const needsReviewCount = rules.filter((r) => r.performanceLabel === "needs_review" && r.status === "active").length;
 
   if (isLoading) {
     return <div className="flex justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
@@ -241,6 +252,19 @@ function LearnedRulesTab() {
 
   return (
     <div className="space-y-4">
+      {/* Needs review banner */}
+      {needsReviewCount > 0 && (
+        <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-900 p-3">
+          <p className="text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>
+              <strong>{needsReviewCount} rule{needsReviewCount === 1 ? "" : "s"} need{needsReviewCount === 1 ? "s" : ""} review</strong> — associated with high rejection rates (10+ applications, ≥50% rejected or &lt;30% approved).
+              <button className="ml-1.5 underline" onClick={() => setPerfFilter("needs_review")} data-testid="btn-filter-needs-review">View them</button>
+            </span>
+          </p>
+        </Card>
+      )}
+
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative">
@@ -253,6 +277,18 @@ function LearnedRulesTab() {
             data-testid="input-search-rules"
           />
         </div>
+        <Select value={perfFilter} onValueChange={setPerfFilter}>
+          <SelectTrigger className="h-8 text-xs w-40" data-testid="select-perf-filter">
+            <SelectValue placeholder="Performance" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Performance</SelectItem>
+            <SelectItem value="high_performing">High Performing</SelectItem>
+            <SelectItem value="stable">Stable</SelectItem>
+            <SelectItem value="needs_review">Needs Review</SelectItem>
+            <SelectItem value="insufficient_data">Insufficient Data</SelectItem>
+          </SelectContent>
+        </Select>
         <Select value={domainFilter} onValueChange={setDomainFilter}>
           <SelectTrigger className="h-8 text-xs w-40" data-testid="select-domain-filter">
             <SelectValue placeholder="Domain" />
@@ -325,6 +361,12 @@ function LearnedRulesTab() {
                       <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${RULE_TYPE_BADGE[rule.ruleType] ?? RULE_TYPE_BADGE.instruction}`}>
                         {ruleTypeLabel(rule.ruleType)}
                       </span>
+                      {rule.performanceLabel && rule.performanceLabel !== "insufficient_data" && (
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium flex items-center gap-1 w-fit ${PERF_LABEL_CONFIG[rule.performanceLabel]?.badge ?? ""}`} data-testid={`badge-perf-${rule.id}`}>
+                          {PERF_LABEL_CONFIG[rule.performanceLabel]?.icon}
+                          {PERF_LABEL_CONFIG[rule.performanceLabel]?.label}
+                        </span>
+                      )}
                       {rule.confidence && (
                         <span className="text-xs text-muted-foreground">
                           Confidence: <span className="font-semibold">{Math.round(Number(rule.confidence) * 100)}%</span>
@@ -332,6 +374,19 @@ function LearnedRulesTab() {
                       )}
                       {rule.timesApplied > 0 && (
                         <span className="text-xs text-muted-foreground">Applied: {rule.timesApplied}×</span>
+                      )}
+                      {rule.approvalRateAfterApplied != null && (
+                        <span className={`text-xs font-medium ${rule.approvalRateAfterApplied >= 70 ? "text-green-600" : rule.approvalRateAfterApplied < 30 ? "text-red-600" : "text-muted-foreground"}`}>
+                          {rule.approvalRateAfterApplied}% approval
+                        </span>
+                      )}
+                      {rule.rejectionRateAfterApplied != null && rule.rejectionRateAfterApplied > 0 && (
+                        <span className={`text-xs ${rule.rejectionRateAfterApplied >= 50 ? "text-red-600 font-medium" : "text-muted-foreground"}`}>
+                          {rule.rejectionRateAfterApplied}% rejected
+                        </span>
+                      )}
+                      {rule.outcomeRates?.totalOutcomes > 0 && (
+                        <span className="text-xs text-green-600">{rule.outcomeRates.totalOutcomes} associated outcome{rule.outcomeRates.totalOutcomes === 1 ? "" : "s"}</span>
                       )}
                       {rule.createdAt && (
                         <span className="text-xs text-muted-foreground">

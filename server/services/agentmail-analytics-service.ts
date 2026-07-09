@@ -434,9 +434,91 @@ export async function getAgentmailRulePerformance(orgId: string) {
       totalReviewed: v.total,
     }));
 
+  // ── Per-rule outcome rates from agentmail_outcome_events ─────────────────
+  let outcomeRateRows: Array<{
+    rule_id: string;
+    rule_source: string;
+    reply_count: number;
+    eval_count: number;
+    conversion_count: number;
+    total_outcomes: number;
+  }> = [];
+  try {
+    const raw = await db.execute(drizzleSql`
+      SELECT
+        ra.rule_id,
+        ra.rule_source,
+        COUNT(CASE WHEN oe.outcome_type = 'reply_received' THEN 1 END)::int          AS reply_count,
+        COUNT(CASE WHEN oe.outcome_type IN ('evaluation_scheduled','evaluation_completed') THEN 1 END)::int AS eval_count,
+        COUNT(CASE WHEN oe.outcome_type = 'lead_converted' THEN 1 END)::int          AS conversion_count,
+        COUNT(oe.id)::int                                                             AS total_outcomes
+      FROM agentmail_rule_applications ra
+      JOIN gmail_agent_actions g ON g.id = ra.action_id
+      LEFT JOIN agentmail_outcome_events oe ON oe.action_id = ra.action_id
+      WHERE ra.org_id = ${orgId}
+      GROUP BY ra.rule_id, ra.rule_source
+    `);
+    outcomeRateRows = (Array.isArray(raw) ? raw : (raw as any).rows ?? []) as typeof outcomeRateRows;
+  } catch { /* table may not exist yet */ }
+
+  const outcomeRateMap = new Map<string, typeof outcomeRateRows[number]>();
+  outcomeRateRows.forEach((r) => outcomeRateMap.set(`${r.rule_source}:${r.rule_id}`, r));
+
+  function performanceLabel(
+    timesApplied: number,
+    approvalRate: number | null,
+    rejectionRate: number | null,
+    editRate: number | null,
+  ): "high_performing" | "stable" | "needs_review" | "insufficient_data" {
+    if (timesApplied < 5) return "insufficient_data";
+    const rejectPct = rejectionRate ?? 0;
+    const approvePct = approvalRate ?? 0;
+    const editPct = editRate ?? 0;
+    if (timesApplied >= 10 && (rejectPct >= 50 || approvePct < 30 || editPct >= 75)) return "needs_review";
+    if (timesApplied >= 5 && approvePct >= 70 && rejectPct <= 15) return "high_performing";
+    return "stable";
+  }
+
+  const learnedWithLabels = learned.map((r) => {
+    const key = `learned:${r.ruleId}`;
+    const or = outcomeRateMap.get(key);
+    const label = performanceLabel(r.timesApplied, r.approvalRateAfterApplied, r.rejectionRateAfterApplied, r.editRateAfterApplied);
+    return {
+      ...r,
+      outcomeRates: or ? {
+        replyCount: or.reply_count,
+        evalCount: or.eval_count,
+        conversionCount: or.conversion_count,
+        totalOutcomes: or.total_outcomes,
+      } : null,
+      performanceLabel: label,
+      needsReview: label === "needs_review",
+    };
+  });
+
+  const standingWithLabels = standing.map((r) => {
+    const key = `standing_instruction:${r.ruleId}`;
+    const or = outcomeRateMap.get(key);
+    const label = performanceLabel(r.timesApplied, r.approvalRateAfterApplied, r.rejectionRateAfterApplied, r.editRateAfterApplied);
+    return {
+      ...r,
+      outcomeRates: or ? {
+        replyCount: or.reply_count,
+        evalCount: or.eval_count,
+        conversionCount: or.conversion_count,
+        totalOutcomes: or.total_outcomes,
+      } : null,
+      performanceLabel: label,
+      needsReview: label === "needs_review",
+    };
+  });
+
+  const needsReviewCount = learnedWithLabels.filter((r) => r.needsReview).length;
+  const highPerformingCount = learnedWithLabels.filter((r) => r.performanceLabel === "high_performing").length;
+
   return {
-    learnedRules: learned,
-    standingInstructions: standing,
+    learnedRules: learnedWithLabels,
+    standingInstructions: standingWithLabels,
     trackingAvailable,
     highRejectionDomains,
     summary: {
@@ -445,6 +527,8 @@ export async function getAgentmailRulePerformance(orgId: string) {
       totalStandingInstructions: standing.length,
       activeStandingInstructions: standing.filter((r) => r.isActive).length,
       totalApplicationsRecorded: appRows.reduce((s, r) => s + r.times_applied, 0),
+      needsReviewCount,
+      highPerformingCount,
     },
   };
 }
@@ -620,6 +704,38 @@ export async function generateAgentmailAttentionItems(orgId: string): Promise<vo
       );
     }
   }
+
+  // 4. Learned rules needing review (based on rule performance)
+  try {
+    const { getAgentmailRulePerformance } = await import("./agentmail-analytics-service");
+    const perf = await getAgentmailRulePerformance(orgId);
+    const needsReview = perf.learnedRules.filter((r: any) => r.needsReview && r.isActive);
+    if (needsReview.length > 0) {
+      await upsert(
+        `${orgId}:agentmail:rules-needs-review`,
+        `${needsReview.length} learned rule${needsReview.length === 1 ? "" : "s"} ${needsReview.length === 1 ? "is" : "are"} associated with repeated rejections`,
+        `${needsReview.length} active learned rule${needsReview.length === 1 ? "" : "s"} ${needsReview.length === 1 ? "has" : "have"} a rejection rate ≥50% or approval rate <30% (10+ applications). Review them in the AgentMail Learning Center.`,
+        65, 60,
+      );
+    }
+  } catch { /* fail open */ }
+
+  // 5. Saved drafts with high-performing rules (unsent opportunity)
+  try {
+    const unsent = actions.filter((a) => {
+      if (!a.approvalRequired || a.status !== "proposed") return false;
+      const r = (a.result && typeof a.result === "object") ? a.result as any : {};
+      return r.savedForReview === true;
+    });
+    if (unsent.length >= 3) {
+      await upsert(
+        `${orgId}:agentmail:unsent-high-performing-drafts`,
+        `${unsent.length} saved drafts are ready to review and send`,
+        `${unsent.length} AgentMail drafts have been saved for review but not yet approved. These drafts used your learned rules — send them to keep outreach active.`,
+        60, 55,
+      );
+    }
+  } catch { /* fail open */ }
 }
 
 // ─── Public: CEO Heartbeat Signal ────────────────────────────────────────────

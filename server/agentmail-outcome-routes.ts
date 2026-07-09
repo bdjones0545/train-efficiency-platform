@@ -6,7 +6,7 @@
 import type { Express } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
-import { recomputeOutcomesForOrg, getOutcomeSummary } from "./services/agentmail-outcome-correlation-service";
+import { recomputeOutcomesForOrg, getOutcomeSummary, syncOutcomeStatusesForOrg } from "./services/agentmail-outcome-correlation-service";
 
 // ─── Table bootstrap ───────────────────────────────────────────────────────────
 
@@ -77,7 +77,22 @@ export async function registerAgentmailOutcomeRoutes(
       if (!orgId) return res.status(400).json({ error: "No org context" });
 
       const result = await recomputeOutcomesForOrg(orgId);
-      res.json({ ok: true, ...result });
+
+      // Phase F: sync communication outcome statuses (upgrade only, fail open)
+      let statusesUpdated = 0;
+      try { statusesUpdated = await syncOutcomeStatusesForOrg(orgId); } catch { /* fail open */ }
+
+      // Phase F: recalculate rule effectiveness (fail open)
+      let effectivenessRecalculated = false;
+      try {
+        const { recalculateRuleEffectivenessForOrg } = await import("./services/outcome-intelligence-service");
+        await recalculateRuleEffectivenessForOrg(orgId);
+        effectivenessRecalculated = true;
+      } catch (err: any) {
+        console.warn("[agentmail-outcomes] effectiveness recalculation failed:", err.message);
+      }
+
+      res.json({ ok: true, ...result, statusesUpdated, effectivenessRecalculated });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
