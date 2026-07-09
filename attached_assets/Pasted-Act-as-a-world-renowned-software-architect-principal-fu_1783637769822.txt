@@ -1,0 +1,389 @@
+Act as a world-renowned software architect, principal full-stack engineer, Apple-level product designer, and enterprise UX specialist.
+
+We are conducting a production-grade audit of TrainEfficiency one page at a time.
+
+This is **Audit #1**.
+
+# Page
+
+**Home Dashboard** (left sidebar)
+
+This is the single most important page in the platform.
+
+Every coach, owner, administrator, and staff member will use this page daily.
+
+Do not redesign TrainEfficiency.
+
+Do not remove functionality.
+
+Do not create mock functionality.
+
+Your objective is to transform the existing Home Dashboard into a premium, production-ready experience while preserving the current architecture and capabilities.
+
+The interface should feel like Apple designed it, Stripe organized it, Linear streamlined it, and OpenAI powered the intelligence.
+
+The platform should remain unmistakably TrainEfficiency with its neon green and black identity.
+
+---
+
+## UX Audit
+
+Audit the page as if preparing it for enterprise launch.
+
+Determine:
+
+* Is the purpose immediately obvious?
+* Is the information hierarchy correct?
+* What should users see first?
+* What should be visually minimized?
+* Does the dashboard create unnecessary cognitive load?
+* Are the most common actions immediately accessible?
+* Is whitespace used effectively?
+* Is typography consistent?
+* Is the page visually calm while remaining information-rich?
+* Is the dashboard responsive across desktop, tablet, and mobile?
+
+Improve the UI without changing TrainEfficiency's identity.
+
+---
+
+## Functional Audit
+
+Inspect every interactive component.
+
+This includes:
+
+* Buttons
+* Cards
+* Widgets
+* Tables
+* Charts
+* Search
+* Filters
+* Dropdowns
+* Links
+* Modals
+* Drawers
+* Quick Actions
+* Navigation
+* Dashboard widgets
+
+Verify:
+
+* Does every interaction work?
+* Are loading states implemented?
+* Are success states implemented?
+* Are error states implemented?
+* Are empty states useful?
+* Are disabled states handled correctly?
+* Is validation complete?
+* Are permissions respected?
+* Are there placeholder components?
+* Are there dead buttons?
+* Are there incomplete workflows?
+
+Repair production-safe issues where appropriate.
+
+---
+
+## Dashboard Intelligence Audit
+
+Determine whether the dashboard immediately answers:
+
+* What requires my attention?
+* What happened today?
+* What should I do next?
+* What is the health of my organization?
+* What are my biggest opportunities?
+* What problems exist right now?
+
+If the dashboard cannot answer these questions clearly, improve it.
+
+---
+
+## Agent Utilization Audit
+
+Review every intelligent system that should participate on the Home Dashboard.
+
+Including but not limited to:
+
+* CEO Heartbeat
+* Executive Agent
+* Revenue Agent
+* Scheduling Agent
+* Growth Agent
+* Client Success Agent
+* Retention Agent
+* Athlete Intelligence
+* AgentMail
+* Hermes Learning Engine
+* PAIL
+* Attention Inbox
+* Future intelligent services
+
+Determine:
+
+* Which agents belong on this page?
+* Which should remain background services?
+* Which recommendations should surface automatically?
+* Which actions should require approval?
+* Which recommendations should be actionable with one click?
+* Are any agents duplicating responsibility?
+* Are recommendations prioritized correctly?
+
+---
+
+## Agent Intelligence & Closed-Loop Learning Assessment
+
+Audit every intelligent workflow using the following framework.
+
+### Learning Loop
+
+Determine whether each AI capability:
+
+* Learns from explicit feedback
+* Learns from user behavior
+* Improves over time
+* Stores organization-scoped learning
+* Allows administrators to review learned behavior
+* Allows administrators to reinforce or correct learning
+* Makes learning transparent
+
+Recommend production-safe improvements where gaps exist.
+
+---
+
+### Closed-Loop Intelligence
+
+Verify that intelligent workflows include:
+
+1. Observation
+2. Recommendation
+3. Human Review
+4. Human Decision
+5. Execution
+6. Business Outcome
+7. Outcome Measurement
+8. Learning
+9. Future Improvement
+
+Identify missing stages.
+
+Recommend implementation.
+
+---
+
+### Outcome Measurement
+
+Determine whether recommendations can measure:
+
+* Success
+* Failure
+* Associated outcomes
+* Observed improvements
+
+Do not fabricate attribution.
+
+Recommend deterministic measurement wherever possible.
+
+---
+
+### Agent Memory
+
+Review:
+
+* What each agent remembers
+* What it should remember
+* What it should never remember
+* Memory scope
+* Memory transparency
+* Memory correction
+* Memory retirement
+
+---
+
+### Explainability
+
+Every recommendation should clearly communicate:
+
+* Why it exists
+* Which information influenced it
+* Confidence
+* Expected value
+* Recommended next action
+
+---
+
+### Human-in-the-Loop
+
+Verify users can:
+
+* Review
+* Edit
+* Approve
+* Reject
+* Save
+* Regenerate
+* Undo when appropriate
+
+No important workflow should bypass required approval.
+
+---
+
+### Cross-Agent Coordination
+
+Determine whether agents collaborate appropriately.
+
+Verify:
+
+* Shared context
+* Clear ownership
+* No duplicated work
+* No conflicting recommendations
+* Consistent data ownership
+* Intelligent collaboration
+
+Recommend improvements.
+
+---
+
+### Operational Intelligence
+
+Determine whether intelligent systems can:
+
+* Measure themselves
+* Detect failures
+* Report effectiveness
+* Notify CEO Heartbeat
+* Surface meaningful Attention Inbox items
+* Prioritize recommendations appropriately
+
+---
+
+### Production Readiness
+
+Classify every intelligent workflow as:
+
+🟢 Production Ready
+
+🟡 Needs Hardening
+
+🔴 Misleading or Incomplete
+
+⚫ Placeholder / Not Production Ready
+
+Provide recommendations to move every workflow toward production readiness.
+
+---
+
+## Visual Polish
+
+Improve:
+
+* Typography
+* Spacing
+* Layout
+* Cards
+* Charts
+* Animations
+* Empty states
+* Icons
+* Hover states
+* Micro-interactions
+* Consistency
+* Accessibility
+
+Preserve the TrainEfficiency visual identity.
+
+Use neon green intentionally.
+
+Avoid visual clutter.
+
+---
+
+## Performance
+
+Review:
+
+* Rendering
+* State management
+* Component organization
+* Unnecessary re-renders
+* Large queries
+* API efficiency
+* Lazy loading opportunities
+* Maintainability
+
+---
+
+## Deliverables
+
+Return:
+
+### 1. UX Audit
+
+Strengths
+
+Weaknesses
+
+Recommended improvements
+
+---
+
+### 2. Functional Audit
+
+Every issue discovered
+
+Every fix implemented
+
+Remaining risks
+
+---
+
+### 3. Agent Intelligence & Closed-Loop Learning Assessment
+
+Strengths
+
+Weaknesses
+
+Missing learning loops
+
+Missing outcome measurement
+
+Cross-agent opportunities
+
+Operational risks
+
+Implementation priorities
+
+---
+
+### 4. Production Readiness Score
+
+Score each category from 1–10:
+
+* UX
+* Functionality
+* Performance
+* Agent Utilization
+* Closed-Loop Learning
+* Explainability
+* Cross-Agent Coordination
+* Operational Intelligence
+* Production Readiness
+
+---
+
+### 5. Implementation Summary
+
+Files changed
+
+Architecture changes
+
+Production-safe improvements
+
+Remaining TODOs
+
+TypeScript/build results
+
+This is a production audit—not a redesign. Preserve TrainEfficiency's proven functionality while making the Home Dashboard feel like a world-class AI operating system for sports performance organizations.
