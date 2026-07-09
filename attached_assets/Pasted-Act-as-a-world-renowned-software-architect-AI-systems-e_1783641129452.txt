@@ -1,0 +1,707 @@
+Act as a world-renowned software architect, AI systems engineer, operations researcher, Apple-level product designer, and enterprise UX specialist.
+
+We are conducting a production-grade audit of TrainEfficiency.
+
+This is the Scheduling Copilot.
+
+This page is NOT simply a scheduling page.
+
+This page is the intelligent operational assistant for scheduling.
+
+Its purpose is to continuously analyze schedules, detect opportunities, recommend improvements, coordinate AI agents, and help coaches and administrators maximize operational efficiency.
+
+Do NOT redesign the page.
+
+Do NOT remove existing functionality.
+
+Do NOT create fake AI.
+
+Do NOT add placeholder buttons.
+
+Preserve TrainEfficiency's architecture, backend scheduling engine, and neon green/black identity.
+
+Improve intelligence.
+
+Improve explainability.
+
+Improve operational value.
+
+---
+
+# Core Mission
+
+The Scheduling Copilot should answer:
+
+What scheduling problems exist?
+
+What opportunities exist?
+
+What should I do first?
+
+Which recommendation creates the largest business value?
+
+Which recommendation requires approval?
+
+What can AI safely automate?
+
+---
+
+# Scheduling Workflow Audit
+
+Review the complete scheduling workflow.
+
+Scheduling should become:
+
+Observe
+
+↓
+
+Detect Issues
+
+↓
+
+Analyze
+
+↓
+
+Recommend
+
+↓
+
+Review
+
+↓
+
+Approve
+
+↓
+
+Execute
+
+↓
+
+Measure
+
+↓
+
+Learn
+
+↓
+
+Improve
+
+If any stage is missing, identify it and recommend the safest implementation.
+
+---
+
+# UX Audit
+
+Audit:
+
+Information hierarchy
+
+Recommendation hierarchy
+
+Calendar integration
+
+Opportunity visibility
+
+Conflict visibility
+
+Capacity visibility
+
+Coach workload
+
+Athlete workload
+
+Quick actions
+
+Mobile usability
+
+Visual clarity
+
+Typography
+
+Spacing
+
+Accessibility
+
+Loading states
+
+Error states
+
+Success states
+
+Empty states
+
+The page should immediately communicate priorities without overwhelming users.
+
+---
+
+# Functional Audit
+
+Inspect every interaction.
+
+Buttons
+
+Recommendation cards
+
+Approve
+
+Reject
+
+Dismiss
+
+Calendar navigation
+
+Search
+
+Filters
+
+Session editing
+
+Move session
+
+Merge sessions
+
+Waitlist actions
+
+Capacity actions
+
+Notifications
+
+Dialogs
+
+Drawers
+
+Bulk actions
+
+Agent actions
+
+Determine:
+
+Does every interaction work?
+
+Is it connected to real backend functionality?
+
+Are permissions respected?
+
+Are there dead buttons?
+
+Are there duplicated workflows?
+
+Are there placeholder actions?
+
+Fix production-safe issues only.
+
+---
+
+# Scheduling Intelligence Audit
+
+Review whether Scheduling Copilot identifies:
+
+Schedule conflicts
+
+Coach conflicts
+
+Athlete conflicts
+
+Facility conflicts
+
+Equipment conflicts
+
+Travel conflicts
+
+Double bookings
+
+Underfilled sessions
+
+Overfilled sessions
+
+Open capacity
+
+Revenue recovery opportunities
+
+Coach utilization
+
+Athlete utilization
+
+Waitlist opportunities
+
+Cancellation impact
+
+Reschedule opportunities
+
+No-show risk
+
+Late cancellation trends
+
+Idle schedule gaps
+
+Peak demand
+
+Future capacity shortages
+
+Only surface recommendations supported by deterministic data.
+
+---
+
+# Agent Utilization Audit
+
+Review how the following agents participate:
+
+Scheduling Agent
+
+Revenue Agent
+
+Retention Agent
+
+Client Success Agent
+
+AgentMail
+
+Athlete Intelligence
+
+CEO Heartbeat
+
+Attention Inbox
+
+Hermes Learning
+
+Future scheduling agents
+
+Determine:
+
+Which recommendations belong to which agent?
+
+Are recommendations duplicated?
+
+Should multiple agents collaborate?
+
+Should recommendations require approval?
+
+Can actions be completed in one click?
+
+Examples:
+
+Optimize Schedule
+
+Move Athlete
+
+Merge Sessions
+
+Fill Open Spots
+
+Notify Waitlist
+
+Draft Schedule Change
+
+Notify Coach
+
+Summarize Schedule
+
+Review Conflict
+
+Recommend Capacity Change
+
+Only wire existing backend functionality.
+
+---
+
+# Agent Intelligence & Closed-Loop Learning Assessment
+
+Audit every intelligent workflow.
+
+---
+
+## Learning Loop
+
+Determine whether Scheduling Copilot learns from:
+
+Accepted recommendations
+
+Rejected recommendations
+
+Ignored recommendations
+
+Coach scheduling habits
+
+Manual schedule edits
+
+Reschedules
+
+Cancellations
+
+No-shows
+
+Waitlist conversions
+
+Capacity changes
+
+Determine whether learning:
+
+Improves future recommendations
+
+Remains organization-scoped
+
+Can be reviewed
+
+Can be corrected
+
+Can retire obsolete behavior
+
+---
+
+## Recommendation Lifecycle
+
+Every recommendation should support:
+
+Detected
+
+↓
+
+Analyzed
+
+↓
+
+Recommended
+
+↓
+
+Reviewed
+
+↓
+
+Approved
+
+↓
+
+Executing
+
+↓
+
+Completed
+
+↓
+
+Measured
+
+↓
+
+Learned
+
+↓
+
+Improved
+
+Surface existing lifecycle information where available.
+
+Do not invent stages.
+
+---
+
+## Outcome Measurement
+
+Determine whether recommendations measure:
+
+Sessions filled
+
+Revenue recovered
+
+Coach time saved
+
+Athletes retained
+
+Conflicts prevented
+
+Waitlist conversions
+
+Schedule utilization
+
+Observed business impact
+
+Never fabricate attribution.
+
+Use deterministic evidence only.
+
+---
+
+## Explainability
+
+Every recommendation should explain:
+
+Why it appeared
+
+Which scheduling signals influenced it
+
+Expected operational impact
+
+Expected business value
+
+Confidence (if available)
+
+Recommended action
+
+Potential downside if ignored
+
+No hidden reasoning.
+
+No prompt exposure.
+
+---
+
+## Human-in-the-Loop
+
+Verify significant actions support:
+
+Review
+
+Approve
+
+Reject
+
+Edit
+
+Undo
+
+Bulk approval
+
+Escalation where appropriate
+
+No production scheduling changes should bypass intended approval.
+
+---
+
+## Cross-Agent Coordination
+
+Determine whether recommendations flow across agents.
+
+Examples:
+
+Scheduling Agent detects underfilled session
+
+↓
+
+Revenue Agent estimates missed revenue
+
+↓
+
+Retention Agent checks affected athletes
+
+↓
+
+AgentMail drafts outreach
+
+↓
+
+Coach reviews
+
+↓
+
+Schedule updated
+
+↓
+
+Outcome measured
+
+↓
+
+Hermes Learning improves future scheduling
+
+↓
+
+CEO Heartbeat receives operational signal
+
+Surface collaboration instead of isolated recommendations.
+
+---
+
+## Operational Intelligence
+
+Determine whether leadership can answer:
+
+Where is scheduling breaking down?
+
+Where are coaches overloaded?
+
+Where is revenue being lost?
+
+Where is capacity underutilized?
+
+Which recommendations consistently succeed?
+
+Which scheduling problems repeat?
+
+Where should attention focus today?
+
+The Scheduling Copilot should become the operational scheduling brain.
+
+---
+
+# Performance
+
+Review:
+
+Query efficiency
+
+Realtime updates
+
+Polling
+
+Caching
+
+Rendering
+
+Component organization
+
+Calendar performance
+
+Large schedule handling
+
+Type safety
+
+Maintainability
+
+Avoid unnecessary architecture changes.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Recommendation cards
+
+Scheduling timeline
+
+Opportunity cards
+
+Conflict visualization
+
+Capacity visualization
+
+Coach utilization indicators
+
+Waitlist indicators
+
+Priority badges
+
+Icons
+
+Animations
+
+Spacing
+
+Typography
+
+Hover states
+
+Accessibility
+
+Micro-interactions
+
+Maintain the existing TrainEfficiency identity.
+
+---
+
+# Deliverables
+
+Return:
+
+1. UX Audit
+
+Strengths
+
+Weaknesses
+
+Improvements implemented
+
+Remaining opportunities
+
+---
+
+2. Functional Audit
+
+Interactive elements reviewed
+
+Issues found
+
+Fixes implemented
+
+Remaining risks
+
+---
+
+3. Scheduling Intelligence Audit
+
+Signals surfaced
+
+Signals missing
+
+Operational improvements
+
+Prioritization improvements
+
+---
+
+4. Agent Intelligence & Closed-Loop Learning Assessment
+
+Learning loops
+
+Recommendation lifecycle
+
+Outcome measurement
+
+Explainability
+
+Cross-agent collaboration
+
+Operational intelligence
+
+Recommended implementation order
+
+---
+
+5. Production Readiness Score
+
+Score:
+
+UX
+
+Functionality
+
+Scheduling Intelligence
+
+Agent Utilization
+
+Closed-Loop Learning
+
+Explainability
+
+Cross-Agent Coordination
+
+Operational Intelligence
+
+Performance
+
+Production Readiness
+
+---
+
+6. Implementation Summary
+
+Files changed
+
+Architecture changes
+
+Production-safe improvements
+
+Remaining TODOs
+
+TypeScript/build results
+
+This page should become the world's best AI scheduling copilot.
+
+It should not simply manage schedules.
+
+It should continuously optimize scheduling decisions, coordinate multiple AI agents, measure business outcomes, learn from every scheduling decision, and improve the organization every day.
