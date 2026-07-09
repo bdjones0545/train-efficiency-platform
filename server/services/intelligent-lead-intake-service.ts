@@ -236,7 +236,7 @@ async function generateOutreachDraft(
   scoring: ScoringResult,
   aiSummary: string,
   learningCtx?: string | null,
-): Promise<{ subject: string; body: string }> {
+): Promise<{ subject: string; body: string; priorCtx?: import("./agentmail-prior-contact-context-service").PriorContactContext }> {
   const firstName = data.athleteName.split(" ")[0];
   const sportLine = data.sport
     ? `${data.sport}${data.position ? ` (${data.position})` : ""}`
@@ -252,11 +252,12 @@ async function generateOutreachDraft(
     : "";
 
   let priorContactBlock = "";
+  let _intakePriorCtx: import("./agentmail-prior-contact-context-service").PriorContactContext | undefined;
   try {
     const { getPriorContactContext } = await import("./agentmail-prior-contact-context-service");
-    const priorCtx = await getPriorContactContext({ orgId: data.orgId, recipientEmail: data.email, communicationDomain: "athlete_lead" });
-    if (priorCtx.hasPriorContact && priorCtx.promptBlock) {
-      priorContactBlock = `\n${priorCtx.promptBlock}\n`;
+    _intakePriorCtx = await getPriorContactContext({ orgId: data.orgId, recipientEmail: data.email, communicationDomain: "athlete_lead" });
+    if (_intakePriorCtx.hasPriorContact && _intakePriorCtx.promptBlock) {
+      priorContactBlock = `\n${_intakePriorCtx.promptBlock}\n`;
     }
   } catch {}
 
@@ -286,11 +287,13 @@ Return JSON: { "subject": "...", "body": "..." }`;
     return {
       subject: parsed.subject || `Welcome to the program, ${firstName}`,
       body: parsed.body || `Hi ${firstName}, thanks for applying! We'd love to connect about your ${sportLine} training goals.`,
+      priorCtx: _intakePriorCtx,
     };
   } catch {
     return {
       subject: `Your application for ${data.programName}`,
       body: `Hi ${firstName},\n\nThanks for applying! We reviewed your application and would love to connect about your ${goalLine}. Reply here or book a quick call — we have limited evaluation spots available.\n\nLooking forward to it!`,
+      priorCtx: _intakePriorCtx,
     };
   }
 }
@@ -435,9 +438,11 @@ export async function runIntelligentLeadIntakePipeline(data: RawIntakeData): Pro
     addLog("ai_summary", "error", String(summaryResult.reason));
   }
 
+  let _outreachPriorCtx: import("./agentmail-prior-contact-context-service").PriorContactContext | undefined;
   if (draftResult.status === "fulfilled") {
     draftSubject = draftResult.value.subject;
     draftBody = draftResult.value.body;
+    _outreachPriorCtx = draftResult.value.priorCtx;
     addLog("outreach_draft", "ok", `subject="${draftSubject}"`);
   } else {
     const firstName = data.athleteName.split(" ")[0];
@@ -541,6 +546,9 @@ export async function runIntelligentLeadIntakePipeline(data: RawIntakeData): Pro
             temperature: scoring.temperature,
             programName: data.programName,
             athleteName: data.athleteName,
+            ...(_outreachPriorCtx
+              ? (await import("./agentmail-prior-contact-context-service")).buildPriorContactSummary(_outreachPriorCtx)
+              : { priorContactUsed: false }),
           } as any,
         })
         .returning();

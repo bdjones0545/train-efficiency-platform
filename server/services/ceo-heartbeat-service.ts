@@ -709,25 +709,103 @@ async function buildPriorityList(orgId: string, heartbeatId: string): Promise<Ce
 
   // ── AgentMail Lead-Level Closed Loop Signal ────────────────────────────────
   try {
-    const { getAgentmailLeadLevelSignal } = await import("./agentmail-prior-contact-context-service");
-    const llSignal = await getAgentmailLeadLevelSignal(orgId);
+    const { getAgentmailLeadLevelSignal, getAgentmailPriorContextAnalytics } = await import("./agentmail-prior-contact-context-service");
+    const [llSignal, analytics] = await Promise.all([
+      getAgentmailLeadLevelSignal(orgId),
+      getAgentmailPriorContextAnalytics(orgId).catch(() => null),
+    ]);
+
     const issueCount = llSignal.noReplyAfter3Emails + llSignal.repliedButNoEval + llSignal.convertedStillReceivingLeadEmails;
-    if (issueCount > 0) {
-      const details: string[] = [];
-      if (llSignal.noReplyAfter3Emails > 0) details.push(`${llSignal.noReplyAfter3Emails} lead${llSignal.noReplyAfter3Emails === 1 ? "" : "s"} received 3+ emails without reply — consider changing follow-up strategy`);
-      if (llSignal.repliedButNoEval > 0) details.push(`${llSignal.repliedButNoEval} lead${llSignal.repliedButNoEval === 1 ? "" : "s"} replied but still have no evaluation scheduled`);
-      if (llSignal.convertedStillReceivingLeadEmails > 0) details.push(`${llSignal.convertedStillReceivingLeadEmails} converted athlete${llSignal.convertedStillReceivingLeadEmails === 1 ? "" : "s"} still receiving lead-style emails — review AgentMail domain routing`);
+    const details: string[] = [];
+    if (llSignal.noReplyAfter3Emails > 0) details.push(`${llSignal.noReplyAfter3Emails} lead${llSignal.noReplyAfter3Emails === 1 ? "" : "s"} received 3+ emails without reply — consider changing follow-up strategy`);
+    if (llSignal.repliedButNoEval > 0) details.push(`${llSignal.repliedButNoEval} lead${llSignal.repliedButNoEval === 1 ? "" : "s"} replied but still have no evaluation scheduled`);
+    if (llSignal.convertedStillReceivingLeadEmails > 0) details.push(`${llSignal.convertedStillReceivingLeadEmails} converted athlete${llSignal.convertedStillReceivingLeadEmails === 1 ? "" : "s"} still receiving lead-style emails — review AgentMail domain routing`);
+
+    // Phase H: add comparison data to signal
+    if (analytics && analytics.totals.draftsWithPriorContext > 0) {
+      const { totals } = analytics;
+      const rWith = totals.replyRateWithContext;
+      const rWithout = totals.replyRateWithoutContext;
+      if (rWith !== null && rWithout !== null) {
+        const diff = rWith - rWithout;
+        if (Math.abs(diff) >= 5) {
+          if (diff > 0) {
+            details.push(`Prior-context drafts have a ${rWith}% associated reply rate vs ${rWithout}% baseline over tracked drafts`);
+          } else {
+            // underperforming — find which domains
+            const underperformingDomains = analytics.byDomain
+              .filter((d) => d.dataConfidence === "medium" || d.dataConfidence === "high")
+              .filter((d) => d.replyRateWithContext !== null && d.replyRateWithoutContext !== null && (d.replyRateWithContext ?? 0) < (d.replyRateWithoutContext ?? 0) - 5)
+              .map((d) => d.domain.replace(/_/g, " "));
+            if (underperformingDomains.length > 0) {
+              details.push(`Prior-context drafts still underperform baseline in: ${underperformingDomains.join(", ")} — review follow-up strategy`);
+            } else {
+              details.push(`Prior-context drafts show ${rWith}% reply rate vs ${rWithout}% baseline — monitoring`);
+            }
+          }
+        }
+      }
+      if (totals.draftsWithPriorContext >= 10 && rWith === null) {
+        details.push(`${totals.draftsWithPriorContext} prior-context drafts recorded but no outcome data yet — outcomes may not be flowing through correctly`);
+      }
+    }
+
+    if (details.length > 0) {
       priorities.push({
         id: `${orgId}:agentmail-lead-loop`,
-        priorityScore: calcPriorityScore({ revenuePotential: 50, urgency: 55, risk: 30, confidence: 80, stageImportance: 55, safetyRisk: 0 }),
+        priorityScore: calcPriorityScore({ revenuePotential: 50, urgency: issueCount > 0 ? 55 : 30, risk: 30, confidence: 80, stageImportance: 55, safetyRisk: 0 }),
         category: "agentmail_lead_loop",
         action: `AgentMail Lead Loop: ${details[0]}`,
         reason: details.join(" | "),
         agentSource: "AgentMail Relationship Engine",
         requiresApproval: false,
         estimatedRevenueCents: 0,
-        urgency: "medium",
+        urgency: issueCount > 0 ? "medium" : "low",
       });
+    }
+
+    // Attention inbox items (Phase H) — insert-or-skip pattern (source_id has no unique index)
+    if (analytics) {
+      // Item 1: underperforming domain with high-confidence data
+      const underperformingDomain = analytics.byDomain.find(
+        (d) => d.dataConfidence === "high" &&
+               d.replyRateWithContext !== null && d.replyRateWithoutContext !== null &&
+               (d.replyRateWithContext ?? 0) < (d.replyRateWithoutContext ?? 0) - 5
+      );
+      if (underperformingDomain) {
+        try {
+          const stableKey = `agentmail-ctx-underperform-${orgId}-${underperformingDomain.domain}`;
+          const existing = await db.execute(sql`SELECT id FROM attention_items WHERE source_id = ${stableKey} LIMIT 1`);
+          const rows = Array.isArray(existing) ? existing : (existing as any).rows ?? [];
+          if (!rows.length) {
+            await db.execute(sql`
+              INSERT INTO attention_items (id, org_id, title, body, source, source_id, status, severity, urgency, business_impact, confidence, created_at, updated_at)
+              VALUES (gen_random_uuid(), ${orgId},
+                ${'Prior-context drafts underperform baseline in ' + underperformingDomain.domain.replace(/_/g, " ")},
+                ${'Reply rate with prior context: ' + (underperformingDomain.replyRateWithContext ?? 0) + '% vs baseline ' + (underperformingDomain.replyRateWithoutContext ?? 0) + '% (' + underperformingDomain.withContextCount + ' drafts — high confidence). Review follow-up strategy for this domain.'},
+                'agentmail_prior_context', ${stableKey}, 'active', 55, 55, 55, 0.8, NOW(), NOW())
+            `).catch(() => {});
+          }
+        } catch {}
+      }
+
+      // Item 2: repeated no-reply at threshold
+      if (llSignal.noReplyAfter3Emails >= 5) {
+        try {
+          const stableKey = `agentmail-lead-3plus-noreply-${orgId}`;
+          const existing = await db.execute(sql`SELECT id FROM attention_items WHERE source_id = ${stableKey} AND status = 'active' LIMIT 1`);
+          const rows = Array.isArray(existing) ? existing : (existing as any).rows ?? [];
+          if (!rows.length) {
+            await db.execute(sql`
+              INSERT INTO attention_items (id, org_id, title, body, source, source_id, status, severity, urgency, business_impact, confidence, created_at, updated_at)
+              VALUES (gen_random_uuid(), ${orgId},
+                ${`${llSignal.noReplyAfter3Emails} leads contacted 3+ times with no reply`},
+                'These leads have received multiple AgentMail outreach emails without responding. Consider pausing or changing the approach for these recipients.',
+                'agentmail_prior_context', ${stableKey}, 'active', 55, 55, 50, 0.85, NOW(), NOW())
+            `).catch(() => {});
+          }
+        } catch {}
+      }
     }
   } catch {}
 

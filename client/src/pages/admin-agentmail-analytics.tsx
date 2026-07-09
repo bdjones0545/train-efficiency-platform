@@ -632,6 +632,29 @@ function RulePerformanceTab() {
 
 // ─── Lead Context Tab ─────────────────────────────────────────────────────────
 
+const CONFIDENCE_BADGE: Record<string, string> = {
+  none:   "bg-gray-100 text-gray-500 border-gray-200",
+  low:    "bg-amber-50 text-amber-700 border-amber-200",
+  medium: "bg-blue-50 text-blue-700 border-blue-200",
+  high:   "bg-green-50 text-green-700 border-green-200",
+};
+
+function RateCompareCell({ withVal, withoutVal }: { withVal: number | null; withoutVal: number | null }) {
+  if (withVal === null && withoutVal === null) return <span className="text-xs text-muted-foreground">—</span>;
+  const diff = withVal !== null && withoutVal !== null ? withVal - withoutVal : null;
+  return (
+    <div className="flex items-center gap-1.5 text-xs">
+      <span className="font-medium">{withVal !== null ? `${withVal}%` : "—"}</span>
+      <span className="text-muted-foreground">vs {withoutVal !== null ? `${withoutVal}%` : "—"}</span>
+      {diff !== null && Math.abs(diff) >= 3 && (
+        <span className={diff > 0 ? "text-green-600 font-semibold" : "text-red-500 font-semibold"}>
+          ({diff > 0 ? "+" : ""}{diff}pp)
+        </span>
+      )}
+    </div>
+  );
+}
+
 function LeadContextTab() {
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/admin/agentmail-learning/prior-context-analytics"],
@@ -640,34 +663,194 @@ function LeadContextTab() {
   if (isLoading) return <div className="flex justify-center py-12"><RefreshCw className="w-5 h-5 animate-spin text-muted-foreground" /></div>;
 
   const d = data ?? {};
+  const totals = d.totals ?? {};
+  const byDomain: any[] = d.byDomain ?? [];
+  const recentExamples: any[] = d.recentExamples ?? [];
   const repeatedNR: { domain: string; count: number }[] = d.repeatedNoReplyDomains ?? [];
-
-  const kpis = [
-    { label: "Drafts with Prior Context", value: d.draftsWithPriorContext ?? 0, icon: <Brain className="w-4 h-4 text-blue-500" />, desc: "Drafts where relationship history was injected into the prompt" },
-    { label: "Reply Rate (with context)", value: d.replyRateWithPriorContext != null ? `${d.replyRateWithPriorContext}%` : "—", icon: <MessageSquare className="w-4 h-4 text-green-500" />, desc: "Reply/outcome rate for drafts that used prior contact context" },
-    { label: "Conversion Rate (with context)", value: d.conversionRateWithPriorContext != null ? `${d.conversionRateWithPriorContext}%` : "—", icon: <Target className="w-4 h-4 text-orange-500" />, desc: "Conversion rate for drafts with prior contact context" },
-    { label: "Leads: 3+ Emails, No Reply", value: d.leadsContactedWithoutReply ?? 0, icon: <AlertTriangle className="w-4 h-4 text-amber-500" />, highlight: (d.leadsContactedWithoutReply ?? 0) > 0, desc: "Recipients contacted 3+ times without any reply" },
-  ];
+  const withCtx = totals.draftsWithPriorContext ?? 0;
+  const withoutCtx = totals.draftsWithoutPriorContext ?? 0;
+  const hasData = withCtx > 0;
 
   return (
     <div className="space-y-5">
       <Card className="border-blue-100 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-900 p-3">
         <p className="text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2">
           <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
-          <span>AgentMail Phase G tracks <strong>individual relationship history</strong> per lead. Prior contact context is injected into draft prompts to prevent repetitive emails and guide the appropriate next step.</span>
+          <span>AgentMail tracks <strong>individual relationship history</strong> per lead. Drafts where prior contact context was injected are labelled "with prior context." Metrics show <em>associated</em> rates — not causal.</span>
         </p>
       </Card>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        {kpis.map((k) => (
-          <Card key={k.label} className={`p-3 ${k.highlight ? "border-amber-200 bg-amber-50 dark:bg-amber-950/20" : ""}`} data-testid={`kpi-lead-context-${k.label.toLowerCase().replace(/\s+/g, "-")}`}>
-            <div className="flex items-center gap-2 mb-1">{k.icon}<p className="text-xs text-muted-foreground">{k.label}</p></div>
-            <p className={`text-2xl font-bold ${k.highlight ? "text-amber-600" : ""}`}>{k.value}</p>
-            <p className="text-xs text-muted-foreground mt-0.5">{k.desc}</p>
-          </Card>
-        ))}
-      </div>
+      {!hasData ? (
+        <Card className="p-8 text-center" data-testid="lead-context-empty-state">
+          <Brain className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
+          <p className="text-sm font-medium">Prior contact tracking is now active</p>
+          <p className="text-xs text-muted-foreground mt-1 max-w-sm mx-auto">
+            Metrics will appear as new drafts are generated. All new domain outreach, intake, and workflow email drafts now record whether prior contact context was used.
+          </p>
+        </Card>
+      ) : (
+        <>
+          {/* ── Comparison KPI bar ───────────────────────────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {[
+              {
+                label: "Drafts",
+                withVal: withCtx,
+                withoutVal: withoutCtx,
+                icon: <Brain className="w-3.5 h-3.5 text-blue-500" />,
+                raw: true,
+              },
+              {
+                label: "Associated reply rate",
+                withVal: totals.replyRateWithContext,
+                withoutVal: totals.replyRateWithoutContext,
+                icon: <MessageSquare className="w-3.5 h-3.5 text-green-500" />,
+              },
+              {
+                label: "Associated conversion rate",
+                withVal: totals.conversionRateWithContext,
+                withoutVal: totals.conversionRateWithoutContext,
+                icon: <Target className="w-3.5 h-3.5 text-orange-500" />,
+              },
+              {
+                label: "Evaluation rate",
+                withVal: totals.evaluationRateWithContext,
+                withoutVal: totals.evaluationRateWithoutContext,
+                icon: <CalendarCheck className="w-3.5 h-3.5 text-purple-500" />,
+              },
+              {
+                label: "First session rate",
+                withVal: totals.firstSessionRateWithContext,
+                withoutVal: totals.firstSessionRateWithoutContext,
+                icon: <Users className="w-3.5 h-3.5 text-cyan-500" />,
+              },
+            ].map((k) => (
+              <Card key={k.label} className="p-3" data-testid={`kpi-prior-ctx-${k.label.toLowerCase().replace(/\s+/g, "-")}`}>
+                <div className="flex items-center gap-1.5 mb-1">{k.icon}<p className="text-xs text-muted-foreground leading-tight">{k.label}</p></div>
+                {k.raw ? (
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 text-xs">
+                      <span className="font-bold text-base text-blue-700">{k.withVal}</span>
+                      <span className="text-muted-foreground">with context</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground">{k.withoutVal} without context</div>
+                  </div>
+                ) : (
+                  <div className="mt-1 space-y-1">
+                    <div className="flex items-center gap-1 text-xs">
+                      <span className="w-2 h-2 rounded-full bg-blue-500 shrink-0" />
+                      <span className="text-muted-foreground">With context:</span>
+                      <span className="font-semibold">{k.withVal != null ? `${k.withVal}%` : "—"}</span>
+                    </div>
+                    <div className="flex items-center gap-1 text-xs">
+                      <span className="w-2 h-2 rounded-full bg-gray-300 shrink-0" />
+                      <span className="text-muted-foreground">Without:</span>
+                      <span className="font-semibold">{k.withoutVal != null ? `${k.withoutVal}%` : "—"}</span>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
 
+          {/* ── Domain comparison table ─────────────────────────────────── */}
+          {byDomain.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <BarChart3 className="w-4 h-4 text-blue-500" /> By Communication Domain
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="border-b bg-muted/30">
+                      <tr>
+                        <th className="text-left px-3 py-2 font-medium text-muted-foreground">Domain</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Drafts (with / without)</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Reply rate</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Conversion rate</th>
+                        <th className="text-right px-3 py-2 font-medium text-muted-foreground">Confidence</th>
+                        <th className="px-3 py-2 font-medium text-muted-foreground">Interpretation</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {byDomain.map((row: any) => (
+                        <tr key={row.domain} className="border-b last:border-0 hover:bg-muted/20" data-testid={`row-domain-ctx-${row.domain}`}>
+                          <td className="px-3 py-2 font-medium capitalize">{row.domain.replace(/_/g, " ")}</td>
+                          <td className="px-3 py-2 text-right tabular-nums">
+                            <span className="text-blue-700">{row.withContextCount}</span>
+                            <span className="text-muted-foreground"> / {row.withoutContextCount}</span>
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <RateCompareCell withVal={row.replyRateWithContext} withoutVal={row.replyRateWithoutContext} />
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <RateCompareCell withVal={row.conversionRateWithContext} withoutVal={row.conversionRateWithoutContext} />
+                          </td>
+                          <td className="px-3 py-2 text-right">
+                            <Badge variant="outline" className={`text-xs ${CONFIDENCE_BADGE[row.dataConfidence] ?? CONFIDENCE_BADGE.none}`}>
+                              {row.dataConfidence}
+                            </Badge>
+                          </td>
+                          <td className="px-3 py-2 text-muted-foreground max-w-[200px] leading-tight">{row.interpretation}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── Recent examples ─────────────────────────────────────────── */}
+          {recentExamples.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-muted-foreground" /> Recent Prior-Context Drafts
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {recentExamples.slice(0, 5).map((ex: any) => (
+                    <div key={ex.actionId} className="bg-muted/30 rounded-lg p-3 text-xs space-y-1" data-testid={`example-prior-ctx-${ex.actionId}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="space-y-0.5">
+                          <div className="font-medium">{ex.recipientEmail}</div>
+                          <div className="text-muted-foreground capitalize">{(ex.domain ?? "").replace(/_/g, " ")}</div>
+                        </div>
+                        <div className="text-muted-foreground shrink-0">
+                          {ex.createdAt ? new Date(ex.createdAt).toLocaleDateString("en", { month: "short", day: "numeric" }) : "—"}
+                        </div>
+                      </div>
+                      {ex.priorContactSummary && (
+                        <div className="text-muted-foreground">
+                          {ex.priorContactSummary.sentCount} prior email{ex.priorContactSummary.sentCount === 1 ? "" : "s"} sent
+                          {ex.priorContactSummary.replyCount > 0 ? `, ${ex.priorContactSummary.replyCount} repl${ex.priorContactSummary.replyCount === 1 ? "y" : "ies"}` : ", no replies yet"}
+                          {ex.priorContactSummary.converted ? " · Converted" : ""}
+                          {ex.priorContactSummary.evaluationScheduled ? " · Eval scheduled" : ""}
+                        </div>
+                      )}
+                      {ex.outcomes.length > 0 && (
+                        <div className="flex flex-wrap gap-1 pt-0.5">
+                          {ex.outcomes.map((o: string) => (
+                            <Badge key={o} variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                              {o.replace(/_/g, " ")}
+                            </Badge>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      )}
+
+      {/* ── Repeated no-reply domains ─────────────────────────────────── */}
       {repeatedNR.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
@@ -688,11 +871,12 @@ function LeadContextTab() {
         </Card>
       )}
 
-      {(d.draftsWithPriorContext ?? 0) === 0 && (
-        <Card className="p-6 text-center">
-          <Brain className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-          <p className="text-sm font-medium">No prior contact context yet</p>
-          <p className="text-xs text-muted-foreground mt-1">Once AgentMail generates drafts for recipients who have prior email history, relationship intelligence will appear here.</p>
+      {(d.leadsContactedWithoutReply ?? 0) > 0 && (
+        <Card className="border-amber-200 bg-amber-50 dark:bg-amber-950/20 p-3">
+          <p className="text-xs text-amber-800 dark:text-amber-300 flex items-start gap-2">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+            <span><strong>{d.leadsContactedWithoutReply}</strong> recipient{d.leadsContactedWithoutReply === 1 ? " has" : "s have"} received 3+ emails without any reply — consider pausing outreach or adjusting the follow-up strategy.</span>
+          </p>
         </Card>
       )}
     </div>

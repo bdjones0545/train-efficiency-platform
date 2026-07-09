@@ -1,0 +1,307 @@
+# TrainEfficiency Replit Task
+
+## AgentMail Phase H — Prior Contact Tracking + Comparison
+
+You are working inside the TrainEfficiency codebase.
+
+AgentMail Phase G is complete:
+
+* Prior contact context service exists.
+* Prior contact context is injected into major generation paths.
+* Draft review surfaces prior contact context.
+* AgentMail Analytics has a Lead Context tab.
+* CEO Heartbeat detects relationship degradation signals.
+
+Known Phase G limitation:
+
+* `priorContactUsed` is not yet persisted back into `gmail_agent_actions.result`.
+* Lead Context analytics will show incomplete/zero results until drafts record whether prior contact context was used.
+
+Now implement **AgentMail Phase H: Prior Contact Tracking + Comparison**.
+
+---
+
+# Goal
+
+Measure whether relationship-aware drafts perform better than baseline drafts.
+
+The system should track:
+
+* Was prior contact context used?
+* What prior context was used?
+* Did drafts with prior context get more replies?
+* Did they lead to evaluations, conversions, or onboarding outcomes?
+* Which communication domains benefit most from prior contact context?
+
+---
+
+# Scope
+
+## 1. Persist Prior Contact Metadata
+
+Whenever a draft generation path calls the prior contact context service and the returned context is non-empty, write metadata into `gmail_agent_actions.result`.
+
+Add fields such as:
+
+```ts
+{
+  priorContactUsed: true,
+  priorContactSummary: {
+    sentCount: number,
+    replyCount: number,
+    lastSentAt?: string,
+    lastOutcome?: string,
+    lastSubject?: string,
+    lastDomain?: string,
+    evaluationScheduled: boolean,
+    converted: boolean,
+    firstSessionScheduled: boolean,
+    programAssigned: boolean,
+    paymentRecovered: boolean,
+    recommendedCTA?: string,
+    recommendedTone?: string
+  }
+}
+```
+
+If no prior context exists:
+
+```ts
+{
+  priorContactUsed: false
+}
+```
+
+Rules:
+
+* Do not store full previous email bodies.
+* Do not store sensitive private notes.
+* Store only summary metadata.
+* Preserve existing `result` JSONB fields.
+* Do not overwrite `fullBody`, `subject`, workflow metadata, or saved edits.
+* Fail open if metadata write fails.
+
+---
+
+## 2. Wire Persistence Into All Phase G Paths
+
+Update every generation path that uses prior contact context:
+
+* `intelligent-lead-intake-service.ts`
+* `agentmail-followup-service.ts`
+* `domain-outreach-service.ts`
+* `workflows/executor.ts`
+* regenerate path if it uses prior contact context
+
+The write should happen after `gmail_agent_actions` row exists and action ID is known.
+
+If a path creates a draft result object before insert, include metadata before insert.
+
+If a path only knows context after insert, patch the result JSONB after insert.
+
+---
+
+## 3. Update Lead Context Analytics
+
+Update the Lead Context tab data source.
+
+It should now use real persisted metadata:
+
+* `result.priorContactUsed`
+* `result.priorContactSummary`
+
+Metrics:
+
+```ts
+{
+  draftsWithPriorContext,
+  draftsWithoutPriorContext,
+  replyRateWithContext,
+  replyRateWithoutContext,
+  conversionRateWithContext,
+  conversionRateWithoutContext,
+  evaluationRateWithContext,
+  evaluationRateWithoutContext,
+  firstSessionRateWithContext,
+  firstSessionRateWithoutContext
+}
+```
+
+Break down by communication domain.
+
+Also show:
+
+* domains where prior context appears to help
+* domains where prior context has insufficient data
+* domains where prior context drafts still underperform
+
+Use honest labels:
+
+* “Associated reply rate”
+* “Associated conversion rate”
+* “With prior context”
+* “Without prior context”
+
+Do not imply causation.
+
+---
+
+## 4. Add Prior Context Comparison Endpoint
+
+Add or update endpoint:
+
+```txt
+GET /api/admin/agentmail-learning/prior-context-analytics
+```
+
+or use existing endpoint from Phase G.
+
+Return:
+
+```ts
+{
+  totals: {
+    draftsWithPriorContext,
+    draftsWithoutPriorContext,
+    replyRateWithContext,
+    replyRateWithoutContext,
+    conversionRateWithContext,
+    conversionRateWithoutContext,
+    evaluationRateWithContext,
+    evaluationRateWithoutContext
+  },
+  byDomain: [
+    {
+      domain,
+      withContextCount,
+      withoutContextCount,
+      replyRateWithContext,
+      replyRateWithoutContext,
+      conversionRateWithContext,
+      conversionRateWithoutContext,
+      evaluationRateWithContext,
+      evaluationRateWithoutContext,
+      dataConfidence: "none" | "low" | "medium" | "high",
+      interpretation: string
+    }
+  ],
+  recentExamples: [
+    {
+      actionId,
+      domain,
+      recipientEmail,
+      priorContactSummary,
+      outcomes: []
+    }
+  ]
+}
+```
+
+Confidence levels:
+
+* none: no prior-context drafts
+* low: 1–4 prior-context drafts
+* medium: 5–19 prior-context drafts
+* high: 20+
+
+---
+
+## 5. Update AgentMail Analytics UI
+
+Update the Lead Context tab.
+
+Show:
+
+* With Prior Context vs Without Prior Context comparison cards
+* Reply/eval/conversion rate comparison
+* Domain comparison table
+* Confidence labels
+* Recent examples of prior-context-aware drafts
+* Empty state when no prior-context drafts exist yet:
+
+  * “Prior contact context is now being tracked. Metrics will appear as new drafts are generated.”
+
+---
+
+## 6. CEO Heartbeat Signal
+
+Update AgentMail Lead Loop signal.
+
+Add:
+
+* drafts generated with prior context
+* whether prior-context drafts are outperforming baseline where data is sufficient
+* domains where repeated-contact drafts still underperform
+
+Examples:
+
+> “Prior-contact-aware drafts have a 22% associated reply rate vs 12% baseline over the last 30 days.”
+
+or
+
+> “Athlete lead follow-ups with prior context still have low reply rate — review follow-up strategy.”
+
+Fail open.
+
+---
+
+## 7. Attention Inbox
+
+Add attention items only when data is meaningful:
+
+* Prior-context drafts underperform baseline in a domain with at least 20 prior-context drafts.
+* Leads contacted 3+ times without reply remains active from Phase G.
+* Prior context tracking has no data after many eligible drafts, indicating instrumentation issue.
+
+Use stable keys.
+
+Do not spam.
+
+---
+
+# Data Integrity
+
+* Prior contact metadata should be summary-only.
+* No prior email body storage.
+* No private AI chain/context stored.
+* All analytics org-scoped.
+* All analytics deterministic.
+* No causation language.
+
+---
+
+# Testing
+
+Verify:
+
+1. New draft with no prior history stores `priorContactUsed: false`.
+2. New draft with prior history stores `priorContactUsed: true`.
+3. Metadata includes summary fields only.
+4. Existing result JSONB fields are preserved.
+5. All Phase G generation paths persist metadata.
+6. Analytics counts with-context and without-context drafts correctly.
+7. Outcome rates use `agentmail_outcome_events`.
+8. Domain comparison confidence labels work.
+9. UI empty state works before data exists.
+10. CEO Heartbeat fails open.
+11. Attention Inbox deduplicates.
+12. TypeScript passes.
+13. Existing AgentMail approval/send behavior remains unchanged.
+
+---
+
+# Deliverable
+
+Implement Phase H and provide a report:
+
+* Files changed
+* Metadata fields persisted
+* Generation paths updated
+* Analytics endpoint updates
+* Analytics UI updates
+* CEO Heartbeat additions
+* Attention Inbox additions
+* Known limitations
+* Recommended Phase I
+
+Focus on measuring the value of individual relationship context without overclaiming causation.

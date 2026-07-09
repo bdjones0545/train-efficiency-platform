@@ -220,12 +220,13 @@ export async function generateDomainDraft(opts: GenerateDomainDraftOpts): Promis
   const { contextText: learningCtx, rules: _appliedRules } = await getMessageLearningContextWithRules(orgId, messageType, { domain });
 
   let priorContactBlock = "";
+  let _domainPriorCtx: import("./agentmail-prior-contact-context-service").PriorContactContext | null = null;
   if (recipientEmail) {
     try {
       const { getPriorContactContext } = await import("./agentmail-prior-contact-context-service");
-      const priorCtx = await getPriorContactContext({ orgId, recipientEmail, communicationDomain: domain });
-      if (priorCtx.hasPriorContact && priorCtx.promptBlock) {
-        priorContactBlock = `\n${priorCtx.promptBlock}\n`;
+      _domainPriorCtx = await getPriorContactContext({ orgId, recipientEmail, communicationDomain: domain });
+      if (_domainPriorCtx.hasPriorContact && _domainPriorCtx.promptBlock) {
+        priorContactBlock = `\n${_domainPriorCtx.promptBlock}\n`;
       }
     } catch {}
   }
@@ -253,6 +254,9 @@ Write the best possible outreach email for this situation. Return ONLY valid JSO
   const subject: string = parsed.subject ?? `${config.label} Outreach`;
   const body: string = parsed.body ?? "";
 
+  const { buildPriorContactSummary } = await import("./agentmail-prior-contact-context-service");
+  const priorContactMeta = _domainPriorCtx ? buildPriorContactSummary(_domainPriorCtx) : { priorContactUsed: false };
+
   // Queue in gmail_agent_actions so it appears in AI Comms Center
   const [action] = await db.insert(gmailAgentActions).values({
     orgId,
@@ -273,6 +277,7 @@ Write the best possible outreach email for this situation. Return ONLY valid JSO
       messageType,
       contextUsed: contextBlock,
       learningApplied: learningCtx.length > 0,
+      ...priorContactMeta,
     } as any,
   } as any).returning();
 

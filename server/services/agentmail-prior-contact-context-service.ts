@@ -357,59 +357,306 @@ export async function getAgentmailLeadLevelSignal(orgId: string): Promise<{
   return { noReplyAfter3Emails, repliedButNoEval, convertedStillReceivingLeadEmails };
 }
 
+// ─── Summary builder + patch helper ──────────────────────────────────────────
+
+export function buildPriorContactSummary(ctx: PriorContactContext): {
+  priorContactUsed: boolean;
+  priorContactSummary?: {
+    sentCount: number;
+    replyCount: number;
+    lastSentAt?: string;
+    lastOutcome?: string;
+    lastSubject?: string;
+    lastDomain?: string;
+    evaluationScheduled: boolean;
+    converted: boolean;
+    firstSessionScheduled: boolean;
+    programAssigned: boolean;
+    paymentRecovered: boolean;
+    recommendedCTA?: string;
+    recommendedTone?: string;
+  };
+} {
+  if (!ctx.hasPriorContact) return { priorContactUsed: false };
+  return {
+    priorContactUsed: true,
+    priorContactSummary: {
+      sentCount: ctx.sentCount,
+      replyCount: ctx.replyCount,
+      lastSentAt: ctx.lastSentAt,
+      lastOutcome: ctx.lastOutcome,
+      lastSubject: ctx.lastSubject,
+      lastDomain: ctx.lastDomain,
+      evaluationScheduled: ctx.evaluationScheduled,
+      converted: ctx.converted,
+      firstSessionScheduled: ctx.firstSessionScheduled,
+      programAssigned: ctx.programAssigned,
+      paymentRecovered: ctx.paymentRecovered,
+      recommendedCTA: ctx.recommendedCTA,
+      recommendedTone: ctx.recommendedTone,
+    },
+  };
+}
+
 /**
- * Analytics — drafts with prior context, reply rate when prior context existed.
- * We track this via a `prior_contact_used` flag stored in the action result JSON.
+ * Patches gmail_agent_actions.result JSONB with prior contact metadata.
+ * Fail-open — never throws.
  */
-export async function getAgentmailPriorContextAnalytics(orgId: string): Promise<{
-  draftsWithPriorContext: number;
-  replyRateWithPriorContext: number | null;
-  conversionRateWithPriorContext: number | null;
+export async function persistPriorContactMetadata(actionId: string, ctx: PriorContactContext): Promise<void> {
+  try {
+    if (!actionId) return;
+    const meta = buildPriorContactSummary(ctx);
+    await db.execute(sql`
+      UPDATE gmail_agent_actions
+      SET result = COALESCE(result, '{}'::jsonb) || ${JSON.stringify(meta)}::jsonb
+      WHERE id = ${actionId}
+    `);
+  } catch {}
+}
+
+// ─── Analytics — comparison shape ────────────────────────────────────────────
+
+function confidenceLevel(count: number): "none" | "low" | "medium" | "high" {
+  if (count === 0) return "none";
+  if (count < 5) return "low";
+  if (count < 20) return "medium";
+  return "high";
+}
+
+function pct(n: number, d: number): number | null {
+  if (d === 0) return null;
+  return Math.round((n / d) * 100);
+}
+
+function domainInterpretation(
+  withCtx: number,
+  rateWith: number | null,
+  rateWithout: number | null,
+): string {
+  if (withCtx === 0) return "No prior-context drafts yet for this domain.";
+  if (rateWith === null && rateWithout === null) return "Outcome data unavailable.";
+  if (rateWith === null) return "Insufficient data for comparison.";
+  if (rateWithout === null) return "All drafts in this domain use prior context — no baseline available.";
+  const diff = (rateWith ?? 0) - (rateWithout ?? 0);
+  if (diff >= 5) return "Prior context associated with higher reply rate in this domain.";
+  if (diff <= -5) return "Prior-context drafts still underperform baseline — review strategy for this domain.";
+  return "Similar performance with and without prior context.";
+}
+
+export interface PriorContextDomainRow {
+  domain: string;
+  withContextCount: number;
+  withoutContextCount: number;
+  replyRateWithContext: number | null;
+  replyRateWithoutContext: number | null;
+  conversionRateWithContext: number | null;
+  conversionRateWithoutContext: number | null;
+  evaluationRateWithContext: number | null;
+  evaluationRateWithoutContext: number | null;
+  dataConfidence: "none" | "low" | "medium" | "high";
+  interpretation: string;
+}
+
+export interface PriorContextAnalytics {
+  totals: {
+    draftsWithPriorContext: number;
+    draftsWithoutPriorContext: number;
+    replyRateWithContext: number | null;
+    replyRateWithoutContext: number | null;
+    conversionRateWithContext: number | null;
+    conversionRateWithoutContext: number | null;
+    evaluationRateWithContext: number | null;
+    evaluationRateWithoutContext: number | null;
+    firstSessionRateWithContext: number | null;
+    firstSessionRateWithoutContext: number | null;
+  };
+  byDomain: PriorContextDomainRow[];
+  recentExamples: {
+    actionId: string;
+    domain: string;
+    recipientEmail: string;
+    priorContactSummary: Record<string, unknown> | null;
+    outcomes: string[];
+    createdAt: string;
+  }[];
   repeatedNoReplyDomains: { domain: string; count: number }[];
   leadsContactedWithoutReply: number;
-}> {
-  let draftsWithPriorContext = 0;
-  let replyRateWithPriorContext: number | null = null;
-  let conversionRateWithPriorContext: number | null = null;
-  const repeatedNoReplyDomains: { domain: string; count: number }[] = [];
-  let leadsContactedWithoutReply = 0;
+}
+
+export async function getAgentmailPriorContextAnalytics(orgId: string): Promise<PriorContextAnalytics> {
+  const empty: PriorContextAnalytics = {
+    totals: {
+      draftsWithPriorContext: 0,
+      draftsWithoutPriorContext: 0,
+      replyRateWithContext: null,
+      replyRateWithoutContext: null,
+      conversionRateWithContext: null,
+      conversionRateWithoutContext: null,
+      evaluationRateWithContext: null,
+      evaluationRateWithoutContext: null,
+      firstSessionRateWithContext: null,
+      firstSessionRateWithoutContext: null,
+    },
+    byDomain: [],
+    recentExamples: [],
+    repeatedNoReplyDomains: [],
+    leadsContactedWithoutReply: 0,
+  };
 
   try {
-    const withCtxRows = rows(await db.execute(sql`
-      SELECT COUNT(*)::int AS cnt
-      FROM gmail_agent_actions
-      WHERE org_id = ${orgId}
-        AND result::text LIKE '%"priorContactUsed":true%'
-    `));
-    draftsWithPriorContext = Number(withCtxRows[0]?.cnt ?? 0);
+    // ── 1. Outcome rates by prior context flag ─────────────────────────────
+    let outcomeCounts: {
+      hasCtx: boolean;
+      total: number;
+      replied: number;
+      converted: number;
+      evalScheduled: number;
+      firstSession: number;
+    }[] = [];
 
-    if (draftsWithPriorContext > 0) {
-      try {
-        const replyRows = rows(await db.execute(sql`
-          SELECT COUNT(DISTINCT aco.gmail_action_id)::int AS cnt
-          FROM agent_communication_outcomes aco
-          JOIN gmail_agent_actions g ON g.id = aco.gmail_action_id
-          WHERE g.org_id = ${orgId}
-            AND g.result::text LIKE '%"priorContactUsed":true%'
-            AND aco.outcome_status IN ('replied','meeting_booked','converted')
-        `));
-        const repliedCount = Number(replyRows[0]?.cnt ?? 0);
-        replyRateWithPriorContext = Math.round((repliedCount / draftsWithPriorContext) * 100);
+    try {
+      const outRows = rows(await db.execute(sql`
+        SELECT
+          (g.result::text LIKE '%"priorContactUsed":true%') AS has_ctx,
+          COUNT(DISTINCT g.id)::int AS total,
+          COUNT(DISTINCT CASE WHEN oe.outcome_type = 'reply_received' THEN g.id END)::int AS replied,
+          COUNT(DISTINCT CASE WHEN oe.outcome_type = 'lead_converted' THEN g.id END)::int AS converted,
+          COUNT(DISTINCT CASE WHEN oe.outcome_type = 'evaluation_scheduled' THEN g.id END)::int AS eval_scheduled,
+          COUNT(DISTINCT CASE WHEN oe.outcome_type = 'first_session_scheduled' THEN g.id END)::int AS first_session
+        FROM gmail_agent_actions g
+        LEFT JOIN agent_communication_outcomes aco ON aco.gmail_action_id = g.id
+        LEFT JOIN agentmail_outcome_events oe ON oe.outcome_id = aco.id
+        WHERE g.org_id = ${orgId}
+          AND g.status IN ('sent','approved')
+          AND g.result IS NOT NULL
+        GROUP BY has_ctx
+      `));
+      outcomeCounts = outRows.map((r: any) => ({
+        hasCtx: r.has_ctx === true || r.has_ctx === 't',
+        total: Number(r.total ?? 0),
+        replied: Number(r.replied ?? 0),
+        converted: Number(r.converted ?? 0),
+        evalScheduled: Number(r.eval_scheduled ?? 0),
+        firstSession: Number(r.first_session ?? 0),
+      }));
+    } catch {}
 
-        const convRows = rows(await db.execute(sql`
-          SELECT COUNT(DISTINCT aco.gmail_action_id)::int AS cnt
-          FROM agent_communication_outcomes aco
-          JOIN gmail_agent_actions g ON g.id = aco.gmail_action_id
-          WHERE g.org_id = ${orgId}
-            AND g.result::text LIKE '%"priorContactUsed":true%'
-            AND aco.outcome_status IN ('converted','revenue_recovered')
-        `));
-        const convCount = Number(convRows[0]?.cnt ?? 0);
-        conversionRateWithPriorContext = Math.round((convCount / draftsWithPriorContext) * 100);
-      } catch {}
-    }
+    const withCtxTotals = outcomeCounts.find((r) => r.hasCtx) ?? { hasCtx: true, total: 0, replied: 0, converted: 0, evalScheduled: 0, firstSession: 0 };
+    const noCtxTotals = outcomeCounts.find((r) => !r.hasCtx) ?? { hasCtx: false, total: 0, replied: 0, converted: 0, evalScheduled: 0, firstSession: 0 };
 
-    // Domains with repeated no-reply follow-ups
+    // Also count drafts that have no result at all or result lacks the flag (= without context)
+    let totalNoResult = 0;
+    try {
+      const nr = rows(await db.execute(sql`
+        SELECT COUNT(*)::int AS cnt
+        FROM gmail_agent_actions
+        WHERE org_id = ${orgId}
+          AND status IN ('sent','approved')
+          AND (result IS NULL OR result::text NOT LIKE '%"priorContactUsed"%')
+      `));
+      totalNoResult = Number(nr[0]?.cnt ?? 0);
+    } catch {}
+
+    const draftsWithPriorContext = withCtxTotals.total;
+    const draftsWithoutPriorContext = noCtxTotals.total + totalNoResult;
+
+    // ── 2. By domain ──────────────────────────────────────────────────────
+    const byDomain: PriorContextDomainRow[] = [];
+    try {
+      const domRows = rows(await db.execute(sql`
+        SELECT
+          g.communication_domain AS domain,
+          (g.result::text LIKE '%"priorContactUsed":true%') AS has_ctx,
+          COUNT(DISTINCT g.id)::int AS total,
+          COUNT(DISTINCT CASE WHEN oe.outcome_type = 'reply_received' THEN g.id END)::int AS replied,
+          COUNT(DISTINCT CASE WHEN oe.outcome_type = 'lead_converted' THEN g.id END)::int AS converted,
+          COUNT(DISTINCT CASE WHEN oe.outcome_type = 'evaluation_scheduled' THEN g.id END)::int AS eval_scheduled
+        FROM gmail_agent_actions g
+        LEFT JOIN agent_communication_outcomes aco ON aco.gmail_action_id = g.id
+        LEFT JOIN agentmail_outcome_events oe ON oe.outcome_id = aco.id
+        WHERE g.org_id = ${orgId}
+          AND g.status IN ('sent','approved')
+          AND g.communication_domain IS NOT NULL
+          AND g.result IS NOT NULL
+        GROUP BY g.communication_domain, has_ctx
+        ORDER BY g.communication_domain
+      `));
+
+      const domMap: Record<string, { withCtx: any; noCtx: any }> = {};
+      for (const r of domRows) {
+        const d = r.domain as string;
+        if (!domMap[d]) domMap[d] = { withCtx: null, noCtx: null };
+        const hasCtx = r.has_ctx === true || r.has_ctx === 't';
+        if (hasCtx) domMap[d].withCtx = r;
+        else domMap[d].noCtx = r;
+      }
+
+      for (const [domain, { withCtx, noCtx }] of Object.entries(domMap)) {
+        const wc = withCtx ? Number(withCtx.total ?? 0) : 0;
+        const nc = noCtx ? Number(noCtx.total ?? 0) : 0;
+        const rWith = pct(withCtx ? Number(withCtx.replied ?? 0) : 0, wc);
+        const rWithout = pct(noCtx ? Number(noCtx.replied ?? 0) : 0, nc);
+        const cvWith = pct(withCtx ? Number(withCtx.converted ?? 0) : 0, wc);
+        const cvWithout = pct(noCtx ? Number(noCtx.converted ?? 0) : 0, nc);
+        const evWith = pct(withCtx ? Number(withCtx.eval_scheduled ?? 0) : 0, wc);
+        const evWithout = pct(noCtx ? Number(noCtx.eval_scheduled ?? 0) : 0, nc);
+        byDomain.push({
+          domain,
+          withContextCount: wc,
+          withoutContextCount: nc,
+          replyRateWithContext: rWith,
+          replyRateWithoutContext: rWithout,
+          conversionRateWithContext: cvWith,
+          conversionRateWithoutContext: cvWithout,
+          evaluationRateWithContext: evWith,
+          evaluationRateWithoutContext: evWithout,
+          dataConfidence: confidenceLevel(wc),
+          interpretation: domainInterpretation(wc, rWith, rWithout),
+        });
+      }
+      byDomain.sort((a, b) => b.withContextCount - a.withContextCount);
+    } catch {}
+
+    // ── 3. Recent examples ────────────────────────────────────────────────
+    const recentExamples: PriorContextAnalytics["recentExamples"] = [];
+    try {
+      const exRows = rows(await db.execute(sql`
+        SELECT g.id, g.communication_domain, g.recipient_email,
+               g.result->'priorContactSummary' AS summary,
+               g.created_at
+        FROM gmail_agent_actions g
+        WHERE g.org_id = ${orgId}
+          AND g.result::text LIKE '%"priorContactUsed":true%'
+        ORDER BY g.created_at DESC
+        LIMIT 8
+      `));
+
+      for (const r of exRows) {
+        let outcomes: string[] = [];
+        try {
+          const oRows = rows(await db.execute(sql`
+            SELECT DISTINCT oe.outcome_type
+            FROM agentmail_outcome_events oe
+            JOIN agent_communication_outcomes aco ON aco.id = oe.outcome_id
+            WHERE aco.gmail_action_id = ${r.id as string}
+            LIMIT 5
+          `));
+          outcomes = oRows.map((o: any) => o.outcome_type as string);
+        } catch {}
+        recentExamples.push({
+          actionId: r.id as string,
+          domain: (r.communication_domain as string) ?? "unknown",
+          recipientEmail: (r.recipient_email as string) ?? "",
+          priorContactSummary: r.summary as Record<string, unknown> | null,
+          outcomes,
+          createdAt: r.created_at as string,
+        });
+      }
+    } catch {}
+
+    // ── 4. Repeated no-reply domains ──────────────────────────────────────
+    const repeatedNoReplyDomains: { domain: string; count: number }[] = [];
+    let leadsContactedWithoutReply = 0;
     try {
       const domainRows = rows(await db.execute(sql`
         SELECT communication_domain AS domain, COUNT(DISTINCT recipient_email)::int AS count
@@ -435,7 +682,6 @@ export async function getAgentmailPriorContextAnalytics(orgId: string): Promise<
       }
     } catch {}
 
-    // Leads contacted 3+ times without reply
     try {
       const lcrRows = rows(await db.execute(sql`
         SELECT COUNT(DISTINCT recipient_email)::int AS cnt
@@ -456,13 +702,26 @@ export async function getAgentmailPriorContextAnalytics(orgId: string): Promise<
       `));
       leadsContactedWithoutReply = lcrRows.length;
     } catch {}
-  } catch {}
 
-  return {
-    draftsWithPriorContext,
-    replyRateWithPriorContext,
-    conversionRateWithPriorContext,
-    repeatedNoReplyDomains,
-    leadsContactedWithoutReply,
-  };
+    return {
+      totals: {
+        draftsWithPriorContext,
+        draftsWithoutPriorContext,
+        replyRateWithContext: pct(withCtxTotals.replied, withCtxTotals.total),
+        replyRateWithoutContext: pct(noCtxTotals.replied, noCtxTotals.total),
+        conversionRateWithContext: pct(withCtxTotals.converted, withCtxTotals.total),
+        conversionRateWithoutContext: pct(noCtxTotals.converted, noCtxTotals.total),
+        evaluationRateWithContext: pct(withCtxTotals.evalScheduled, withCtxTotals.total),
+        evaluationRateWithoutContext: pct(noCtxTotals.evalScheduled, noCtxTotals.total),
+        firstSessionRateWithContext: pct(withCtxTotals.firstSession, withCtxTotals.total),
+        firstSessionRateWithoutContext: pct(noCtxTotals.firstSession, noCtxTotals.total),
+      },
+      byDomain,
+      recentExamples,
+      repeatedNoReplyDomains,
+      leadsContactedWithoutReply,
+    };
+  } catch {
+    return empty;
+  }
 }

@@ -45,19 +45,25 @@ async function refineWorkflowEmailWithLearning(
   subject: string,
   body: string,
   recipientEmail?: string,
-): Promise<{ subject: string; body: string; appliedRules: import("../services/message-learning-service").AppliedRuleMetadata[] } | null> {
+): Promise<{
+  subject: string;
+  body: string;
+  appliedRules: import("../services/message-learning-service").AppliedRuleMetadata[];
+  priorCtx: import("../services/agentmail-prior-contact-context-service").PriorContactContext | null;
+} | null> {
   try {
     const domain = WORKFLOW_DOMAIN_MAP[workflowType] ?? "general";
     const { getMessageLearningContextWithRules } = await import("../services/message-learning-service");
     const { contextText: learningCtx, rules: appliedRules } = await getMessageLearningContextWithRules(orgId, domain);
 
     let priorContactBlock = "";
+    let _execPriorCtx: import("../services/agentmail-prior-contact-context-service").PriorContactContext | null = null;
     if (recipientEmail) {
       try {
         const { getPriorContactContext } = await import("../services/agentmail-prior-contact-context-service");
-        const priorCtx = await getPriorContactContext({ orgId, recipientEmail, communicationDomain: domain });
-        if (priorCtx.hasPriorContact && priorCtx.promptBlock) {
-          priorContactBlock = `\n${priorCtx.promptBlock}\n`;
+        _execPriorCtx = await getPriorContactContext({ orgId, recipientEmail, communicationDomain: domain });
+        if (_execPriorCtx.hasPriorContact && _execPriorCtx.promptBlock) {
+          priorContactBlock = `\n${_execPriorCtx.promptBlock}\n`;
         }
       } catch {}
     }
@@ -86,7 +92,7 @@ async function refineWorkflowEmailWithLearning(
 
     const parsed = JSON.parse(resp.choices[0]?.message?.content ?? "{}");
     if (parsed.subject && parsed.body) {
-      return { subject: parsed.subject, body: parsed.body, appliedRules };
+      return { subject: parsed.subject, body: parsed.body, appliedRules, priorCtx: _execPriorCtx };
     }
     return null;
   } catch {
@@ -455,12 +461,14 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
         let builtInput = stepDef.buildInput(ctx);
 
         let _workflowAppliedRules: import("../services/message-learning-service").AppliedRuleMetadata[] = [];
+        let _wfPriorCtx: import("../services/agentmail-prior-contact-context-service").PriorContactContext | null = null;
         if (stepDef.toolName === "create_email_draft" && builtInput.subject && builtInput.body) {
           const _wfRecipient = (builtInput.to ?? builtInput.recipientEmail ?? ctx.entityEmail ?? undefined) as string | undefined;
           const refined = await refineWorkflowEmailWithLearning(orgId, run.workflowType, builtInput.subject as string, builtInput.body as string, _wfRecipient);
           if (refined) {
             builtInput = { ...builtInput, subject: refined.subject, body: refined.body };
             _workflowAppliedRules = refined.appliedRules;
+            _wfPriorCtx = refined.priorCtx;
           }
         }
 
@@ -483,6 +491,22 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
           import("../services/agentmail-analytics-service").then(({ recordAgentMailRuleApplications }) =>
             recordAgentMailRuleApplications({ orgId, actionId: result.toolCallId!, communicationDomain: _wfDomain, rules: _workflowAppliedRules })
           ).catch(() => {});
+        }
+
+        // Persist prior contact metadata — non-blocking, fail-open
+        if (stepDef.toolName === "create_email_draft" && result.toolCallId) {
+          const _actionIdForCtx = result.toolCallId;
+          if (_wfPriorCtx) {
+            import("../services/agentmail-prior-contact-context-service").then(({ persistPriorContactMetadata }) =>
+              persistPriorContactMetadata(_actionIdForCtx, _wfPriorCtx!)
+            ).catch(() => {});
+          } else {
+            db.execute(sql`
+              UPDATE gmail_agent_actions
+              SET result = COALESCE(result, '{}'::jsonb) || '{"priorContactUsed":false}'::jsonb
+              WHERE id = ${_actionIdForCtx}
+            `).catch(() => {});
+          }
         }
 
         if (result.requiresConfirmation) {
