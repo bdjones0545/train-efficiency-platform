@@ -14,6 +14,7 @@ import {
   RefreshCw, ArrowUpRight, Eye, Clock, Circle,
   Layers, Command, ChevronUp, Bot, WifiOff,
   ThumbsUp, ThumbsDown, Inbox, Info,
+  Award, BookOpen, GitBranch, Lightbulb, ListChecks,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 
@@ -71,6 +72,45 @@ type AgentRow = { name: string; actionCount: number; lastActive: string | null; 
 type AgentActivityData = { agents: AgentRow[]; ceoHeartbeatStatus: { status: string; lastRun: string; isRunning: boolean } | null; generatedAt: string };
 type SearchResult = { type: string; label: string; description: string; href: string; zone: string };
 type ExpScore = { overallScore: number; dimensions: { label: string; score: number; trend: string }[]; insights: string[]; generatedAt: string };
+
+// Phase 2 — Intelligence Layer Types
+type ExecInsight = { id: string; icon: string; label: string; value: string; detail: string; color: string };
+type ExecInsightsData = { insights: ExecInsight[]; generatedAt: string };
+
+type AgentRepRow = {
+  name: string; source: string; approvalRate: number | null; rejectionRate: number | null;
+  qualityScore: number | null; trustTier: string; totalActions: number; failedCount: number;
+  averageConfidence: number | null; rejectionSpike: boolean; lastActive: string | null;
+  pendingCount: number; completedCount: number; rejectedCount: number;
+  gmailTotal?: number; unifiedTotal?: number;
+};
+type AgentReputationData = { agents: AgentRepRow[]; generatedAt: string };
+
+type OrgLearningEntry = {
+  id: string; type: string; category: string; domain: string; memoryType: string;
+  title: string; detail: string | null; outcome: string | null;
+  confidence: number; impact: number; occurrenceCount: number;
+  source: string; learnedAt: string;
+};
+type OrgLearningData = {
+  learnings: OrgLearningEntry[];
+  humanDecisions: { type: string; actionType: string; count: number; label: string }[];
+  stats: { totalLearnings: number; avgConfidence: number | null; totalOccurrences: number; latestLearning: string | null; learnings24h: number; learnings7d: number };
+  generatedAt: string;
+};
+
+type RecHistoryItem = {
+  id: string; source: string; agent: string; title: string; preview: string | null;
+  riskLevel: string; status: string;
+  lifecycle: { stage: string; label: string; step: number };
+  confidence?: number | null; estimatedImpact?: string | null;
+  createdAt: string; updatedAt: string; approvedBy?: string | null;
+};
+type RecHistoryData = {
+  items: RecHistoryItem[];
+  summary: { total: number; pending: number; completed: number; rejected: number; approvalRate: number | null };
+  generatedAt: string;
+};
 
 // ─── Mode ─────────────────────────────────────────────────────────────────────
 
@@ -1056,6 +1096,402 @@ function ExperienceScore({ mode }: { mode: Mode }) {
   );
 }
 
+// ─── Section: Executive Insights ─────────────────────────────────────────────
+
+const INSIGHT_ICONS: Record<string, any> = {
+  Bot, TrendingUp, Clock, DollarSign, Brain, Award, Lightbulb, Target,
+};
+const INSIGHT_COLORS: Record<string, string> = {
+  emerald: "text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 border-emerald-200 dark:border-emerald-800",
+  blue: "text-blue-600 dark:text-blue-400 bg-blue-500/10 border-blue-200 dark:border-blue-800",
+  amber: "text-amber-600 dark:text-amber-400 bg-amber-500/10 border-amber-200 dark:border-amber-800",
+  violet: "text-violet-600 dark:text-violet-400 bg-violet-500/10 border-violet-200 dark:border-violet-800",
+  rose: "text-rose-600 dark:text-rose-400 bg-rose-500/10 border-rose-200 dark:border-rose-800",
+};
+
+function ExecutiveInsights() {
+  const { data, isLoading } = useQuery<ExecInsightsData>({
+    queryKey: ["/api/command-center/executive-insights"],
+    staleTime: 120_000,
+    refetchInterval: 180_000,
+  });
+
+  const insights = data?.insights ?? [];
+
+  if (!isLoading && insights.length === 0) return null;
+
+  return (
+    <section data-testid="section-executive-insights">
+      <div className="flex items-center gap-2 mb-3">
+        <Lightbulb className="h-4 w-4 text-primary" />
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Executive Intelligence</h2>
+        {data && <span className="text-[9px] text-muted-foreground ml-auto">Live · {insights.length} insight{insights.length !== 1 ? "s" : ""}</span>}
+      </div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-20 rounded-xl" />)}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {insights.map(insight => {
+            const Icon = INSIGHT_ICONS[insight.icon] ?? Brain;
+            const colorClass = INSIGHT_COLORS[insight.color] ?? INSIGHT_COLORS.blue;
+            return (
+              <div
+                key={insight.id}
+                className={`flex items-start gap-3 p-3.5 rounded-xl border ${colorClass}`}
+                data-testid={`insight-${insight.id}`}
+              >
+                <div className="shrink-0 mt-0.5">
+                  <Icon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-[9px] font-medium uppercase tracking-wide opacity-70 mb-0.5">{insight.label}</p>
+                  <p className="text-sm font-bold truncate">{insight.value}</p>
+                  <p className="text-[9px] opacity-70 mt-0.5 line-clamp-2 leading-relaxed">{insight.detail}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Section: Recommendation History (Lifecycle Tracker) ─────────────────────
+
+const LIFECYCLE_STEPS = [
+  { step: 1, label: "Detected" },
+  { step: 2, label: "Analyzing" },
+  { step: 3, label: "Review" },
+  { step: 4, label: "Decision" },
+  { step: 5, label: "Approved" },
+  { step: 7, label: "Done" },
+];
+
+function LifecycleBar({ currentStep, stage }: { currentStep: number; stage: string }) {
+  const isRejected = stage === "rejected";
+  return (
+    <div className="flex items-center gap-0.5 mt-1.5">
+      {LIFECYCLE_STEPS.map((s, idx) => {
+        const active = !isRejected && currentStep >= s.step;
+        const isLast = idx === LIFECYCLE_STEPS.length - 1;
+        return (
+          <div key={s.step} className="flex items-center gap-0.5" style={{ flex: isLast ? "0 0 auto" : 1 }}>
+            <div className={`h-1 rounded-full transition-all duration-500 ${isLast ? "w-3 h-3 rounded-full border-2" : "w-full"} ${
+              isRejected && currentStep === s.step ? "bg-rose-400 border-rose-400"
+              : active ? "bg-primary border-primary"
+              : "bg-muted border-muted"
+            }`} />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function RecommendationHistory() {
+  const [expanded, setExpanded] = useState(false);
+  const { data, isLoading } = useQuery<RecHistoryData>({
+    queryKey: ["/api/command-center/recommendation-history"],
+    staleTime: 60_000,
+    refetchInterval: 120_000,
+  });
+
+  const items = data?.items ?? [];
+  const summary = data?.summary;
+  const visible = expanded ? items : items.slice(0, 5);
+
+  const stageBadge = (stage: string, label: string) => {
+    const styles: Record<string, string> = {
+      detecting: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+      analyzing: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+      pending_review: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+      approved: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+      completed: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300",
+      rejected: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
+      detected: "bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400",
+    };
+    return <Badge className={`text-[8px] px-1.5 py-0 h-4 ${styles[stage] ?? "bg-muted text-muted-foreground"}`}>{label}</Badge>;
+  };
+
+  return (
+    <section data-testid="section-recommendation-history">
+      <div className="flex items-center gap-2 mb-3">
+        <ListChecks className="h-4 w-4 text-primary" />
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Recommendation Lifecycle — Last 14 Days</h2>
+        {summary && (
+          <div className="ml-auto flex items-center gap-3 text-[9px] text-muted-foreground">
+            <span className="text-amber-600 dark:text-amber-400 font-medium">{summary.pending} pending</span>
+            <span className="text-emerald-600 dark:text-emerald-400 font-medium">{summary.completed} done</span>
+            {summary.approvalRate != null && <span>{summary.approvalRate}% approval</span>}
+          </div>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-14 rounded-xl" />)}</div>
+      ) : items.length === 0 ? (
+        <div className="flex items-center gap-3 p-4 rounded-xl border bg-muted/20 text-muted-foreground">
+          <ListChecks className="h-4 w-4 shrink-0" />
+          <p className="text-xs">No recommendations in the last 14 days</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {visible.map(item => (
+            <div key={item.id} className="p-3 rounded-xl border bg-card" data-testid={`rec-history-${item.id}`}>
+              <div className="flex items-start gap-2.5">
+                <div className="shrink-0 mt-0.5">
+                  {item.source === "agentmail" ? <Bell className="h-3.5 w-3.5 text-blue-500" /> : <Zap className="h-3.5 w-3.5 text-amber-500" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <p className="text-[10px] font-semibold truncate max-w-[200px] sm:max-w-none">{item.title}</p>
+                    {stageBadge(item.lifecycle.stage, item.lifecycle.label)}
+                    {item.confidence != null && (
+                      <span className="text-[8px] text-muted-foreground">{item.confidence}% conf.</span>
+                    )}
+                  </div>
+                  <p className="text-[8px] text-muted-foreground mt-0.5">
+                    {item.agent} · {item.lifecycle.label} · {formatDistanceToNow(new Date(item.createdAt), { addSuffix: true })}
+                    {item.approvedBy && <span className="ml-1">· approved by {item.approvedBy}</span>}
+                  </p>
+                  <LifecycleBar currentStep={item.lifecycle.step} stage={item.lifecycle.stage} />
+                </div>
+              </div>
+            </div>
+          ))}
+          {items.length > 5 && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="w-full text-center text-[9px] text-muted-foreground hover:text-foreground py-1.5 border rounded-xl border-dashed transition-colors"
+              data-testid="button-rec-history-expand"
+            >
+              {expanded ? "Show less" : `Show ${items.length - 5} more`}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Section: Agent Reputation ────────────────────────────────────────────────
+
+function TrustTierBadge({ tier }: { tier: string }) {
+  const styles: Record<string, string> = {
+    high_trust: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300",
+    trusted: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300",
+    assisted: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300",
+    training: "bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300",
+    restricted: "bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-300",
+    unknown: "bg-muted text-muted-foreground",
+  };
+  const labels: Record<string, string> = {
+    high_trust: "High Trust", trusted: "Trusted", assisted: "Assisted",
+    training: "Training", restricted: "Restricted", unknown: "Unknown",
+  };
+  return <Badge className={`text-[8px] px-1.5 py-0 h-4 ${styles[tier] ?? styles.unknown}`}>{labels[tier] ?? tier}</Badge>;
+}
+
+function AgentReputation() {
+  const { data, isLoading } = useQuery<AgentReputationData>({
+    queryKey: ["/api/command-center/agent-reputation"],
+    staleTime: 120_000,
+    refetchInterval: 300_000,
+  });
+
+  const agents = data?.agents ?? [];
+  if (!isLoading && agents.length === 0) return null;
+
+  return (
+    <section data-testid="section-agent-reputation">
+      <div className="flex items-center gap-2 mb-3">
+        <Award className="h-4 w-4 text-primary" />
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Agent Reputation — 30-Day Window</h2>
+        {data && <span className="text-[9px] text-muted-foreground ml-auto">{agents.length} agent{agents.length !== 1 ? "s" : ""} tracked</span>}
+      </div>
+
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">{Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}</div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+          {agents.map(agent => {
+            const totalActivity = (agent.totalActions || 0) + (agent.gmailTotal || 0) + (agent.unifiedTotal || 0);
+            const hasQualityData = agent.qualityScore != null;
+            return (
+              <div
+                key={agent.name}
+                className={`p-3.5 rounded-xl border bg-card ${agent.rejectionSpike ? "border-rose-300 dark:border-rose-700" : ""}`}
+                data-testid={`agent-rep-${agent.name.toLowerCase().replace(/\s+/g, "-")}`}
+              >
+                <div className="flex items-start justify-between gap-2 mb-2">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold truncate">{agent.name}</p>
+                    <p className="text-[8px] text-muted-foreground mt-0.5">
+                      {totalActivity} action{totalActivity !== 1 ? "s" : ""}
+                      {agent.lastActive && <> · {formatDistanceToNow(new Date(agent.lastActive), { addSuffix: true })}</>}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {agent.rejectionSpike && <AlertTriangle className="h-3.5 w-3.5 text-rose-500" />}
+                    <TrustTierBadge tier={agent.trustTier} />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2">
+                  {agent.approvalRate != null && (
+                    <div>
+                      <p className="text-[8px] text-muted-foreground">Approval</p>
+                      <p className={`text-xs font-bold ${agent.approvalRate >= 70 ? "text-emerald-600 dark:text-emerald-400" : agent.approvalRate >= 50 ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400"}`}>
+                        {agent.approvalRate}%
+                      </p>
+                    </div>
+                  )}
+                  {hasQualityData && (
+                    <div>
+                      <p className="text-[8px] text-muted-foreground">Quality</p>
+                      <p className={`text-xs font-bold ${(agent.qualityScore ?? 0) >= 70 ? "text-emerald-600 dark:text-emerald-400" : "text-amber-600 dark:text-amber-400"}`}>
+                        {agent.qualityScore}
+                      </p>
+                    </div>
+                  )}
+                  {agent.averageConfidence != null && (
+                    <div>
+                      <p className="text-[8px] text-muted-foreground">Confidence</p>
+                      <p className="text-xs font-bold">{agent.averageConfidence}%</p>
+                    </div>
+                  )}
+                  {agent.failedCount > 0 && (
+                    <div>
+                      <p className="text-[8px] text-muted-foreground">Failures</p>
+                      <p className="text-xs font-bold text-rose-600 dark:text-rose-400">{agent.failedCount}</p>
+                    </div>
+                  )}
+                </div>
+
+                {hasQualityData && (
+                  <div className="mt-2">
+                    <HealthBar score={agent.qualityScore ?? 0} />
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+// ─── Section: Organizational Learning Feed ────────────────────────────────────
+
+function OrgLearning() {
+  const [expanded, setExpanded] = useState(false);
+  const { data, isLoading } = useQuery<OrgLearningData>({
+    queryKey: ["/api/command-center/org-learning"],
+    staleTime: 120_000,
+    refetchInterval: 300_000,
+  });
+
+  const learnings = data?.learnings ?? [];
+  const stats = data?.stats;
+  const humanDecisions = data?.humanDecisions ?? [];
+  const visible = expanded ? learnings : learnings.slice(0, 4);
+
+  if (!isLoading && learnings.length === 0 && humanDecisions.length === 0) return null;
+
+  const confidenceColor = (c: number) =>
+    c >= 85 ? "text-emerald-600 dark:text-emerald-400" : c >= 65 ? "text-amber-600 dark:text-amber-400" : "text-rose-600 dark:text-rose-400";
+
+  return (
+    <section data-testid="section-org-learning">
+      <div className="flex items-center gap-2 mb-3">
+        <BookOpen className="h-4 w-4 text-primary" />
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Organizational Learning</h2>
+        {stats && (
+          <div className="ml-auto flex items-center gap-3 text-[9px] text-muted-foreground">
+            {stats.learnings24h > 0 && <span className="text-primary font-medium">+{stats.learnings24h} today</span>}
+            <span>{stats.totalLearnings} total</span>
+            {stats.avgConfidence != null && <span>{stats.avgConfidence}% avg. confidence</span>}
+          </div>
+        )}
+      </div>
+
+      {isLoading ? (
+        <div className="space-y-2">{Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 rounded-xl" />)}</div>
+      ) : (
+        <div className="space-y-2">
+          {/* Human decision patterns — what leadership approved/rejected */}
+          {humanDecisions.length > 0 && (
+            <div className="flex flex-wrap gap-2 p-3 rounded-xl border bg-primary/5 border-primary/20">
+              <div className="flex items-center gap-1.5 w-full mb-1">
+                <GitBranch className="h-3 w-3 text-primary" />
+                <p className="text-[9px] font-medium text-primary">Human Decision Patterns (7 days)</p>
+              </div>
+              {humanDecisions.map((d, i) => (
+                <div key={i} className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-background border text-[9px]">
+                  {d.actionType.includes("approve") ? (
+                    <ThumbsUp className="h-2.5 w-2.5 text-emerald-500 shrink-0" />
+                  ) : d.actionType.includes("reject") ? (
+                    <ThumbsDown className="h-2.5 w-2.5 text-rose-500 shrink-0" />
+                  ) : (
+                    <Activity className="h-2.5 w-2.5 text-muted-foreground shrink-0" />
+                  )}
+                  <span>{d.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Hermes learnings */}
+          {visible.map(l => (
+            <div key={l.id} className="p-3.5 rounded-xl border bg-card" data-testid={`learning-${l.id}`}>
+              <div className="flex items-start gap-2.5">
+                <Brain className="h-3.5 w-3.5 text-violet-500 shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap mb-0.5">
+                    <Badge className="text-[8px] px-1.5 py-0 h-4 bg-violet-100 text-violet-700 dark:bg-violet-900/30 dark:text-violet-300">
+                      {l.category}
+                    </Badge>
+                    <span className={`text-[8px] font-semibold ${confidenceColor(l.confidence)}`}>{l.confidence}% confidence</span>
+                    {l.occurrenceCount > 1 && (
+                      <span className="text-[8px] text-muted-foreground">seen {l.occurrenceCount}×</span>
+                    )}
+                  </div>
+                  <p className="text-[10px] font-medium leading-relaxed">{l.title}</p>
+                  {l.detail && <p className="text-[8px] text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">{l.detail}</p>}
+                  {l.outcome && (
+                    <p className="text-[8px] mt-1 text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                      <CheckCircle className="h-2.5 w-2.5 shrink-0" />
+                      {l.outcome}
+                    </p>
+                  )}
+                  <p className="text-[8px] text-muted-foreground mt-1">
+                    {l.source} · {l.domain} · {formatDistanceToNow(new Date(l.learnedAt), { addSuffix: true })}
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {learnings.length > 4 && (
+            <button
+              onClick={() => setExpanded(e => !e)}
+              className="w-full text-center text-[9px] text-muted-foreground hover:text-foreground py-1.5 border rounded-xl border-dashed transition-colors"
+              data-testid="button-learning-expand"
+            >
+              {expanded ? "Show less" : `Show ${learnings.length - 4} more learnings`}
+            </button>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function AdminUnifiedCommandPage() {
@@ -1158,11 +1594,20 @@ export default function AdminUnifiedCommandPage() {
         {/* Pending Approvals */}
         <PendingApprovals />
 
+        {/* Recommendation Lifecycle Tracker */}
+        <RecommendationHistory />
+
         {/* System Health */}
         <SystemHealth mode={mode} />
 
+        {/* Agent Reputation — 30-day window */}
+        <AgentReputation />
+
         {/* Notification Center */}
         <NotificationCenter />
+
+        {/* Organizational Learning Feed */}
+        <OrgLearning />
 
         {/* Experience Score — Operator only */}
         <ExperienceScore mode={mode} />

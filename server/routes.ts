@@ -30094,6 +30094,422 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     } catch (e: any) { res.status(500).json({ message: "Failed to load agent activity" }); }
   });
 
+  // ─── Phase 2: Intelligence Layer ─────────────────────────────────────────────
+
+  // GET /api/command-center/agent-reputation
+  app.get("/api/command-center/agent-reputation", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await resolveOrgIdOrThrow(req);
+      const since30d = new Date(Date.now() - 30 * 86400_000);
+      const getR = (r: any) => Array.isArray(r) ? r : (r?.rows ?? []);
+
+      const [qualityRows, gmailByAgent, unifiedByActor] = await Promise.all([
+        db.execute(sql`
+          SELECT agent_name, approval_rate, rejection_rate, quality_score, trust_tier,
+                 total_actions, failed_count, average_confidence, rejection_spike,
+                 computed_at, window_days
+          FROM agent_quality_scores
+          WHERE org_id = ${orgId} AND window_days = 30
+          ORDER BY quality_score DESC NULLS LAST
+          LIMIT 12
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT created_by_agent as agent_name,
+                 COUNT(*) as total,
+                 COUNT(*) FILTER (WHERE status IN ('executed','sent','approved')) as completed,
+                 COUNT(*) FILTER (WHERE status = 'proposed') as pending,
+                 COUNT(*) FILTER (WHERE status = 'rejected') as rejected,
+                 MAX(created_at) as last_active
+          FROM gmail_agent_actions
+          WHERE org_id = ${orgId} AND created_at > ${since30d.toISOString()}
+          GROUP BY created_by_agent
+          ORDER BY total DESC
+          LIMIT 10
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT actor_type as agent_name,
+                 COUNT(*) as total,
+                 COUNT(*) FILTER (WHERE status IN ('completed','success')) as completed,
+                 COUNT(*) FILTER (WHERE status = 'failed') as failed,
+                 MAX(created_at) as last_active
+          FROM unified_agent_action_log
+          WHERE org_id = ${orgId} AND created_at > ${since30d.toISOString()}
+          GROUP BY actor_type
+          ORDER BY total DESC
+          LIMIT 10
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const quality = getR(qualityRows) as any[];
+      const gmail = getR(gmailByAgent) as any[];
+      const unified = getR(unifiedByActor) as any[];
+
+      // Merge into a unified agent reputation map
+      const agentMap: Record<string, any> = {};
+
+      for (const q of quality) {
+        const name = q.agent_name;
+        agentMap[name] = {
+          name,
+          source: "quality_scores",
+          approvalRate: q.approval_rate != null ? Math.round(Number(q.approval_rate) * 100) : null,
+          rejectionRate: q.rejection_rate != null ? Math.round(Number(q.rejection_rate) * 100) : null,
+          qualityScore: q.quality_score != null ? Math.round(Number(q.quality_score)) : null,
+          trustTier: q.trust_tier ?? "training",
+          totalActions: Number(q.total_actions ?? 0),
+          failedCount: Number(q.failed_count ?? 0),
+          averageConfidence: q.average_confidence != null ? Math.round(Number(q.average_confidence) * 100) : null,
+          rejectionSpike: q.rejection_spike === true,
+          lastActive: q.computed_at,
+          pendingCount: 0,
+          completedCount: 0,
+          rejectedCount: 0,
+        };
+      }
+
+      for (const g of gmail) {
+        const name = g.agent_name ?? "Unknown";
+        if (!agentMap[name]) agentMap[name] = { name, source: "gmail_actions", trustTier: "unknown", qualityScore: null };
+        agentMap[name].gmailTotal = Number(g.total ?? 0);
+        agentMap[name].completedCount = Number(g.completed ?? 0);
+        agentMap[name].pendingCount = Number(g.pending ?? 0);
+        agentMap[name].rejectedCount = Number(g.rejected ?? 0);
+        agentMap[name].lastActive = agentMap[name].lastActive ?? g.last_active;
+        if (agentMap[name].approvalRate == null && agentMap[name].gmailTotal > 0) {
+          const completed = Number(g.completed ?? 0);
+          const total = Number(g.total ?? 0);
+          agentMap[name].approvalRate = total > 0 ? Math.round((completed / total) * 100) : null;
+        }
+      }
+
+      for (const u of unified) {
+        const name = u.agent_name ?? "system";
+        if (!agentMap[name]) agentMap[name] = { name, source: "unified_log", trustTier: "unknown", qualityScore: null };
+        agentMap[name].unifiedTotal = Number(u.total ?? 0);
+        agentMap[name].unifiedCompleted = Number(u.completed ?? 0);
+        agentMap[name].unifiedFailed = Number(u.failed ?? 0);
+        agentMap[name].lastActive = agentMap[name].lastActive ?? u.last_active;
+      }
+
+      const agents = Object.values(agentMap)
+        .filter(a => (a.totalActions ?? 0) + (a.gmailTotal ?? 0) + (a.unifiedTotal ?? 0) > 0)
+        .sort((a, b) => (b.totalActions ?? b.gmailTotal ?? 0) - (a.totalActions ?? a.gmailTotal ?? 0))
+        .slice(0, 8);
+
+      res.json({ agents, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load agent reputation" }); }
+  });
+
+  // GET /api/command-center/org-learning
+  app.get("/api/command-center/org-learning", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await resolveOrgIdOrThrow(req);
+      const since7d = new Date(Date.now() - 7 * 86400_000);
+      const getR = (r: any) => Array.isArray(r) ? r : (r?.rows ?? []);
+
+      const [hermesRows, auditRows, hermesStats] = await Promise.all([
+        db.execute(sql`
+          SELECT id, domain, source, memory_type, department, category,
+                 learning, observation, outcome, confidence_score, impact_score,
+                 occurrence_count, last_seen_at, created_at
+          FROM hermes_auto_learnings
+          WHERE org_id = ${orgId}
+          ORDER BY (confidence_score * LN(GREATEST(occurrence_count, 1))) DESC, created_at DESC
+          LIMIT 8
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT action_type, target_table, notes, created_at
+          FROM admin_action_audit_log
+          WHERE org_id = ${orgId} AND created_at > ${since7d.toISOString()}
+          ORDER BY created_at DESC LIMIT 10
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT
+            COUNT(*) as total_learnings,
+            AVG(confidence_score) as avg_confidence,
+            SUM(occurrence_count) as total_occurrences,
+            MAX(last_seen_at) as latest_learning,
+            COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '24 hours') as learnings_24h,
+            COUNT(*) FILTER (WHERE created_at > NOW() - INTERVAL '7 days') as learnings_7d
+          FROM hermes_auto_learnings
+          WHERE org_id = ${orgId}
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const hermes = getR(hermesRows) as any[];
+      const audits = getR(auditRows) as any[];
+      const stats = getR(hermesStats)[0] ?? {};
+
+      const learnings = hermes.map(h => ({
+        id: h.id,
+        type: "hermes",
+        category: h.category ?? h.department ?? "General",
+        domain: h.domain ?? "operations",
+        memoryType: h.memory_type ?? "lesson",
+        title: h.learning ? String(h.learning).substring(0, 80) : "Platform learning",
+        detail: h.observation ? String(h.observation).substring(0, 200) : null,
+        outcome: h.outcome ? String(h.outcome).substring(0, 150) : null,
+        confidence: Number(h.confidence_score ?? 70),
+        impact: Number(h.impact_score ?? 60),
+        occurrenceCount: Number(h.occurrence_count ?? 1),
+        source: h.source ?? "system",
+        learnedAt: h.last_seen_at ?? h.created_at,
+      }));
+
+      // Derive human-decision learning events from audit log
+      const approvalPatterns = audits.reduce((acc: any, a: any) => {
+        const type = a.action_type as string;
+        if (!acc[type]) acc[type] = 0;
+        acc[type]++;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const humanDecisions = Object.entries(approvalPatterns).map(([actionType, count]) => ({
+        type: "human_decision",
+        actionType,
+        count,
+        label: actionType === "command_center_approve" ? `${count} approval${(count as number) !== 1 ? "s" : ""} made`
+          : actionType === "command_center_reject" ? `${count} rejection${(count as number) !== 1 ? "s" : ""} recorded`
+          : `${count} admin action${(count as number) !== 1 ? "s" : ""} (${actionType.replace(/_/g, " ")})`,
+      }));
+
+      res.json({
+        learnings,
+        humanDecisions,
+        stats: {
+          totalLearnings: Number(stats.total_learnings ?? 0),
+          avgConfidence: stats.avg_confidence != null ? Math.round(Number(stats.avg_confidence)) : null,
+          totalOccurrences: Number(stats.total_occurrences ?? 0),
+          latestLearning: stats.latest_learning ?? null,
+          learnings24h: Number(stats.learnings_24h ?? 0),
+          learnings7d: Number(stats.learnings_7d ?? 0),
+        },
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load org learning" }); }
+  });
+
+  // GET /api/command-center/recommendation-history
+  app.get("/api/command-center/recommendation-history", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await resolveOrgIdOrThrow(req);
+      const since14d = new Date(Date.now() - 14 * 86400_000);
+      const getR = (r: any) => Array.isArray(r) ? r : (r?.rows ?? []);
+
+      const [emailActions, autoQueue] = await Promise.all([
+        db.execute(sql`
+          SELECT id, subject, body_preview, status, risk_level, created_by_agent,
+                 action_type, created_at, executed_at, approved_by
+          FROM gmail_agent_actions
+          WHERE org_id = ${orgId} AND created_at > ${since14d.toISOString()}
+          ORDER BY created_at DESC LIMIT 15
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT id, action_type, title, description, status, confidence,
+                 estimated_impact, created_at, updated_at
+          FROM autonomous_action_queue
+          WHERE org_id = ${orgId} AND created_at > ${since14d.toISOString()}
+          ORDER BY created_at DESC LIMIT 10
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const mapEmailStatus = (status: string) => {
+        if (status === "proposed") return { stage: "pending_review", label: "Pending Review", step: 3 };
+        if (status === "approved") return { stage: "approved", label: "Approved", step: 5 };
+        if (status === "executed" || status === "sent") return { stage: "completed", label: "Completed", step: 7 };
+        if (status === "rejected") return { stage: "rejected", label: "Rejected", step: 4 };
+        if (status === "draft") return { stage: "analyzing", label: "Analyzing", step: 2 };
+        return { stage: "detected", label: "Detected", step: 1 };
+      };
+
+      const mapAutoStatus = (status: string) => {
+        if (status === "pending") return { stage: "pending_review", label: "Pending Review", step: 3 };
+        if (status === "approved") return { stage: "approved", label: "Approved", step: 5 };
+        if (status === "executed") return { stage: "completed", label: "Completed", step: 7 };
+        if (status === "rejected") return { stage: "rejected", label: "Rejected", step: 4 };
+        return { stage: "detected", label: "Detected", step: 1 };
+      };
+
+      const items = [
+        ...getR(emailActions).map((e: any) => {
+          const lifecycle = mapEmailStatus(e.status);
+          return {
+            id: e.id,
+            source: "agentmail",
+            agent: e.created_by_agent ?? "Agent",
+            title: e.subject ?? `${e.action_type ?? "Email"} action`,
+            preview: e.body_preview ? String(e.body_preview).substring(0, 100) : null,
+            riskLevel: e.risk_level ?? "low",
+            status: e.status,
+            lifecycle,
+            createdAt: e.created_at,
+            updatedAt: e.executed_at ?? e.created_at,
+            approvedBy: e.approved_by,
+          };
+        }),
+        ...getR(autoQueue).map((a: any) => {
+          const lifecycle = mapAutoStatus(a.status);
+          return {
+            id: a.id,
+            source: "autonomy",
+            agent: "Autonomy Engine",
+            title: a.title ?? `${a.action_type ?? "Action"}`,
+            preview: a.description ? String(a.description).substring(0, 100) : null,
+            riskLevel: "medium",
+            status: a.status,
+            lifecycle,
+            confidence: a.confidence != null ? Math.round(Number(a.confidence) * 100) : null,
+            estimatedImpact: a.estimated_impact,
+            createdAt: a.created_at,
+            updatedAt: a.updated_at ?? a.created_at,
+            approvedBy: null,
+          };
+        }),
+      ].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 12);
+
+      // Summary statistics
+      const all = [...getR(emailActions), ...getR(autoQueue)] as any[];
+      const completed = all.filter(a => ["executed", "sent", "completed"].includes(a.status)).length;
+      const rejected = all.filter(a => a.status === "rejected").length;
+      const pending = all.filter(a => ["proposed", "pending"].includes(a.status)).length;
+
+      res.json({
+        items,
+        summary: {
+          total: items.length,
+          pending,
+          completed,
+          rejected,
+          approvalRate: all.length > 0 ? Math.round(((completed) / all.length) * 100) : null,
+        },
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load recommendation history" }); }
+  });
+
+  // GET /api/command-center/executive-insights
+  app.get("/api/command-center/executive-insights", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await resolveOrgIdOrThrow(req);
+      const since30d = new Date(Date.now() - 30 * 86400_000);
+      const getR = (r: any) => Array.isArray(r) ? r : (r?.rows ?? []);
+
+      const [topAgent, topOpp, latestLearning, revenueAttrib, pendingCount, ignoredCategories] = await Promise.all([
+        db.execute(sql`
+          SELECT created_by_agent as name, COUNT(*) as action_count,
+                 COUNT(*) FILTER (WHERE status IN ('executed','sent')) as completed
+          FROM gmail_agent_actions
+          WHERE org_id = ${orgId} AND created_at > ${since30d.toISOString()}
+          GROUP BY created_by_agent ORDER BY action_count DESC LIMIT 1
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT title, potential_value, confidence, status
+          FROM org_ai_opportunities
+          WHERE org_id = ${orgId} AND status = 'open'
+          ORDER BY potential_value DESC NULLS LAST LIMIT 1
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT learning, confidence_score, impact_score, category, last_seen_at
+          FROM hermes_auto_learnings
+          WHERE org_id = ${orgId}
+          ORDER BY last_seen_at DESC NULLS LAST LIMIT 1
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT COUNT(*) as events, SUM(credited_value) as total_value,
+                 SUM(outcome_value) as outcome_total
+          FROM ai_revenue_events
+          WHERE org_id = ${orgId} AND created_at > ${since30d.toISOString()}
+            AND outcome_status = 'success'
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT COUNT(*) as cnt FROM autonomous_action_queue WHERE org_id = ${orgId} AND status = 'pending'
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT action_type, COUNT(*) as cnt
+          FROM admin_action_audit_log
+          WHERE org_id = ${orgId} AND action_type = 'command_center_reject'
+          GROUP BY action_type
+          LIMIT 1
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const agentRow = getR(topAgent)[0];
+      const oppRow = getR(topOpp)[0];
+      const learningRow = getR(latestLearning)[0];
+      const revenueRow = getR(revenueAttrib)[0];
+      const pendingRow = getR(pendingCount)[0];
+
+      const fmt = (cents: number) => `$${(cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+
+      const insights: { id: string; icon: string; label: string; value: string; detail: string; color: string }[] = [];
+
+      if (agentRow?.name) {
+        const completionRate = agentRow.action_count > 0
+          ? Math.round((Number(agentRow.completed ?? 0) / Number(agentRow.action_count)) * 100)
+          : 0;
+        insights.push({
+          id: "top_agent",
+          icon: "Bot",
+          label: "Most Active Agent",
+          value: String(agentRow.name),
+          detail: `${Number(agentRow.action_count)} actions · ${completionRate}% completion rate (30d)`,
+          color: "emerald",
+        });
+      }
+
+      if (oppRow?.title) {
+        const oppValue = oppRow.potential_value != null ? fmt(Math.round(Number(oppRow.potential_value) * 100)) : null;
+        insights.push({
+          id: "top_opp",
+          icon: "TrendingUp",
+          label: "Top Revenue Opportunity",
+          value: oppValue ?? "Open",
+          detail: `${oppRow.title} · ${Math.round(Number(oppRow.confidence ?? 0.7) * 100)}% confidence`,
+          color: "blue",
+        });
+      }
+
+      const pendingApprovals = Number(pendingRow?.cnt ?? 0);
+      if (pendingApprovals > 0) {
+        insights.push({
+          id: "pending_approvals",
+          icon: "Clock",
+          label: "Awaiting Approval",
+          value: `${pendingApprovals} action${pendingApprovals !== 1 ? "s" : ""}`,
+          detail: "Agents blocked waiting for human review",
+          color: "amber",
+        });
+      }
+
+      const revenueEvents = Number(revenueRow?.events ?? 0);
+      const revenueValue = Number(revenueRow?.total_value ?? 0);
+      if (revenueEvents > 0) {
+        insights.push({
+          id: "ai_revenue",
+          icon: "DollarSign",
+          label: "AI-Attributed Revenue",
+          value: fmt(revenueValue),
+          detail: `Across ${revenueEvents} verified outcome event${revenueEvents !== 1 ? "s" : ""} in last 30 days`,
+          color: "emerald",
+        });
+      }
+
+      if (learningRow?.learning) {
+        insights.push({
+          id: "latest_learning",
+          icon: "Brain",
+          label: "Latest Organizational Learning",
+          value: learningRow.category ?? "General",
+          detail: String(learningRow.learning).substring(0, 120),
+          color: "violet",
+        });
+      }
+
+      res.json({ insights, generatedAt: new Date().toISOString() });
+    } catch (e: any) { res.status(500).json({ message: "Failed to load executive insights" }); }
+  });
+
   // ═══════════════════════════════════════════════════════════════
   // CUSTOMER SUCCESS OS — Phase 16
   // ═══════════════════════════════════════════════════════════════
