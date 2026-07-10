@@ -1,0 +1,761 @@
+Act as a world-renowned software architect, workforce optimization expert, AI systems engineer, enterprise SaaS product designer, Apple-level UX specialist, and scheduling optimization researcher.
+
+We are conducting a production-grade page-by-page audit of TrainEfficiency.
+
+# Page
+
+**Availability**
+
+This page is NOT simply an availability editor.
+
+It is the workforce availability intelligence engine.
+
+Its purpose is to continuously optimize organizational scheduling capacity while balancing coach workload, athlete demand, operational efficiency, revenue opportunity, and long-term sustainability.
+
+Do NOT redesign the page.
+
+Do NOT remove existing functionality.
+
+Do NOT create fake AI.
+
+Do NOT invent metrics.
+
+Do NOT add placeholder buttons.
+
+Preserve the existing scheduling architecture, availability engine, recommendation engine, backend APIs, and TrainEfficiency design system.
+
+Improve intelligence.
+
+Improve explainability.
+
+Improve measurable operational value.
+
+---
+
+# Core Mission
+
+Within five seconds the user should know:
+
+Who is available today?
+
+Who becomes unavailable soon?
+
+Where are future availability shortages?
+
+Where is availability being wasted?
+
+Where should additional availability be opened?
+
+Where should availability be reduced?
+
+Which coaches are nearing burnout?
+
+Which availability changes create the greatest business value?
+
+What should leadership do next?
+
+---
+
+# Availability Optimization Lifecycle
+
+Review every intelligent workflow.
+
+Verify support for:
+
+Observe
+
+↓
+
+Analyze Availability
+
+↓
+
+Detect Opportunity
+
+↓
+
+Prioritize
+
+↓
+
+Recommend
+
+↓
+
+Human Review
+
+↓
+
+Approve
+
+↓
+
+Execute
+
+↓
+
+Measure
+
+↓
+
+Learn
+
+↓
+
+Future Optimization
+
+Surface existing lifecycle stages.
+
+Do not fabricate lifecycle data.
+
+Recommend production-safe implementation where gaps exist.
+
+---
+
+# UX Audit
+
+Audit:
+
+Availability calendar
+
+Weekly schedule
+
+Daily schedule
+
+Coach selection
+
+Availability blocks
+
+Recurring availability
+
+Overrides
+
+Time-off
+
+Blackout periods
+
+Filtering
+
+Search
+
+Sorting
+
+Bulk editing
+
+Availability visualization
+
+Capacity visualization
+
+Mobile responsiveness
+
+Accessibility
+
+Typography
+
+Spacing
+
+Loading
+
+Errors
+
+Success
+
+Empty states
+
+The page should immediately communicate workforce availability health.
+
+---
+
+# Functional Audit
+
+Inspect every interaction.
+
+Create availability
+
+Edit availability
+
+Delete availability
+
+Recurring schedules
+
+Exceptions
+
+Vacation
+
+Time off
+
+Bulk edits
+
+Copy schedule
+
+Templates
+
+Availability overrides
+
+Coach switching
+
+Search
+
+Filters
+
+Sorting
+
+Calendar navigation
+
+Recommendation cards
+
+Dialogs
+
+Drawers
+
+Determine:
+
+Does it work?
+
+Is it connected to real backend functionality?
+
+Are permissions respected?
+
+Loading, success, error, undo handled?
+
+Dead buttons?
+
+Duplicate workflows?
+
+Placeholder actions?
+
+Fix production-safe issues only.
+
+---
+
+# Availability Intelligence Audit
+
+Determine whether the page surfaces:
+
+Available hours
+
+Booked hours
+
+Unused hours
+
+Future availability
+
+Availability conflicts
+
+Coverage gaps
+
+Coach overlap
+
+Peak demand mismatch
+
+Future shortages
+
+Future idle time
+
+Revenue opportunity
+
+Coverage risk
+
+Time-off impact
+
+Recurring availability quality
+
+Unused recurring blocks
+
+Schedule flexibility
+
+Demand matching
+
+Recommended availability expansion
+
+Recommended availability reduction
+
+Recommended schedule shifts
+
+Recommended coach coverage
+
+Only use deterministic intelligence.
+
+---
+
+# Agent Utilization Audit
+
+Review participation from:
+
+Scheduling Agent
+
+Revenue Agent
+
+Retention Agent
+
+Client Success Agent
+
+AgentMail
+
+Executive Agent
+
+CEO Heartbeat
+
+Hermes Learning
+
+Attention Inbox
+
+Determine:
+
+Which recommendations belong to each agent?
+
+Should Revenue Agent estimate financial impact?
+
+Should Scheduling Agent recommend availability changes?
+
+Should AgentMail draft coach notifications?
+
+Should Client Success identify athlete impact?
+
+Should CEO Heartbeat receive workforce health signals?
+
+Avoid duplicate recommendations.
+
+Clarify ownership.
+
+---
+
+# Agent Intelligence & Closed-Loop Learning Assessment
+
+Review every intelligent workflow.
+
+---
+
+## Learning Loop
+
+Determine whether the page learns from:
+
+Availability changes
+
+Coach overrides
+
+Manual edits
+
+Recurring schedule changes
+
+Vacation requests
+
+Time-off
+
+Accepted recommendations
+
+Rejected recommendations
+
+Ignored recommendations
+
+Revenue outcomes
+
+Scheduling outcomes
+
+Attendance outcomes
+
+Determine whether learning:
+
+Improves recommendations
+
+Remains organization-scoped
+
+Can be reviewed
+
+Can be corrected
+
+Can retire obsolete learning
+
+---
+
+## Recommendation Lifecycle
+
+Every recommendation should support:
+
+Detected
+
+↓
+
+Analyzed
+
+↓
+
+Prioritized
+
+↓
+
+Recommended
+
+↓
+
+Human Review
+
+↓
+
+Approved
+
+↓
+
+Executed
+
+↓
+
+Outcome Measured
+
+↓
+
+Learning
+
+↓
+
+Future Optimization
+
+Surface existing lifecycle information.
+
+Do not fabricate stages.
+
+---
+
+## Outcome Measurement
+
+Determine whether recommendations measure:
+
+Availability utilization
+
+Revenue improvement
+
+Coverage improvement
+
+Conflict reduction
+
+Coach satisfaction
+
+Coach retention
+
+Scheduling efficiency
+
+Unused hours reduced
+
+Observed business value
+
+Only use deterministic evidence.
+
+Never fabricate attribution.
+
+---
+
+## Explainability
+
+Every recommendation should explain:
+
+Why this recommendation exists
+
+Which availability signals influenced it
+
+Expected operational benefit
+
+Expected financial benefit
+
+Potential downside if ignored
+
+Confidence
+
+Recommended next action
+
+Whether similar recommendations succeeded previously
+
+Do not expose prompts.
+
+---
+
+## Human-in-the-Loop
+
+Verify every recommendation supports:
+
+Review
+
+Approve
+
+Reject
+
+Edit
+
+Undo
+
+Bulk approval
+
+Escalation
+
+No production availability changes should execute automatically unless explicitly configured.
+
+---
+
+## Cross-Agent Coordination
+
+Review coordinated workflows.
+
+Examples:
+
+Scheduling Agent detects availability gap
+
+↓
+
+Revenue Agent estimates associated revenue opportunity
+
+↓
+
+Client Success evaluates athlete impact
+
+↓
+
+AgentMail drafts coach communication
+
+↓
+
+Human approves
+
+↓
+
+Availability updated
+
+↓
+
+Outcome measured
+
+↓
+
+Hermes Learning improves future recommendations
+
+↓
+
+CEO Heartbeat receives workforce signal
+
+Surface collaboration instead of isolated recommendations.
+
+---
+
+## Organizational Learning
+
+Leadership should understand:
+
+Which availability patterns consistently work?
+
+Which recurring schedules fail?
+
+Which coaches frequently override availability?
+
+Which availability changes improve utilization?
+
+Which recurring blocks go unused?
+
+Which shortages repeat?
+
+When should additional coaching hours be added?
+
+When should availability be reduced?
+
+Surface learning without exposing prompts or internal reasoning.
+
+---
+
+## Operational Intelligence
+
+Determine whether leadership can answer:
+
+Where is availability limiting growth?
+
+Where is availability wasted?
+
+Which coaches should expand hours?
+
+Which coaches should reduce hours?
+
+Where are future shortages developing?
+
+Where is revenue constrained by availability?
+
+Availability should become the workforce planning engine of TrainEfficiency.
+
+---
+
+# Performance
+
+Review:
+
+Query efficiency
+
+Rendering
+
+Calendar performance
+
+Realtime updates
+
+Caching
+
+Polling
+
+Large organizations
+
+State management
+
+Component organization
+
+Type safety
+
+Maintainability
+
+Avoid unnecessary architecture changes.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Availability cards
+
+Weekly calendar
+
+Availability blocks
+
+Coverage indicators
+
+Capacity indicators
+
+Recommendation cards
+
+Business impact indicators
+
+Outcome indicators
+
+Priority badges
+
+Spacing
+
+Typography
+
+Accessibility
+
+Hover states
+
+Micro-interactions
+
+Maintain TrainEfficiency branding.
+
+Green = healthy availability
+
+Amber = watch
+
+Red = shortage
+
+Blue = AI recommendation
+
+---
+
+# Deliverables
+
+Return:
+
+1. UX Audit
+
+Strengths
+
+Weaknesses
+
+Improvements implemented
+
+Remaining opportunities
+
+---
+
+2. Functional Audit
+
+Interactive elements reviewed
+
+Issues found
+
+Fixes implemented
+
+Remaining risks
+
+---
+
+3. Availability Intelligence Audit
+
+Signals surfaced
+
+Signals missing
+
+Optimization opportunities
+
+Operational risks
+
+---
+
+4. Agent Intelligence & Closed-Loop Learning Assessment
+
+Learning loops
+
+Recommendation lifecycle
+
+Outcome measurement
+
+Explainability
+
+Cross-agent coordination
+
+Organizational learning
+
+Operational intelligence
+
+Recommended implementation order
+
+---
+
+5. Production Readiness Score
+
+Score:
+
+UX
+
+Functionality
+
+Availability Intelligence
+
+Agent Utilization
+
+Closed-Loop Learning
+
+Explainability
+
+Cross-Agent Coordination
+
+Outcome Measurement
+
+Performance
+
+Production Readiness
+
+---
+
+6. Implementation Summary
+
+Files changed
+
+Architecture changes
+
+Production-safe improvements
+
+Agent/AI improvements
+
+Remaining TODOs
+
+TypeScript/build results
+
+Availability should become the workforce planning engine of TrainEfficiency.
+
+It should continuously optimize coach availability, maximize scheduling flexibility, improve organizational capacity, coordinate multiple AI agents, measure workforce outcomes, and become smarter after every scheduling decision.
+
+One final instruction:
+
+Before introducing any new intelligence, determine whether it already exists in Scheduling Copilot, Coach Capacity, Opportunity Inbox, or Command Center. Reuse existing intelligence whenever possible instead of creating parallel logic. Availability should execute workforce planning—not duplicate the intelligence that already exists elsewhere.
