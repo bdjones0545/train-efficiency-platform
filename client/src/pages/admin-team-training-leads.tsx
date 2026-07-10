@@ -397,19 +397,466 @@ function urgencyBorderClass(level: UrgencyLevel): string {
   return "border-l-4 border-l-transparent";
 }
 
-// ─── B2B Lifecycle Bar ────────────────────────────────────────────────────────
-const B2B_STAGES = ["Captured", "Contacted", "Replied", "In Pipeline", "Active"];
+// ─── Enriched Prospect State Types ────────────────────────────────────────────
+interface ProspectEnrichedState {
+  hasDraft: boolean;
+  draftId: string | null;
+  draftApproved: boolean;
+  draftSentAt: string | null;
+  draftSubject: string | null;
+  outreachCount: number;
+  lastOutreachAt: string | null;
+}
 
-function getB2BStep(outreachStatus: string | null | undefined, hasDeal: boolean): number {
-  if (hasDeal) return 3;
-  if (outreachStatus === "Replied") return 2;
-  if (outreachStatus === "Contacted") return 1;
+// ─── TT Revenue Ops Data Shape ────────────────────────────────────────────────
+interface TTRevenueOpsData {
+  stageDistribution: Array<{ stage: string; count: number }>;
+  bottleneckStage: string | null;
+  sourceConversion: Array<{ source: string; total: number; converted: number; rate: number }>;
+  outreachMetrics: {
+    totalSent: number; totalReplied: number; totalBooked: number; totalConverted: number;
+    replyRate: number; bookingRate: number; avgDaysToReply: number | null;
+  };
+  pipelineValueCents: number;
+  stalledValueCents: number;
+}
+
+// ─── Scraped Lead Readiness ────────────────────────────────────────────────────
+type ReadinessState =
+  | "ready_for_outreach" | "needs_research" | "needs_contact"
+  | "draft_ready" | "awaiting_approval" | "awaiting_reply" | "replied" | "in_pipeline";
+
+function getReadinessState(
+  prospect: TeamTrainingProspect,
+  enriched?: ProspectEnrichedState | null,
+): ReadinessState {
+  const p = prospect as any;
+  const hasEmail = !!(prospect.decisionMakerEmail || prospect.contactEmail);
+  const hasContact = !!(prospect.decisionMakerName || prospect.contactName && prospect.contactName !== "unknown");
+  const hasOrgInfo = !!(prospect.websiteUrl || (prospect.organizationType && prospect.organizationType !== "unknown"));
+  if (prospect.outreachStatus === "Replied") return "replied";
+  if (prospect.outreachStatus === "Contacted" && enriched?.draftSentAt) return "awaiting_reply";
+  if (enriched?.draftApproved && !enriched.draftSentAt) return "awaiting_approval";
+  if (enriched?.hasDraft && !enriched.draftApproved) return "draft_ready";
+  if (!hasEmail) return "needs_contact";
+  if (!hasOrgInfo) return "needs_research";
+  return "ready_for_outreach";
+}
+
+const READINESS_CONFIG: Record<ReadinessState, { label: string; className: string }> = {
+  ready_for_outreach: { label: "Ready for Outreach", className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400" },
+  needs_research: { label: "Needs Research", className: "bg-amber-100 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400" },
+  needs_contact: { label: "Needs Contact", className: "bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-400" },
+  draft_ready: { label: "Draft Ready", className: "bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400" },
+  awaiting_approval: { label: "Awaiting Approval", className: "bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400" },
+  awaiting_reply: { label: "Awaiting Reply", className: "bg-sky-100 text-sky-700 dark:bg-sky-950/40 dark:text-sky-400" },
+  replied: { label: "Replied", className: "bg-teal-100 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400" },
+  in_pipeline: { label: "In Pipeline", className: "bg-violet-100 text-violet-700 dark:bg-violet-950/40 dark:text-violet-400" },
+};
+
+function ScrapedLeadReadiness({ prospect, enriched }: { prospect: TeamTrainingProspect; enriched?: ProspectEnrichedState | null }) {
+  const state = getReadinessState(prospect, enriched);
+  const cfg = READINESS_CONFIG[state];
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${cfg.className}`} data-testid={`badge-readiness-${prospect.id}`}>
+      {cfg.label}
+    </span>
+  );
+}
+
+// ─── TT Draft Ready Badge ─────────────────────────────────────────────────────
+function TTDraftReadyBadge({ enriched }: { enriched?: ProspectEnrichedState | null }) {
+  if (!enriched?.hasDraft) return null;
+  if (enriched.draftSentAt) return (
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-100 text-teal-700 dark:bg-teal-950/40 dark:text-teal-400">
+      <CheckCircle className="h-2.5 w-2.5" /> Sent
+    </span>
+  );
+  if (enriched.draftApproved) return (
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-purple-100 text-purple-700 dark:bg-purple-950/40 dark:text-purple-400">
+      <CheckCircle className="h-2.5 w-2.5" /> Approved
+    </span>
+  );
+  return (
+    <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-400">
+      <Zap className="h-2.5 w-2.5" /> Draft Ready
+    </span>
+  );
+}
+
+// ─── TT Draft Modal ───────────────────────────────────────────────────────────
+function TTDraftModal({ prospect, onClose, onSent }: {
+  prospect: TeamTrainingProspect;
+  onClose: () => void;
+  onSent?: () => void;
+}) {
+  const { toast } = useToast();
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
+  const [draftId, setDraftId] = useState<string | null>(null);
+  const [draftApproved, setDraftApproved] = useState(false);
+  const [draftSentAt, setDraftSentAt] = useState<string | null>(null);
+  const [loaded, setLoaded] = useState(false);
+
+  const displayEmail = prospect.decisionMakerEmail || prospect.contactEmail;
+  const displayName = prospect.decisionMakerName || prospect.contactName;
+
+  const { isLoading: draftLoading, error: draftError } = useQuery<any>({
+    queryKey: [`/api/admin/team-training/prospects/${prospect.id}/draft`],
+    refetchOnWindowFocus: false,
+    retry: false,
+    // @ts-ignore
+    select: (data: any) => {
+      if (data?.draft && !loaded) {
+        setDraftId(data.draft.id);
+        setSubject(data.draft.subject || "");
+        setBody(data.draft.body || "");
+        setDraftApproved(!!data.draft.approved);
+        setDraftSentAt(data.draft.sentAt || null);
+        setLoaded(true);
+      }
+      return data;
+    },
+  });
+
+  const approveMutation = useMutation({
+    mutationFn: async () => {
+      if (!draftId) throw new Error("No draft ID");
+      const res = await apiRequest("POST", `/api/admin/team-training/drafts/${draftId}/approve`, {});
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Approve failed");
+      return json;
+    },
+    onSuccess: () => {
+      setDraftApproved(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects/enriched"] });
+      toast({ title: "Draft approved", description: "Ready to send." });
+    },
+    onError: (err: Error) => toast({ title: "Approve failed", description: err.message, variant: "destructive" }),
+  });
+
+  const sendMutation = useMutation({
+    mutationFn: async () => {
+      if (!draftId) throw new Error("No draft ID");
+      const patchRes = await apiRequest("PATCH", `/api/admin/team-training/drafts/${draftId}`, { subject: subject.trim(), body: body.trim() });
+      if (!patchRes.ok) { const j = await patchRes.json(); throw new Error(j.message || "Save failed"); }
+      const res = await apiRequest("POST", `/api/admin/team-training/drafts/${draftId}/send`, {});
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Send failed");
+      return json;
+    },
+    onSuccess: () => {
+      setDraftSentAt(new Date().toISOString());
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects/enriched"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/stats"] });
+      toast({ title: "Email sent", description: `Sent to ${displayEmail} via governed send path.` });
+      onSent?.();
+    },
+    onError: (err: Error) => {
+      const isPolicy = err.message.toLowerCase().includes("pause") || err.message.toLowerCase().includes("cooldown") || err.message.toLowerCase().includes("opted out");
+      toast({ title: isPolicy ? "Send blocked by policy" : "Send failed", description: err.message, variant: "destructive" });
+    },
+  });
+
+  const generateMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", `/api/admin/team-training/prospects/${prospect.id}/generate-email`, {});
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.message || "Generate failed");
+      return json;
+    },
+    onSuccess: (data: any) => {
+      setDraftId(data.id);
+      setSubject(data.subject || "");
+      setBody(data.body || "");
+      setDraftApproved(false);
+      setDraftSentAt(null);
+      setLoaded(true);
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/drafts"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/prospects/enriched"] });
+      toast({ title: "Draft generated", description: "Review and edit before sending." });
+    },
+    onError: (err: Error) => toast({ title: "Generate failed", description: err.message, variant: "destructive" }),
+  });
+
+  const isSent = !!draftSentAt;
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent className="max-w-xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Mail className="h-4 w-4 text-blue-500" />
+            AgentMail Draft — {prospect.prospectName}
+          </DialogTitle>
+        </DialogHeader>
+
+        {draftLoading && (
+          <div className="flex items-center justify-center py-10 gap-2 text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span className="text-sm">Loading draft…</span>
+          </div>
+        )}
+
+        {!draftLoading && draftError && !loaded && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2 text-sm text-amber-600 py-2 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 rounded px-3">
+              <AlertCircle className="h-4 w-4 shrink-0" />
+              No draft exists yet for this prospect.
+            </div>
+            <Button
+              className="w-full gap-2"
+              onClick={() => generateMutation.mutate()}
+              disabled={generateMutation.isPending}
+              data-testid="button-generate-draft-modal"
+            >
+              {generateMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin" /> Generating…</> : <><Zap className="h-3.5 w-3.5" /> Generate AI Draft</>}
+            </Button>
+          </div>
+        )}
+
+        {isSent && (
+          <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 text-center space-y-2">
+            <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto" />
+            <p className="font-semibold text-emerald-700 dark:text-emerald-400">Email sent!</p>
+            <p className="text-xs text-muted-foreground">Sent to {displayEmail}. Draft logged in outreach history.</p>
+            <Button size="sm" variant="outline" onClick={onClose} className="mt-2">Close</Button>
+          </div>
+        )}
+
+        {!draftLoading && loaded && !isSent && (
+          <div className="space-y-4">
+            {draftApproved && (
+              <div className="flex items-center gap-2 text-xs text-purple-700 dark:text-purple-400 bg-purple-50 dark:bg-purple-950/30 rounded px-2.5 py-1.5 border border-purple-200 dark:border-purple-800">
+                <CheckCircle className="h-3 w-3 shrink-0" />
+                Draft approved — ready to send. Edits saved before send.
+              </div>
+            )}
+            {!draftApproved && (
+              <div className="flex items-center gap-2 text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/30 rounded px-2.5 py-1.5 border border-blue-200 dark:border-blue-800">
+                <Zap className="h-3 w-3 shrink-0" />
+                AI draft loaded — review and edit before approving and sending.
+              </div>
+            )}
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">To</p>
+              <div className="text-sm bg-muted/40 border rounded px-3 py-2 font-mono text-muted-foreground">
+                {displayEmail || <span className="italic text-red-500">No email — add contact first</span>}
+                {displayName && <span className="ml-2 text-[11px] text-muted-foreground/70">({displayName})</span>}
+              </div>
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Subject</p>
+              <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="text-sm h-9" data-testid="input-tt-draft-subject" />
+            </div>
+
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Body</p>
+              <Textarea
+                value={body}
+                onChange={(e) => setBody(e.target.value)}
+                className="text-sm min-h-[160px] resize-none font-mono text-xs"
+                data-testid="textarea-tt-draft-body"
+              />
+            </div>
+
+            <div className="flex gap-2 flex-wrap pt-1 border-t">
+              {!draftApproved ? (
+                <Button
+                  onClick={() => approveMutation.mutate()}
+                  disabled={approveMutation.isPending || !subject.trim() || !body.trim()}
+                  className="flex-1 gap-2 bg-purple-600 hover:bg-purple-700 text-white"
+                  data-testid="button-approve-tt-draft"
+                >
+                  {approveMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin" /> Approving…</> : <><CheckCircle className="h-3.5 w-3.5" /> Approve Draft</>}
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => sendMutation.mutate()}
+                  disabled={sendMutation.isPending || !displayEmail || !subject.trim() || !body.trim()}
+                  className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                  data-testid="button-send-tt-draft"
+                >
+                  {sendMutation.isPending ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</> : <><SendHorizonal className="h-3.5 w-3.5" /> Send via AgentMail</>}
+                </Button>
+              )}
+              <Button
+                variant="outline"
+                onClick={() => generateMutation.mutate()}
+                disabled={generateMutation.isPending || sendMutation.isPending}
+                className="gap-1.5"
+                data-testid="button-regenerate-tt-draft"
+              >
+                {generateMutation.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RotateCcw className="h-3.5 w-3.5" />}
+                Regenerate
+              </Button>
+              <Link href="/admin/ai-approvals">
+                <Button variant="ghost" size="sm" className="text-xs gap-1 text-muted-foreground" onClick={onClose} data-testid="link-all-tt-drafts">
+                  <ExternalLink className="h-3 w-3" /> All Drafts
+                </Button>
+              </Link>
+            </div>
+            <p className="text-[10px] text-muted-foreground">
+              Send is governed — checks emergency pause, DNC list, opt-out, and 7-day cooldown before delivering.
+            </p>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// ─── TT Revenue Ops Panel ─────────────────────────────────────────────────────
+function TTRevenueOpsPanel({ data }: { data: TTRevenueOpsData }) {
+  const fmtDollars = (cents: number) => cents >= 100000
+    ? `$${(cents / 100000).toFixed(1)}k`
+    : `$${Math.round(cents / 100).toLocaleString()}`;
+
+  const STAGE_LABELS: Record<string, string> = {
+    new_lead: "New Lead", qualified: "Qualified", outreached: "Contacted",
+    replied: "Replied", closed: "Closed", lost: "Lost",
+  };
+
+  const maxCount = Math.max(...data.stageDistribution.map((s) => s.count), 1);
+
+  return (
+    <Card className="p-4 mb-4 space-y-4 border-l-4 border-l-emerald-500" data-testid="card-tt-revenue-ops">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-emerald-500" />
+          <p className="text-sm font-semibold">B2B Revenue Operations</p>
+        </div>
+        <div className="flex gap-3 text-xs">
+          {data.bottleneckStage && (
+            <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
+              <AlertCircle className="h-3 w-3" />
+              Bottleneck: {STAGE_LABELS[data.bottleneckStage] || data.bottleneckStage}
+            </span>
+          )}
+          {data.pipelineValueCents > 0 && (
+            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+              {fmtDollars(data.pipelineValueCents)} pipeline
+            </span>
+          )}
+          {data.stalledValueCents > 0 && (
+            <span className="text-amber-600 dark:text-amber-400">
+              {fmtDollars(data.stalledValueCents)} stalled
+            </span>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-2">Stage Distribution</p>
+          <div className="space-y-1">
+            {data.stageDistribution.filter((s) => s.count > 0).map((s) => (
+              <div key={s.stage} className="flex items-center gap-2">
+                <span className={`text-[10px] w-20 shrink-0 ${s.stage === data.bottleneckStage ? "text-amber-600 dark:text-amber-400 font-medium" : "text-muted-foreground"}`}>
+                  {STAGE_LABELS[s.stage] || s.stage}{s.stage === data.bottleneckStage && " ⚠"}
+                </span>
+                <div className="flex-1 bg-muted/40 rounded-full h-1.5">
+                  <div
+                    className={`h-1.5 rounded-full ${s.stage === "lost" ? "bg-red-400" : s.stage === data.bottleneckStage ? "bg-amber-400" : "bg-emerald-500"}`}
+                    style={{ width: `${Math.round((s.count / maxCount) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-muted-foreground w-4 text-right">{s.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <p className="text-xs font-medium text-muted-foreground">Outreach Metrics</p>
+          {data.outreachMetrics.totalSent === 0 ? (
+            <p className="text-xs text-muted-foreground italic">No outreach sent yet</p>
+          ) : (
+            <div className="grid grid-cols-2 gap-1.5">
+              <div className="rounded border p-1.5 text-center bg-muted/20">
+                <p className="text-sm font-bold">{data.outreachMetrics.totalSent}</p>
+                <p className="text-[10px] text-muted-foreground">Sent</p>
+              </div>
+              <div className={`rounded border p-1.5 text-center ${data.outreachMetrics.replyRate >= 20 ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800" : "bg-muted/20"}`}>
+                <p className={`text-sm font-bold ${data.outreachMetrics.replyRate >= 20 ? "text-emerald-700 dark:text-emerald-400" : ""}`}>{data.outreachMetrics.replyRate}%</p>
+                <p className="text-[10px] text-muted-foreground">Reply Rate</p>
+              </div>
+              <div className="rounded border p-1.5 text-center bg-muted/20">
+                <p className="text-sm font-bold">{data.outreachMetrics.totalReplied}</p>
+                <p className="text-[10px] text-muted-foreground">Replied</p>
+              </div>
+              {data.outreachMetrics.avgDaysToReply !== null && (
+                <div className="rounded border p-1.5 text-center bg-muted/20">
+                  <p className="text-sm font-bold">{data.outreachMetrics.avgDaysToReply}d</p>
+                  <p className="text-[10px] text-muted-foreground">Avg to Reply</p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {data.sourceConversion.length > 0 && (
+        <div>
+          <p className="text-xs font-medium text-muted-foreground mb-1.5">Research Source Performance</p>
+          <div className="flex flex-wrap gap-1.5">
+            {data.sourceConversion.map((s) => (
+              <span key={s.source} className="text-[10px] bg-muted/40 border rounded px-2 py-0.5 text-muted-foreground">
+                {s.source} <span className="font-medium text-foreground">{s.total}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ─── B2B Lifecycle Bar ────────────────────────────────────────────────────────
+const B2B_STAGES = [
+  { key: "captured", label: "Captured" },
+  { key: "researched", label: "Researched" },
+  { key: "qualified", label: "Qualified" },
+  { key: "prepared", label: "Prepared" },
+  { key: "contacted", label: "Contacted" },
+  { key: "replied", label: "Replied" },
+  { key: "pipeline", label: "In Pipeline" },
+  { key: "active", label: "Active" },
+];
+
+function getB2BStep(
+  prospect: TeamTrainingProspect,
+  hasDeal: boolean,
+  enriched?: ProspectEnrichedState | null,
+): number {
+  if (hasDeal) return 6;
+  if (prospect.outreachStatus === "Replied") return 5;
+  if (enriched?.draftSentAt || prospect.outreachStatus === "Contacted") return 4;
+  if (enriched?.hasDraft || prospect.outreachStatus === "Approved") return 3;
+  const hasOrgInfo = !!(prospect.websiteUrl || (prospect.organizationType && prospect.organizationType !== "unknown"));
+  const hasContact = !!(prospect.decisionMakerEmail || prospect.contactEmail || prospect.decisionMakerName);
+  if (hasContact) return 2;
+  if (hasOrgInfo) return 1;
   return 0;
 }
 
-function B2BLifecycleBar({ outreachStatus, hasDeal }: { outreachStatus: string | null | undefined; hasDeal: boolean }) {
+function B2BLifecycleBar({
+  prospect,
+  hasDeal,
+  enriched,
+}: {
+  prospect: TeamTrainingProspect;
+  hasDeal: boolean;
+  enriched?: ProspectEnrichedState | null;
+}) {
+  const outreachStatus = prospect.outreachStatus;
   const isDnc = outreachStatus === "Do Not Contact" || outreachStatus === "Not Interested";
-  const currentStep = getB2BStep(outreachStatus, hasDeal);
+  const currentStep = getB2BStep(prospect, hasDeal, enriched);
 
   if (isDnc) {
     return (
@@ -421,12 +868,12 @@ function B2BLifecycleBar({ outreachStatus, hasDeal }: { outreachStatus: string |
   }
 
   return (
-    <div className="flex items-center gap-1">
+    <div className="flex items-center gap-0.5">
       {B2B_STAGES.map((stage, i) => {
         const isDone = i < currentStep;
         const isCurrent = i === currentStep;
         return (
-          <div key={stage} className="flex items-center gap-0.5 flex-1 min-w-0" title={stage}>
+          <div key={stage.key} className="flex items-center gap-0.5 flex-1 min-w-0" title={stage.label}>
             <div
               className={`h-1.5 flex-1 rounded-full transition-colors ${
                 isDone ? "bg-emerald-500" : isCurrent ? "bg-blue-500" : "bg-muted/60"
@@ -436,7 +883,7 @@ function B2BLifecycleBar({ outreachStatus, hasDeal }: { outreachStatus: string |
         );
       })}
       <span className="text-[10px] text-muted-foreground shrink-0 ml-1.5">
-        {B2B_STAGES[currentStep]}
+        {B2B_STAGES[currentStep]?.label ?? "Active"}
       </span>
     </div>
   );
@@ -447,6 +894,7 @@ function ProspectCard({
   onStatusChange,
   onEdit,
   onGenerateEmail,
+  onOpenDraftModal,
   onDelete,
   onMarkReplied,
   onDoNotContact,
@@ -454,11 +902,13 @@ function ProspectCard({
   onCreateDeal,
   enrichingId,
   existingDealProspectIds,
+  enriched,
 }: {
   prospect: TeamTrainingProspect;
   onStatusChange: (id: string, status: string) => void;
   onEdit: (p: TeamTrainingProspect) => void;
   onGenerateEmail: (p: TeamTrainingProspect) => void;
+  onOpenDraftModal: (p: TeamTrainingProspect) => void;
   onDelete: (id: string) => void;
   onMarkReplied: (id: string) => void;
   onDoNotContact: (id: string) => void;
@@ -466,6 +916,7 @@ function ProspectCard({
   onCreateDeal: (p: TeamTrainingProspect) => void;
   enrichingId: string | null;
   existingDealProspectIds: Set<string>;
+  enriched?: ProspectEnrichedState | null;
 }) {
   const [expanded, setExpanded] = useState(false);
   const stage = getClientStage(prospect);
@@ -528,32 +979,54 @@ function ProspectCard({
       </div>
 
       <ConfidenceBar score={prospect.confidenceScore || 50} />
-      <B2BLifecycleBar outreachStatus={prospect.outreachStatus} hasDeal={hasDeal} />
+      <B2BLifecycleBar prospect={prospect} hasDeal={hasDeal} enriched={enriched} />
+
+      {/* Readiness + draft state row */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <ScrapedLeadReadiness prospect={prospect} enriched={enriched} />
+        <TTDraftReadyBadge enriched={enriched} />
+        {enriched?.outreachCount ? (
+          <span className="text-[10px] text-muted-foreground">{enriched.outreachCount} outreach event{enriched.outreachCount !== 1 ? "s" : ""}</span>
+        ) : null}
+      </div>
 
       <div className="flex items-center gap-2 flex-wrap">
         {quality.hasEmail ? (
           <>
-            {(() => {
-              const p = prospect as any;
-              const score: number | null = p.contactConfidenceScore ?? null;
-              const isVerified = p.verificationStatus === "verified";
-              const isManual = p.contactSourceType === "manual";
-              const passesConfidence = score === null || score >= 0.65;
-              const canGenerate = passesConfidence || isVerified || isManual;
-              return (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  onClick={() => onGenerateEmail(prospect)}
-                  disabled={!canGenerate}
-                  title={!canGenerate ? "Contact confidence too low. Re-run discovery or enter manually." : undefined}
-                  data-testid={`button-generate-email-${prospect.id}`}
-                >
-                  <Mail className="h-3 w-3 mr-1" /> Generate Email
-                </Button>
-              );
-            })()}
+            {enriched?.hasDraft ? (
+              <Button
+                size="sm"
+                variant="outline"
+                className={`h-7 text-xs ${enriched.draftApproved ? "border-purple-400 text-purple-700 dark:text-purple-400" : "border-blue-400 text-blue-700 dark:text-blue-400"}`}
+                onClick={() => onOpenDraftModal(prospect)}
+                data-testid={`button-view-draft-${prospect.id}`}
+              >
+                <Mail className="h-3 w-3 mr-1" />
+                {enriched.draftSentAt ? "View Sent" : enriched.draftApproved ? "Ready to Send" : "Review Draft"}
+              </Button>
+            ) : (
+              (() => {
+                const p = prospect as any;
+                const score: number | null = p.contactConfidenceScore ?? null;
+                const isVerified = p.verificationStatus === "verified";
+                const isManual = p.contactSourceType === "manual";
+                const passesConfidence = score === null || score >= 0.65;
+                const canGenerate = passesConfidence || isVerified || isManual;
+                return (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    onClick={() => onOpenDraftModal(prospect)}
+                    disabled={!canGenerate}
+                    title={!canGenerate ? "Contact confidence too low. Re-run discovery or enter manually." : undefined}
+                    data-testid={`button-generate-email-${prospect.id}`}
+                  >
+                    <Mail className="h-3 w-3 mr-1" /> Draft Email
+                  </Button>
+                );
+              })()
+            )}
             <Button
               size="sm"
               variant="ghost"
@@ -1749,6 +2222,7 @@ export default function AdminTeamTrainingLeadsPage() {
     duplicates: { name: string }[];
   } | null>(null);
   const [generateEmailForProspect, setGenerateEmailForProspect] = useState<TeamTrainingProspect | null>(null);
+  const [draftModalProspect, setDraftModalProspect] = useState<TeamTrainingProspect | null>(null);
   const [estimatedValue, setEstimatedValue] = useState("500");
 
   // ─── Research Progress Panel state ───────────────────────────────────────
@@ -1781,6 +2255,16 @@ export default function AdminTeamTrainingLeadsPage() {
       stepTimers.current.push(t);
     });
   }, [clearStepTimers]);
+
+  const { data: enrichedMap } = useQuery<{ enriched: Record<string, ProspectEnrichedState> }>({
+    queryKey: ["/api/admin/team-training/prospects/enriched"],
+    staleTime: 30000,
+  });
+
+  const { data: ttRevenueOps } = useQuery<TTRevenueOpsData>({
+    queryKey: ["/api/admin/team-training/prospects/revenue-ops"],
+    staleTime: 60000,
+  });
 
   const { data: stats, isLoading: statsLoading } = useQuery<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>({
     queryKey: ["/api/admin/team-training/stats"],
@@ -2771,6 +3255,8 @@ export default function AdminTeamTrainingLeadsPage() {
             </div>
           )}
 
+          {ttRevenueOps && <TTRevenueOpsPanel data={ttRevenueOps} />}
+
           {prospectsError ? (
             <QueryErrorState
               title="Unable to load leads"
@@ -2794,6 +3280,7 @@ export default function AdminTeamTrainingLeadsPage() {
                   onStatusChange={(id, status) => updateProspectMutation.mutate({ id, data: { outreachStatus: status as TeamTrainingProspect["outreachStatus"] } })}
                   onEdit={openEditProspect}
                   onGenerateEmail={(p) => setGenerateEmailForProspect(p)}
+                  onOpenDraftModal={(p) => setDraftModalProspect(p)}
                   onDelete={(id) => deleteProspectMutation.mutate(id)}
                   onMarkReplied={(id) => markRepliedMutation.mutate(id)}
                   onDoNotContact={(id) => doNotContactMutation.mutate(id)}
@@ -2801,6 +3288,7 @@ export default function AdminTeamTrainingLeadsPage() {
                   onCreateDeal={(p) => createDealMutation.mutate(p)}
                   enrichingId={enrichingId}
                   existingDealProspectIds={existingDealProspectIds}
+                  enriched={enrichedMap?.enriched?.[p.id] ?? null}
                 />
               ))}
             </div>
@@ -3529,6 +4017,15 @@ export default function AdminTeamTrainingLeadsPage() {
             </div>
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* TT Draft Modal — inline per-prospect AgentMail modal */}
+      {draftModalProspect && (
+        <TTDraftModal
+          prospect={draftModalProspect}
+          onClose={() => setDraftModalProspect(null)}
+          onSent={() => setDraftModalProspect(null)}
+        />
       )}
 
       {/* Generate Email Confirmation */}

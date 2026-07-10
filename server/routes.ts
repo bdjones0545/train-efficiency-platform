@@ -11322,6 +11322,162 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
+  // GET /api/admin/team-training/prospects/enriched — per-prospect draft status + readiness for inline cards
+  app.get("/api/admin/team-training/prospects/enriched", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { db } = await import("./db");
+      const { sql: sql2 } = await import("drizzle-orm");
+
+      // Latest draft per prospect
+      const draftRows = await db.execute(sql2`
+        SELECT DISTINCT ON (prospect_id)
+          prospect_id, id AS draft_id, subject, approved, sent_at, created_at
+        FROM team_training_outreach_drafts
+        WHERE org_id = ${orgId}
+        ORDER BY prospect_id, created_at DESC
+      `).catch(() => [] as any);
+
+      // Outreach event counts per prospect
+      const eventRows = await db.execute(sql2`
+        SELECT prospect_id, COUNT(*) AS outreach_count, MAX(created_at) AS last_outreach_at
+        FROM prospect_outreach_events
+        WHERE org_id = ${orgId}
+        GROUP BY prospect_id
+      `).catch(() => [] as any);
+
+      const draftArr: any[] = Array.isArray(draftRows) ? draftRows : (draftRows as any)?.rows ?? [];
+      const eventArr: any[] = Array.isArray(eventRows) ? eventRows : (eventRows as any)?.rows ?? [];
+
+      const enriched: Record<string, {
+        hasDraft: boolean; draftId: string | null; draftApproved: boolean; draftSentAt: string | null;
+        draftSubject: string | null; outreachCount: number; lastOutreachAt: string | null;
+      }> = {};
+
+      for (const d of draftArr) {
+        enriched[d.prospect_id] = {
+          hasDraft: true,
+          draftId: d.draft_id,
+          draftApproved: !!d.approved,
+          draftSentAt: d.sent_at ? new Date(d.sent_at).toISOString() : null,
+          draftSubject: d.subject,
+          outreachCount: 0,
+          lastOutreachAt: null,
+        };
+      }
+      for (const e of eventArr) {
+        if (enriched[e.prospect_id]) {
+          enriched[e.prospect_id].outreachCount = Number(e.outreach_count);
+          enriched[e.prospect_id].lastOutreachAt = e.last_outreach_at ? new Date(e.last_outreach_at).toISOString() : null;
+        } else {
+          enriched[e.prospect_id] = {
+            hasDraft: false, draftId: null, draftApproved: false, draftSentAt: null, draftSubject: null,
+            outreachCount: Number(e.outreach_count),
+            lastOutreachAt: e.last_outreach_at ? new Date(e.last_outreach_at).toISOString() : null,
+          };
+        }
+      }
+
+      res.json({ enriched });
+    } catch (err: any) {
+      console.error("[TT prospects/enriched]", err);
+      res.status(500).json({ message: "Failed to fetch enriched data" });
+    }
+  });
+
+  // GET /api/admin/team-training/prospects/revenue-ops — B2B revenue ops metrics (mirrors athlete-leads/revenue-ops shape)
+  app.get("/api/admin/team-training/prospects/revenue-ops", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const { db } = await import("./db");
+      const { sql: sql2 } = await import("drizzle-orm");
+
+      const [stageCounts, draftMetrics, sourceRows, prospectRows] = await Promise.all([
+        db.execute(sql2`
+          SELECT outreach_status, COUNT(*) AS cnt FROM team_training_prospects
+          WHERE org_id = ${orgId} GROUP BY outreach_status
+        `).catch(() => [] as any),
+        db.execute(sql2`
+          SELECT
+            COUNT(*) AS total_drafts,
+            COUNT(*) FILTER (WHERE sent_at IS NOT NULL) AS total_sent,
+            COUNT(*) FILTER (WHERE approved AND sent_at IS NULL) AS pending_send
+          FROM team_training_outreach_drafts WHERE org_id = ${orgId}
+        `).catch(() => [] as any),
+        db.execute(sql2`
+          SELECT source_url, COUNT(*) AS cnt FROM team_training_prospects
+          WHERE org_id = ${orgId} AND source_url IS NOT NULL
+          GROUP BY source_url ORDER BY cnt DESC LIMIT 6
+        `).catch(() => [] as any),
+        db.execute(sql2`
+          SELECT outreach_status, estimated_value, created_at FROM team_training_prospects
+          WHERE org_id = ${orgId}
+        `).catch(() => [] as any),
+      ]);
+
+      const stageArr: any[] = Array.isArray(stageCounts) ? stageCounts : (stageCounts as any)?.rows ?? [];
+      const draftArr: any[] = Array.isArray(draftMetrics) ? draftMetrics : (draftMetrics as any)?.rows ?? [];
+      const sourceArr: any[] = Array.isArray(sourceRows) ? sourceRows : (sourceRows as any)?.rows ?? [];
+      const prospectArr: any[] = Array.isArray(prospectRows) ? prospectRows : (prospectRows as any)?.rows ?? [];
+
+      const STATUS_TO_STAGE: Record<string, string> = {
+        "New": "new_lead", "Needs Review": "new_lead", "Approved": "qualified",
+        "Contacted": "outreached", "Replied": "replied",
+        "Not Interested": "lost", "Do Not Contact": "lost",
+      };
+      const STAGE_ORDER = ["new_lead", "qualified", "outreached", "replied", "closed", "lost"];
+      const stageBucket: Record<string, number> = {};
+      for (const r of stageArr) {
+        const stage = STATUS_TO_STAGE[r.outreach_status] ?? "new_lead";
+        stageBucket[stage] = (stageBucket[stage] || 0) + Number(r.cnt);
+      }
+      const stageDistribution = STAGE_ORDER.map((stage) => ({ stage, count: stageBucket[stage] || 0 }));
+      const bottleneckStage = stageDistribution
+        .filter((s) => !["closed", "lost"].includes(s.stage))
+        .sort((a, b) => b.count - a.count)[0]?.stage ?? null;
+
+      const dm = draftArr[0] || {};
+      const totalSent = Number(dm.total_sent || 0);
+      const totalReplied = stageArr.filter((r: any) => r.outreach_status === "Replied").reduce((a: number, r: any) => a + Number(r.cnt), 0);
+      const outreachMetrics = {
+        totalSent,
+        totalReplied,
+        totalBooked: 0, // no meeting-booking column on TT prospects yet
+        totalConverted: stageArr.filter((r: any) => ["Replied"].includes(r.outreach_status)).reduce((a: number, r: any) => a + Number(r.cnt), 0),
+        replyRate: totalSent > 0 ? Math.round((totalReplied / totalSent) * 100) : 0,
+        bookingRate: 0,
+        avgDaysToReply: null as number | null,
+      };
+
+      // Source quality (using source_url domain as source label)
+      const sourceConversion = sourceArr.map((s: any) => {
+        let domain = "organic";
+        try { domain = new URL(s.source_url).hostname.replace("www.", ""); } catch {}
+        return { source: domain, total: Number(s.cnt), converted: 0, rate: 0 };
+      });
+
+      // Pipeline value (sum estimatedValue for non-lost prospects)
+      const pipelineValueCents = prospectArr
+        .filter((p: any) => !["Not Interested", "Do Not Contact"].includes(p.outreach_status))
+        .reduce((acc: number, p: any) => acc + (Number(p.estimated_value) * 100 || 0), 0);
+
+      const stalledValueCents = prospectArr
+        .filter((p: any) => p.outreach_status === "Contacted")
+        .reduce((acc: number, p: any) => acc + (Number(p.estimated_value) * 100 || 0), 0);
+
+      res.json({ stageDistribution, bottleneckStage, sourceConversion, outreachMetrics, pipelineValueCents, stalledValueCents });
+    } catch (err: any) {
+      console.error("[TT revenue-ops]", err);
+      res.status(500).json({ message: "Failed to fetch revenue ops" });
+    }
+  });
+
   // Create prospect manually
   app.post("/api/admin/team-training/prospects", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
@@ -11380,6 +11536,59 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       res.json({ ok: true });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/admin/team-training/prospects/:id/draft — get latest active draft (inline modal pattern, mirrors athlete-leads/:id/draft)
+  app.get("/api/admin/team-training/prospects/:id/draft", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
+      const orgId = profile.organizationId;
+      const prospectId = req.params.id;
+
+      const prospect = await storage.getTeamTrainingProspect(prospectId);
+      if (!prospect || prospect.orgId !== orgId) return res.status(404).json({ message: "Prospect not found" });
+
+      const { db } = await import("./db");
+      const { sql: sql2 } = await import("drizzle-orm");
+
+      // Return the latest draft (prioritize unsent over sent)
+      const rows = await db.execute(sql2`
+        SELECT id, prospect_id, org_id, subject, body, approved, approved_at, sent_at, created_at
+        FROM team_training_outreach_drafts
+        WHERE org_id = ${orgId} AND prospect_id = ${prospectId}
+        ORDER BY sent_at NULLS FIRST, created_at DESC
+        LIMIT 1
+      `).catch(() => [] as any);
+
+      const arr: any[] = Array.isArray(rows) ? rows : (rows as any)?.rows ?? [];
+      const draft = arr[0] ?? null;
+
+      if (!draft) return res.status(404).json({ message: "No draft found — generate one first." });
+
+      res.json({
+        draft: {
+          id: draft.id,
+          prospectId: draft.prospect_id,
+          subject: draft.subject,
+          body: draft.body,
+          approved: draft.approved,
+          approvedAt: draft.approved_at,
+          sentAt: draft.sent_at,
+          createdAt: draft.created_at,
+        },
+        prospect: {
+          id: prospect.id,
+          prospectName: prospect.prospectName,
+          contactEmail: prospect.decisionMakerEmail || prospect.contactEmail,
+          contactName: prospect.decisionMakerName || prospect.contactName,
+        },
+      });
+    } catch (err: any) {
+      console.error("[TT prospects/:id/draft]", err);
+      res.status(500).json({ message: "Failed to load draft" });
     }
   });
 

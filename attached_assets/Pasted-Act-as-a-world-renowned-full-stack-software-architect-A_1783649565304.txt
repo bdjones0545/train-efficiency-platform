@@ -1,0 +1,638 @@
+Act as a world-renowned full-stack software architect, AI systems engineer, revenue operations expert, B2B CRM architect, AgentMail product specialist, and Apple-level UX designer.
+
+We are revisiting the existing **Team Training Leads** page.
+
+The previous audit improved the B2B pipeline, urgency signals, lifecycle visibility, Revenue Agent intelligence, sorting, pipeline value, and priority actions.
+
+However, it missed a major requirement:
+
+**Team Training Leads must have AgentMail and lead-intelligence parity with Athlete Leads.**
+
+A large portion of Team Training Leads are sourced through outbound research and internet scraping. This means the page is not only a B2B CRM. It is also an outbound sales operating system.
+
+Do not invent a second outbound architecture.
+
+Do not create parallel AgentMail logic.
+
+Do not redesign the page.
+
+Do not remove the improvements already implemented.
+
+Use the existing **Athlete Leads implementation as the reference architecture** and bring all applicable intelligence, communication, outcome tracking, and AgentMail capabilities into Team Training Leads.
+
+Preserve the differences between B2C athlete acquisition and B2B organization sales.
+
+---
+
+# Primary Objective
+
+Create production-safe feature parity between:
+
+* Athlete Leads
+* Team Training Leads
+
+Reuse the same underlying systems wherever possible:
+
+* AgentMail
+* Lead intelligence profiles
+* Communication outcomes
+* Draft readiness
+* Suggested actions
+* Follow-up timing
+* Lifecycle history
+* Stage transitions
+* Revenue operations analytics
+* Learning signals
+* Human approval workflows
+
+The Team Training Leads page should become the B2B outbound revenue operations system for schools, teams, clubs, athletic departments, and organizations.
+
+---
+
+# Step 1 — Perform a Direct Parity Audit
+
+Inspect the current implementation of:
+
+* Athlete Leads page
+* Team Training Leads page
+* Athlete Leads enriched endpoint
+* Athlete Leads revenue operations endpoint
+* AgentMail lead workflows
+* Communication outcome tables
+* Lead intelligence profile services
+* Sequence and follow-up services
+* Existing Team Training endpoints
+
+Create a concrete parity matrix.
+
+For every Athlete Leads capability, classify it as:
+
+* Already present in Team Training Leads
+* Applicable and should be reused
+* Requires B2B terminology adaptation
+* Not applicable to B2B
+* Requires backend support
+
+Do not guess. Trace the actual components, endpoints, services, schemas, and tables.
+
+---
+
+# AgentMail Integration
+
+AgentMail must become a first-class workflow on Team Training Leads.
+
+Bring over all applicable Athlete Leads functionality, including:
+
+* Draft Ready indicator
+* AI-generated outreach readiness
+* Suggested next action
+* Suggested next-action reason
+* Draft approval
+* Draft rejection
+* Draft editing
+* Draft regeneration
+* Communication status
+* Last outreach timestamp
+* Next recommended outreach timing
+* Reply status
+* Meeting-booked status
+* Outcome status
+* Communication history
+* Agent attribution
+* Explainability
+* Human-in-the-loop controls
+
+Where existing Team Training AgentMail workflows already exist, reuse and consolidate them rather than duplicating behavior.
+
+No email should appear sent unless the real send workflow completed.
+
+No reply, open, meeting, or outcome state may be fabricated.
+
+---
+
+# Outbound Sequence Intelligence
+
+Because many Team Training Leads are scraped or researched outbound prospects, surface the real outbound sequence state for each organization where data exists.
+
+This should include, when supported:
+
+* Sequence name
+* Current touch
+* Total touches
+* Last touch
+* Next scheduled touch
+* Awaiting draft approval
+* Draft ready
+* Sent
+* Awaiting reply
+* Replied
+* Meeting booked
+* Sequence paused
+* Sequence completed
+* Sequence stopped due to reply
+
+If this infrastructure already exists for Athlete Leads or AgentMail, reuse it.
+
+Do not create a new sequence engine.
+
+Do not infer a sequence state from incomplete data unless the rule is deterministic and clearly documented.
+
+---
+
+# B2B Lead Intelligence
+
+Mirror the Athlete Leads intelligence architecture and adapt the terminology for organizations.
+
+Surface applicable fields such as:
+
+* AI summary
+* Qualification summary
+* Qualification reason
+* Suggested next action
+* Suggested next-action reason
+* AI tags
+* Follow-up timing
+* Draft readiness
+* Outcome status
+* Pipeline stage
+* Stage transition history
+* Last intelligence update
+* Contact verification status
+* Research completeness
+
+Replace athlete-specific concepts with organization-specific concepts.
+
+Examples:
+
+* Evaluation becomes Discovery Meeting, Demo, or Consultation
+* Enrollment becomes Agreement or Active Organization
+* Athlete source becomes Organization source or Research source
+* Athlete conversion becomes Organization activation
+
+---
+
+# Scraped Lead Readiness
+
+Since many leads originate from internet research or scraping, every organization should clearly communicate whether it is ready for outbound action.
+
+Create an honest readiness assessment using only real stored data.
+
+Potential readiness signals:
+
+* Organization name present
+* Organization type known
+* Website found
+* Primary contact identified
+* Contact role identified
+* Email present
+* Email verified, if verification exists
+* Phone present
+* Sport or program known
+* Research summary available
+* Sequence selected
+* Personalization context available
+* AgentMail draft ready
+
+Surface a compact state such as:
+
+* Ready for Outreach
+* Needs Research
+* Needs Contact
+* Needs Verification
+* Draft Ready
+* Awaiting Approval
+* Awaiting Reply
+
+Do not mark an email as verified unless an actual verification field or service supports it.
+
+Do not invent school size, sports, decision makers, or organizational facts.
+
+---
+
+# B2B Lifecycle Parity
+
+Reuse the same lifecycle architecture as Athlete Leads, but adapt it correctly for B2B.
+
+Recommended lifecycle:
+
+Captured / Imported
+
+↓
+
+Researched
+
+↓
+
+Qualified
+
+↓
+
+Outreach Prepared
+
+↓
+
+Outreach Sent
+
+↓
+
+Reply
+
+↓
+
+Discovery Meeting
+
+↓
+
+Proposal
+
+↓
+
+Negotiation
+
+↓
+
+Agreement
+
+↓
+
+Active Organization
+
+↓
+
+Expansion
+
+↓
+
+Renewal
+
+Only surface stages supported by real fields or deterministic mappings.
+
+Maintain a visible lifecycle bar and stage-transition history.
+
+Every transition should show, when available:
+
+* Previous stage
+* New stage
+* Timestamp
+* Source
+* Reason
+* User or agent responsible
+
+---
+
+# Revenue Operations Parity
+
+Bring over the applicable Revenue Operations intelligence from Athlete Leads.
+
+Team Training Leads should show:
+
+* Pipeline stage distribution
+* Bottleneck detection
+* Outreach sent
+* Replies
+* Reply rate
+* Meetings booked
+* Meeting-booking rate
+* Proposals created
+* Agreements won
+* Win rate
+* Average days to reply
+* Average days to close
+* Pipeline value
+* Won revenue
+* Source-to-conversion performance
+* Research-source performance
+* Sequence performance, if available
+* Stalled pipeline value
+* Associated revenue at risk
+
+Use real data only.
+
+Do not fabricate win probability, lifetime value, or causal attribution.
+
+Use wording such as:
+
+* Associated pipeline value
+* Observed reply rate
+* Observed conversion rate
+* Recorded won revenue
+* Stalled pipeline value
+
+---
+
+# Human-in-the-Loop
+
+Verify that Team Training AgentMail workflows allow users to:
+
+* Review
+* Edit
+* Approve
+* Reject
+* Regenerate
+* Save
+* Send through the existing governed send path
+* Pause a sequence
+* Stop a sequence
+* Resume a sequence where supported
+* Dismiss a recommendation
+* Undo where supported
+
+No outbound communication should bypass the existing approval and send-governance model unless the organization has explicitly enabled autonomous sending.
+
+Respect all existing send policies, approval policies, kill switches, and permissions.
+
+---
+
+# Agent Coordination
+
+Make the collaboration model visible without clutter.
+
+Expected workflow:
+
+Growth Agent
+
+↓
+
+Research / Lead Capture
+
+↓
+
+Revenue Agent prioritizes the organization
+
+↓
+
+AgentMail prepares personalized outreach
+
+↓
+
+Human reviews and approves
+
+↓
+
+Communication outcome recorded
+
+↓
+
+Scheduling Agent supports discovery meeting or demo
+
+↓
+
+Proposal / Negotiation
+
+↓
+
+Agreement
+
+↓
+
+Client Success prepares onboarding
+
+↓
+
+Outcome measured
+
+↓
+
+Hermes Learning improves future prioritization and outreach
+
+↓
+
+CEO Heartbeat receives pipeline health signals
+
+Clarify which agent owns each action.
+
+Avoid duplicate recommendations between Revenue Agent, AgentMail, and the Priority Actions queue.
+
+---
+
+# AgentMail Learning and Closed-Loop Intelligence
+
+Audit whether the B2B workflow learns from:
+
+* Draft approvals
+* Draft rejections
+* Manual draft edits
+* Sequence pauses
+* Sequence stops
+* Replies
+* No replies
+* Meeting bookings
+* Proposal outcomes
+* Won and lost deals
+* Organization type
+* Contact role
+* Research source
+* Follow-up timing
+* Outreach touch number
+
+Verify the loop:
+
+Research
+
+↓
+
+Recommendation
+
+↓
+
+Draft
+
+↓
+
+Human Review
+
+↓
+
+Send
+
+↓
+
+Reply or No Reply
+
+↓
+
+Meeting / Proposal / Agreement Outcome
+
+↓
+
+Outcome Measurement
+
+↓
+
+Learning
+
+↓
+
+Improved Future Outreach
+
+Do not claim Hermes consumes a signal unless the exact backend path is verified.
+
+If actions are merely persisted and available for learning, state that precisely.
+
+---
+
+# Explainability
+
+Every AgentMail or revenue recommendation should explain:
+
+* Why this organization was prioritized
+* Which real signals influenced the recommendation
+* Why outreach is recommended now
+* Which contact or role is being targeted
+* Which sequence or touch is being used
+* What previous communication exists
+* Expected next step
+* Potential downside if ignored
+* Confidence, only when supported
+* Which agent owns the recommendation
+
+Do not expose prompts, hidden reasoning, or chain-of-thought.
+
+---
+
+# Functional Audit
+
+Verify every relevant interaction:
+
+* Generate AgentMail draft
+* Load existing draft
+* Edit draft
+* Approve draft
+* Reject draft
+* Regenerate draft
+* Send through governed path
+* Execute Revenue Agent action
+* Dismiss Revenue Agent action
+* Run Revenue Agent
+* Load daily brief
+* Advance lifecycle
+* Schedule meeting
+* Create proposal
+* Convert to active organization
+* Search
+* Sort
+* Filter
+* Expand lead
+* Archive
+* Delete
+* Bulk actions, where supported
+
+For every action, confirm:
+
+* Real endpoint or mutation
+* Permissions
+* Loading state
+* Success state
+* Error state
+* Cache invalidation
+* Audit logging
+* No dead button
+* No toast-only fake completion
+
+---
+
+# Implementation Rules
+
+* Preserve all existing Team Training Leads improvements.
+* Reuse Athlete Leads components or shared components where practical.
+* Extract shared B2C/B2B lead components only when it reduces duplication safely.
+* Avoid a broad refactor if surgical reuse is safer.
+* Reuse existing AgentMail endpoints, services, tables, and send governance.
+* Do not create duplicate lead intelligence tables unless absolutely necessary.
+* Do not introduce mock data.
+* Do not weaken authentication, authorization, tenant isolation, or send controls.
+* Keep all intelligence organization-scoped.
+* Maintain TrainEfficiency’s neon green and black visual system.
+* Run TypeScript and relevant build checks after implementation.
+
+---
+
+# Deliverables
+
+Return:
+
+## 1. Athlete Leads → Team Training Leads Parity Matrix
+
+List every applicable capability and its implementation status.
+
+## 2. AgentMail Integration Assessment
+
+What existed
+What was missing
+What was reused
+What was implemented
+What remains
+
+## 3. Scraped Lead Readiness Assessment
+
+Research completeness
+Contact readiness
+Verification state
+Sequence readiness
+Draft readiness
+Remaining data gaps
+
+## 4. B2B Revenue Lifecycle Assessment
+
+Lifecycle stages
+Stage mappings
+Transition history
+Stalled stages
+Bottlenecks
+
+## 5. Agent Intelligence & Closed-Loop Learning Assessment
+
+Agent ownership
+Learning signals
+Communication outcomes
+Recommendation lifecycle
+Cross-agent coordination
+Verified learning paths
+Unverified assumptions
+
+## 6. Functional Audit
+
+All interactions reviewed
+Dead or fake actions found
+Fixes implemented
+Remaining risks
+
+## 7. Production Readiness Score
+
+Score:
+
+* UX
+* Functionality
+* AgentMail Integration
+* Outbound Sequence Intelligence
+* Scraped Lead Readiness
+* B2B Revenue Intelligence
+* Explainability
+* Human-in-the-Loop
+* Closed-Loop Learning
+* Cross-Agent Coordination
+* Outcome Measurement
+* Performance
+* Overall Production Readiness
+
+## 8. Implementation Summary
+
+Files changed
+Endpoints reused
+Endpoints added only if unavoidable
+Shared components created
+Architecture changes
+Remaining TODOs
+TypeScript/build results
+
+The final result should make Team Training Leads feel like the B2B counterpart to Athlete Leads:
+
+One shared revenue intelligence platform.
+
+Two distinct acquisition workflows.
+
+Athlete Leads manages B2C athlete enrollment.
+
+Team Training Leads manages researched and scraped B2B organization outreach, meetings, proposals, agreements, expansion, and renewal.
+
+AgentMail must be deeply integrated into both.
