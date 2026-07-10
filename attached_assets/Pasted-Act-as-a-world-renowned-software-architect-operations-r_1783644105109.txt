@@ -1,0 +1,776 @@
+Act as a world-renowned software architect, operations researcher, AI systems engineer, enterprise SaaS product designer, Apple-level UX specialist, and scheduling optimization expert.
+
+We are conducting a production-grade page-by-page audit of TrainEfficiency.
+
+# Page
+
+**Group Sessions**
+
+This page is NOT simply a list of sessions.
+
+It is the operational management and optimization engine for recurring and one-off group training.
+
+It should continuously help organizations:
+
+• Fill sessions
+• Increase attendance
+• Maximize revenue
+• Balance coach workload
+• Improve athlete experience
+• Reduce cancellations
+• Detect scheduling opportunities
+• Learn from every scheduling outcome
+
+Do NOT redesign the page.
+
+Do NOT remove existing functionality.
+
+Do NOT create fake AI.
+
+Do NOT invent metrics.
+
+Do NOT add placeholder actions.
+
+Preserve the existing scheduling architecture, recommendation engine, backend APIs, and TrainEfficiency design system.
+
+Improve intelligence.
+
+Improve explainability.
+
+Improve measurable business value.
+
+---
+
+# Core Mission
+
+Within five seconds the user should know:
+
+Which sessions are healthy?
+
+Which sessions need attention?
+
+Which sessions are underfilled?
+
+Which sessions are oversubscribed?
+
+Which sessions should be expanded?
+
+Which sessions should be merged?
+
+Which sessions should be cancelled?
+
+Which sessions have waitlists?
+
+Which sessions represent the largest revenue opportunity?
+
+What should leadership do next?
+
+---
+
+# Session Optimization Lifecycle
+
+Review every intelligent workflow.
+
+Verify support for:
+
+Observe
+
+↓
+
+Detect Opportunity
+
+↓
+
+Analyze
+
+↓
+
+Prioritize
+
+↓
+
+Recommend
+
+↓
+
+Human Review
+
+↓
+
+Approve
+
+↓
+
+Execute
+
+↓
+
+Measure
+
+↓
+
+Learn
+
+↓
+
+Future Optimization
+
+Surface existing stages.
+
+Do not fabricate lifecycle data.
+
+Recommend production-safe implementation where gaps exist.
+
+---
+
+# UX Audit
+
+Audit:
+
+Information hierarchy
+
+Session cards
+
+Calendar views
+
+Capacity visualization
+
+Attendance visualization
+
+Revenue visualization
+
+Coach assignment
+
+Waitlist visibility
+
+Search
+
+Filters
+
+Sorting
+
+Bulk actions
+
+Status badges
+
+Typography
+
+Spacing
+
+Accessibility
+
+Loading
+
+Errors
+
+Success
+
+Empty states
+
+Responsive behavior
+
+The page should feel like an operational control center for group training.
+
+---
+
+# Functional Audit
+
+Inspect every interaction.
+
+Session cards
+
+Create session
+
+Edit session
+
+Duplicate session
+
+Archive session
+
+Cancel session
+
+Merge session
+
+Expand capacity
+
+Reduce capacity
+
+Waitlist actions
+
+Coach assignment
+
+Attendance actions
+
+Bulk actions
+
+Filters
+
+Search
+
+Sorting
+
+Calendar navigation
+
+Export
+
+Dialogs
+
+Drawers
+
+Recommendations
+
+Determine:
+
+Does it work?
+
+Is it connected to real backend functionality?
+
+Are permissions respected?
+
+Does it support loading, success, failure, and undo?
+
+Are there dead buttons?
+
+Are duplicate workflows present?
+
+Fix production-safe issues only.
+
+---
+
+# Group Session Intelligence Audit
+
+Determine whether the page surfaces:
+
+Fill percentage
+
+Remaining spots
+
+Waitlist size
+
+Revenue generated
+
+Associated revenue opportunity
+
+Coach utilization
+
+Session profitability
+
+Attendance trend
+
+Cancellation trend
+
+No-show trend
+
+Demand trend
+
+Peak booking windows
+
+Best-performing sessions
+
+Worst-performing sessions
+
+Future demand
+
+Future capacity shortage
+
+Recommended expansion
+
+Recommended reduction
+
+Recommended merge
+
+Recommended cancellation
+
+Recommended coach reassignment
+
+Only use deterministic intelligence.
+
+---
+
+# Agent Utilization Audit
+
+Review participation from:
+
+Scheduling Agent
+
+Revenue Agent
+
+Retention Agent
+
+Client Success Agent
+
+Growth Agent
+
+AgentMail
+
+Athlete Intelligence
+
+CEO Heartbeat
+
+Hermes Learning
+
+Attention Inbox
+
+Determine:
+
+Which agent owns each recommendation?
+
+Should multiple agents collaborate?
+
+Should Revenue Agent estimate financial impact?
+
+Should Scheduling Agent recommend capacity changes?
+
+Should AgentMail draft waitlist outreach?
+
+Should Client Success identify athletes needing personal communication?
+
+Should CEO Heartbeat receive operational signals?
+
+Clarify ownership.
+
+Avoid duplicate recommendations.
+
+---
+
+# Agent Intelligence & Closed-Loop Learning Assessment
+
+Review every intelligent workflow.
+
+---
+
+## Learning Loop
+
+Determine whether the page learns from:
+
+Session fills
+
+Waitlist conversions
+
+Capacity changes
+
+Coach changes
+
+Attendance
+
+No-shows
+
+Cancellations
+
+Manual overrides
+
+Accepted recommendations
+
+Rejected recommendations
+
+Ignored recommendations
+
+Determine whether learning:
+
+Improves recommendations
+
+Remains organization-scoped
+
+Can be reviewed
+
+Can be corrected
+
+Can retire obsolete learning
+
+---
+
+## Recommendation Lifecycle
+
+Every recommendation should support:
+
+Detected
+
+↓
+
+Analyzed
+
+↓
+
+Prioritized
+
+↓
+
+Recommended
+
+↓
+
+Human Review
+
+↓
+
+Approved
+
+↓
+
+Executed
+
+↓
+
+Outcome Measured
+
+↓
+
+Learning
+
+↓
+
+Future Optimization
+
+Surface existing lifecycle information.
+
+Do not fabricate stages.
+
+---
+
+## Outcome Measurement
+
+Determine whether recommendations measure:
+
+Fill rate improvement
+
+Revenue improvement
+
+Waitlist conversion
+
+Attendance improvement
+
+No-show reduction
+
+Coach utilization improvement
+
+Session profitability
+
+Observed business value
+
+Time saved
+
+Only use deterministic evidence.
+
+Never fabricate attribution.
+
+---
+
+## Explainability
+
+Every recommendation should explain:
+
+Why this recommendation exists
+
+Which scheduling signals influenced it
+
+Expected operational impact
+
+Expected financial impact
+
+Expected athlete impact
+
+Potential downside if ignored
+
+Confidence
+
+Recommended next action
+
+Whether similar recommendations succeeded previously
+
+No prompt exposure.
+
+---
+
+## Human-in-the-Loop
+
+Verify every recommendation supports:
+
+Review
+
+Approve
+
+Reject
+
+Edit
+
+Undo
+
+Bulk approval
+
+Escalation
+
+No production session changes should occur without intended human approval.
+
+---
+
+## Cross-Agent Coordination
+
+Review coordinated workflows.
+
+Examples:
+
+Scheduling Agent detects underfilled session
+
+↓
+
+Revenue Agent estimates associated revenue opportunity
+
+↓
+
+AgentMail drafts outreach
+
+↓
+
+Client Success identifies priority athletes
+
+↓
+
+Human approves
+
+↓
+
+Session fills
+
+↓
+
+Outcome measured
+
+↓
+
+Hermes Learning improves future recommendations
+
+↓
+
+CEO Heartbeat receives operational signal
+
+Surface collaboration rather than isolated recommendations.
+
+---
+
+## Organizational Learning
+
+Leadership should understand:
+
+Which session types consistently fill?
+
+Which sessions repeatedly underperform?
+
+Which coaches achieve the highest fill rates?
+
+Which session times produce the highest attendance?
+
+Which recommendations consistently succeed?
+
+Which capacity strategies fail?
+
+Which cancellation patterns repeat?
+
+Which waitlist strategies perform best?
+
+Surface learning without exposing prompts or internal reasoning.
+
+---
+
+## Operational Intelligence
+
+Determine whether leadership can answer:
+
+Where is revenue being lost?
+
+Where should capacity increase?
+
+Where should capacity decrease?
+
+Where should coaches change?
+
+Where are cancellations increasing?
+
+Where are athletes dropping?
+
+Which sessions deserve expansion?
+
+Which sessions should be retired?
+
+Group Sessions should become the operational optimization engine for recurring programming.
+
+---
+
+# Performance
+
+Review:
+
+Large organizations
+
+Query efficiency
+
+Realtime updates
+
+Caching
+
+Pagination
+
+Rendering
+
+Filtering
+
+Sorting
+
+State management
+
+Component organization
+
+Type safety
+
+Maintainability
+
+Avoid unnecessary architecture rewrites.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Session cards
+
+Capacity indicators
+
+Fill bars
+
+Revenue indicators
+
+Coach badges
+
+Waitlist indicators
+
+Recommendation cards
+
+Outcome indicators
+
+Priority badges
+
+Animations
+
+Spacing
+
+Typography
+
+Hover states
+
+Accessibility
+
+Maintain TrainEfficiency branding.
+
+Green = healthy
+
+Amber = attention
+
+Red = intervention
+
+Blue = AI recommendation
+
+---
+
+# Deliverables
+
+Return:
+
+1. UX Audit
+
+Strengths
+
+Weaknesses
+
+Improvements implemented
+
+Remaining opportunities
+
+---
+
+2. Functional Audit
+
+Interactive elements reviewed
+
+Issues found
+
+Fixes implemented
+
+Remaining risks
+
+---
+
+3. Group Session Intelligence Audit
+
+Signals surfaced
+
+Signals missing
+
+Optimization opportunities
+
+Operational risks
+
+---
+
+4. Agent Intelligence & Closed-Loop Learning Assessment
+
+Learning loops
+
+Recommendation lifecycle
+
+Outcome measurement
+
+Explainability
+
+Cross-agent coordination
+
+Organizational learning
+
+Operational intelligence
+
+Recommended implementation order
+
+---
+
+5. Production Readiness Score
+
+Score:
+
+UX
+
+Functionality
+
+Session Intelligence
+
+Agent Utilization
+
+Closed-Loop Learning
+
+Explainability
+
+Cross-Agent Coordination
+
+Outcome Measurement
+
+Performance
+
+Production Readiness
+
+---
+
+6. Implementation Summary
+
+Files changed
+
+Architecture changes
+
+Production-safe improvements
+
+Agent/AI improvements
+
+Remaining TODOs
+
+TypeScript/build results
+
+This page should become the world's best operational management system for group training.
+
+It should continuously optimize session utilization, maximize revenue, improve athlete experience, coordinate AI agents, measure outcomes, and become smarter after every scheduling decision.
