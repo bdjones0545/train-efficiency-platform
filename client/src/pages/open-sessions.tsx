@@ -22,7 +22,9 @@ import {
   Calendar, Clock, Filter, MapPin, Trash2, Users, UserPlus, UserMinus,
   Plus, X, ChevronLeft, ChevronRight, CalendarDays, LayoutGrid,
   List, AlertCircle, CheckCircle2, Clock3, SlidersHorizontal,
-  TrendingUp, DollarSign, Sparkles, Star, Zap, Target
+  TrendingUp, DollarSign, Sparkles, Star, Zap, Target,
+  ArrowUpRight, Brain, AlertTriangle, BarChart2, Activity,
+  ChevronDown, ChevronsUpDown, Eye, RefreshCw
 } from "lucide-react";
 import { useState, useMemo } from "react";
 import {
@@ -203,6 +205,8 @@ function CoachFillCampaignButton({ session }: { session: OpenSession }) {
     onError: () => toast({ title: "Failed to generate campaign", variant: "destructive" }),
   });
 
+  const revenueImpact = openSpots * (session.service?.priceCents || 0);
+
   return (
     <>
       <Button
@@ -217,7 +221,7 @@ function CoachFillCampaignButton({ session }: { session: OpenSession }) {
         {generateMutation.isPending ? "Generating…" : `Generate Fill Campaign (${openSpots} spots)`}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 text-primary" />
@@ -225,26 +229,54 @@ function CoachFillCampaignButton({ session }: { session: OpenSession }) {
             </DialogTitle>
           </DialogHeader>
           {draft && (
-            <div className="space-y-3 text-sm">
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Subject</p>
-                <p className="p-2 bg-muted/50 rounded text-sm">{draft.subject}</p>
+            <div className="space-y-4">
+              {/* Agent attribution + revenue impact */}
+              <div className="rounded-lg bg-blue-500/5 border border-blue-500/20 p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-3.5 w-3.5 text-blue-500" />
+                  <p className="text-xs font-semibold text-blue-700 dark:text-blue-400">Agent Collaboration</p>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  <Badge className="text-[10px] bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20">Scheduling Agent</Badge>
+                  <Badge className="text-[10px] bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20">AgentMail</Badge>
+                  <Badge className="text-[10px] bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-500/20">Revenue Agent</Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className="bg-background/60 rounded-md p-2">
+                    <p className="text-[10px] text-muted-foreground">Open Spots</p>
+                    <p className="text-sm font-bold">{openSpots}</p>
+                  </div>
+                  {revenueImpact > 0 && (
+                    <div className="bg-background/60 rounded-md p-2">
+                      <p className="text-[10px] text-muted-foreground">Revenue Opportunity</p>
+                      <p className="text-sm font-bold text-green-600 dark:text-green-400">${(revenueImpact / 100).toFixed(0)}</p>
+                    </div>
+                  )}
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">SMS</p>
-                <p className="p-2 bg-muted/50 rounded text-sm whitespace-pre-wrap">{draft.smsBody}</p>
-              </div>
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Email Body</p>
-                <p className="p-2 bg-muted/50 rounded text-sm whitespace-pre-wrap">{draft.emailBody}</p>
+
+              {/* Draft content */}
+              <div className="space-y-3 text-sm">
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Subject</p>
+                  <p className="p-2 bg-muted/50 rounded text-sm">{draft.subject}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">SMS</p>
+                  <p className="p-2 bg-muted/50 rounded text-sm whitespace-pre-wrap">{draft.smsBody}</p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground uppercase mb-1">Email Body</p>
+                  <p className="p-2 bg-muted/50 rounded text-sm whitespace-pre-wrap">{draft.emailBody}</p>
+                </div>
               </div>
             </div>
           )}
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setOpen(false)}>Close</Button>
-            <Button size="sm" onClick={() => { setOpen(false); toast({ title: "Campaign saved to drafts" }); }}>
+            <Button size="sm" onClick={() => { setOpen(false); toast({ title: "Campaign saved to drafts", description: "Review and send from AI Comms Center." }); }}>
               <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
-              Saved to Drafts
+              Save to Drafts
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -253,7 +285,257 @@ function CoachFillCampaignButton({ session }: { session: OpenSession }) {
   );
 }
 
+// ─── Coach Operational Health Banner ─────────────────────────────────────────
+
+function CoachOperationalBanner({ sessions }: { sessions: OpenSession[] }) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  const { data: healthData } = useQuery<any>({
+    queryKey: ["/api/scheduling-intelligence/health-score"],
+    queryFn: async () =>
+      authenticatedFetch("/api/scheduling-intelligence/health-score").catch(() => null),
+    staleTime: 120_000,
+    retry: false,
+  });
+
+  const { data: oppData } = useQuery<any>({
+    queryKey: ["/api/scheduling-intelligence/opportunities"],
+    queryFn: async () =>
+      authenticatedFetch("/api/scheduling-intelligence/opportunities").catch(() => null),
+    staleTime: 120_000,
+    retry: false,
+  });
+
+  const now = new Date();
+
+  const upcomingSessions = sessions.filter(s => {
+    try { return new Date(s.startAt as any) >= now; } catch { return false; }
+  });
+
+  const underfilled = upcomingSessions.filter(s => {
+    const count = s.participantCount || 0;
+    const max = s.maxParticipants || 6;
+    return max > 0 && count / max < 0.5 && s.status !== "CANCELLED";
+  });
+
+  const oversubscribed = upcomingSessions.filter(s => {
+    const count = s.participantCount || 0;
+    const max = s.maxParticipants || 6;
+    return count >= max;
+  });
+
+  const revenueGap = upcomingSessions.reduce((acc, s) => {
+    const count = s.participantCount || 0;
+    const max = s.maxParticipants || 6;
+    const price = s.service?.priceCents || 0;
+    return acc + (max - count) * price;
+  }, 0);
+
+  const oppCount = (oppData?.opportunities?.length || oppData?.total || 0);
+  const healthScore = healthData?.score || null;
+  const healthLabel = healthScore === null ? null : healthScore >= 75 ? "Healthy" : healthScore >= 50 ? "Needs Attention" : "Critical";
+  const healthColor = healthScore === null ? "" : healthScore >= 75 ? "text-green-600 dark:text-green-400" : healthScore >= 50 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400";
+
+  return (
+    <div className="rounded-lg border bg-card shadow-sm overflow-hidden" data-testid="coach-operational-banner">
+      <button
+        className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/40 transition-colors"
+        onClick={() => setCollapsed(c => !c)}
+        data-testid="button-toggle-operational-banner"
+      >
+        <div className="flex items-center gap-2">
+          <Activity className="h-4 w-4 text-primary" />
+          <span className="text-sm font-semibold">Operational Overview</span>
+          {underfilled.length > 0 && (
+            <Badge className="text-[10px] h-4 px-1.5 bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20">
+              {underfilled.length} need attention
+            </Badge>
+          )}
+          {oppCount > 0 && (
+            <Badge className="text-[10px] h-4 px-1.5 bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/20">
+              {oppCount} AI opportunities
+            </Badge>
+          )}
+        </div>
+        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${collapsed ? "-rotate-90" : ""}`} />
+      </button>
+
+      {!collapsed && (
+        <div className="px-4 pb-4 border-t">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-3">
+            {/* Health Score */}
+            <div className="bg-muted/40 rounded-lg p-3 space-y-1" data-testid="kpi-health-score">
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Scheduling Health</p>
+              {healthScore !== null ? (
+                <div className="flex items-end gap-1.5">
+                  <p className={`text-xl font-bold leading-none ${healthColor}`}>{healthScore}</p>
+                  <p className={`text-xs font-medium pb-0.5 ${healthColor}`}>{healthLabel}</p>
+                </div>
+              ) : (
+                <p className="text-xl font-bold text-muted-foreground">—</p>
+              )}
+            </div>
+
+            {/* Underfilled */}
+            <div
+              className={`rounded-lg p-3 space-y-1 ${underfilled.length > 0 ? "bg-yellow-500/10 border border-yellow-500/20" : "bg-muted/40"}`}
+              data-testid="kpi-underfilled"
+            >
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Underfilled (&lt;50%)</p>
+              <div className="flex items-end gap-1.5">
+                <p className={`text-xl font-bold leading-none ${underfilled.length > 0 ? "text-yellow-600 dark:text-yellow-400" : "text-foreground"}`}>
+                  {underfilled.length}
+                </p>
+                <p className="text-xs text-muted-foreground pb-0.5">sessions</p>
+              </div>
+            </div>
+
+            {/* Full / Oversubscribed */}
+            <div
+              className={`rounded-lg p-3 space-y-1 ${oversubscribed.length > 0 ? "bg-green-500/10 border border-green-500/20" : "bg-muted/40"}`}
+              data-testid="kpi-full-sessions"
+            >
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Full Sessions</p>
+              <div className="flex items-end gap-1.5">
+                <p className={`text-xl font-bold leading-none ${oversubscribed.length > 0 ? "text-green-600 dark:text-green-400" : "text-muted-foreground"}`}>
+                  {oversubscribed.length}
+                </p>
+                <p className="text-xs text-muted-foreground pb-0.5">/ {upcomingSessions.length}</p>
+              </div>
+            </div>
+
+            {/* Revenue Gap */}
+            <div
+              className={`rounded-lg p-3 space-y-1 ${revenueGap > 0 ? "bg-red-500/10 border border-red-500/20" : "bg-muted/40"}`}
+              data-testid="kpi-revenue-gap"
+            >
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wide font-medium">Revenue Opportunity</p>
+              <div className="flex items-end gap-1.5">
+                <p className={`text-xl font-bold leading-none ${revenueGap > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"}`}>
+                  ${(revenueGap / 100).toFixed(0)}
+                </p>
+                <p className="text-xs text-muted-foreground pb-0.5">unfilled</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Health breakdown */}
+          {healthData?.breakdown && (
+            <div className="mt-3 grid grid-cols-3 sm:grid-cols-5 gap-2">
+              {Object.entries(healthData.breakdown).map(([key, val]: [string, any]) => {
+                const score = typeof val === "number" ? val : 0;
+                const color = score >= 75 ? "bg-green-500" : score >= 50 ? "bg-yellow-500" : "bg-red-500";
+                return (
+                  <div key={key} className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[9px] text-muted-foreground capitalize">{key.replace(/([A-Z])/g, " $1")}</p>
+                      <p className="text-[10px] font-semibold">{score}</p>
+                    </div>
+                    <div className="w-full bg-muted rounded-full h-1">
+                      <div className={`h-1 rounded-full transition-all ${color}`} style={{ width: `${Math.min(100, score)}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Scheduling Opportunities Strip (coaches only) ────────────────────────────
+
+function SchedulingOpportunitiesStrip({ onSessionClick, sessions }: { onSessionClick: (s: OpenSession) => void; sessions: OpenSession[] }) {
+  const { data, isLoading } = useQuery<any>({
+    queryKey: ["/api/scheduling-intelligence/opportunities"],
+    queryFn: async () =>
+      authenticatedFetch("/api/scheduling-intelligence/opportunities").catch(() => null),
+    staleTime: 120_000,
+    retry: false,
+  });
+
+  const opportunities: any[] = data?.opportunities || [];
+  const top = opportunities.filter(o => o.priority === "high" || o.priority === "urgent").slice(0, 3);
+
+  if (isLoading) {
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center gap-2">
+          <Brain className="h-3.5 w-3.5 text-blue-500" />
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">AI Opportunities</p>
+        </div>
+        <div className="flex gap-2">{[1,2,3].map(i => <Skeleton key={i} className="h-16 flex-1 rounded-lg" />)}</div>
+      </div>
+    );
+  }
+
+  if (top.length === 0) return null;
+
+  const typeLabel: Record<string, { label: string; icon: string; color: string }> = {
+    "low_fill": { label: "Underfilled", icon: "📉", color: "bg-yellow-500/10 border-yellow-500/30 text-yellow-700 dark:text-yellow-400" },
+    "waitlist_demand": { label: "Expand Capacity", icon: "📈", color: "bg-green-500/10 border-green-500/30 text-green-700 dark:text-green-400" },
+    "cancellation": { label: "Backfill Slot", icon: "🔄", color: "bg-orange-500/10 border-orange-500/30 text-orange-700 dark:text-orange-400" },
+    "coach_inactive": { label: "Coach Idle", icon: "👤", color: "bg-blue-500/10 border-blue-500/30 text-blue-700 dark:text-blue-400" },
+    "coach_overloaded": { label: "Coach Load", icon: "⚠️", color: "bg-red-500/10 border-red-500/30 text-red-700 dark:text-red-400" },
+  };
+
+  return (
+    <div className="space-y-2" data-testid="scheduling-opportunities-strip">
+      <div className="flex items-center gap-2">
+        <Brain className="h-3.5 w-3.5 text-blue-500" />
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">AI Scheduling Opportunities</p>
+        <Badge className="text-[10px] h-4 px-1.5 bg-blue-500/15 text-blue-600 dark:text-blue-400 border-blue-500/20">
+          {opportunities.length} total
+        </Badge>
+        <a href="/admin/scheduling-copilot" className="ml-auto flex items-center gap-1 text-[10px] text-primary hover:underline">
+          View All <ArrowUpRight className="h-2.5 w-2.5" />
+        </a>
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+        {top.map((opp) => {
+          const meta = typeLabel[opp.type] || { label: opp.type, icon: "💡", color: "bg-muted border-border text-muted-foreground" };
+          const session = sessions.find(s => s.id === opp.bookingId);
+          return (
+            <div
+              key={opp.id}
+              className={`rounded-lg border p-3 space-y-1.5 ${meta.color}`}
+              data-testid={`opportunity-card-${opp.id}`}
+            >
+              <div className="flex items-center gap-1.5">
+                <span className="text-base leading-none">{meta.icon}</span>
+                <span className="text-[11px] font-semibold">{meta.label}</span>
+                {opp.priority === "urgent" && (
+                  <Badge className="text-[9px] h-3.5 px-1 bg-red-500 text-white border-0 ml-auto">Urgent</Badge>
+                )}
+              </div>
+              <p className="text-[11px] font-medium leading-tight truncate">{opp.title}</p>
+              <p className="text-[10px] opacity-80 leading-tight line-clamp-2">{opp.description}</p>
+              {opp.revenueImpact !== undefined && (
+                <p className="text-[10px] font-semibold">
+                  Revenue: <span>${(opp.revenueImpact / 100).toFixed(0)}</span>
+                </p>
+              )}
+              {session && (
+                <button
+                  onClick={() => onSessionClick(session)}
+                  className="text-[10px] underline underline-offset-2 hover:opacity-80 transition-opacity"
+                  data-testid={`opportunity-view-session-${opp.id}`}
+                >
+                  View Session →
+                </button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 type CalendarView = "month" | "week" | "day";
+type SortKey = "time" | "fillPct" | "revenueGap" | "status";
 
 interface Filters {
   sport: string;
@@ -1194,6 +1476,7 @@ function SessionChip({ session, onClick }: { session: OpenSession; onClick: (e: 
   const max = session.maxParticipants || 6;
   const spotsLeft = max - count;
   const isFull = spotsLeft <= 0;
+  const fillPct = max > 0 ? Math.min(100, (count / max) * 100) : 0;
 
   const bgClass = status === "Open"
     ? "bg-green-500/10 border-green-500/30 hover:bg-green-500/20"
@@ -1203,8 +1486,9 @@ function SessionChip({ session, onClick }: { session: OpenSession; onClick: (e: 
     ? "bg-muted/50 border-muted-foreground/20 hover:bg-muted"
     : "bg-blue-500/10 border-blue-500/30 hover:bg-blue-500/20";
 
+  const fillBarColor = fillPct >= 90 ? "bg-orange-500" : fillPct >= 50 ? "bg-green-500" : "bg-yellow-500";
+
   const sport = (session.sport || session.service?.name || "Session").toUpperCase();
-  // Show only the first segment of the location (before first comma) to keep it compact
   const locationShort = session.location
     ? session.location.split(",")[0].trim().toUpperCase()
     : null;
@@ -1232,6 +1516,11 @@ function SessionChip({ session, onClick }: { session: OpenSession; onClick: (e: 
         <p className="text-[9px] text-muted-foreground leading-tight truncate mt-px">{locationShort}</p>
       )}
       <p className={`text-[9px] font-semibold leading-tight mt-px ${spotsColor}`}>{spotsLabel}</p>
+      {status !== "Cancelled" && (
+        <div className="w-full bg-muted/60 rounded-full h-0.5 mt-1">
+          <div className={`h-0.5 rounded-full transition-all ${fillBarColor}`} style={{ width: `${fillPct}%` }} />
+        </div>
+      )}
     </button>
   );
 }
@@ -1248,18 +1537,30 @@ function DaySessionCard({ session, onClick, isCoach }: { session: OpenSession; o
   const isFull = spotsLeft <= 0;
   const fillPct = Math.min(100, (count / max) * 100);
   const sportEmoji = getSportEmoji(session.sport);
+  const revenueGap = spotsLeft * (session.service?.priceCents || 0);
+  const needsAttention = isCoach && status !== "Cancelled" && !isFull && fillPct < 50 && new Date(session.startAt as any) > new Date();
 
-  const ctaLabel = isCoach ? "Edit Session" : isFull ? "Join Waitlist" : "Join Session";
+  const ctaLabel = isCoach ? "View Details" : isFull ? "Join Waitlist" : "Join Session";
+
+  const borderColor = needsAttention
+    ? "rgb(234 179 8)"
+    : status === "Open"
+    ? "rgb(34 197 94)"
+    : status === "Full"
+    ? "rgb(249 115 22)"
+    : status === "Cancelled"
+    ? "rgb(156 163 175)"
+    : "rgb(59 130 246)";
 
   return (
     <Card
       className="p-4 cursor-pointer hover:shadow-md transition-all border-l-4"
-      style={{ borderLeftColor: status === "Open" ? "rgb(34 197 94)" : status === "Full" ? "rgb(249 115 22)" : status === "Cancelled" ? "rgb(156 163 175)" : "rgb(59 130 246)" }}
+      style={{ borderLeftColor: borderColor }}
       onClick={onClick}
       data-testid={`card-open-session-${session.id}`}
     >
-      {/* Header: sport + status badge */}
-      <div className="flex items-start justify-between gap-2 mb-3">
+      {/* Header: sport + badges */}
+      <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex-1 min-w-0">
           {session.sport ? (
             <div className="flex items-center gap-2">
@@ -1273,7 +1574,14 @@ function DaySessionCard({ session, onClick, isCoach }: { session: OpenSession; o
             <p className="text-sm text-muted-foreground mt-0.5">{session.service.name}</p>
           )}
         </div>
-        <div className="shrink-0">{getStatusBadge(status, spotsLeft)}</div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {getStatusBadge(status, spotsLeft)}
+          {needsAttention && (
+            <Badge className="text-[9px] h-4 px-1.5 bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20 gap-0.5">
+              <AlertTriangle className="h-2.5 w-2.5" /> Needs Attention
+            </Badge>
+          )}
+        </div>
       </div>
 
       {/* Time */}
@@ -1292,7 +1600,7 @@ function DaySessionCard({ session, onClick, isCoach }: { session: OpenSession; o
 
       {/* Coach */}
       {session.coach?.user && (
-        <div className="flex items-center gap-2 text-sm mb-2.5">
+        <div className="flex items-center gap-2 text-sm mb-2">
           <Avatar className="h-5 w-5 shrink-0">
             <AvatarImage src={session.coach.photoUrl || session.coach.user.profileImageUrl || undefined} />
             <AvatarFallback className="text-[9px] bg-primary/10 text-primary">
@@ -1307,7 +1615,7 @@ function DaySessionCard({ session, onClick, isCoach }: { session: OpenSession; o
 
       {/* Skill + Age chips */}
       {(session.skillLevel || session.ageRange) && (
-        <div className="flex flex-wrap gap-1.5 mb-3">
+        <div className="flex flex-wrap gap-1.5 mb-2.5">
           {session.skillLevel && (
             <Badge variant="outline" className="text-xs" data-testid={`badge-skill-${session.id}`}>{session.skillLevel}</Badge>
           )}
@@ -1317,24 +1625,39 @@ function DaySessionCard({ session, onClick, isCoach }: { session: OpenSession; o
         </div>
       )}
 
-      {/* Capacity bar */}
-      <div className="space-y-1 mb-3">
+      {/* Capacity bar + fill % */}
+      <div className="space-y-1 mb-2.5">
         <div className="flex items-center justify-between text-sm">
           <span className="flex items-center gap-1.5 text-muted-foreground">
             <Users className="h-3.5 w-3.5" />
             <span>{count} / {max} Athletes</span>
           </span>
-          <span className={`text-xs font-semibold ${isFull ? "text-orange-600 dark:text-orange-400" : spotsLeft <= 2 ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400"}`}>
-            {isFull ? "FULL" : `${spotsLeft} Spot${spotsLeft !== 1 ? "s" : ""} Available`}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className={`text-[10px] font-bold ${fillPct >= 80 ? "text-green-600 dark:text-green-400" : fillPct >= 50 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}`}>
+              {Math.round(fillPct)}%
+            </span>
+            <span className={`text-xs font-semibold ${isFull ? "text-orange-600 dark:text-orange-400" : spotsLeft <= 2 ? "text-yellow-600 dark:text-yellow-400" : "text-green-600 dark:text-green-400"}`}>
+              {isFull ? "FULL" : `${spotsLeft} Spot${spotsLeft !== 1 ? "s" : ""} Left`}
+            </span>
+          </div>
         </div>
         <div className="w-full bg-muted rounded-full h-1.5">
           <div
-            className={`h-1.5 rounded-full transition-all ${isFull ? "bg-orange-500" : spotsLeft <= 2 ? "bg-yellow-500" : "bg-green-500"}`}
+            className={`h-1.5 rounded-full transition-all ${fillPct >= 80 ? "bg-green-500" : fillPct >= 50 ? "bg-yellow-500" : "bg-red-500"}`}
             style={{ width: `${fillPct}%` }}
           />
         </div>
       </div>
+
+      {/* Revenue gap (coaches only) */}
+      {isCoach && revenueGap > 0 && (
+        <div className="flex items-center justify-between text-xs text-muted-foreground mb-2.5 px-1">
+          <span className="flex items-center gap-1">
+            <DollarSign className="h-3 w-3" />Revenue opportunity
+          </span>
+          <span className="font-semibold text-red-600 dark:text-red-400">${(revenueGap / 100).toFixed(0)} unfilled</span>
+        </div>
+      )}
 
       {/* CTA */}
       <div className="pt-2 border-t border-border/40">
@@ -1754,6 +2077,7 @@ export default function OpenSessionsPage() {
   const [createSessionOpen, setCreateSessionOpen] = useState(false);
   const [createSessionDate, setCreateSessionDate] = useState<Date | undefined>(undefined);
   const [searchTerm, setSearchTerm] = useState("");
+  const [sortKey, setSortKey] = useState<SortKey>("time");
   const [filters, setFilters] = useState<Filters>({
     sport: "all", location: "all", ageGroup: "all",
     skillLevel: "all", availability: "all", sessionType: "all"
@@ -1775,7 +2099,7 @@ export default function OpenSessionsPage() {
 
   const filteredSessions = useMemo(() => {
     const q = searchTerm.trim().toLowerCase();
-    return sessions.filter(session => {
+    const filtered = sessions.filter(session => {
       if (filters.availability !== "all") {
         const status = getSessionStatus(session);
         if (status !== filters.availability) return false;
@@ -1800,7 +2124,27 @@ export default function OpenSessionsPage() {
       }
       return true;
     });
-  }, [sessions, filters, searchTerm]);
+
+    return [...filtered].sort((a, b) => {
+      if (sortKey === "fillPct") {
+        const fillA = (a.participantCount || 0) / (a.maxParticipants || 6);
+        const fillB = (b.participantCount || 0) / (b.maxParticipants || 6);
+        return fillA - fillB;
+      }
+      if (sortKey === "revenueGap") {
+        const gapA = ((a.maxParticipants || 6) - (a.participantCount || 0)) * (a.service?.priceCents || 0);
+        const gapB = ((b.maxParticipants || 6) - (b.participantCount || 0)) * (b.service?.priceCents || 0);
+        return gapB - gapA;
+      }
+      if (sortKey === "status") {
+        const order: Record<string, number> = { "Open": 0, "Full": 1, "Cancelled": 2 };
+        const sA = order[getSessionStatus(a)] ?? 9;
+        const sB = order[getSessionStatus(b)] ?? 9;
+        return sA - sB;
+      }
+      return new Date(a.startAt as any).getTime() - new Date(b.startAt as any).getTime();
+    });
+  }, [sessions, filters, searchTerm, sortKey]);
 
   const navigate = (dir: "prev" | "next" | "today") => {
     if (dir === "today") { setCurrentDate(new Date()); setSelectedDay(null); return; }
@@ -1863,10 +2207,22 @@ export default function OpenSessionsPage() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-2xl font-serif font-bold" data-testid="text-open-sessions-title">Group Sessions</h1>
-          <p className="text-muted-foreground text-sm mt-0.5">Browse and join open group training sessions</p>
+          <p className="text-muted-foreground text-sm mt-0.5">
+            {isCoach
+              ? "Operational management and optimization engine for group training"
+              : "Browse and join open group training sessions"}
+          </p>
         </div>
         {isCoach && <AddSessionDialog />}
       </div>
+
+      {/* Coach: Operational Health Banner */}
+      {isCoach && <CoachOperationalBanner sessions={sessions} />}
+
+      {/* Coach: AI Scheduling Opportunities */}
+      {isCoach && sessions.length > 0 && (
+        <SchedulingOpportunitiesStrip onSessionClick={setSelectedSession} sessions={sessions} />
+      )}
 
       {/* Recommended For You (non-coach athletes only) */}
       {!isCoach && userId && <RecommendedForYouStrip userId={userId} sessions={sessions} onSessionClick={setSelectedSession} />}
@@ -1882,7 +2238,7 @@ export default function OpenSessionsPage() {
         setSearchTerm={setSearchTerm}
       />
 
-      {/* Calendar Controls */}
+      {/* Calendar Controls + Sort */}
       <div className="flex items-center gap-2 flex-wrap">
         <div className="flex items-center gap-1 rounded-lg border p-0.5 bg-muted/30">
           <Button
@@ -1931,11 +2287,40 @@ export default function OpenSessionsPage() {
 
         <p className="font-semibold text-sm" data-testid="text-period-label">{periodLabel()}</p>
 
-        <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Open</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />Full</span>
-          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-muted-foreground inline-block" />Cancelled</span>
-        </div>
+        {/* Sort controls (coaches only, for day/week list views) */}
+        {isCoach && view === "day" && (
+          <div className="flex items-center gap-1 ml-auto">
+            <ChevronsUpDown className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Sort:</span>
+            {(["time", "fillPct", "revenueGap", "status"] as SortKey[]).map(key => {
+              const labels: Record<SortKey, string> = {
+                time: "Time",
+                fillPct: "Fill %",
+                revenueGap: "Revenue Gap",
+                status: "Status",
+              };
+              return (
+                <button
+                  key={key}
+                  onClick={() => setSortKey(key)}
+                  className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${sortKey === key ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"}`}
+                  data-testid={`sort-${key}`}
+                >
+                  {labels[key]}
+                </button>
+              );
+            })}
+          </div>
+        )}
+
+        {(!isCoach || view !== "day") && (
+          <div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 inline-block" />Open</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500 inline-block" />Full</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-muted-foreground inline-block" />Cancelled</span>
+            {isCoach && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-500 inline-block" />Attention</span>}
+          </div>
+        )}
       </div>
 
       {/* Calendar Body */}
