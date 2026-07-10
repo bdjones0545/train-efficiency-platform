@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { fetchJson } from "@/lib/api-helpers";
@@ -43,10 +44,21 @@ import {
   BarChart3,
   Zap,
   LayoutList,
-  CalendarDays,
   TrendingUp,
   ArrowLeftRight,
   Sparkles,
+  Brain,
+  AlertTriangle,
+  CheckCircle2,
+  AlertCircle,
+  ThumbsUp,
+  ThumbsDown,
+  Calendar,
+  Activity,
+  TrendingDown,
+  Target,
+  Info,
+  RefreshCw,
 } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import type { AvailabilityBlock, Organization } from "@shared/schema";
@@ -58,6 +70,11 @@ import {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+// Monday=0 in our system, but JS getDay() returns 0=Sunday,1=Monday...
+// Map JS getDay() to our dayOfWeek (0=Mon...6=Sun)
+const JS_DAY_TO_IDX: Record<number, number> = { 1: 0, 2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 0: 6 };
+const TODAY_IDX = JS_DAY_TO_IDX[new Date().getDay()];
 
 const TIMES: string[] = [];
 for (let h = 5; h <= 22; h++) {
@@ -159,6 +176,105 @@ function fetchWithAuth(url: string) {
   });
 }
 
+// ─── Coverage Quality (deterministic from hours) ─────────────────────────────
+
+function dayeCoverageSignal(hours: number): { label: string; color: string; ring: string; bg: string } {
+  if (hours === 0) return { label: "No coverage", color: "text-muted-foreground", ring: "border-border", bg: "bg-muted/20" };
+  if (hours < 3) return { label: "Light", color: "text-amber-600 dark:text-amber-400", ring: "border-amber-300 dark:border-amber-700", bg: "bg-amber-50/60 dark:bg-amber-950/20" };
+  if (hours <= 8) return { label: "Healthy", color: "text-green-600 dark:text-green-400", ring: "border-green-300 dark:border-green-700", bg: "bg-green-50/60 dark:bg-green-950/20" };
+  if (hours <= 12) return { label: "Heavy", color: "text-amber-600 dark:text-amber-400", ring: "border-amber-300 dark:border-amber-700", bg: "bg-amber-50/60 dark:bg-amber-950/20" };
+  return { label: "Overloaded", color: "text-red-600 dark:text-red-400", ring: "border-red-300 dark:border-red-700", bg: "bg-red-50/60 dark:bg-red-950/20" };
+}
+
+// ─── Workforce Health Banner ──────────────────────────────────────────────────
+
+function WorkforceHealthBanner({ blocks }: { blocks: AvailabilityBlock[] }) {
+  const { data: healthData, isLoading } = useQuery<any>({
+    queryKey: ["/api/scheduling-intelligence/health-score"],
+    queryFn: () => fetchWithAuth("/api/scheduling-intelligence/health-score"),
+    staleTime: 60_000,
+  });
+
+  // Deterministic signals from blocks
+  const todayBlocks = blocks.filter(b => b.dayOfWeek === TODAY_IDX);
+  const todayHours = todayBlocks.reduce((s, b) => s + blockDurationHours(b), 0);
+  const daysWithNoBlocks = DAYS.filter((_, i) => !blocks.some(b => b.dayOfWeek === i));
+  const totalWeekHours = blocks.reduce((s, b) => s + blockDurationHours(b), 0);
+
+  const score = healthData?.score ?? null;
+  const grade = healthData?.grade ?? null;
+
+  const gradeColor = grade === "Excellent" ? "text-green-600 dark:text-green-400"
+    : grade === "Good" ? "text-green-600 dark:text-green-400"
+    : grade === "Fair" ? "text-amber-600 dark:text-amber-400"
+    : grade === "Poor" ? "text-red-600 dark:text-red-400"
+    : grade === "Critical" ? "text-red-700 dark:text-red-400"
+    : "text-muted-foreground";
+
+  const gradeBg = grade === "Excellent" || grade === "Good"
+    ? "bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800"
+    : grade === "Fair"
+    ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-800"
+    : grade === "Poor" || grade === "Critical"
+    ? "bg-red-50 dark:bg-red-950/20 border-red-200 dark:border-red-800"
+    : "bg-muted/30 border-border";
+
+  const signals: { icon: any; text: string; color: string }[] = [];
+
+  if (todayHours === 0) {
+    signals.push({ icon: AlertTriangle, text: "No availability set for today", color: "text-red-600 dark:text-red-400" });
+  } else {
+    signals.push({ icon: CheckCircle2, text: `${todayHours.toFixed(1)}h available today`, color: "text-green-600 dark:text-green-400" });
+  }
+
+  if (daysWithNoBlocks.length > 0) {
+    signals.push({ icon: AlertCircle, text: `${daysWithNoBlocks.length} day${daysWithNoBlocks.length > 1 ? "s" : ""} with no coverage`, color: "text-amber-600 dark:text-amber-400" });
+  }
+
+  if (totalWeekHours > 50) {
+    signals.push({ icon: AlertTriangle, text: "High weekly hours — burnout risk", color: "text-red-600 dark:text-red-400" });
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex gap-3">
+        {[1,2,3].map(i => <Skeleton key={i} className="h-9 flex-1 rounded-lg" />)}
+      </div>
+    );
+  }
+
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${gradeBg}`}>
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+        {score !== null && (
+          <div className="flex items-center gap-2 shrink-0">
+            <Activity className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs text-muted-foreground">Schedule Health</span>
+            <span className={`text-sm font-bold ${gradeColor}`}>{grade} ({score})</span>
+          </div>
+        )}
+        <div className="flex items-center gap-2 shrink-0">
+          <Calendar className="h-4 w-4 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">This week</span>
+          <span className="text-sm font-semibold">{totalWeekHours.toFixed(1)}h scheduled</span>
+        </div>
+        {signals.map((s, i) => (
+          <div key={i} className="flex items-center gap-1.5 shrink-0">
+            <s.icon className={`h-3.5 w-3.5 ${s.color}`} />
+            <span className={`text-xs font-medium ${s.color}`}>{s.text}</span>
+          </div>
+        ))}
+        {daysWithNoBlocks.length === 0 && totalWeekHours > 0 && (
+          <div className="flex items-center gap-1.5 shrink-0">
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+            <span className="text-xs font-medium text-green-600 dark:text-green-400">Full week covered</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Capacity Bar ─────────────────────────────────────────────────────────────
 
 function CapacityBar({ blocks, coachId }: { blocks: AvailabilityBlock[]; coachId: string }) {
@@ -197,11 +313,16 @@ function CapacityBar({ blocks, coachId }: { blocks: AvailabilityBlock[]; coachId
     utilization >= 75 ? "text-amber-600 dark:text-amber-400" :
     "text-green-600 dark:text-green-400";
 
+  const utilizationBarColor =
+    utilization >= 90 ? "bg-red-500" :
+    utilization >= 75 ? "bg-amber-500" :
+    "bg-green-500";
+
   const metrics = [
     { label: "Available / Wk", value: `${availableHours.toFixed(1)}h`, icon: Clock, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-950/30" },
     { label: "Booked This Wk", value: `${bookedHours.toFixed(1)}h`, icon: BarChart3, color: "text-purple-600 dark:text-purple-400", bg: "bg-purple-50 dark:bg-purple-950/30" },
     { label: "Open Capacity", value: `${openHours.toFixed(1)}h`, icon: Zap, color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-950/30" },
-    { label: "Utilization", value: `${utilization}%`, icon: TrendingUp, color: utilizationColor, bg: "bg-muted/50" },
+    { label: "Utilization", value: `${utilization}%`, icon: TrendingUp, color: utilizationColor, bg: "bg-muted/50", bar: true },
   ];
 
   return (
@@ -213,9 +334,19 @@ function CapacityBar({ blocks, coachId }: { blocks: AvailabilityBlock[]; coachId
               <div className={`p-2 rounded-lg ${m.bg}`}>
                 <m.icon className={`h-4 w-4 ${m.color}`} />
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="text-xs text-muted-foreground">{m.label}</p>
                 <p className={`text-xl font-bold ${m.color}`}>{m.value}</p>
+                {m.bar && availableHours > 0 && (
+                  <div className="mt-1.5">
+                    <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                      <div
+                        className={`h-full rounded-full transition-all ${utilizationBarColor}`}
+                        style={{ width: `${Math.min(utilization, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -432,7 +563,8 @@ function DaySection({
   onDuplicateRequest: (block: AvailabilityBlock) => void;
 }) {
   const { toast } = useToast();
-  const [isOpen, setIsOpen] = useState(true);
+  const isToday = dayIndex === TODAY_IDX;
+  const [isOpen, setIsOpen] = useState(isToday || dayBlocks.length > 0);
   const [addingNew, setAddingNew] = useState(false);
   const [newStart, setNewStart] = useState("06:00");
   const [newEnd, setNewEnd] = useState("14:00");
@@ -501,10 +633,11 @@ function DaySection({
   });
 
   const totalHours = dayBlocks.reduce((s, b) => s + blockDurationHours(b), 0);
+  const coverage = dayeCoverageSignal(totalHours);
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <div className="border rounded-xl overflow-hidden">
+      <div className={`border rounded-xl overflow-hidden ${isToday ? "ring-2 ring-primary/30" : ""}`}>
         <CollapsibleTrigger asChild>
           <button
             className={`w-full flex items-center justify-between px-4 py-3 text-sm font-semibold transition-colors hover:bg-muted/50 ${
@@ -513,10 +646,15 @@ function DaySection({
             data-testid={`toggle-day-${dayIndex}`}
           >
             <div className="flex items-center gap-3">
-              <span className="w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold bg-primary/10 text-primary">
+              <span className={`w-5 h-5 flex items-center justify-center rounded text-[10px] font-bold ${
+                isToday ? "bg-primary text-primary-foreground" : "bg-primary/10 text-primary"
+              }`}>
                 {dayName.charAt(0)}
               </span>
               <span>{dayName}</span>
+              {isToday && (
+                <Badge className="text-[10px] h-4 px-1.5 bg-primary/10 text-primary border-primary/20">Today</Badge>
+              )}
               {dayBlocks.length > 0 && (
                 <Badge variant="secondary" className="text-xs">
                   {dayBlocks.length} block{dayBlocks.length !== 1 ? "s" : ""} · {totalHours.toFixed(1)}h
@@ -524,6 +662,9 @@ function DaySection({
               )}
             </div>
             <div className="flex items-center gap-2">
+              {totalHours > 0 && (
+                <span className={`text-xs font-medium ${coverage.color}`}>{coverage.label}</span>
+              )}
               {dayBlocks.length === 0 && (
                 <span className="text-xs text-muted-foreground">No availability set</span>
               )}
@@ -607,15 +748,12 @@ function TemplatesTab({
   const { toast } = useToast();
   const [applyingTemplate, setApplyingTemplate] = useState<Template | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
-  const [customTemplateName, setCustomTemplateName] = useState("");
 
   const applyMutation = useMutation({
     mutationFn: async (template: Template) => {
-      // Delete all existing blocks first
       await Promise.all(existingBlocks.map(b =>
         apiRequest("DELETE", `/api/coach/availability/${b.id}`)
       ));
-      // Create all new blocks
       await Promise.all(template.blocks.map(b =>
         apiRequest("POST", "/api/coach/availability", {
           coachId: activeCoachId || undefined,
@@ -732,6 +870,446 @@ function TemplatesTab({
   );
 }
 
+// ─── Intelligence Tab ─────────────────────────────────────────────────────────
+
+interface RecommendationAction {
+  type: string;
+  coachId?: string;
+  sessionId?: string;
+  description: string;
+  estimatedRevenueCents?: number;
+}
+
+function IntelligenceTab({ blocks }: { blocks: AvailabilityBlock[] }) {
+  const { toast } = useToast();
+
+  const { data: capacityData, isLoading: loadingCap, refetch: refetchCap } = useQuery<any>({
+    queryKey: ["/api/scheduling-intelligence/capacity-optimization"],
+    queryFn: () => fetchWithAuth("/api/scheduling-intelligence/capacity-optimization"),
+    staleTime: 60_000,
+  });
+
+  const { data: opportunitiesData, isLoading: loadingOpp, refetch: refetchOpp } = useQuery<any>({
+    queryKey: ["/api/scheduling-intelligence/opportunities"],
+    queryFn: () => fetchWithAuth("/api/scheduling-intelligence/opportunities"),
+    staleTime: 60_000,
+  });
+
+  const { data: healthData, isLoading: loadingHealth } = useQuery<any>({
+    queryKey: ["/api/scheduling-intelligence/health-score"],
+    queryFn: () => fetchWithAuth("/api/scheduling-intelligence/health-score"),
+    staleTime: 60_000,
+  });
+
+  const actionMutation = useMutation({
+    mutationFn: (body: { recommendationType: string; action: "accepted" | "rejected"; context?: any }) =>
+      apiRequest("POST", "/api/scheduling-intelligence/recommendation-action", body),
+    onSuccess: (_data, vars) => {
+      toast({ title: vars.action === "accepted" ? "Recommendation accepted" : "Recommendation dismissed" });
+      refetchCap();
+      refetchOpp();
+    },
+    onError: () => toast({ title: "Error", description: "Could not record action", variant: "destructive" }),
+  });
+
+  // Deterministic coverage gap analysis from blocks
+  const coverageAnalysis = useMemo(() => {
+    return DAYS.map((day, i) => {
+      const dayBlocks = blocks.filter(b => b.dayOfWeek === i);
+      const hours = dayBlocks.reduce((s, b) => s + blockDurationHours(b), 0);
+      const signal = dayeCoverageSignal(hours);
+      return { day, dayIndex: i, hours, signal, isToday: i === TODAY_IDX };
+    });
+  }, [blocks]);
+
+  const gapDays = coverageAnalysis.filter(d => d.hours === 0);
+  const lightDays = coverageAnalysis.filter(d => d.hours > 0 && d.hours < 3);
+  const overloadedDays = coverageAnalysis.filter(d => d.hours > 12);
+  const totalWeekHours = blocks.reduce((s, b) => s + blockDurationHours(b), 0);
+
+  const isLoading = loadingCap || loadingOpp || loadingHealth;
+
+  return (
+    <div className="space-y-6">
+      {/* ── Health Score Summary ── */}
+      {loadingHealth ? (
+        <Skeleton className="h-24 rounded-xl" />
+      ) : healthData ? (
+        <Card className="border-0 shadow-sm">
+          <CardContent className="p-5">
+            <div className="flex items-start justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-xs text-muted-foreground mb-1 flex items-center gap-1.5">
+                  <Activity className="h-3.5 w-3.5" />
+                  Organizational Schedule Health
+                </p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-3xl font-bold">{healthData.score ?? "—"}</span>
+                  <span className="text-sm text-muted-foreground">/ 100</span>
+                  <Badge className={`text-xs ${
+                    healthData.grade === "Excellent" || healthData.grade === "Good"
+                      ? "bg-green-500/15 text-green-700 dark:text-green-400 border-green-500/20"
+                      : healthData.grade === "Fair"
+                      ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20"
+                      : "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20"
+                  }`}>
+                    {healthData.grade ?? "Unknown"}
+                  </Badge>
+                </div>
+              </div>
+              {healthData.factors && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-1 text-xs">
+                  {Object.entries(healthData.factors as Record<string, number>).map(([k, v]) => (
+                    <div key={k} className="flex items-center gap-2">
+                      <span className="text-muted-foreground capitalize">{k.replace(/_/g, " ")}</span>
+                      <span className="font-semibold">{typeof v === "number" ? Math.round(v) : v}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* ── Coverage Gap Analysis (Deterministic) ── */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <Target className="h-4 w-4 text-muted-foreground" />
+          Coverage Analysis
+          <Badge variant="outline" className="text-xs font-normal">Deterministic</Badge>
+        </h3>
+        <div className="grid grid-cols-7 gap-1.5">
+          {coverageAnalysis.map(d => (
+            <div
+              key={d.dayIndex}
+              className={`rounded-lg border p-2 text-center ${d.signal.ring} ${d.signal.bg} ${d.isToday ? "ring-2 ring-primary/40" : ""}`}
+              data-testid={`coverage-day-${d.dayIndex}`}
+            >
+              <p className="text-[10px] font-semibold text-muted-foreground mb-1">{d.day.slice(0, 3)}</p>
+              <p className={`text-sm font-bold ${d.signal.color}`}>{d.hours.toFixed(0)}h</p>
+              <p className={`text-[9px] mt-0.5 ${d.signal.color}`}>{d.signal.label}</p>
+              {d.isToday && <p className="text-[9px] text-primary font-medium mt-0.5">Today</p>}
+            </div>
+          ))}
+        </div>
+
+        {(gapDays.length > 0 || lightDays.length > 0 || overloadedDays.length > 0) && (
+          <div className="mt-3 space-y-1.5">
+            {gapDays.length > 0 && (
+              <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                <span className="text-red-700 dark:text-red-300">
+                  <strong>{gapDays.map(d => d.day).join(", ")}</strong> — no availability set. Coverage gap {gapDays.some(d => d.isToday) ? "(includes today)" : ""}.
+                </span>
+              </div>
+            )}
+            {lightDays.length > 0 && (
+              <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                <AlertCircle className="h-3.5 w-3.5 text-amber-600 dark:text-amber-400 shrink-0" />
+                <span className="text-amber-700 dark:text-amber-300">
+                  <strong>{lightDays.map(d => d.day).join(", ")}</strong> — light coverage (&lt;3h). Consider expanding.
+                </span>
+              </div>
+            )}
+            {overloadedDays.length > 0 && (
+              <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                <span className="text-red-700 dark:text-red-300">
+                  <strong>{overloadedDays.map(d => d.day).join(", ")}</strong> — heavy schedule (&gt;12h). Burnout risk.
+                </span>
+              </div>
+            )}
+            {totalWeekHours > 50 && (
+              <div className="flex items-center gap-2 text-xs p-2 rounded-md bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-600 dark:text-red-400 shrink-0" />
+                <span className="text-red-700 dark:text-red-300">
+                  <strong>{totalWeekHours.toFixed(1)}h/week</strong> — exceeds sustainable threshold. Evaluate workload.
+                </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {gapDays.length === 0 && lightDays.length === 0 && overloadedDays.length === 0 && totalWeekHours > 0 && (
+          <div className="mt-3 flex items-center gap-2 text-xs p-2 rounded-md bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800">
+            <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400 shrink-0" />
+            <span className="text-green-700 dark:text-green-300">Coverage is healthy across all scheduled days.</span>
+          </div>
+        )}
+      </div>
+
+      {/* ── Capacity Optimization Recommendations ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            <Brain className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+            Scheduling Intelligence
+            <Badge className="text-xs bg-blue-500/15 text-blue-700 dark:text-blue-400 border-blue-500/20">AI</Badge>
+          </h3>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => { refetchCap(); refetchOpp(); }}
+            data-testid="button-refresh-intelligence"
+          >
+            <RefreshCw className="h-3 w-3 mr-1" />
+            Refresh
+          </Button>
+        </div>
+
+        {loadingCap ? (
+          <div className="space-y-3">
+            {[1,2].map(i => <Skeleton key={i} className="h-24 rounded-xl" />)}
+          </div>
+        ) : capacityData?.recommendations?.length > 0 ? (
+          <div className="space-y-3">
+            {capacityData.recommendations.map((rec: any, idx: number) => (
+              <RecommendationCard
+                key={idx}
+                rec={rec}
+                onAccept={() => actionMutation.mutate({
+                  recommendationType: rec.type || "capacity_optimization",
+                  action: "accepted",
+                  context: rec,
+                })}
+                onReject={() => actionMutation.mutate({
+                  recommendationType: rec.type || "capacity_optimization",
+                  action: "rejected",
+                  context: rec,
+                })}
+                isPending={actionMutation.isPending}
+              />
+            ))}
+          </div>
+        ) : !loadingCap ? (
+          <div className="text-center py-8 text-sm text-muted-foreground border border-dashed rounded-xl">
+            <CheckCircle2 className="h-6 w-6 mx-auto mb-2 text-green-500 opacity-60" />
+            No capacity optimization recommendations at this time.
+          </div>
+        ) : null}
+      </div>
+
+      {/* ── Opportunity Inbox ── */}
+      {!loadingOpp && opportunitiesData?.opportunities?.length > 0 && (
+        <div>
+          <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+            <Zap className="h-4 w-4 text-amber-500" />
+            Scheduling Opportunities
+          </h3>
+          <div className="space-y-2">
+            {opportunitiesData.opportunities.slice(0, 5).map((opp: any, idx: number) => (
+              <div
+                key={idx}
+                className="flex items-start gap-3 p-3 rounded-lg border bg-amber-50/50 dark:bg-amber-950/10 border-amber-200 dark:border-amber-800"
+                data-testid={`opportunity-${idx}`}
+              >
+                <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{opp.title ?? opp.type ?? "Opportunity"}</p>
+                  {opp.description && <p className="text-xs text-muted-foreground mt-0.5">{opp.description}</p>}
+                  {opp.estimatedRevenueCents != null && (
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-1 font-medium">
+                      Est. ${Math.round(opp.estimatedRevenueCents / 100).toLocaleString()} revenue opportunity
+                    </p>
+                  )}
+                </div>
+                {opp.severity && (
+                  <Badge className={`text-xs shrink-0 ${
+                    opp.severity === "high" ? "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20"
+                    : opp.severity === "medium" ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20"
+                    : "bg-muted text-muted-foreground"
+                  }`}>
+                    {opp.severity}
+                  </Badge>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Operational Intelligence Summary ── */}
+      <div>
+        <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+          <Info className="h-4 w-4 text-muted-foreground" />
+          Operational Summary
+        </h3>
+        <div className="grid sm:grid-cols-2 gap-3">
+          <SummaryCard
+            title="Where availability limits growth"
+            value={gapDays.length > 0
+              ? `${gapDays.length} day${gapDays.length > 1 ? "s" : ""} uncovered — ${gapDays.map(d => d.day).join(", ")}`
+              : "No coverage gaps detected"}
+            icon={TrendingDown}
+            color={gapDays.length > 0 ? "text-red-600 dark:text-red-400" : "text-green-600 dark:text-green-400"}
+            data-testid="summary-growth-limits"
+          />
+          <SummaryCard
+            title="Where availability is wasted"
+            value={overloadedDays.length > 0
+              ? `${overloadedDays.length} day${overloadedDays.length > 1 ? "s" : ""} overloaded — ${overloadedDays.map(d => d.day).join(", ")}`
+              : totalWeekHours === 0 ? "No availability configured"
+              : "No overloaded days"}
+            icon={AlertTriangle}
+            color={overloadedDays.length > 0 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}
+            data-testid="summary-wasted-availability"
+          />
+          <SummaryCard
+            title="Total weekly capacity configured"
+            value={`${totalWeekHours.toFixed(1)} hours across ${blocks.length} block${blocks.length !== 1 ? "s" : ""}`}
+            icon={Clock}
+            color="text-blue-600 dark:text-blue-400"
+            data-testid="summary-weekly-capacity"
+          />
+          <SummaryCard
+            title="Days with healthy coverage"
+            value={`${coverageAnalysis.filter(d => d.hours >= 3 && d.hours <= 12).length} of 7 days`}
+            icon={CheckCircle2}
+            color="text-green-600 dark:text-green-400"
+            data-testid="summary-healthy-days"
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SummaryCard({ title, value, icon: Icon, color, "data-testid": testId }: {
+  title: string; value: string; icon: any; color: string; "data-testid"?: string;
+}) {
+  return (
+    <div className="rounded-lg border bg-card p-4" data-testid={testId}>
+      <div className="flex items-center gap-2 mb-1.5">
+        <Icon className={`h-3.5 w-3.5 ${color}`} />
+        <p className="text-xs text-muted-foreground">{title}</p>
+      </div>
+      <p className={`text-sm font-semibold ${color}`}>{value}</p>
+    </div>
+  );
+}
+
+function RecommendationCard({
+  rec,
+  onAccept,
+  onReject,
+  isPending,
+}: {
+  rec: any;
+  onAccept: () => void;
+  onReject: () => void;
+  isPending: boolean;
+}) {
+  const [dismissed, setDismissed] = useState(false);
+  const [accepted, setAccepted] = useState(false);
+
+  if (dismissed || accepted) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border bg-muted/30 text-xs text-muted-foreground">
+        {accepted ? <ThumbsUp className="h-3.5 w-3.5 text-green-500" /> : <X className="h-3.5 w-3.5" />}
+        {accepted ? "Recommendation accepted — outcome will be tracked." : "Recommendation dismissed."}
+      </div>
+    );
+  }
+
+  const hasRevenue = rec.estimatedRevenueCents != null || rec.potentialRevenueCents != null;
+  const revenueCents = rec.estimatedRevenueCents ?? rec.potentialRevenueCents ?? 0;
+
+  return (
+    <div
+      className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 p-4"
+      data-testid={`rec-card-${rec.type ?? "unknown"}`}
+    >
+      <div className="flex items-start gap-3">
+        <div className="p-1.5 rounded-md bg-blue-100 dark:bg-blue-900/30 shrink-0">
+          <Brain className="h-3.5 w-3.5 text-blue-600 dark:text-blue-400" />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
+            <p className="text-sm font-semibold">{rec.title ?? rec.type ?? "Recommendation"}</p>
+            {rec.priority && (
+              <Badge className={`text-[10px] ${
+                rec.priority === "high" ? "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20"
+                : rec.priority === "medium" ? "bg-amber-500/15 text-amber-700 dark:text-amber-400 border-amber-500/20"
+                : "bg-muted text-muted-foreground"
+              }`}>
+                {rec.priority}
+              </Badge>
+            )}
+            {rec.confidence != null && (
+              <span className="text-[10px] text-muted-foreground">
+                {Math.round(rec.confidence * 100)}% confidence
+              </span>
+            )}
+          </div>
+
+          {rec.description && (
+            <p className="text-xs text-muted-foreground mb-2">{rec.description}</p>
+          )}
+
+          {/* Explainability */}
+          {(rec.reason || rec.signal || rec.why) && (
+            <div className="text-xs text-muted-foreground bg-muted/50 rounded-md px-2.5 py-1.5 mb-2">
+              <span className="font-medium">Why: </span>
+              {rec.reason ?? rec.signal ?? rec.why}
+            </div>
+          )}
+
+          {/* Financial impact */}
+          {hasRevenue && revenueCents > 0 && (
+            <div className="flex items-center gap-1.5 text-xs text-green-700 dark:text-green-400 mb-2">
+              <TrendingUp className="h-3 w-3" />
+              <span>Est. ${Math.round(revenueCents / 100).toLocaleString()} revenue opportunity</span>
+            </div>
+          )}
+
+          {/* Downside if ignored */}
+          {rec.downsideIfIgnored && (
+            <div className="text-xs text-amber-700 dark:text-amber-400 mb-2">
+              <span className="font-medium">Risk if ignored: </span>
+              {rec.downsideIfIgnored}
+            </div>
+          )}
+
+          {/* Recommended action */}
+          {rec.recommendedAction && (
+            <div className="text-xs text-blue-700 dark:text-blue-400 mb-3">
+              <span className="font-medium">Next step: </span>
+              {rec.recommendedAction}
+            </div>
+          )}
+
+          {/* Human-in-the-loop controls */}
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="h-7 text-xs bg-blue-600 hover:bg-blue-700"
+              onClick={() => { setAccepted(true); onAccept(); }}
+              disabled={isPending}
+              data-testid="button-accept-recommendation"
+            >
+              <ThumbsUp className="h-3 w-3 mr-1" />
+              Accept
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs"
+              onClick={() => { setDismissed(true); onReject(); }}
+              disabled={isPending}
+              data-testid="button-reject-recommendation"
+            >
+              <ThumbsDown className="h-3 w-3 mr-1" />
+              Dismiss
+            </Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Duplicate Dialog ─────────────────────────────────────────────────────────
 
 function DuplicateDialog({
@@ -809,7 +1387,7 @@ function DuplicateDialog({
 
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
-type TabView = "weekly" | "templates";
+type TabView = "weekly" | "templates" | "intelligence";
 
 export default function AvailabilityManagerPage() {
   const { toast } = useToast();
@@ -871,6 +1449,7 @@ export default function AvailabilityManagerPage() {
   const TABS = [
     { key: "weekly" as TabView, label: "Weekly Builder", icon: LayoutList },
     { key: "templates" as TabView, label: "Templates", icon: Sparkles },
+    { key: "intelligence" as TabView, label: "Intelligence", icon: Brain },
   ];
 
   return (
@@ -908,6 +1487,9 @@ export default function AvailabilityManagerPage() {
         )}
       </div>
 
+      {/* ── Workforce Health Banner ── */}
+      {!isLoading && <WorkforceHealthBanner blocks={blocks} />}
+
       {/* ── Capacity Bar ── */}
       {isLoading ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -930,8 +1512,11 @@ export default function AvailabilityManagerPage() {
             }`}
             data-testid={`tab-${tab.key}`}
           >
-            <tab.icon className="h-4 w-4" />
+            <tab.icon className={`h-4 w-4 ${tab.key === "intelligence" && activeTab !== "intelligence" ? "text-blue-500" : ""}`} />
             {tab.label}
+            {tab.key === "intelligence" && activeTab !== "intelligence" && (
+              <span className="ml-0.5 w-1.5 h-1.5 rounded-full bg-blue-500 inline-block" />
+            )}
           </button>
         ))}
       </div>
@@ -955,12 +1540,14 @@ export default function AvailabilityManagerPage() {
             />
           ))}
         </div>
-      ) : (
+      ) : activeTab === "templates" ? (
         <TemplatesTab
           activeCoachId={activeCoachId}
           existingBlocks={blocks}
           orgLocations={orgLocations}
         />
+      ) : (
+        <IntelligenceTab blocks={blocks} />
       )}
 
       {/* ── Duplicate Dialog ── */}
