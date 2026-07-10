@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Link } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -17,23 +17,57 @@ import {
   Trash2, Edit2, UserCheck, ClipboardList, DollarSign, BarChart2,
   Building2, Zap, ArrowRight, ExternalLink, X as XIcon, Star,
   Send, CalendarDays, CheckSquare, AlertCircle, RefreshCw,
+  Flame, AlertTriangle, Snowflake, ArrowUpDown, SortAsc,
+  TrendingDown, Activity, FileText, Eye,
 } from "lucide-react";
 import type { LeadCaptureSubmission } from "@shared/schema";
 
 // ─── Status config ─────────────────────────────────────────────────────────
 const BOOKING_STATUS_MAP: Record<string, { label: string; className: string }> = {
-  not_booked:       { label: "New",             className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
-  evaluation_booked:{ label: "Eval Scheduled",  className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" },
-  enrolled:         { label: "Enrolled",         className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" },
-  attended:         { label: "Attended",         className: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300" },
-  lost:             { label: "Lost",             className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
-  archived:         { label: "Archived",         className: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" },
+  not_booked:        { label: "New",            className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300" },
+  evaluation_booked: { label: "Eval Scheduled", className: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300" },
+  enrolled:          { label: "Enrolled",        className: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300" },
+  attended:          { label: "Attended",        className: "bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-300" },
+  lost:              { label: "Lost",            className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" },
+  archived:          { label: "Archived",        className: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-400" },
 };
 
 const COMMITMENT_COLORS: Record<string, string> = {
   high:   "text-emerald-600 dark:text-emerald-400",
   medium: "text-yellow-600 dark:text-yellow-400",
   low:    "text-slate-500 dark:text-slate-400",
+};
+
+type UrgencyLevel = "hot" | "warn" | "cold" | "eval" | "normal" | "inactive";
+
+function getUrgency(lead: LeadCaptureSubmission): UrgencyLevel {
+  const status = lead.bookingStatus || "not_booked";
+  if (status === "enrolled" || status === "attended") return "inactive";
+  if (status === "lost" || status === "archived") return "inactive";
+  if (status === "evaluation_booked") return "eval";
+
+  const ageDays = lead.createdAt
+    ? (Date.now() - new Date(lead.createdAt).getTime()) / (1000 * 60 * 60 * 24)
+    : 0;
+  const score = lead.aiQualificationScore || 0;
+
+  if (ageDays >= 7) return "cold";
+  if (ageDays >= 3) return "warn";
+  if (score >= 75 && ageDays < 4) return "hot";
+  return "normal";
+}
+
+const URGENCY_CONFIG: Record<UrgencyLevel, { label: string; icon: any; badgeClass: string; cardBorderClass: string }> = {
+  hot:      { label: "Hot Lead",        icon: Flame,         badgeClass: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700", cardBorderClass: "border-l-4 border-l-emerald-500" },
+  warn:     { label: "Follow-up Needed",icon: AlertTriangle,  badgeClass: "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300 border-amber-200 dark:border-amber-700",           cardBorderClass: "border-l-4 border-l-amber-400" },
+  cold:     { label: "Cold Risk",       icon: Snowflake,      badgeClass: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-700",                       cardBorderClass: "border-l-4 border-l-red-500" },
+  eval:     { label: "Eval Scheduled",  icon: CalendarDays,   badgeClass: "bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 border-indigo-200 dark:border-indigo-700",     cardBorderClass: "" },
+  normal:   { label: "New",             icon: Activity,       badgeClass: "",                                                                                                                        cardBorderClass: "" },
+  inactive: { label: "",                icon: null,           badgeClass: "",                                                                                                                        cardBorderClass: "" },
+};
+
+const URGENCY_SORT_ORDER: Record<UrgencyLevel, number> = {
+  cold: 0, warn: 1, hot: 2, eval: 3, normal: 4, inactive: 5,
 };
 
 function getStatusCfg(status: string | null | undefined) {
@@ -49,6 +83,11 @@ function timeAgo(dateStr: string | null | undefined): string {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function daysAgo(dateStr: string | null | undefined): number {
+  if (!dateStr) return 0;
+  return Math.floor((Date.now() - new Date(dateStr).getTime()) / (1000 * 60 * 60 * 24));
 }
 
 function formatDate(dateStr: string | null | undefined): string {
@@ -72,6 +111,19 @@ function QualificationBadge({ score }: { score: number | null | undefined }) {
   );
 }
 
+// ─── Urgency Badge ────────────────────────────────────────────────────────────
+function UrgencyBadge({ urgency }: { urgency: UrgencyLevel }) {
+  const cfg = URGENCY_CONFIG[urgency];
+  if (!cfg.badgeClass || urgency === "normal" || urgency === "inactive") return null;
+  const Icon = cfg.icon;
+  return (
+    <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border ${cfg.badgeClass}`}>
+      {Icon && <Icon className="h-2.5 w-2.5" />}
+      {cfg.label}
+    </span>
+  );
+}
+
 // ─── Source Badge ────────────────────────────────────────────────────────────
 function SourceBadge({ source, campaign }: { source?: string | null; campaign?: string | null }) {
   const label = campaign || source || "organic";
@@ -83,6 +135,19 @@ function SourceBadge({ source, campaign }: { source?: string | null; campaign?: 
         : "bg-slate-50 text-slate-600 dark:bg-slate-800 dark:text-slate-400 border-slate-200 dark:border-slate-700"
     }`} data-testid="badge-source">
       {isAd ? "Ad" : "Organic"} · {label}
+    </span>
+  );
+}
+
+// ─── Draft Indicator ─────────────────────────────────────────────────────────
+function DraftReadyBadge({ lead }: { lead: LeadCaptureSubmission }) {
+  if (!(lead as any).adminEmailStatus && !(lead as any).aiNextAction) return null;
+  const hasDraft = (lead as any).adminEmailStatus === "draft_created" || !!(lead as any).aiNextAction;
+  if (!hasDraft) return null;
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold border bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300 border-blue-200 dark:border-blue-700">
+      <FileText className="h-2.5 w-2.5" />
+      Draft Ready
     </span>
   );
 }
@@ -161,7 +226,6 @@ function ConvertAthleteModal({
 
         {!result ? (
           <div className="space-y-4">
-            {/* Lead summary */}
             <div className="rounded-lg bg-muted/30 border px-3 py-2.5 text-xs space-y-1.5">
               <div className="flex items-center gap-3 flex-wrap font-medium">
                 <span data-testid="text-convert-name">{lead.athleteName}</span>
@@ -192,41 +256,16 @@ function ConvertAthleteModal({
               </div>
             )}
 
-            {/* What will happen */}
             <div className="space-y-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">What will happen</p>
               <div className="space-y-2">
                 {[
-                  {
-                    icon: <UserCheck className="h-3.5 w-3.5 text-emerald-500" />,
-                    text: "Create or link a CLIENT account (users + user_profiles)",
-                    detail: hasEmail ? `Account will use ${lead.email}` : "Skipped — no email",
-                  },
-                  {
-                    icon: <CheckSquare className="h-3.5 w-3.5 text-blue-500" />,
-                    text: "Mark lead as Enrolled + set convertedAt timestamp",
-                    detail: "leadCaptureSubmissions updated",
-                  },
-                  {
-                    icon: <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />,
-                    text: "Advance intelligence pipeline stage to 'converted'",
-                    detail: "Stage transition audit entry written",
-                  },
-                  {
-                    icon: <Mail className="h-3.5 w-3.5 text-purple-500" />,
-                    text: "Queue AgentMail welcome draft for review",
-                    detail: "Queued in AI Approvals — not auto-sent",
-                  },
-                  {
-                    icon: <Send className="h-3.5 w-3.5 text-teal-500" />,
-                    text: hasEmail ? "Send account invitation email (SendGrid)" : "Skip account invite — no email",
-                    detail: hasEmail ? "\"Create your password\" link, 7-day expiry" : "Manual invite later",
-                  },
-                  {
-                    icon: <Zap className="h-3.5 w-3.5 text-yellow-500" />,
-                    text: "Initialize PAIL athlete intelligence profile",
-                    detail: "Seeded with intake data — grows with session history",
-                  },
+                  { icon: <UserCheck className="h-3.5 w-3.5 text-emerald-500" />, text: "Create or link a CLIENT account (users + user_profiles)", detail: hasEmail ? `Account will use ${lead.email}` : "Skipped — no email" },
+                  { icon: <CheckSquare className="h-3.5 w-3.5 text-blue-500" />, text: "Mark lead as Enrolled + set convertedAt timestamp", detail: "leadCaptureSubmissions updated" },
+                  { icon: <BarChart2 className="h-3.5 w-3.5 text-indigo-500" />, text: "Advance intelligence pipeline stage to 'converted'", detail: "Stage transition audit entry written" },
+                  { icon: <Mail className="h-3.5 w-3.5 text-purple-500" />, text: "Queue AgentMail welcome draft for review", detail: "Queued in AI Approvals — not auto-sent" },
+                  { icon: <Send className="h-3.5 w-3.5 text-teal-500" />, text: hasEmail ? "Send account invitation email (SendGrid)" : "Skip account invite — no email", detail: hasEmail ? `"Create your password" link, 7-day expiry` : "Manual invite later" },
+                  { icon: <Zap className="h-3.5 w-3.5 text-yellow-500" />, text: "Initialize PAIL athlete intelligence profile", detail: "Seeded with intake data — grows with session history" },
                 ].map((item, i) => (
                   <div key={i} className="flex items-start gap-2.5">
                     <div className="mt-0.5 shrink-0">{item.icon}</div>
@@ -262,9 +301,7 @@ function ConvertAthleteModal({
             </div>
           </div>
         ) : (
-          /* Success state — Phase 4 onboarding checklist */
           <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
-            {/* Header */}
             <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 text-center space-y-1">
               <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto" />
               <p className="font-semibold text-emerald-700 dark:text-emerald-400">
@@ -276,7 +313,6 @@ function ConvertAthleteModal({
               )}
             </div>
 
-            {/* Onboarding checklist */}
             <div className="space-y-1">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Onboarding Checklist</p>
               {([
@@ -308,7 +344,6 @@ function ConvertAthleteModal({
               ))}
             </div>
 
-            {/* Next best action */}
             {result.nextBestAction && (
               <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/20 px-3 py-2.5">
                 <p className="text-xs font-semibold text-blue-700 dark:text-blue-400 mb-0.5">Next best action</p>
@@ -316,7 +351,6 @@ function ConvertAthleteModal({
               </div>
             )}
 
-            {/* Action buttons */}
             <div className="flex gap-2 pt-2 border-t flex-wrap sticky bottom-0 bg-background">
               {result.welcomeDraftCreated && (
                 <Link href="/admin/ai-approvals">
@@ -369,7 +403,7 @@ function EmailDraftModal({
     queryKey: [`/api/admin/athlete-leads/${lead.id}/draft`],
     refetchOnWindowFocus: false,
     retry: false,
-    // @ts-ignore — using select to set state as a side-effect (safe here)
+    // @ts-ignore
     select: (data: any) => {
       if (!draftId) {
         setDraftId(data.draft.id);
@@ -401,11 +435,7 @@ function EmailDraftModal({
     onError: (err: Error) => {
       const isGmailErr = err.message.toLowerCase().includes("gmail") || err.message.toLowerCase().includes("oauth");
       if (isGmailErr) {
-        toast({
-          title: "Gmail not connected",
-          description: "Connect Gmail in Settings to send emails through AgentMail.",
-          variant: "destructive",
-        });
+        toast({ title: "Gmail not connected", description: "Connect Gmail in Settings to send emails through AgentMail.", variant: "destructive" });
       } else {
         toast({ title: "Send failed", description: err.message, variant: "destructive" });
       }
@@ -472,54 +502,36 @@ function EmailDraftModal({
 
             <div>
               <p className="text-xs font-medium text-muted-foreground mb-1">Subject</p>
-              <Input
-                value={subject}
-                onChange={(e) => setSubject(e.target.value)}
-                className="text-sm"
-                placeholder="Subject line…"
-                data-testid="input-email-subject"
-              />
+              <Input value={subject} onChange={(e) => setSubject(e.target.value)} className="text-sm h-9" data-testid="input-email-subject" />
             </div>
 
             <div>
-              <p className="text-xs font-medium text-muted-foreground mb-1">Message</p>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Body</p>
               <Textarea
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
-                className="text-sm min-h-[180px] resize-none font-mono"
-                placeholder="Email body…"
+                className="text-sm min-h-[160px] resize-none font-mono text-xs"
                 data-testid="textarea-email-body"
               />
             </div>
 
-            <div className="flex items-center gap-2 flex-wrap pt-2 border-t">
+            <div className="flex gap-2 flex-wrap pt-1 border-t">
               <Button
                 onClick={() => sendMutation.mutate()}
                 disabled={sendMutation.isPending || !subject.trim() || !body.trim()}
-                className="gap-1.5"
-                data-testid="button-send-email"
+                className="flex-1 gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+                data-testid="button-send-agentmail"
               >
                 {sendMutation.isPending
                   ? <><Loader2 className="h-4 w-4 animate-spin" /> Sending…</>
                   : <><Send className="h-3.5 w-3.5" /> Send via AgentMail</>
                 }
               </Button>
-              <Button
-                variant="outline"
-                onClick={onClose}
-                disabled={sendMutation.isPending}
-                data-testid="button-save-draft-queue"
-              >
+              <Button variant="outline" onClick={onClose} disabled={sendMutation.isPending} data-testid="button-save-draft-queue">
                 Save to Queue
               </Button>
               <Link href="/admin/ai-approvals">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="text-xs gap-1 text-muted-foreground"
-                  onClick={onClose}
-                  data-testid="link-view-all-drafts"
-                >
+                <Button variant="ghost" size="sm" className="text-xs gap-1 text-muted-foreground" onClick={onClose} data-testid="link-view-all-drafts">
                   <ExternalLink className="h-3 w-3" /> All Drafts
                 </Button>
               </Link>
@@ -555,7 +567,6 @@ function ScheduleEvalModal({
   const [confirmResult, setConfirmResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Load intel profile for this submission (to get intelProfileId as leadId)
   const { isLoading: intelLoading } = useQuery<any>({
     queryKey: [`/api/lead-capture/intelligence/${lead.id}`],
     refetchOnWindowFocus: false,
@@ -567,7 +578,6 @@ function ScheduleEvalModal({
     },
   });
 
-  // Load existing scheduling context if any
   const { isLoading: ctxLoading } = useQuery<any>({
     queryKey: [`/api/org/scheduling-agent/contexts/${lead.id}`],
     refetchOnWindowFocus: false,
@@ -588,83 +598,47 @@ function ScheduleEvalModal({
   const isInitialLoading = intelLoading || ctxLoading;
 
   async function handleFindAndOffer() {
-    if (!intelProfileId) {
-      setError("AI lead profile not ready yet. Try again in a moment.");
-      return;
-    }
-    setError(null);
-    setStep("finding");
+    if (!intelProfileId) { setError("AI lead profile not ready yet. Try again in a moment."); return; }
+    setError(null); setStep("finding");
     try {
-      const res = await apiRequest("POST", "/api/org/scheduling-agent/find-slots", {
-        submissionId: lead.id,
-        durationMin: 60,
-        lookAheadDays: 14,
-      });
+      const res = await apiRequest("POST", "/api/org/scheduling-agent/find-slots", { submissionId: lead.id, durationMin: 60, lookAheadDays: 14 });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || "Failed to find slots");
-      if (!json.slots?.length) {
-        setError("No available slots found in the next 14 days. Make sure coaches have availability set up.");
-        setStep("initial");
-        return;
-      }
-      setSlots(json.slots);
-      setStep("slots_found");
-    } catch (err: any) {
-      setError(err.message);
-      setStep("initial");
-    }
+      if (!json.slots?.length) { setError("No available slots found in the next 14 days. Make sure coaches have availability set up."); setStep("initial"); return; }
+      setSlots(json.slots); setStep("slots_found");
+    } catch (err: any) { setError(err.message); setStep("initial"); }
   }
 
   async function handleOfferSlots() {
     if (!intelProfileId) return;
-    setError(null);
-    setStep("offering");
+    setError(null); setStep("offering");
     try {
-      const res = await apiRequest("POST", "/api/org/scheduling-agent/offer-slots", {
-        submissionId: lead.id,
-        leadId: intelProfileId,
-        durationMin: 60,
-      });
+      const res = await apiRequest("POST", "/api/org/scheduling-agent/offer-slots", { submissionId: lead.id, leadId: intelProfileId, durationMin: 60 });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || "Failed to offer slots");
-      setOfferedSlots(json.offeredSlots || slots);
-      setStep("offered");
-      toast({
-        title: "Slots offered via AgentMail",
-        description: "An email draft with time options has been created and queued for review.",
-      });
+      setOfferedSlots(json.offeredSlots || slots); setStep("offered");
+      toast({ title: "Slots offered via AgentMail", description: "An email draft with time options has been created and queued for review." });
       queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads"] });
-    } catch (err: any) {
-      setError(err.message);
-      setStep("slots_found");
-    }
+    } catch (err: any) { setError(err.message); setStep("slots_found"); }
   }
 
   async function handleConfirmBooking() {
     if (!replyText.trim()) return;
-    setError(null);
-    setStep("confirming");
+    setError(null); setStep("confirming");
     try {
-      const res = await apiRequest("POST", "/api/org/scheduling-agent/confirm-booking", {
-        submissionId: lead.id,
-        replyText: replyText.trim(),
-      });
+      const res = await apiRequest("POST", "/api/org/scheduling-agent/confirm-booking", { submissionId: lead.id, replyText: replyText.trim() });
       const json = await res.json();
       if (!res.ok) throw new Error(json.message || "Failed to confirm booking");
       setConfirmResult(json);
       if (json.success) {
-        setStep("confirmed");
-        onBooked();
+        setStep("confirmed"); onBooked();
         queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads"] });
         queryClient.invalidateQueries({ queryKey: ["/api/admin/athlete-leads/stats"] });
       } else {
         setError(json.message || "Could not auto-confirm. Low confidence — please mark manually or try a clearer reply.");
         setStep("offered");
       }
-    } catch (err: any) {
-      setError(err.message);
-      setStep("offered");
-    }
+    } catch (err: any) { setError(err.message); setStep("offered"); }
   }
 
   return (
@@ -678,7 +652,6 @@ function ScheduleEvalModal({
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Lead summary */}
           <div className="rounded-lg bg-muted/30 border px-3 py-2.5 text-xs space-y-1">
             <div className="flex items-center gap-4 flex-wrap">
               <span><span className="text-muted-foreground">Email:</span> {lead.email}</span>
@@ -689,53 +662,34 @@ function ScheduleEvalModal({
 
           {error && (
             <div className="flex items-start gap-2 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 rounded px-3 py-2 border border-red-200 dark:border-red-800">
-              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-              <span>{error}</span>
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" /><span>{error}</span>
             </div>
           )}
 
-          {/* ── Step: Initial ── */}
-          {(step === "initial") && (
+          {step === "initial" && (
             <div className="space-y-3">
               {isInitialLoading ? (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Loading scheduling context…
+                  <Loader2 className="h-4 w-4 animate-spin" />Loading scheduling context…
                 </div>
               ) : (
                 <>
-                  <p className="text-sm text-muted-foreground">
-                    Find available evaluation slots and send them to the athlete via AgentMail.
-                    The athlete will reply to confirm their preferred time.
-                  </p>
-                  <Button
-                    onClick={handleFindAndOffer}
-                    disabled={!intelProfileId}
-                    className="w-full gap-2"
-                    data-testid="button-find-slots"
-                  >
-                    <Calendar className="h-4 w-4" />
-                    Find Available Slots
+                  <p className="text-sm text-muted-foreground">Find available evaluation slots and send them to the athlete via AgentMail. The athlete will reply to confirm their preferred time.</p>
+                  <Button onClick={handleFindAndOffer} disabled={!intelProfileId} className="w-full gap-2" data-testid="button-find-slots">
+                    <Calendar className="h-4 w-4" />Find Available Slots
                   </Button>
-                  {!intelProfileId && (
-                    <p className="text-[11px] text-amber-600 dark:text-amber-400">
-                      AI profile is still processing — refresh and try again in a moment.
-                    </p>
-                  )}
+                  {!intelProfileId && <p className="text-[11px] text-amber-600 dark:text-amber-400">AI profile is still processing — refresh and try again in a moment.</p>}
                 </>
               )}
             </div>
           )}
 
-          {/* ── Step: Finding slots ── */}
           {step === "finding" && (
             <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span className="text-sm">Searching coach availability…</span>
+              <Loader2 className="h-5 w-5 animate-spin" /><span className="text-sm">Searching coach availability…</span>
             </div>
           )}
 
-          {/* ── Step: Slots found ── */}
           {step === "slots_found" && (
             <div className="space-y-3">
               <p className="text-sm font-medium">{slots.length} slot{slots.length !== 1 ? "s" : ""} found</p>
@@ -751,41 +705,27 @@ function ScheduleEvalModal({
                   </div>
                 ))}
               </div>
-              <Button
-                onClick={handleOfferSlots}
-                className="w-full gap-2"
-                data-testid="button-offer-slots"
-              >
-                <Send className="h-3.5 w-3.5" />
-                Send Slot Options via AgentMail
+              <Button onClick={handleOfferSlots} className="w-full gap-2" data-testid="button-offer-slots">
+                <Send className="h-3.5 w-3.5" />Send Slot Options via AgentMail
               </Button>
-              <p className="text-[11px] text-muted-foreground">
-                An email draft with these time options will be queued in AI Approvals for review before sending.
-              </p>
+              <p className="text-[11px] text-muted-foreground">An email draft with these time options will be queued in AI Approvals for review before sending.</p>
             </div>
           )}
 
-          {/* ── Step: Offering ── */}
           {step === "offering" && (
             <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span className="text-sm">Creating AgentMail draft…</span>
+              <Loader2 className="h-5 w-5 animate-spin" /><span className="text-sm">Creating AgentMail draft…</span>
             </div>
           )}
 
-          {/* ── Step: Slots offered / confirm booking ── */}
           {step === "offered" && (
             <div className="space-y-4">
               <div className="rounded-lg bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800 p-3 space-y-1">
                 <div className="flex items-center gap-2 text-indigo-700 dark:text-indigo-300 text-sm font-medium">
-                  <CheckSquare className="h-4 w-4" />
-                  Slots sent via AgentMail
+                  <CheckSquare className="h-4 w-4" />Slots sent via AgentMail
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  The athlete will reply with their preferred time. Paste their reply below to confirm the booking.
-                </p>
+                <p className="text-xs text-muted-foreground">The athlete will reply with their preferred time. Paste their reply below to confirm the booking.</p>
               </div>
-
               {offeredSlots.length > 0 && (
                 <div className="space-y-1.5">
                   <p className="text-xs font-medium text-muted-foreground">Offered times</p>
@@ -797,54 +737,28 @@ function ScheduleEvalModal({
                   ))}
                 </div>
               )}
-
               <div>
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">
-                  Athlete's reply (paste here to auto-confirm)
-                </p>
-                <Textarea
-                  value={replyText}
-                  onChange={(e) => setReplyText(e.target.value)}
-                  placeholder={`e.g. "Thursday at 4pm works great!"`}
-                  className="text-sm min-h-[80px] resize-none"
-                  data-testid="textarea-reply-text"
-                />
+                <p className="text-xs font-medium text-muted-foreground mb-1.5">Athlete's reply (paste here to auto-confirm)</p>
+                <Textarea value={replyText} onChange={(e) => setReplyText(e.target.value)} placeholder={`e.g. "Thursday at 4pm works great!"`} className="text-sm min-h-[80px] resize-none" data-testid="textarea-reply-text" />
               </div>
-
               <div className="flex gap-2">
-                <Button
-                  onClick={handleConfirmBooking}
-                  disabled={!replyText.trim()}
-                  className="flex-1 gap-2"
-                  data-testid="button-confirm-booking"
-                >
-                  <CheckCircle className="h-3.5 w-3.5" />
-                  Parse & Confirm Booking
+                <Button onClick={handleConfirmBooking} disabled={!replyText.trim()} className="flex-1 gap-2" data-testid="button-confirm-booking">
+                  <CheckCircle className="h-3.5 w-3.5" />Parse & Confirm Booking
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={handleFindAndOffer}
-                  className="gap-1.5 text-xs"
-                  data-testid="button-resend-slots"
-                >
+                <Button variant="outline" onClick={handleFindAndOffer} className="gap-1.5 text-xs" data-testid="button-resend-slots">
                   <RefreshCw className="h-3 w-3" /> New Slots
                 </Button>
               </div>
-              <p className="text-[11px] text-muted-foreground">
-                AI will match the reply to an offered slot. If confidence is too low, you'll be prompted to confirm manually.
-              </p>
+              <p className="text-[11px] text-muted-foreground">AI will match the reply to an offered slot. If confidence is too low, you'll be prompted to confirm manually.</p>
             </div>
           )}
 
-          {/* ── Step: Confirming ── */}
           {step === "confirming" && (
             <div className="flex items-center justify-center py-8 gap-2 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              <span className="text-sm">Parsing reply and confirming booking…</span>
+              <Loader2 className="h-5 w-5 animate-spin" /><span className="text-sm">Parsing reply and confirming booking…</span>
             </div>
           )}
 
-          {/* ── Step: Confirmed ── */}
           {step === "confirmed" && (
             <div className="rounded-lg bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800 p-4 text-center space-y-2">
               <CheckCircle className="h-8 w-8 text-emerald-500 mx-auto" />
@@ -855,10 +769,7 @@ function ScheduleEvalModal({
                   {confirmResult.selectedSlot.coachName && ` · ${confirmResult.selectedSlot.coachName}`}
                 </p>
               )}
-              <p className="text-xs text-muted-foreground">
-                Lead status updated to <strong>Eval Scheduled</strong> and pipeline stage set to <strong>booked</strong>.
-                A confirmation email draft has been queued in AI Approvals.
-              </p>
+              <p className="text-xs text-muted-foreground">Lead status updated to <strong>Eval Scheduled</strong> and pipeline stage set to <strong>booked</strong>. A confirmation email draft has been queued in AI Approvals.</p>
               <Button size="sm" variant="outline" onClick={onClose} className="mt-2">Close</Button>
             </div>
           )}
@@ -889,9 +800,13 @@ function AthleteLeadCard({
   const [expanded, setExpanded] = useState(false);
   const statusCfg = getStatusCfg(lead.bookingStatus);
   const commitmentColor = COMMITMENT_COLORS[lead.commitmentLevel || ""] || COMMITMENT_COLORS.low;
+  const urgency = getUrgency(lead);
+  const urgencyCfg = URGENCY_CONFIG[urgency];
+  const days = daysAgo(lead.createdAt?.toString());
+  const isContacted = !!(lead as any).contactedAt || (lead as any).adminEmailStatus === "sent";
 
   return (
-    <Card className="p-4 space-y-3" data-testid={`card-athlete-lead-${lead.id}`}>
+    <Card className={`p-4 space-y-3 ${urgencyCfg.cardBorderClass}`} data-testid={`card-athlete-lead-${lead.id}`}>
       {/* Header row */}
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div className="flex-1 min-w-0">
@@ -904,6 +819,8 @@ function AthleteLeadCard({
               {statusCfg.label}
             </span>
             <QualificationBadge score={lead.aiQualificationScore} />
+            <UrgencyBadge urgency={urgency} />
+            <DraftReadyBadge lead={lead} />
           </div>
           <div className="flex items-center gap-2 flex-wrap mt-0.5">
             {lead.parentName && (
@@ -914,15 +831,9 @@ function AthleteLeadCard({
                 )}
               </p>
             )}
-            {lead.sport && (
-              <span className="text-xs text-muted-foreground">· {lead.sport}</span>
-            )}
-            {lead.age && (
-              <span className="text-xs text-muted-foreground">· Age {lead.age}</span>
-            )}
-            {lead.school && (
-              <span className="text-xs text-muted-foreground">· {lead.school}</span>
-            )}
+            {lead.sport && <span className="text-xs text-muted-foreground">· {lead.sport}</span>}
+            {lead.age && <span className="text-xs text-muted-foreground">· Age {lead.age}</span>}
+            {lead.school && <span className="text-xs text-muted-foreground">· {lead.school}</span>}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -938,8 +849,8 @@ function AthleteLeadCard({
         </div>
       </div>
 
-      {/* Source + commitment row */}
-      <div className="flex items-center gap-2 flex-wrap">
+      {/* Intelligence signals row */}
+      <div className="flex items-center gap-3 flex-wrap">
         <SourceBadge source={lead.utmSource} campaign={lead.utmCampaign} />
         {lead.commitmentLevel && (
           <span className={`text-xs font-medium capitalize ${commitmentColor}`} data-testid={`text-commitment-${lead.id}`}>
@@ -948,6 +859,27 @@ function AthleteLeadCard({
         )}
         {lead.experienceLevel && (
           <span className="text-xs text-muted-foreground capitalize">{lead.experienceLevel.replace(/_/g, " ")} experience</span>
+        )}
+        {/* Time signals */}
+        {urgency === "cold" && (
+          <span className="text-xs text-red-600 dark:text-red-400 font-medium flex items-center gap-1">
+            <Clock className="h-3 w-3" />{days}d without contact — cold risk
+          </span>
+        )}
+        {urgency === "warn" && !isContacted && (
+          <span className="text-xs text-amber-600 dark:text-amber-400 font-medium flex items-center gap-1">
+            <Clock className="h-3 w-3" />{days}d since submission — follow up
+          </span>
+        )}
+        {urgency === "hot" && (
+          <span className="text-xs text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-1">
+            <Flame className="h-3 w-3" />High-score lead — contact now
+          </span>
+        )}
+        {isContacted && urgency !== "inactive" && urgency !== "cold" && (
+          <span className="text-xs text-muted-foreground flex items-center gap-1">
+            <CheckCircle className="h-3 w-3 text-emerald-500" />Contacted
+          </span>
         )}
       </div>
 
@@ -979,11 +911,12 @@ function AthleteLeadCard({
           <Button
             size="sm"
             variant="ghost"
-            className="h-7 text-xs"
+            className={`h-7 text-xs ${(lead as any).aiNextAction ? "text-blue-600 dark:text-blue-400" : ""}`}
             onClick={() => onEmail(lead)}
             data-testid={`button-email-athlete-${lead.id}`}
           >
-            <Mail className="h-3 w-3 mr-1" /> Email
+            <Mail className="h-3 w-3 mr-1" />
+            {(lead as any).aiNextAction ? "Draft Ready" : "Email"}
           </Button>
         )}
         {lead.phone && (
@@ -1030,16 +963,24 @@ function AthleteLeadCard({
                 <span>{lead.phone}</span>
               </div>
             )}
-            {lead.grade && (
-              <div><span className="text-muted-foreground">Grade:</span> {lead.grade}</div>
-            )}
-            {lead.position && (
-              <div><span className="text-muted-foreground">Position:</span> {lead.position}</div>
-            )}
+            {lead.grade && <div><span className="text-muted-foreground">Grade:</span> {lead.grade}</div>}
+            {lead.position && <div><span className="text-muted-foreground">Position:</span> {lead.position}</div>}
             {lead.currentTrainingStatus && (
               <div className="col-span-2">
                 <span className="text-muted-foreground">Training status:</span>{" "}
                 <span className="capitalize">{lead.currentTrainingStatus.replace(/_/g, " ")}</span>
+              </div>
+            )}
+            {(lead as any).contactedAt && (
+              <div className="col-span-2 flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400">
+                <CheckCircle className="h-3 w-3 shrink-0" />
+                Contacted {formatDate((lead as any).contactedAt?.toString())}
+              </div>
+            )}
+            {(lead as any).evaluationBookedAt && (
+              <div className="col-span-2 flex items-center gap-1.5 text-indigo-600 dark:text-indigo-400">
+                <CalendarDays className="h-3 w-3 shrink-0" />
+                Eval: {formatDate((lead as any).evaluationBookedAt?.toString())}
               </div>
             )}
             {lead.createdAt && (
@@ -1064,39 +1005,22 @@ function AthleteLeadCard({
           )}
 
           {lead.aiQualificationReason && (
-            <div className="rounded-md bg-muted/40 border p-2 space-y-1">
-              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">AI Assessment</p>
-              <p className="text-muted-foreground leading-relaxed">{lead.aiQualificationReason}</p>
+            <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 p-2">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-blue-600 dark:text-blue-400 mb-0.5 flex items-center gap-1">
+                <Zap className="h-2.5 w-2.5" /> AI Intelligence
+              </p>
+              <p className="text-[11px] text-blue-800 dark:text-blue-300">{lead.aiQualificationReason}</p>
             </div>
           )}
 
-          {lead.notes && (
-            <div className="rounded-md bg-muted/40 border-l-2 border-primary/30 pl-2 py-1.5">
-              <p className="text-muted-foreground italic">{lead.notes}</p>
+          {(lead as any).aiNextAction && (
+            <div className="rounded-md bg-muted/30 border p-2">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-0.5">Recommended Next Action</p>
+              <p className="text-[11px]">{(lead as any).aiNextAction}</p>
             </div>
           )}
 
-          {/* Timeline milestones */}
-          <div className="space-y-1">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Timeline</p>
-            <div className="space-y-0.5">
-              <div className="flex items-center gap-2">
-                <div className={`h-2 w-2 rounded-full shrink-0 ${lead.createdAt ? "bg-blue-500" : "bg-muted"}`} />
-                <span className="text-muted-foreground">Applied — {formatDate(lead.createdAt?.toString())}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={`h-2 w-2 rounded-full shrink-0 ${lead.evaluationBookedAt ? "bg-indigo-500" : "bg-muted"}`} />
-                <span className="text-muted-foreground">Eval Scheduled — {formatDate(lead.evaluationBookedAt?.toString())}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <div className={`h-2 w-2 rounded-full shrink-0 ${lead.convertedAt ? "bg-emerald-500" : "bg-muted"}`} />
-                <span className="text-muted-foreground">Converted — {formatDate(lead.convertedAt?.toString())}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* UTM attribution */}
-          {(lead.utmSource || lead.utmMedium || lead.utmCampaign) && (
+          {(lead.utmSource || lead.utmCampaign || lead.utmMedium) && (
             <div className="rounded-md bg-muted/30 border p-2 space-y-1">
               <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Campaign Attribution</p>
               <div className="grid grid-cols-2 gap-1 text-[10px]">
@@ -1163,11 +1087,7 @@ function EditLeadModal({
           </div>
           <div className="flex gap-2 justify-end pt-2 border-t">
             <Button variant="outline" onClick={onClose} data-testid="button-cancel-edit">Cancel</Button>
-            <Button
-              onClick={() => onSave(lead.id, { notes, bookingStatus })}
-              disabled={isSaving}
-              data-testid="button-save-edit"
-            >
+            <Button onClick={() => onSave(lead.id, { notes, bookingStatus })} disabled={isSaving} data-testid="button-save-edit">
               {isSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Save
             </Button>
@@ -1178,12 +1098,77 @@ function EditLeadModal({
   );
 }
 
+// ─── Intelligence Command Strip ───────────────────────────────────────────────
+function IntelligenceStrip({
+  stats,
+  activeFilter,
+  onFilterChange,
+}: {
+  stats: any;
+  activeFilter: string;
+  onFilterChange: (f: string) => void;
+}) {
+  const pills = [
+    { key: "hot",   label: "Hot Leads",       count: stats?.hotLeads || 0,      icon: Flame,          colorActive: "bg-emerald-600 text-white border-emerald-600", colorInactive: "text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700 hover:bg-emerald-50 dark:hover:bg-emerald-950/30" },
+    { key: "warn",  label: "Needs Follow-up", count: stats?.needsFollowUp || 0,  icon: AlertTriangle,   colorActive: "bg-amber-500 text-white border-amber-500",     colorInactive: "text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700 hover:bg-amber-50 dark:hover:bg-amber-950/30" },
+    { key: "cold",  label: "Cold Risk",        count: stats?.coldRisk || 0,       icon: Snowflake,      colorActive: "bg-red-600 text-white border-red-600",         colorInactive: "text-red-700 dark:text-red-400 border-red-200 dark:border-red-700 hover:bg-red-50 dark:hover:bg-red-950/30" },
+    { key: "eval",  label: "Eval Scheduled",   count: stats?.evalScheduled || 0,  icon: CalendarDays,   colorActive: "bg-indigo-600 text-white border-indigo-600",   colorInactive: "text-indigo-700 dark:text-indigo-400 border-indigo-200 dark:border-indigo-700 hover:bg-indigo-50 dark:hover:bg-indigo-950/30" },
+  ];
+
+  const hasAlerts = (stats?.coldRisk || 0) + (stats?.needsFollowUp || 0) > 0;
+
+  return (
+    <Card className={`p-3 ${hasAlerts ? "border-amber-200 dark:border-amber-800 bg-amber-50/30 dark:bg-amber-950/10" : ""}`}>
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground shrink-0">
+          <Activity className="h-3.5 w-3.5" />
+          Pipeline Intelligence
+        </div>
+        <div className="flex items-center gap-2 flex-wrap ml-1">
+          {pills.map(({ key, label, count, icon: Icon, colorActive, colorInactive }) => (
+            <button
+              key={key}
+              onClick={() => onFilterChange(activeFilter === key ? "all" : key)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold border transition-colors ${
+                activeFilter === key ? colorActive : colorInactive
+              }`}
+              data-testid={`filter-urgency-${key}`}
+            >
+              <Icon className="h-3 w-3" />
+              {label}
+              <span className={`ml-0.5 px-1 py-0.5 rounded text-[10px] font-bold ${activeFilter === key ? "bg-white/20" : "bg-current/10"}`}>
+                {count}
+              </span>
+            </button>
+          ))}
+        </div>
+        {activeFilter !== "all" && (
+          <button
+            onClick={() => onFilterChange("all")}
+            className="ml-auto text-xs text-muted-foreground hover:text-foreground flex items-center gap-1"
+            data-testid="button-clear-urgency-filter"
+          >
+            <XIcon className="h-3 w-3" /> Clear filter
+          </button>
+        )}
+        {hasAlerts && activeFilter === "all" && (
+          <p className="ml-auto text-[11px] text-amber-600 dark:text-amber-400 font-medium">
+            {(stats?.coldRisk || 0) + (stats?.needsFollowUp || 0)} leads need attention
+          </p>
+        )}
+      </div>
+    </Card>
+  );
+}
+
 // ─── Main Page ───────────────────────────────────────────────────────────────
 export default function AdminAthleteLeadsPage() {
   const { toast } = useToast();
   const [searchText, setSearchText] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterUrgency, setFilterUrgency] = useState("all");
   const [filterSport, setFilterSport] = useState("all");
+  const [sortBy, setSortBy] = useState<"urgency" | "newest" | "score" | "waiting">("urgency");
   const [editLead, setEditLead] = useState<LeadCaptureSubmission | null>(null);
   const [emailLead, setEmailLead] = useState<LeadCaptureSubmission | null>(null);
   const [scheduleLead, setScheduleLead] = useState<LeadCaptureSubmission | null>(null);
@@ -1201,6 +1186,11 @@ export default function AdminAthleteLeadsPage() {
     conversionRate: number;
     projectedRevenue: number;
     sourceAttribution: Record<string, number>;
+    newToday: number;
+    hotLeads: number;
+    needsFollowUp: number;
+    coldRisk: number;
+    lostLeads: number;
   }>({
     queryKey: ["/api/admin/athlete-leads/stats"],
   });
@@ -1233,55 +1223,71 @@ export default function AdminAthleteLeadsPage() {
     onError: (err: Error) => toast({ title: "Delete failed", description: err.message, variant: "destructive" }),
   });
 
-  const sports = [...new Set((leads || []).map((l) => l.sport).filter(Boolean))] as string[];
+  const sports = useMemo(() => [...new Set((leads || []).map((l) => l.sport).filter(Boolean))] as string[], [leads]);
 
-  const filtered = (leads || []).filter((l) => {
-    if (filterStatus !== "all" && l.bookingStatus !== filterStatus) return false;
-    if (filterSport !== "all" && l.sport !== filterSport) return false;
-    if (searchText) {
-      const q = searchText.toLowerCase();
-      if (
-        !l.athleteName.toLowerCase().includes(q) &&
-        !(l.parentName || "").toLowerCase().includes(q) &&
-        !(l.sport || "").toLowerCase().includes(q) &&
-        !(l.school || "").toLowerCase().includes(q)
-      ) return false;
-    }
-    return true;
-  });
+  const filtered = useMemo(() => {
+    let list = (leads || []).filter((l) => {
+      if (filterStatus !== "all" && l.bookingStatus !== filterStatus) return false;
+      if (filterSport !== "all" && l.sport !== filterSport) return false;
+      if (filterUrgency !== "all" && getUrgency(l) !== filterUrgency) return false;
+      if (searchText) {
+        const q = searchText.toLowerCase();
+        if (
+          !l.athleteName.toLowerCase().includes(q) &&
+          !(l.parentName || "").toLowerCase().includes(q) &&
+          !(l.sport || "").toLowerCase().includes(q) &&
+          !(l.school || "").toLowerCase().includes(q) &&
+          !(l.email || "").toLowerCase().includes(q)
+        ) return false;
+      }
+      return true;
+    });
 
-  const topSources = stats?.sourceAttribution
-    ? Object.entries(stats.sourceAttribution)
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, 4)
-    : [];
+    list = [...list].sort((a, b) => {
+      if (sortBy === "urgency") {
+        const ua = URGENCY_SORT_ORDER[getUrgency(a)];
+        const ub = URGENCY_SORT_ORDER[getUrgency(b)];
+        if (ua !== ub) return ua - ub;
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      }
+      if (sortBy === "newest") {
+        return new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime();
+      }
+      if (sortBy === "score") {
+        return (b.aiQualificationScore || 0) - (a.aiQualificationScore || 0);
+      }
+      if (sortBy === "waiting") {
+        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
+      }
+      return 0;
+    });
+
+    return list;
+  }, [leads, filterStatus, filterSport, filterUrgency, searchText, sortBy]);
+
+  const topSources = useMemo(() =>
+    stats?.sourceAttribution
+      ? Object.entries(stats.sourceAttribution).sort(([, a], [, b]) => b - a).slice(0, 4)
+      : [],
+    [stats]
+  );
 
   return (
-    <div className="space-y-6">
-      {/* ── System-type navigation banner ── */}
+    <div className="space-y-5">
+      {/* ── System navigation banner ── */}
       <div className="rounded-lg border border-border bg-muted/30 p-3">
         <div className="flex items-center gap-2 flex-wrap">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
             <span className="font-medium text-foreground">CRM System:</span>
           </div>
           <Link href="/admin/athlete-leads">
-            <button
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-orange-500 text-white shadow-sm"
-              data-testid="nav-athlete-leads-active"
-            >
-              <Users className="h-3.5 w-3.5" />
-              Athlete Intake Pipeline
-              <span className="ml-1 opacity-80">B2C</span>
+            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold bg-orange-500 text-white shadow-sm" data-testid="nav-athlete-leads-active">
+              <Users className="h-3.5 w-3.5" />Athlete Intake Pipeline<span className="ml-1 opacity-80">B2C</span>
             </button>
           </Link>
           <Link href="/admin/team-training-leads">
-            <button
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground border border-border hover:border-foreground/30 transition-colors"
-              data-testid="nav-b2b-partnerships"
-            >
-              <Building2 className="h-3.5 w-3.5" />
-              Team Partnerships
-              <span className="ml-1 opacity-60">B2B</span>
+            <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium text-muted-foreground hover:text-foreground border border-border hover:border-foreground/30 transition-colors" data-testid="nav-b2b-partnerships">
+              <Building2 className="h-3.5 w-3.5" />Team Partnerships<span className="ml-1 opacity-60">B2B</span>
             </button>
           </Link>
           <p className="text-[11px] text-muted-foreground ml-auto hidden sm:block">
@@ -1295,43 +1301,66 @@ export default function AdminAthleteLeadsPage() {
         <div>
           <h1 className="text-2xl font-serif font-bold" data-testid="text-page-title">Athlete Intake Pipeline</h1>
           <p className="text-muted-foreground mt-1 text-sm">
-            Manage athlete applications and parent inquiries from ads, forms, and landing pages.
+            Revenue intelligence and athlete acquisition engine — conversions, follow-ups, and onboarding.
           </p>
+        </div>
+        <div className="flex gap-2">
+          <Link href="/admin/lead-pipeline">
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" data-testid="link-pipeline-view">
+              <BarChart2 className="h-3.5 w-3.5" /> Pipeline View
+            </Button>
+          </Link>
+          <Link href="/admin/ai-approvals">
+            <Button variant="outline" size="sm" className="gap-1.5 text-xs" data-testid="link-ai-approvals">
+              <FileText className="h-3.5 w-3.5" /> AI Approvals
+            </Button>
+          </Link>
         </div>
       </div>
 
       {/* ── Metrics ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3">
         {statsLoading ? (
-          Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-20" />)
+          Array.from({ length: 7 }).map((_, i) => <Skeleton key={i} className="h-20" />)
         ) : (
           <>
             <Card className="p-3 text-center">
               <ClipboardList className="h-4 w-4 mx-auto text-blue-500 mb-1" />
               <p className="text-xl font-bold" data-testid="text-stat-total">{stats?.total || 0}</p>
-              <p className="text-xs text-muted-foreground">Applications</p>
+              <p className="text-xs text-muted-foreground">Total</p>
+              {(stats?.newToday || 0) > 0 && (
+                <p className="text-[10px] text-blue-600 dark:text-blue-400 font-medium mt-0.5">+{stats?.newToday} today</p>
+              )}
+            </Card>
+            <Card className="p-3 text-center">
+              <Flame className="h-4 w-4 mx-auto text-emerald-500 mb-1" />
+              <p className="text-xl font-bold text-emerald-600 dark:text-emerald-400" data-testid="text-stat-hot">{stats?.hotLeads || 0}</p>
+              <p className="text-xs text-muted-foreground">Hot Leads</p>
+            </Card>
+            <Card className={`p-3 text-center ${(stats?.needsFollowUp || 0) > 0 ? "border-amber-200 dark:border-amber-800 bg-amber-50/30 dark:bg-amber-950/10" : ""}`}>
+              <AlertTriangle className={`h-4 w-4 mx-auto mb-1 ${(stats?.needsFollowUp || 0) > 0 ? "text-amber-500" : "text-muted-foreground"}`} />
+              <p className={`text-xl font-bold ${(stats?.needsFollowUp || 0) > 0 ? "text-amber-600 dark:text-amber-400" : ""}`} data-testid="text-stat-followup">{stats?.needsFollowUp || 0}</p>
+              <p className="text-xs text-muted-foreground">Needs Follow-up</p>
+            </Card>
+            <Card className={`p-3 text-center ${(stats?.coldRisk || 0) > 0 ? "border-red-200 dark:border-red-900 bg-red-50/30 dark:bg-red-950/10" : ""}`}>
+              <Snowflake className={`h-4 w-4 mx-auto mb-1 ${(stats?.coldRisk || 0) > 0 ? "text-red-500" : "text-muted-foreground"}`} />
+              <p className={`text-xl font-bold ${(stats?.coldRisk || 0) > 0 ? "text-red-600 dark:text-red-400" : ""}`} data-testid="text-stat-cold">{stats?.coldRisk || 0}</p>
+              <p className="text-xs text-muted-foreground">Cold Risk</p>
             </Card>
             <Card className="p-3 text-center">
               <Calendar className="h-4 w-4 mx-auto text-indigo-500 mb-1" />
               <p className="text-xl font-bold" data-testid="text-stat-eval">{stats?.evalScheduled || 0}</p>
-              <p className="text-xs text-muted-foreground">Evals Scheduled</p>
-            </Card>
-            <Card className="p-3 text-center">
-              <TrendingUp className="h-4 w-4 mx-auto text-emerald-500 mb-1" />
-              <p className="text-xl font-bold" data-testid="text-stat-conversion">{stats?.conversionRate || 0}%</p>
-              <p className="text-xs text-muted-foreground">Conversion Rate</p>
+              <p className="text-xs text-muted-foreground">Eval Scheduled</p>
             </Card>
             <Card className="p-3 text-center">
               <UserCheck className="h-4 w-4 mx-auto text-teal-500 mb-1" />
               <p className="text-xl font-bold" data-testid="text-stat-enrolled">{stats?.enrolled || 0}</p>
               <p className="text-xs text-muted-foreground">Enrolled</p>
+              {(stats?.total || 0) > 0 && (
+                <p className="text-[10px] text-teal-600 dark:text-teal-400 font-medium mt-0.5">{stats?.conversionRate || 0}% rate</p>
+              )}
             </Card>
-            <Card className="p-3 text-center col-span-2 lg:col-span-1">
-              <DollarSign className="h-4 w-4 mx-auto text-primary mb-1" />
-              <p className="text-xl font-bold" data-testid="text-stat-revenue">${(stats?.projectedRevenue || 0).toLocaleString()}</p>
-              <p className="text-xs text-muted-foreground">Projected Revenue</p>
-            </Card>
-            <Card className="p-3 col-span-2 lg:col-span-1">
+            <Card className="p-3 col-span-2 sm:col-span-1">
               <div className="flex items-center gap-1 mb-1.5">
                 <BarChart2 className="h-3.5 w-3.5 text-purple-500" />
                 <p className="text-xs font-medium">Sources</p>
@@ -1351,18 +1380,30 @@ export default function AdminAthleteLeadsPage() {
         )}
       </div>
 
-      {/* ── Filters ── */}
+      {/* ── Intelligence command strip ── */}
+      {!statsLoading && (
+        <IntelligenceStrip
+          stats={stats}
+          activeFilter={filterUrgency}
+          onFilterChange={(f) => {
+            setFilterUrgency(f);
+            setFilterStatus("all");
+          }}
+        />
+      )}
+
+      {/* ── Filters + Sort ── */}
       <Card className="p-3">
         <div className="flex items-center gap-2 flex-wrap">
           <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
           <Input
-            placeholder="Search athletes..."
+            placeholder="Search athletes, email, school…"
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            className="h-8 text-sm w-44"
+            className="h-8 text-sm w-52"
             data-testid="input-search"
           />
-          <Select value={filterStatus} onValueChange={setFilterStatus}>
+          <Select value={filterStatus} onValueChange={(v) => { setFilterStatus(v); setFilterUrgency("all"); }}>
             <SelectTrigger className="h-8 text-xs w-40" data-testid="select-filter-status">
               <SelectValue placeholder="All Statuses" />
             </SelectTrigger>
@@ -1387,7 +1428,21 @@ export default function AdminAthleteLeadsPage() {
               </SelectContent>
             </Select>
           )}
-          <span className="text-xs text-muted-foreground ml-auto">{filtered.length} leads</span>
+          <div className="flex items-center gap-1 ml-auto">
+            <SortAsc className="h-3.5 w-3.5 text-muted-foreground" />
+            <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+              <SelectTrigger className="h-8 text-xs w-36" data-testid="select-sort">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="urgency">By Urgency</SelectItem>
+                <SelectItem value="newest">Newest First</SelectItem>
+                <SelectItem value="score">AI Score</SelectItem>
+                <SelectItem value="waiting">Longest Waiting</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <span className="text-xs text-muted-foreground shrink-0">{filtered.length} leads</span>
         </div>
       </Card>
 
@@ -1399,8 +1454,27 @@ export default function AdminAthleteLeadsPage() {
       ) : filtered.length === 0 ? (
         <Card className="p-10 text-center text-muted-foreground">
           <Users className="h-10 w-10 mx-auto mb-3 opacity-30" />
-          <p className="text-sm font-medium">No leads match your filters</p>
-          <p className="text-xs mt-1">Try adjusting the search or status filter.</p>
+          <p className="text-sm font-medium">
+            {filterUrgency !== "all"
+              ? `No leads match the "${URGENCY_CONFIG[filterUrgency as UrgencyLevel]?.label || filterUrgency}" filter`
+              : "No leads match your filters"}
+          </p>
+          <p className="text-xs mt-1">
+            {filterUrgency !== "all"
+              ? "Great — no action needed in this category."
+              : "Try adjusting the search or status filter."}
+          </p>
+          {(filterUrgency !== "all" || filterStatus !== "all" || searchText) && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-4 text-xs"
+              onClick={() => { setFilterUrgency("all"); setFilterStatus("all"); setSearchText(""); }}
+              data-testid="button-clear-all-filters"
+            >
+              Clear all filters
+            </Button>
+          )}
         </Card>
       ) : (
         <div className="space-y-3">
@@ -1419,7 +1493,7 @@ export default function AdminAthleteLeadsPage() {
         </div>
       )}
 
-      {/* ── Convert to Athlete Modal ── */}
+      {/* ── Modals ── */}
       {convertLead && (
         <ConvertAthleteModal
           lead={convertLead}
@@ -1427,8 +1501,6 @@ export default function AdminAthleteLeadsPage() {
           onConverted={() => setConvertLead(null)}
         />
       )}
-
-      {/* ── Edit Modal ── */}
       {editLead && (
         <EditLeadModal
           lead={editLead}
@@ -1437,16 +1509,12 @@ export default function AdminAthleteLeadsPage() {
           isSaving={updateMutation.isPending}
         />
       )}
-
-      {/* ── Email Draft Modal ── */}
       {emailLead && (
         <EmailDraftModal
           lead={emailLead}
           onClose={() => setEmailLead(null)}
         />
       )}
-
-      {/* ── Schedule Eval Modal ── */}
       {scheduleLead && (
         <ScheduleEvalModal
           lead={scheduleLead}

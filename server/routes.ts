@@ -19574,7 +19574,28 @@ Respond with this exact JSON structure:
         sourceAttribution[src] = (sourceAttribution[src] || 0) + 1;
       }
 
-      res.json({ total, evalScheduled, converted, enrolled, conversionRate, projectedRevenue, sourceAttribution });
+      const now = Date.now();
+      const msPerDay = 1000 * 60 * 60 * 24;
+      const activeStatuses = new Set(["not_booked", "evaluation_booked"]);
+      const newToday = rows.filter((r: any) => r.createdAt && now - new Date(r.createdAt).getTime() < msPerDay).length;
+      const hotLeads = rows.filter((r: any) => {
+        if (!activeStatuses.has(r.bookingStatus || "not_booked")) return false;
+        const ageDays = r.createdAt ? (now - new Date(r.createdAt).getTime()) / msPerDay : 99;
+        return (r.aiQualificationScore || 0) >= 75 && ageDays < 4;
+      }).length;
+      const needsFollowUp = rows.filter((r: any) => {
+        if ((r.bookingStatus || "not_booked") !== "not_booked") return false;
+        const ageDays = r.createdAt ? (now - new Date(r.createdAt).getTime()) / msPerDay : 99;
+        return ageDays >= 3 && ageDays < 7 && !r.contactedAt;
+      }).length;
+      const coldRisk = rows.filter((r: any) => {
+        if ((r.bookingStatus || "not_booked") !== "not_booked") return false;
+        const ageDays = r.createdAt ? (now - new Date(r.createdAt).getTime()) / msPerDay : 99;
+        return ageDays >= 7;
+      }).length;
+      const lostLeads = rows.filter((r: any) => r.bookingStatus === "lost" || r.bookingStatus === "archived").length;
+
+      res.json({ total, evalScheduled, converted, enrolled, conversionRate, projectedRevenue, sourceAttribution, newToday, hotLeads, needsFollowUp, coldRisk, lostLeads });
     } catch (err: any) {
       console.error("[athlete-leads-stats] error:", err);
       res.status(500).json({ message: "Failed to fetch stats" });
