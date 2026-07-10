@@ -1,0 +1,559 @@
+We have completed Phase 1 of the Coach Capacity audit.
+
+The UI is production-ready.
+
+The capacity metrics are surfaced.
+
+The recommendation system is wired.
+
+The learning panels are present.
+
+This is **Phase 2 — Workforce Optimization, Predictive Capacity, and Organizational Intelligence**.
+
+Do NOT redesign the page.
+
+Do NOT replace the existing UI.
+
+Do NOT remove functionality.
+
+Do NOT introduce fake AI.
+
+Do NOT invent metrics.
+
+Do NOT create placeholder actions.
+
+Preserve the existing architecture, scheduling intelligence, recommendation history, and TrainEfficiency design system.
+
+The goal is to transform Coach Capacity from a utilization report into a continuously improving workforce optimization engine.
+
+---
+
+# Core Principle
+
+Coach Capacity should not simply report utilization.
+
+It should continuously answer:
+
+How do we maximize the effectiveness of every coach?
+
+Every recommendation should improve:
+
+Coach workload
+
+Revenue
+
+Athlete experience
+
+Scheduling efficiency
+
+Retention
+
+Burnout prevention
+
+Organizational capacity
+
+---
+
+# Workforce Optimization Lifecycle
+
+Review every recommendation.
+
+Verify that every optimization follows:
+
+Detect
+
+↓
+
+Analyze
+
+↓
+
+Prioritize
+
+↓
+
+Recommend
+
+↓
+
+Human Review
+
+↓
+
+Approve
+
+↓
+
+Execute
+
+↓
+
+Outcome Measured
+
+↓
+
+Learning
+
+↓
+
+Future Optimization
+
+Surface existing stages.
+
+Do not fabricate lifecycle data.
+
+Identify missing stages.
+
+---
+
+# Workforce Effectiveness
+
+Every recommendation should eventually answer:
+
+Did this recommendation improve workforce performance?
+
+Measure where deterministic evidence exists.
+
+Examples:
+
+Coach utilization improved
+
+Idle capacity reduced
+
+Revenue recovered
+
+Athletes reassigned
+
+Burnout reduced
+
+Waitlist reduced
+
+Coach schedule balanced
+
+Coach retention improved
+
+Athlete continuity preserved
+
+Time saved
+
+Never fabricate attribution.
+
+Only use observed or associated outcomes.
+
+---
+
+# Recommendation History
+
+Review whether workforce recommendations retain:
+
+Creation
+
+Priority
+
+Owning agent
+
+Approval
+
+Execution
+
+Outcome
+
+Business value
+
+Coach affected
+
+Resolution
+
+If history exists, surface it.
+
+If incomplete, recommend the safest architecture.
+
+---
+
+# Workforce Agent Reputation
+
+Review Scheduling Agent workforce recommendations.
+
+Determine whether production metrics already exist.
+
+Examples:
+
+Recommendations generated
+
+Recommendations approved
+
+Recommendations rejected
+
+Average utilization improvement
+
+Average revenue recovered
+
+Average idle capacity reduced
+
+Recommendation categories
+
+Average confidence
+
+Observed success rate
+
+Repeated failures
+
+Trust tier
+
+Surface only deterministic metrics.
+
+---
+
+# Predictive Workforce Intelligence
+
+Determine whether Coach Capacity predicts:
+
+Future overload
+
+Future underutilization
+
+Future hiring need
+
+Future idle capacity
+
+Upcoming burnout
+
+Future scheduling bottlenecks
+
+Capacity shortages
+
+Seasonal demand
+
+Coach availability trends
+
+Recurring utilization problems
+
+If prediction infrastructure already exists, expose it.
+
+If not, recommend production-safe implementation.
+
+---
+
+# Coach Optimization
+
+Every coach card should help answer:
+
+Why is this coach overloaded?
+
+Why is this coach underutilized?
+
+Why is revenue lower?
+
+Why are athletes leaving?
+
+Why are cancellations higher?
+
+What should change?
+
+Expected business impact?
+
+Confidence?
+
+Recommended action?
+
+Potential downside if ignored?
+
+Do not expose prompts.
+
+---
+
+# Organizational Learning
+
+Leadership should understand:
+
+Which optimization recommendations consistently work?
+
+Which recommendations consistently fail?
+
+Which coaches respond best to optimization?
+
+Which schedules repeatedly cause burnout?
+
+Which session types create idle capacity?
+
+Which utilization patterns repeat?
+
+Which hiring decisions should be considered?
+
+Surface learning without exposing internal reasoning.
+
+---
+
+# Cross-Agent Workforce Coordination
+
+Determine whether optimization flows across:
+
+Scheduling Agent
+
+↓
+
+Revenue Agent
+
+↓
+
+Retention Agent
+
+↓
+
+Client Success
+
+↓
+
+AgentMail
+
+↓
+
+Hermes Learning
+
+↓
+
+CEO Heartbeat
+
+Examples:
+
+Scheduling Agent detects overload
+
+↓
+
+Revenue Agent estimates lost opportunity
+
+↓
+
+Retention Agent evaluates athlete continuity
+
+↓
+
+AgentMail drafts coach communication
+
+↓
+
+Human approves
+
+↓
+
+Schedule changes
+
+↓
+
+Outcome measured
+
+↓
+
+Learning recorded
+
+↓
+
+CEO Heartbeat receives workforce health signal
+
+Avoid duplicate recommendations.
+
+Clarify ownership.
+
+---
+
+# Explainability
+
+Improve every recommendation.
+
+Each recommendation should explain:
+
+Why this recommendation exists
+
+Which workforce signals influenced it
+
+Expected operational benefit
+
+Expected financial benefit
+
+Expected athlete impact
+
+Potential downside if ignored
+
+Confidence
+
+Recommended next step
+
+Whether similar recommendations succeeded previously
+
+---
+
+# Outcome Measurement
+
+Determine whether recommendations measure:
+
+Utilization improvement
+
+Revenue improvement
+
+Idle capacity reduction
+
+Burnout reduction
+
+Athlete continuity
+
+Coach satisfaction
+
+Coach retention
+
+Scheduling efficiency
+
+Observed workforce improvements
+
+If realization tracking is missing, recommend production-safe implementation.
+
+---
+
+# Human-in-the-Loop
+
+Verify every recommendation supports:
+
+Review
+
+Approve
+
+Reject
+
+Edit
+
+Undo
+
+Bulk approval
+
+Escalation
+
+No workforce optimization should modify production schedules automatically unless explicitly configured.
+
+---
+
+# Operational Intelligence
+
+Leadership should immediately answer:
+
+Which coach needs help?
+
+Which coach should receive the next athlete?
+
+Which coach generates the highest value?
+
+Which coach consistently exceeds capacity?
+
+Where is workforce efficiency declining?
+
+Where is additional hiring needed?
+
+Where is money being lost because of staffing?
+
+Coach Capacity should become the workforce optimization engine for the organization.
+
+---
+
+# Performance
+
+Review:
+
+Rendering
+
+Large organizations
+
+Query efficiency
+
+Caching
+
+Realtime updates
+
+Component organization
+
+State management
+
+Type safety
+
+Maintainability
+
+Avoid unnecessary architecture changes.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Coach optimization cards
+
+Optimization recommendations
+
+Prediction indicators
+
+Business impact
+
+Revenue impact
+
+Outcome indicators
+
+Recommendation history
+
+Learning indicators
+
+Priority badges
+
+Workload visualization
+
+Micro-interactions
+
+Spacing
+
+Typography
+
+Accessibility
+
+Maintain TrainEfficiency branding.
+
+Use:
+
+Green = healthy optimization
+
+Amber = watch
+
+Red = intervention required
+
+Blue = AI recommendation
+
+---
+
+# Deliverables
+
+Return:
+
+1. Intelligence Improvements Implemented
+
+2. Workforce Optimization Assessment
+
+3. Recommendation Lifecycle Assessment
+
+4. Workforce Agent Reputation Assessment
+
+5. Predictive Workforce Assessment
+
+6. Organizational Learning Assessment
+
+7. Explainability Improvements
+
+8. Outcome Measurement Assessment
+
+9. Remaining Production Gaps
+
+10. Updated Production Readiness Score
+
+11. Files Changed
+
+12. TypeScript / Build Results
+
+This is not another reporting page.
+
+This is the AI workforce optimization engine.
+
+The final result should continuously optimize coach utilization, reduce burnout, maximize revenue, improve athlete assignment, coordinate multiple AI agents, measure workforce outcomes, and become smarter after every scheduling decision.
