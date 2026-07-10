@@ -19602,6 +19602,169 @@ Respond with this exact JSON structure:
     }
   });
 
+  // GET /api/admin/athlete-leads/enriched — submissions joined with intel profiles + latest outcomes
+  app.get("/api/admin/athlete-leads/enriched", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadIntelligenceProfiles, agentCommunicationOutcomes } = await import("@shared/schema");
+      const { eq, and, inArray, sql: sql2 } = await import("drizzle-orm");
+      const orgId = profile.organizationId;
+
+      const [intelRows, outcomeRows] = await Promise.all([
+        db.select({
+          submissionId: leadIntelligenceProfiles.submissionId,
+          pipelineStage: leadIntelligenceProfiles.pipelineStage,
+          aiSummary: leadIntelligenceProfiles.aiSummary,
+          leadScore: leadIntelligenceProfiles.leadScore,
+          temperature: leadIntelligenceProfiles.temperature,
+          urgency: leadIntelligenceProfiles.urgency,
+          suggestedNextAction: leadIntelligenceProfiles.suggestedNextAction,
+          suggestedNextActionReason: leadIntelligenceProfiles.suggestedNextActionReason,
+          stageTransitions: leadIntelligenceProfiles.stageTransitions,
+          followUpStage: leadIntelligenceProfiles.followUpStage,
+          lastInteractionAt: leadIntelligenceProfiles.lastInteractionAt,
+          nextFollowUpAt: leadIntelligenceProfiles.nextFollowUpAt,
+          gmailDraftActionId: leadIntelligenceProfiles.gmailDraftActionId,
+          tags: leadIntelligenceProfiles.tags,
+          intakeProcessedAt: leadIntelligenceProfiles.intakeProcessedAt,
+          draftGeneratedAt: leadIntelligenceProfiles.draftGeneratedAt,
+          suppressed: leadIntelligenceProfiles.suppressed,
+          suppressionReason: leadIntelligenceProfiles.suppressionReason,
+        }).from(leadIntelligenceProfiles).where(eq(leadIntelligenceProfiles.orgId, orgId)),
+        db.execute(sql2`
+          SELECT DISTINCT ON (lead_id) lead_id, outcome_status, replied_at, booked_session_at, converted_at, sent_at
+          FROM agent_communication_outcomes
+          WHERE org_id = ${orgId} AND lead_id IS NOT NULL
+          ORDER BY lead_id, created_at DESC
+        `).catch(() => [] as any),
+      ]);
+
+      const intelMap: Record<string, any> = {};
+      for (const row of intelRows) {
+        if (row.submissionId) intelMap[row.submissionId] = row;
+      }
+
+      const outcomeArr = Array.isArray(outcomeRows) ? outcomeRows : (outcomeRows as any)?.rows ?? [];
+      const outcomeMap: Record<string, any> = {};
+      for (const row of outcomeArr) {
+        if (row.lead_id) outcomeMap[row.lead_id] = {
+          outcomeStatus: row.outcome_status,
+          repliedAt: row.replied_at,
+          bookedSessionAt: row.booked_session_at,
+          convertedAt: row.converted_at,
+          sentAt: row.sent_at,
+        };
+      }
+
+      // Merge intel + outcome by submissionId
+      const enriched: Record<string, any> = {};
+      for (const [subId, intel] of Object.entries(intelMap)) {
+        enriched[subId] = { ...intel, outcome: outcomeMap[subId] ?? null };
+      }
+      // Also include submissions that have outcomes but no intel profile
+      for (const [subId, outcome] of Object.entries(outcomeMap)) {
+        if (!enriched[subId]) enriched[subId] = { outcome };
+      }
+
+      res.json({ enriched });
+    } catch (err: any) {
+      console.error("[athlete-leads/enriched] error:", err);
+      res.status(500).json({ message: "Failed to fetch enriched data" });
+    }
+  });
+
+  // GET /api/admin/athlete-leads/revenue-ops — aggregate pipeline intelligence
+  app.get("/api/admin/athlete-leads/revenue-ops", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub ?? req.user?.id;
+      const profile = await storage.getUserProfile(userId);
+      if (!profile?.organizationId) return res.status(400).json({ message: "No organization" });
+      const { db } = await import("./db");
+      const { leadCaptureSubmissions, leadIntelligenceProfiles, agentCommunicationOutcomes } = await import("@shared/schema");
+      const { eq, and, count, sql: sql2 } = await import("drizzle-orm");
+      const orgId = profile.organizationId;
+
+      const [submissions, intelStages, outcomeCounts] = await Promise.all([
+        db.select({
+          utmSource: leadCaptureSubmissions.utmSource,
+          utmCampaign: leadCaptureSubmissions.utmCampaign,
+          bookingStatus: leadCaptureSubmissions.bookingStatus,
+          convertedAt: leadCaptureSubmissions.convertedAt,
+          createdAt: leadCaptureSubmissions.createdAt,
+          estimatedValueCents: leadCaptureSubmissions.estimatedValueCents,
+        }).from(leadCaptureSubmissions).where(eq(leadCaptureSubmissions.orgId, orgId)),
+        db.select({
+          pipelineStage: leadIntelligenceProfiles.pipelineStage,
+          cnt: count(),
+        }).from(leadIntelligenceProfiles)
+          .where(eq(leadIntelligenceProfiles.orgId, orgId))
+          .groupBy(leadIntelligenceProfiles.pipelineStage),
+        db.execute(sql2`
+          SELECT
+            COUNT(*) FILTER (WHERE outcome_status != 'lost') AS total_sent,
+            COUNT(*) FILTER (WHERE outcome_status IN ('replied','meeting_booked','booked_session','converted')) AS total_replied,
+            COUNT(*) FILTER (WHERE outcome_status IN ('booked_session','converted')) AS total_booked,
+            COUNT(*) FILTER (WHERE outcome_status = 'converted') AS total_converted,
+            AVG(EXTRACT(EPOCH FROM (replied_at - sent_at))/86400)::numeric(10,1) AS avg_days_to_reply
+          FROM agent_communication_outcomes
+          WHERE org_id = ${orgId} AND communication_domain IN ('athlete_lead','parent_lead') AND sent_at IS NOT NULL
+        `).catch(() => [] as any),
+      ]);
+
+      // Stage distribution
+      const STAGE_ORDER = ["new_lead", "engaged", "scheduling", "booked", "converted", "stalled", "lost"];
+      const stageDistribution = STAGE_ORDER.map((stage) => ({
+        stage,
+        count: Number(intelStages.find((r: any) => r.pipelineStage === stage)?.cnt || 0),
+      }));
+      const bottleneckStage = stageDistribution
+        .filter((s) => !["converted", "lost"].includes(s.stage))
+        .sort((a, b) => b.count - a.count)[0]?.stage ?? null;
+
+      // Source quality
+      const sourceMap: Record<string, { total: number; converted: number }> = {};
+      for (const sub of submissions) {
+        const src = sub.utmCampaign || sub.utmSource || "organic";
+        if (!sourceMap[src]) sourceMap[src] = { total: 0, converted: 0 };
+        sourceMap[src].total++;
+        if (sub.convertedAt) sourceMap[src].converted++;
+      }
+      const sourceConversion = Object.entries(sourceMap)
+        .map(([source, v]) => ({ source, total: v.total, converted: v.converted, rate: v.total > 0 ? Math.round((v.converted / v.total) * 100) : 0 }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 6);
+
+      // Outreach metrics
+      const outRow: any = Array.isArray(outcomeCounts) ? outcomeCounts[0] : (outcomeCounts as any)?.rows?.[0] ?? {};
+      const totalSent = Number(outRow?.total_sent || 0);
+      const totalReplied = Number(outRow?.total_replied || 0);
+      const totalBooked = Number(outRow?.total_booked || 0);
+      const totalConverted = Number(outRow?.total_converted || 0);
+      const outreachMetrics = {
+        totalSent,
+        totalReplied,
+        totalBooked,
+        totalConverted,
+        replyRate: totalSent > 0 ? Math.round((totalReplied / totalSent) * 100) : 0,
+        bookingRate: totalSent > 0 ? Math.round((totalBooked / totalSent) * 100) : 0,
+        avgDaysToReply: outRow?.avg_days_to_reply ? Number(outRow.avg_days_to_reply) : null,
+      };
+
+      // Projected pipeline value
+      const pipelineValueCents = submissions
+        .filter((s) => !["enrolled", "archived", "lost"].includes(s.bookingStatus || ""))
+        .reduce((acc, s) => acc + (s.estimatedValueCents || 0), 0);
+
+      res.json({ stageDistribution, bottleneckStage, sourceConversion, outreachMetrics, pipelineValueCents });
+    } catch (err: any) {
+      console.error("[athlete-leads/revenue-ops] error:", err);
+      res.status(500).json({ message: "Failed to fetch revenue ops" });
+    }
+  });
+
   app.patch("/api/admin/athlete-leads/:id", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;

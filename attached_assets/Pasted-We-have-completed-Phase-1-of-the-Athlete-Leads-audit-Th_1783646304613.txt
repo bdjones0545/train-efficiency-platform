@@ -1,0 +1,533 @@
+We have completed Phase 1 of the Athlete Leads audit.
+
+The UI is production-ready.
+
+Lead intelligence is surfaced.
+
+Urgency is visible.
+
+AgentMail integration is present.
+
+The scheduling workflow is connected.
+
+This is **Phase 2 — Revenue Operations, Lead Intelligence, and Continuous Conversion Learning**.
+
+Do NOT redesign the page.
+
+Do NOT remove functionality.
+
+Do NOT replace existing architecture.
+
+Do NOT create fake AI.
+
+Do NOT invent conversion probabilities.
+
+Do NOT fabricate revenue attribution.
+
+Preserve the existing CRM, AgentMail, scheduling workflow, onboarding flow, recommendation engine, and TrainEfficiency design system.
+
+The objective is to transform Athlete Leads into the Revenue Operations engine of TrainEfficiency.
+
+---
+
+# Core Principle
+
+Every lead should move through a measurable lifecycle.
+
+Every recommendation should improve conversion.
+
+Every human decision should improve future prioritization.
+
+Every outreach should become measurable.
+
+Every enrollment should improve organizational learning.
+
+---
+
+# Revenue Pipeline Lifecycle
+
+Audit every lead.
+
+Verify support for:
+
+Lead Captured
+
+↓
+
+Qualified
+
+↓
+
+Prioritized
+
+↓
+
+Assigned
+
+↓
+
+Human Review
+
+↓
+
+Outreach Approved
+
+↓
+
+Outreach Sent
+
+↓
+
+Reply
+
+↓
+
+Evaluation Scheduled
+
+↓
+
+Evaluation Completed
+
+↓
+
+Enrollment
+
+↓
+
+Active Athlete
+
+↓
+
+Retention
+
+↓
+
+Learning
+
+Surface existing stages.
+
+Do not fabricate lifecycle data.
+
+Identify missing production-safe implementation.
+
+---
+
+# Lead Outcome Measurement
+
+Every lead should eventually answer:
+
+Did this lead convert?
+
+Did outreach receive a reply?
+
+Did evaluation occur?
+
+Did enrollment occur?
+
+How long did conversion take?
+
+Which recommendation was approved?
+
+Which recommendation was ignored?
+
+Which communication performed best?
+
+Which follow-up strategy worked?
+
+Only use deterministic evidence.
+
+Never fabricate attribution.
+
+Use:
+
+Associated outcomes
+
+Observed conversions
+
+Observed response rate
+
+Associated revenue
+
+---
+
+# Recommendation History
+
+Review whether recommendations retain:
+
+Creation
+
+Priority
+
+Agent
+
+Reason
+
+Approval
+
+Execution
+
+Reply
+
+Evaluation
+
+Enrollment
+
+Resolution
+
+Business value
+
+If history exists, surface it.
+
+If incomplete, recommend the safest architecture.
+
+---
+
+# Revenue Agent Reputation
+
+Review Revenue Agent and Growth Agent.
+
+Determine whether production metrics already exist.
+
+Examples:
+
+Recommendations generated
+
+Recommendations approved
+
+Outreach approved
+
+Outreach rejected
+
+Evaluation bookings
+
+Reply rate
+
+Enrollment rate
+
+Average time to conversion
+
+Average response time
+
+Observed business value
+
+Recommendation categories
+
+Trust tier
+
+Repeated failures
+
+Only surface deterministic metrics.
+
+---
+
+# Coach Accountability
+
+Determine whether leadership can answer:
+
+Who owns this lead?
+
+How long has it been assigned?
+
+Has follow-up occurred?
+
+Has outreach been approved?
+
+Has evaluation been booked?
+
+Has the lead stalled?
+
+Which coach converts best?
+
+Which coach needs help?
+
+If ownership infrastructure exists, surface it.
+
+If not, recommend safe implementation.
+
+---
+
+# Organizational Learning
+
+Leadership should understand:
+
+Which lead sources convert best?
+
+Which campaigns produce the highest-quality athletes?
+
+Which AI outreach performs best?
+
+Which follow-up timing performs best?
+
+Which evaluation windows convert best?
+
+Which recommendation categories consistently succeed?
+
+Which lead stages create bottlenecks?
+
+Which coaches consistently outperform expectations?
+
+Surface learning without exposing prompts or internal reasoning.
+
+---
+
+# Explainability
+
+Every recommendation should explain:
+
+Why this recommendation exists
+
+Which lead signals influenced it
+
+Expected operational impact
+
+Expected business impact
+
+Potential downside if ignored
+
+Confidence (when available)
+
+Recommended next step
+
+Whether similar recommendations historically succeeded
+
+No prompt exposure.
+
+No hidden reasoning.
+
+---
+
+# Human-in-the-Loop
+
+Verify every recommendation supports:
+
+Review
+
+Approve
+
+Reject
+
+Edit
+
+Undo
+
+Bulk approval
+
+Escalation
+
+No outbound communication should automatically send unless explicitly configured.
+
+---
+
+# Cross-Agent Coordination
+
+Determine whether the following workflow is visible:
+
+Growth Agent identifies lead
+
+↓
+
+Revenue Agent estimates opportunity
+
+↓
+
+AgentMail drafts outreach
+
+↓
+
+Coach reviews
+
+↓
+
+Scheduling Agent recommends evaluation
+
+↓
+
+Evaluation booked
+
+↓
+
+Enrollment
+
+↓
+
+Client Success prepares onboarding
+
+↓
+
+Outcome measured
+
+↓
+
+Hermes Learning improves prioritization
+
+↓
+
+CEO Heartbeat receives revenue signal
+
+Surface collaboration instead of isolated recommendations.
+
+---
+
+# Operational Intelligence
+
+Leadership should immediately answer:
+
+Where is revenue leaking?
+
+Which leads require action today?
+
+Which outreach is stalled?
+
+Which evaluations remain unscheduled?
+
+Which campaigns underperform?
+
+Which coaches need assistance?
+
+Which AI recommendations consistently convert?
+
+Which stages create the largest bottleneck?
+
+Athlete Leads should become the Revenue Operations engine for TrainEfficiency.
+
+---
+
+# Continuous Learning
+
+Determine whether the platform improves from:
+
+Accepted outreach
+
+Rejected outreach
+
+Manual email edits
+
+Reply timing
+
+Evaluation attendance
+
+Enrollment outcomes
+
+Lost leads
+
+Coach behavior
+
+AgentMail performance
+
+Lead source quality
+
+If learning infrastructure already exists, expose it.
+
+If missing, recommend production-safe implementation.
+
+---
+
+# Performance
+
+Review:
+
+Large lead volumes
+
+Query efficiency
+
+Realtime updates
+
+Caching
+
+Pagination
+
+Filtering
+
+Sorting
+
+Rendering
+
+State management
+
+Type safety
+
+Maintainability
+
+Avoid unnecessary architecture changes.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Lead cards
+
+Pipeline visualization
+
+Lifecycle indicators
+
+Outcome indicators
+
+Coach ownership
+
+Agent ownership
+
+Activity timeline
+
+Recommendation history
+
+Revenue indicators
+
+Priority badges
+
+Micro-interactions
+
+Spacing
+
+Typography
+
+Accessibility
+
+Maintain TrainEfficiency branding.
+
+Green = progressing
+
+Amber = action required
+
+Red = stalled
+
+Blue = AI recommendation
+
+---
+
+# Deliverables
+
+Return:
+
+1. Intelligence Improvements Implemented
+
+2. Revenue Pipeline Assessment
+
+3. Recommendation Lifecycle Assessment
+
+4. Revenue Agent Reputation Assessment
+
+5. Coach Accountability Assessment
+
+6. Organizational Learning Assessment
+
+7. Explainability Improvements
+
+8. Outcome Measurement Assessment
+
+9. Remaining Production Gaps
+
+10. Updated Production Readiness Score
+
+11. Files Changed
+
+12. TypeScript / Build Results
+
+This is not another CRM.
+
+This is the Revenue Operations engine for TrainEfficiency.
+
+It should continuously improve lead prioritization, outreach quality, evaluation scheduling, enrollment conversion, and organizational learning while coordinating Growth Agent, Revenue Agent, AgentMail, Scheduling, Client Success, Hermes Learning, and CEO Heartbeat into one measurable acquisition system.
+
+Before implementing anything new, determine whether the capability already exists in AgentMail, Command Center, Opportunity Inbox, Scheduling Copilot, CEO Heartbeat, or the onboarding workflow. Reuse existing intelligence wherever possible instead of creating parallel systems.

@@ -19,6 +19,8 @@ import {
   Send, CalendarDays, CheckSquare, AlertCircle, RefreshCw,
   Flame, AlertTriangle, Snowflake, ArrowUpDown, SortAsc,
   TrendingDown, Activity, FileText, Eye,
+  Brain, History, ChevronRight, GitBranch, PieChart, MessageSquare,
+  LayoutDashboard, ArrowDown, Minus,
 } from "lucide-react";
 import type { LeadCaptureSubmission } from "@shared/schema";
 
@@ -779,9 +781,392 @@ function ScheduleEvalModal({
   );
 }
 
+// ─── Enriched Intelligence Types ─────────────────────────────────────────────
+interface EnrichedIntel {
+  pipelineStage?: string | null;
+  aiSummary?: string | null;
+  leadScore?: number | null;
+  temperature?: string | null;
+  urgency?: string | null;
+  suggestedNextAction?: string | null;
+  suggestedNextActionReason?: string | null;
+  stageTransitions?: Array<{ fromStage?: string; toStage?: string; reason?: string; source?: string; timestamp?: string }> | null;
+  followUpStage?: string | null;
+  lastInteractionAt?: string | null;
+  nextFollowUpAt?: string | null;
+  gmailDraftActionId?: string | null;
+  tags?: string[] | null;
+  outcome?: {
+    outcomeStatus?: string | null;
+    repliedAt?: string | null;
+    bookedSessionAt?: string | null;
+    convertedAt?: string | null;
+    sentAt?: string | null;
+  } | null;
+}
+
+interface RevenueOpsData {
+  stageDistribution: Array<{ stage: string; count: number }>;
+  bottleneckStage: string | null;
+  sourceConversion: Array<{ source: string; total: number; converted: number; rate: number }>;
+  outreachMetrics: {
+    totalSent: number;
+    totalReplied: number;
+    totalBooked: number;
+    totalConverted: number;
+    replyRate: number;
+    bookingRate: number;
+    avgDaysToReply: number | null;
+  };
+  pipelineValueCents: number;
+}
+
+// ─── Lifecycle Bar ────────────────────────────────────────────────────────────
+const LIFECYCLE_STEPS = [
+  { key: "captured",   label: "Captured" },
+  { key: "qualified",  label: "Scored" },
+  { key: "outreached", label: "Outreached" },
+  { key: "replied",    label: "Replied" },
+  { key: "scheduled",  label: "Eval" },
+  { key: "enrolled",   label: "Enrolled" },
+];
+
+function getLifecycleStep(lead: LeadCaptureSubmission, intel: EnrichedIntel | null): number {
+  if (lead.bookingStatus === "enrolled" || intel?.pipelineStage === "converted") return 5;
+  if (lead.bookingStatus === "evaluation_booked" || lead.bookingStatus === "attended" || intel?.pipelineStage === "booked" || intel?.pipelineStage === "scheduling") return 4;
+  const replied = intel?.outcome?.outcomeStatus && ["replied", "meeting_booked", "booked_session"].includes(intel.outcome.outcomeStatus);
+  if (replied) return 3;
+  const outreached = !!(lead as any).contactedAt || (lead as any).adminEmailStatus === "sent" || intel?.pipelineStage === "engaged" || !!intel?.outcome?.sentAt;
+  if (outreached) return 2;
+  if ((lead.aiQualificationScore || 0) > 0 || (intel?.leadScore || 0) > 0) return 1;
+  return 0;
+}
+
+function LifecycleBar({ lead, intel }: { lead: LeadCaptureSubmission; intel: EnrichedIntel | null }) {
+  const step = getLifecycleStep(lead, intel);
+  const isLost = lead.bookingStatus === "lost" || intel?.pipelineStage === "lost";
+  const isStalled = intel?.pipelineStage === "stalled";
+
+  return (
+    <div className="flex items-center gap-0 w-full" data-testid="lifecycle-bar">
+      {LIFECYCLE_STEPS.map((s, i) => {
+        const done = i < step;
+        const active = i === step;
+        const dotColor = isLost && i === step
+          ? "bg-red-400 dark:bg-red-500"
+          : isStalled && i === step
+          ? "bg-amber-400 dark:bg-amber-500"
+          : done
+          ? "bg-emerald-500"
+          : active
+          ? "bg-blue-500 ring-2 ring-blue-200 dark:ring-blue-900"
+          : "bg-slate-200 dark:bg-slate-700";
+        const lineColor = done ? "bg-emerald-500" : "bg-slate-200 dark:bg-slate-700";
+        return (
+          <div key={s.key} className="flex items-center flex-1 min-w-0">
+            <div className="flex flex-col items-center shrink-0" title={s.label}>
+              <div className={`h-2 w-2 rounded-full ${dotColor} transition-colors`} />
+              <span className={`text-[8px] mt-0.5 leading-none hidden sm:block truncate max-w-[36px] ${done || active ? "text-foreground/60" : "text-muted-foreground/40"}`}>
+                {s.label}
+              </span>
+            </div>
+            {i < LIFECYCLE_STEPS.length - 1 && (
+              <div className={`flex-1 h-0.5 mx-0.5 rounded-full ${lineColor} transition-colors`} />
+            )}
+          </div>
+        );
+      })}
+      {isLost && (
+        <span className="ml-2 text-[10px] text-red-500 font-medium shrink-0">Lost</span>
+      )}
+      {isStalled && !isLost && (
+        <span className="ml-2 text-[10px] text-amber-500 font-medium shrink-0">Stalled</span>
+      )}
+    </div>
+  );
+}
+
+// ─── Intel Panel (expanded view) ─────────────────────────────────────────────
+const PIPELINE_STAGE_LABELS: Record<string, { label: string; color: string }> = {
+  new_lead:   { label: "New Lead",    color: "text-blue-600 dark:text-blue-400" },
+  engaged:    { label: "Engaged",     color: "text-emerald-600 dark:text-emerald-400" },
+  scheduling: { label: "Scheduling",  color: "text-indigo-600 dark:text-indigo-400" },
+  booked:     { label: "Booked",      color: "text-teal-600 dark:text-teal-400" },
+  converted:  { label: "Converted",   color: "text-emerald-700 dark:text-emerald-300" },
+  stalled:    { label: "Stalled",     color: "text-amber-600 dark:text-amber-400" },
+  lost:       { label: "Lost",        color: "text-red-600 dark:text-red-400" },
+};
+
+const OUTCOME_LABELS: Record<string, { label: string; color: string }> = {
+  sent:           { label: "Outreach Sent",   color: "text-blue-600 dark:text-blue-400" },
+  replied:        { label: "Replied",          color: "text-emerald-600 dark:text-emerald-400" },
+  meeting_booked: { label: "Meeting Booked",  color: "text-teal-600 dark:text-teal-400" },
+  booked_session: { label: "Session Booked",  color: "text-indigo-600 dark:text-indigo-400" },
+  converted:      { label: "Converted",        color: "text-emerald-700 dark:text-emerald-300" },
+  lost:           { label: "Lost",             color: "text-red-600 dark:text-red-400" },
+  ignored:        { label: "No Reply",         color: "text-slate-500" },
+  bounced:        { label: "Bounced",          color: "text-red-500" },
+};
+
+function IntelPanel({ intel }: { intel: EnrichedIntel }) {
+  const stageCfg = intel.pipelineStage ? (PIPELINE_STAGE_LABELS[intel.pipelineStage] ?? PIPELINE_STAGE_LABELS.new_lead) : null;
+  const outcomeCfg = intel.outcome?.outcomeStatus ? (OUTCOME_LABELS[intel.outcome.outcomeStatus] ?? null) : null;
+  const transitions = (intel.stageTransitions || []).slice(-3).reverse();
+  const hasDraft = !!intel.gmailDraftActionId;
+
+  return (
+    <div className="rounded-md border border-blue-200 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 p-2.5 space-y-2" data-testid="intel-panel">
+      {/* Header */}
+      <div className="flex items-center gap-1.5">
+        <Brain className="h-3 w-3 text-blue-600 dark:text-blue-400 shrink-0" />
+        <p className="text-[10px] font-semibold uppercase tracking-wide text-blue-700 dark:text-blue-300">
+          Revenue Intelligence
+        </p>
+        <div className="flex items-center gap-2 ml-auto">
+          {stageCfg && (
+            <span className={`text-[10px] font-semibold ${stageCfg.color}`}>
+              Pipeline: {stageCfg.label}
+            </span>
+          )}
+          {outcomeCfg && (
+            <span className={`text-[10px] font-medium ${outcomeCfg.color} flex items-center gap-0.5`}>
+              <MessageSquare className="h-2.5 w-2.5" />
+              {outcomeCfg.label}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* AI Summary */}
+      {intel.aiSummary && (
+        <p className="text-[11px] text-blue-800 dark:text-blue-200 leading-relaxed">{intel.aiSummary}</p>
+      )}
+
+      {/* Suggested next action */}
+      {intel.suggestedNextAction && (
+        <div className="flex items-start gap-1.5 rounded bg-white/60 dark:bg-slate-900/40 border border-blue-100 dark:border-blue-900 px-2 py-1.5">
+          <Zap className="h-3 w-3 text-blue-500 shrink-0 mt-0.5" />
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold text-blue-700 dark:text-blue-300">
+              Suggested: {intel.suggestedNextAction.replace(/_/g, " ")}
+            </p>
+            {intel.suggestedNextActionReason && (
+              <p className="text-[10px] text-muted-foreground mt-0.5">{intel.suggestedNextActionReason}</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Outcome + draft signals */}
+      <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground">
+        {intel.outcome?.repliedAt && (
+          <span className="flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400">
+            <CheckCircle className="h-2.5 w-2.5" />Replied {timeAgo(intel.outcome.repliedAt)}
+          </span>
+        )}
+        {intel.outcome?.sentAt && !intel.outcome?.repliedAt && (
+          <span className="flex items-center gap-0.5">
+            <Send className="h-2.5 w-2.5" />Outreach sent {timeAgo(intel.outcome.sentAt)}
+          </span>
+        )}
+        {intel.nextFollowUpAt && (
+          <span className="flex items-center gap-0.5 text-amber-600 dark:text-amber-400">
+            <Clock className="h-2.5 w-2.5" />Next follow-up {timeAgo(intel.nextFollowUpAt)}
+          </span>
+        )}
+        {hasDraft && (
+          <span className="flex items-center gap-0.5 text-blue-600 dark:text-blue-400">
+            <FileText className="h-2.5 w-2.5" />Draft queued
+          </span>
+        )}
+        {(intel.leadScore || 0) > 0 && (
+          <span className="flex items-center gap-0.5">
+            <Star className="h-2.5 w-2.5" />AI score: {intel.leadScore}/100
+          </span>
+        )}
+      </div>
+
+      {/* Tags */}
+      {intel.tags && intel.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {intel.tags.slice(0, 6).map((t, i) => (
+            <span key={i} className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-medium">
+              {t}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Stage transition history */}
+      {transitions.length > 0 && (
+        <div className="space-y-0.5">
+          <p className="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground/60 flex items-center gap-1">
+            <History className="h-2.5 w-2.5" /> Recent Stage History
+          </p>
+          {transitions.map((t, i) => (
+            <div key={i} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+              <span className="font-medium text-foreground/60">{t.fromStage?.replace(/_/g, " ") ?? "?"}</span>
+              <ChevronRight className="h-2.5 w-2.5 shrink-0 text-muted-foreground/40" />
+              <span className="font-semibold text-foreground/80">{t.toStage?.replace(/_/g, " ") ?? "?"}</span>
+              {t.reason && <span className="truncate text-muted-foreground/60">— {t.reason}</span>}
+              {t.timestamp && <span className="ml-auto shrink-0">{timeAgo(t.timestamp)}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Revenue Ops Panel ────────────────────────────────────────────────────────
+const STAGE_COLORS: Record<string, string> = {
+  new_lead:   "bg-blue-500",
+  engaged:    "bg-emerald-500",
+  scheduling: "bg-indigo-500",
+  booked:     "bg-teal-500",
+  converted:  "bg-emerald-600",
+  stalled:    "bg-amber-500",
+  lost:       "bg-red-400",
+};
+
+function RevenueOpsPanel({ data }: { data: RevenueOpsData }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const totalInFunnel = data.stageDistribution.filter((s) => !["converted", "lost"].includes(s.stage)).reduce((a, b) => a + b.count, 0);
+  const maxCount = Math.max(...data.stageDistribution.map((s) => s.count), 1);
+
+  const fmtDollars = (cents: number) =>
+    cents >= 100000 ? `$${(cents / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })}` :
+    cents > 0 ? `$${Math.round(cents / 100).toLocaleString()}` : "$0";
+
+  return (
+    <Card className="border-slate-200 dark:border-slate-700" data-testid="revenue-ops-panel">
+      <div
+        className="flex items-center justify-between px-3 py-2.5 cursor-pointer select-none hover:bg-muted/20 transition-colors rounded-lg"
+        onClick={() => setCollapsed((c) => !c)}
+      >
+        <div className="flex items-center gap-2">
+          <LayoutDashboard className="h-3.5 w-3.5 text-slate-500 dark:text-slate-400" />
+          <span className="text-xs font-semibold text-foreground/80">Revenue Operations</span>
+          {data.bottleneckStage && (
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-700">
+              <AlertTriangle className="h-2.5 w-2.5" />
+              Bottleneck: {data.bottleneckStage.replace(/_/g, " ")}
+            </span>
+          )}
+          {(data.pipelineValueCents || 0) > 0 && (
+            <span className="text-[10px] text-muted-foreground">
+              {fmtDollars(data.pipelineValueCents)} pipeline value
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-3">
+          <span className="text-[10px] text-muted-foreground">{totalInFunnel} active leads</span>
+          {collapsed ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" />}
+        </div>
+      </div>
+
+      {!collapsed && (
+        <div className="px-3 pb-3 space-y-4 border-t">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-3">
+            {/* Pipeline funnel */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                <GitBranch className="h-2.5 w-2.5" /> Pipeline Stages
+              </p>
+              <div className="space-y-1.5">
+                {data.stageDistribution.filter((s) => s.count > 0 || !["stalled", "lost"].includes(s.stage)).map((s) => (
+                  <div key={s.stage} className="space-y-0.5">
+                    <div className="flex items-center justify-between text-[10px]">
+                      <span className={`font-medium ${s.stage === data.bottleneckStage ? "text-amber-600 dark:text-amber-400" : "text-foreground/70"}`}>
+                        {s.stage.replace(/_/g, " ")}
+                        {s.stage === data.bottleneckStage && " ⚠"}
+                      </span>
+                      <span className="font-bold">{s.count}</span>
+                    </div>
+                    <div className="h-1 rounded-full bg-muted/40 overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${STAGE_COLORS[s.stage] ?? "bg-slate-400"} transition-all`}
+                        style={{ width: `${Math.round((s.count / maxCount) * 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Outreach metrics */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                <Send className="h-2.5 w-2.5" /> Outreach Performance
+              </p>
+              {data.outreachMetrics.totalSent === 0 ? (
+                <p className="text-[11px] text-muted-foreground/60">No outreach tracked yet</p>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="rounded-md bg-muted/30 border p-2 text-center">
+                      <p className="text-base font-bold">{data.outreachMetrics.totalSent}</p>
+                      <p className="text-[10px] text-muted-foreground">Outreached</p>
+                    </div>
+                    <div className={`rounded-md border p-2 text-center ${data.outreachMetrics.replyRate >= 20 ? "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-200 dark:border-emerald-800" : "bg-muted/30"}`}>
+                      <p className={`text-base font-bold ${data.outreachMetrics.replyRate >= 20 ? "text-emerald-700 dark:text-emerald-400" : ""}`}>
+                        {data.outreachMetrics.replyRate}%
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">Reply Rate</p>
+                    </div>
+                    <div className="rounded-md bg-muted/30 border p-2 text-center">
+                      <p className="text-base font-bold">{data.outreachMetrics.totalBooked}</p>
+                      <p className="text-[10px] text-muted-foreground">Booked</p>
+                    </div>
+                    <div className={`rounded-md border p-2 text-center ${data.outreachMetrics.bookingRate >= 10 ? "bg-teal-50 dark:bg-teal-950/20 border-teal-200 dark:border-teal-800" : "bg-muted/30"}`}>
+                      <p className={`text-base font-bold ${data.outreachMetrics.bookingRate >= 10 ? "text-teal-700 dark:text-teal-400" : ""}`}>
+                        {data.outreachMetrics.bookingRate}%
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">Book Rate</p>
+                    </div>
+                  </div>
+                  {data.outreachMetrics.avgDaysToReply !== null && (
+                    <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+                      <Clock className="h-2.5 w-2.5" />
+                      Avg {data.outreachMetrics.avgDaysToReply}d to reply
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Source quality */}
+            <div className="space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1">
+                <PieChart className="h-2.5 w-2.5" /> Source Conversion
+              </p>
+              {data.sourceConversion.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground/60">No attribution data yet</p>
+              ) : (
+                <div className="space-y-1.5">
+                  {data.sourceConversion.map((s) => (
+                    <div key={s.source} className="flex items-center gap-2 text-[10px]">
+                      <span className="truncate flex-1 font-medium text-foreground/70" title={s.source}>{s.source}</span>
+                      <span className="text-muted-foreground">{s.total} leads</span>
+                      <span className={`font-semibold min-w-[30px] text-right ${s.rate >= 20 ? "text-emerald-600 dark:text-emerald-400" : s.rate > 0 ? "text-foreground/70" : "text-muted-foreground/40"}`}>
+                        {s.rate}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 // ─── Athlete Lead Card ───────────────────────────────────────────────────────
 function AthleteLeadCard({
   lead,
+  intel,
   onUpdate,
   onDelete,
   onEdit,
@@ -790,6 +1175,7 @@ function AthleteLeadCard({
   onConvert,
 }: {
   lead: LeadCaptureSubmission;
+  intel?: EnrichedIntel | null;
   onUpdate: (id: string, data: Record<string, any>) => void;
   onDelete: (id: string) => void;
   onEdit: (lead: LeadCaptureSubmission) => void;
@@ -804,6 +1190,7 @@ function AthleteLeadCard({
   const urgencyCfg = URGENCY_CONFIG[urgency];
   const days = daysAgo(lead.createdAt?.toString());
   const isContacted = !!(lead as any).contactedAt || (lead as any).adminEmailStatus === "sent";
+  const intelData = intel ?? null;
 
   return (
     <Card className={`p-4 space-y-3 ${urgencyCfg.cardBorderClass}`} data-testid={`card-athlete-lead-${lead.id}`}>
@@ -881,6 +1268,11 @@ function AthleteLeadCard({
             <CheckCircle className="h-3 w-3 text-emerald-500" />Contacted
           </span>
         )}
+      </div>
+
+      {/* Lifecycle progress bar */}
+      <div className="pt-0.5">
+        <LifecycleBar lead={lead} intel={intelData} />
       </div>
 
       {/* Action buttons */}
@@ -1030,6 +1422,11 @@ function AthleteLeadCard({
                 {lead.utmContent && <div className="col-span-2"><span className="text-muted-foreground">Content:</span> {lead.utmContent}</div>}
               </div>
             </div>
+          )}
+
+          {/* Revenue Intelligence Panel — surfaces enriched intel profile data */}
+          {intelData && (intelData.aiSummary || intelData.pipelineStage || intelData.suggestedNextAction || intelData.outcome || (intelData.stageTransitions && intelData.stageTransitions.length > 0)) && (
+            <IntelPanel intel={intelData} />
           )}
         </div>
       )}
@@ -1193,6 +1590,16 @@ export default function AdminAthleteLeadsPage() {
     lostLeads: number;
   }>({
     queryKey: ["/api/admin/athlete-leads/stats"],
+  });
+
+  const { data: enrichedData } = useQuery<{ enriched: Record<string, EnrichedIntel> }>({
+    queryKey: ["/api/admin/athlete-leads/enriched"],
+    staleTime: 60_000,
+  });
+
+  const { data: revenueOps } = useQuery<RevenueOpsData>({
+    queryKey: ["/api/admin/athlete-leads/revenue-ops"],
+    staleTime: 60_000,
   });
 
   const updateMutation = useMutation({
@@ -1392,6 +1799,9 @@ export default function AdminAthleteLeadsPage() {
         />
       )}
 
+      {/* ── Revenue Operations panel ── */}
+      {revenueOps && <RevenueOpsPanel data={revenueOps} />}
+
       {/* ── Filters + Sort ── */}
       <Card className="p-3">
         <div className="flex items-center gap-2 flex-wrap">
@@ -1482,6 +1892,7 @@ export default function AdminAthleteLeadsPage() {
             <AthleteLeadCard
               key={lead.id}
               lead={lead}
+              intel={enrichedData?.enriched?.[lead.id] ?? null}
               onUpdate={(id, data) => updateMutation.mutate({ id, data })}
               onDelete={(id) => deleteMutation.mutate(id)}
               onEdit={setEditLead}
