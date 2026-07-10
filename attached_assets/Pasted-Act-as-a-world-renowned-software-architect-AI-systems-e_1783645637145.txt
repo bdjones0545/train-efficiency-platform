@@ -1,0 +1,779 @@
+Act as a world-renowned software architect, AI systems engineer, revenue operations expert, CRM architect, Apple-level product designer, and enterprise UX specialist.
+
+We are conducting a production-grade page-by-page audit of TrainEfficiency.
+
+# Page
+
+**Athlete Leads**
+
+This page is NOT simply a CRM.
+
+It is the revenue intelligence and athlete acquisition engine for TrainEfficiency.
+
+Its purpose is to continuously optimize lead conversion, coach follow-up, athlete onboarding, scheduling, retention preparation, and long-term customer value.
+
+Do NOT redesign the page.
+
+Do NOT remove existing functionality.
+
+Do NOT create fake AI.
+
+Do NOT invent metrics.
+
+Do NOT add placeholder actions.
+
+Preserve the existing lead pipeline, AgentMail, CRM architecture, scheduling engine, and TrainEfficiency design system.
+
+Improve intelligence.
+
+Improve explainability.
+
+Improve measurable business value.
+
+---
+
+# Core Mission
+
+Within five seconds leadership should know:
+
+How many new leads arrived?
+
+Which leads require immediate attention?
+
+Which leads are most likely to convert?
+
+Which leads are becoming cold?
+
+Which leads require personal outreach?
+
+Which leads already have AI drafts prepared?
+
+Where is revenue at risk?
+
+What should the team do next?
+
+---
+
+# Lead Lifecycle Audit
+
+Verify every lead supports:
+
+Captured
+
+↓
+
+Qualified
+
+↓
+
+Prioritized
+
+↓
+
+Assigned
+
+↓
+
+Contacted
+
+↓
+
+Conversation
+
+↓
+
+Consultation / Evaluation
+
+↓
+
+Trial Session
+
+↓
+
+Enrollment
+
+↓
+
+Active Athlete
+
+↓
+
+Retention
+
+↓
+
+Learning
+
+Surface existing stages.
+
+Do not fabricate lifecycle stages.
+
+Recommend production-safe implementation where gaps exist.
+
+---
+
+# UX Audit
+
+Audit:
+
+Lead list
+
+Pipeline
+
+Kanban (if present)
+
+Table
+
+Filters
+
+Search
+
+Sorting
+
+Lead cards
+
+Status badges
+
+Priority indicators
+
+Revenue indicators
+
+Coach assignment
+
+Communication history
+
+Activity timeline
+
+Notes
+
+Loading
+
+Errors
+
+Success
+
+Empty states
+
+Accessibility
+
+Spacing
+
+Typography
+
+Mobile responsiveness
+
+The page should make revenue opportunities obvious.
+
+---
+
+# Functional Audit
+
+Review every interaction.
+
+Lead creation
+
+Lead editing
+
+Lead assignment
+
+Status changes
+
+Coach assignment
+
+Email
+
+SMS
+
+Phone
+
+Notes
+
+Tasks
+
+Schedule consultation
+
+Book evaluation
+
+Convert athlete
+
+Archive
+
+Delete
+
+Bulk actions
+
+Search
+
+Filters
+
+Sorting
+
+Import
+
+Export
+
+AgentMail draft
+
+Approve draft
+
+Reject draft
+
+Regenerate draft
+
+Determine:
+
+Does it work?
+
+Is it connected to real backend functionality?
+
+Permissions respected?
+
+Loading, success, error, undo?
+
+Dead buttons?
+
+Duplicate workflows?
+
+Placeholder actions?
+
+Fix production-safe issues only.
+
+---
+
+# Revenue Intelligence Audit
+
+Determine whether the page surfaces:
+
+Lead score
+
+Conversion probability
+
+Time since last contact
+
+Time in stage
+
+Revenue potential
+
+Expected lifetime value (if supported)
+
+Source
+
+Campaign
+
+Coach assignment
+
+Follow-up urgency
+
+Cold lead risk
+
+Hot lead indicators
+
+Communication status
+
+Missed follow-ups
+
+Upcoming appointments
+
+Evaluation scheduled
+
+Enrollment likelihood
+
+Only use deterministic intelligence.
+
+If probability models do not exist, recommend production-safe architecture instead of fabricating scores.
+
+---
+
+# Agent Utilization Audit
+
+Review participation from:
+
+Growth Agent
+
+Revenue Agent
+
+Client Success Agent
+
+Scheduling Agent
+
+AgentMail
+
+Executive Agent
+
+CEO Heartbeat
+
+Hermes Learning
+
+Attention Inbox
+
+Determine:
+
+Which agent owns which recommendation?
+
+Should Growth Agent prioritize leads?
+
+Should Revenue Agent estimate opportunity?
+
+Should AgentMail prepare outreach?
+
+Should Scheduling Agent recommend evaluations?
+
+Should Client Success prepare onboarding?
+
+Should CEO Heartbeat receive lead health signals?
+
+Avoid duplicate recommendations.
+
+Clarify ownership.
+
+---
+
+# Agent Intelligence & Closed-Loop Learning Assessment
+
+Review every intelligent workflow.
+
+---
+
+## Learning Loop
+
+Determine whether the system learns from:
+
+Lead conversions
+
+Lost leads
+
+Ignored leads
+
+Coach follow-up timing
+
+Email engagement
+
+Reply timing
+
+Consultation attendance
+
+Evaluation outcomes
+
+Enrollment
+
+Accepted AI drafts
+
+Rejected AI drafts
+
+Manual edits
+
+Determine whether learning:
+
+Improves future recommendations
+
+Remains organization-scoped
+
+Can be reviewed
+
+Can be corrected
+
+Can retire obsolete learning
+
+---
+
+## Recommendation Lifecycle
+
+Every recommendation should support:
+
+Detected
+
+↓
+
+Analyzed
+
+↓
+
+Prioritized
+
+↓
+
+Recommended
+
+↓
+
+Human Review
+
+↓
+
+Approved
+
+↓
+
+Executed
+
+↓
+
+Outcome Measured
+
+↓
+
+Learning
+
+↓
+
+Future Optimization
+
+Surface existing stages.
+
+Do not fabricate lifecycle information.
+
+---
+
+## Outcome Measurement
+
+Determine whether recommendations measure:
+
+Lead conversion
+
+Evaluation bookings
+
+Email replies
+
+Consultation attendance
+
+Enrollment
+
+Revenue generated
+
+Associated revenue
+
+Coach response time
+
+Time to conversion
+
+Observed business value
+
+Never fabricate attribution.
+
+Only use deterministic evidence.
+
+---
+
+## Explainability
+
+Every recommendation should explain:
+
+Why this recommendation exists
+
+Which lead signals influenced it
+
+Expected business impact
+
+Expected conversion impact
+
+Potential downside if ignored
+
+Confidence (if supported)
+
+Recommended next action
+
+Whether similar recommendations have historically succeeded
+
+Do not expose prompts.
+
+---
+
+## Human-in-the-Loop
+
+Verify every recommendation supports:
+
+Review
+
+Approve
+
+Reject
+
+Edit
+
+Undo
+
+Bulk approval
+
+Escalation
+
+No outbound communication should be automatically sent unless explicitly configured.
+
+---
+
+## Cross-Agent Coordination
+
+Review workflows such as:
+
+Growth Agent identifies high-value lead
+
+↓
+
+Revenue Agent estimates opportunity
+
+↓
+
+AgentMail drafts outreach
+
+↓
+
+Scheduling Agent recommends evaluation
+
+↓
+
+Coach reviews
+
+↓
+
+Lead contacted
+
+↓
+
+Evaluation booked
+
+↓
+
+Enrollment
+
+↓
+
+Client Success begins onboarding
+
+↓
+
+Outcome measured
+
+↓
+
+Hermes Learning improves future prioritization
+
+↓
+
+CEO Heartbeat receives revenue signal
+
+Surface collaboration rather than isolated agent behavior.
+
+---
+
+## Organizational Learning
+
+Leadership should understand:
+
+Which lead sources convert best?
+
+Which outreach timing performs best?
+
+Which coaches convert most effectively?
+
+Which AI drafts perform best?
+
+Which recommendations are ignored?
+
+Which follow-up strategies succeed?
+
+Which campaigns underperform?
+
+Which lead patterns repeat?
+
+Surface learning without exposing internal reasoning.
+
+---
+
+## Operational Intelligence
+
+Leadership should immediately answer:
+
+Where is revenue leaking?
+
+Which leads require action today?
+
+Which coaches need follow-up help?
+
+Where are evaluations bottlenecked?
+
+Which campaigns generate the highest-quality athletes?
+
+Which lead stages create the most friction?
+
+Athlete Leads should become the revenue operating system for athlete acquisition.
+
+---
+
+# Performance
+
+Review:
+
+Large lead volumes
+
+Query efficiency
+
+Realtime updates
+
+Caching
+
+Pagination
+
+Rendering
+
+Filtering
+
+Sorting
+
+State management
+
+Type safety
+
+Maintainability
+
+Avoid unnecessary architecture rewrites.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Lead cards
+
+Pipeline
+
+Priority indicators
+
+Revenue indicators
+
+Follow-up badges
+
+Communication timeline
+
+Agent attribution
+
+Recommendation cards
+
+Outcome indicators
+
+Activity history
+
+Spacing
+
+Typography
+
+Hover states
+
+Accessibility
+
+Micro-interactions
+
+Maintain TrainEfficiency branding.
+
+Green = healthy pipeline
+
+Amber = follow-up needed
+
+Red = at-risk lead
+
+Blue = AI recommendation
+
+---
+
+# Deliverables
+
+Return:
+
+1. UX Audit
+
+Strengths
+
+Weaknesses
+
+Improvements implemented
+
+Remaining opportunities
+
+---
+
+2. Functional Audit
+
+Interactive elements reviewed
+
+Issues found
+
+Fixes implemented
+
+Remaining risks
+
+---
+
+3. Revenue Intelligence Audit
+
+Signals surfaced
+
+Signals missing
+
+Revenue opportunities
+
+Operational risks
+
+---
+
+4. Agent Intelligence & Closed-Loop Learning Assessment
+
+Learning loops
+
+Recommendation lifecycle
+
+Outcome measurement
+
+Explainability
+
+Cross-agent coordination
+
+Organizational learning
+
+Operational intelligence
+
+Recommended implementation order
+
+---
+
+5. Production Readiness Score
+
+Score:
+
+UX
+
+Functionality
+
+Revenue Intelligence
+
+Agent Utilization
+
+Closed-Loop Learning
+
+Explainability
+
+Cross-Agent Coordination
+
+Outcome Measurement
+
+Performance
+
+Production Readiness
+
+---
+
+6. Implementation Summary
+
+Files changed
+
+Architecture changes
+
+Production-safe improvements
+
+Agent/AI improvements
+
+Remaining TODOs
+
+TypeScript/build results
+
+Athlete Leads should become the AI-powered revenue operating system for athlete acquisition.
+
+Before creating any new intelligence, determine whether it already exists in AgentMail, Command Center, Opportunity Inbox, Scheduling Copilot, CEO Heartbeat, or the existing lead pipeline. Reuse existing intelligence wherever possible instead of creating parallel logic. Every recommendation should ultimately help convert more athletes while remaining measurable, explainable, and continuously improving.
