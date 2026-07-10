@@ -23,7 +23,8 @@ import {
   MessageSquare, PhoneOff, ShieldCheck, ShieldAlert, ShieldX,
   Activity, BarChart2, Zap, Settings2, CheckCircle2, Ban, Copy, UserX,
   Sparkles, RotateCcw, Clock, MapPin, FileSearch, Minimize2, X as XIcon,
-  Upload, Download, Briefcase, Building2,
+  Upload, Download, Briefcase, Building2, ArrowUpDown, Flame, DollarSign,
+  Brain, TrendingDown, Calendar,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import type { TeamTrainingProspect, TeamTrainingOutreachDraft } from "@shared/schema";
@@ -367,6 +368,80 @@ function ConfidenceBar({ score }: { score: number }) {
   );
 }
 
+// ─── Urgency Helpers ──────────────────────────────────────────────────────────
+function daysSinceContact(p: TeamTrainingProspect): number | null {
+  const ts = p.lastContactedAt;
+  if (!ts) return null;
+  return Math.floor((Date.now() - (ts instanceof Date ? ts : new Date(ts as unknown as string)).getTime()) / (1000 * 60 * 60 * 24));
+}
+
+type UrgencyLevel = "hot" | "warm" | "cold" | "stalled" | "dnc";
+
+function getUrgencyLevel(p: TeamTrainingProspect): UrgencyLevel {
+  if (p.outreachStatus === "Do Not Contact" || p.outreachStatus === "Not Interested") return "dnc";
+  if (p.outreachStatus === "Replied") return "hot";
+  if (p.outreachStatus === "Contacted") {
+    const days = daysSinceContact(p);
+    if (days === null || days <= 7) return "warm";
+    if (days <= 30) return "cold";
+    return "stalled";
+  }
+  return "cold";
+}
+
+function urgencyBorderClass(level: UrgencyLevel): string {
+  if (level === "hot") return "border-l-4 border-l-emerald-500";
+  if (level === "warm") return "border-l-4 border-l-blue-400";
+  if (level === "stalled") return "border-l-4 border-l-red-400";
+  if (level === "dnc") return "border-l-4 border-l-slate-300 dark:border-l-slate-600";
+  return "border-l-4 border-l-transparent";
+}
+
+// ─── B2B Lifecycle Bar ────────────────────────────────────────────────────────
+const B2B_STAGES = ["Captured", "Contacted", "Replied", "In Pipeline", "Active"];
+
+function getB2BStep(outreachStatus: string | null | undefined, hasDeal: boolean): number {
+  if (hasDeal) return 3;
+  if (outreachStatus === "Replied") return 2;
+  if (outreachStatus === "Contacted") return 1;
+  return 0;
+}
+
+function B2BLifecycleBar({ outreachStatus, hasDeal }: { outreachStatus: string | null | undefined; hasDeal: boolean }) {
+  const isDnc = outreachStatus === "Do Not Contact" || outreachStatus === "Not Interested";
+  const currentStep = getB2BStep(outreachStatus, hasDeal);
+
+  if (isDnc) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <div className="flex-1 h-1 rounded-full bg-slate-200 dark:bg-slate-700" />
+        <span className="text-[10px] text-muted-foreground/60 shrink-0">Closed</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-1">
+      {B2B_STAGES.map((stage, i) => {
+        const isDone = i < currentStep;
+        const isCurrent = i === currentStep;
+        return (
+          <div key={stage} className="flex items-center gap-0.5 flex-1 min-w-0" title={stage}>
+            <div
+              className={`h-1.5 flex-1 rounded-full transition-colors ${
+                isDone ? "bg-emerald-500" : isCurrent ? "bg-blue-500" : "bg-muted/60"
+              }`}
+            />
+          </div>
+        );
+      })}
+      <span className="text-[10px] text-muted-foreground shrink-0 ml-1.5">
+        {B2B_STAGES[currentStep]}
+      </span>
+    </div>
+  );
+}
+
 function ProspectCard({
   prospect,
   onStatusChange,
@@ -399,9 +474,11 @@ function ProspectCard({
   const hasDeal = existingDealProspectIds.has(prospect.id);
 
   const displayEmail = prospect.decisionMakerEmail || prospect.contactEmail;
+  const urgency = getUrgencyLevel(prospect);
+  const daysAgo = daysSinceContact(prospect);
 
   return (
-    <Card className="p-4 space-y-3" data-testid={`card-prospect-${prospect.id}`}>
+    <Card className={`p-4 space-y-3 ${urgencyBorderClass(urgency)}`} data-testid={`card-prospect-${prospect.id}`}>
       <div className="flex items-start justify-between gap-2 flex-wrap">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -413,9 +490,24 @@ function ProspectCard({
               {stage.label}
             </span>
             <LeadValidationBadge status={(prospect as any).leadValidationStatus} />
+            {urgency === "stalled" && (
+              <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 shrink-0" data-testid={`badge-stalled-${prospect.id}`}>
+                <Flame className="h-2.5 w-2.5" /> Stalled
+              </span>
+            )}
           </div>
-          <p className="text-xs text-muted-foreground mt-0.5">
-            {prospect.organizationType} · {prospect.sport} · {prospect.city}, {prospect.state}
+          <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5 flex-wrap">
+            <span>{prospect.organizationType} · {prospect.sport} · {prospect.city}, {prospect.state}</span>
+            {daysAgo !== null && prospect.outreachStatus === "Contacted" && (
+              <span className={`inline-flex items-center gap-0.5 font-medium ${daysAgo > 30 ? "text-red-500 dark:text-red-400" : daysAgo > 7 ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground"}`} data-testid={`text-days-ago-${prospect.id}`}>
+                <Clock className="h-2.5 w-2.5" />{daysAgo}d ago
+              </span>
+            )}
+            {prospect.estimatedValue ? (
+              <span className="inline-flex items-center gap-0.5 text-emerald-600 dark:text-emerald-400 font-medium" data-testid={`text-est-value-${prospect.id}`}>
+                <DollarSign className="h-2.5 w-2.5" />{prospect.estimatedValue.toLocaleString()}
+              </span>
+            ) : null}
           </p>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -436,6 +528,7 @@ function ProspectCard({
       </div>
 
       <ConfidenceBar score={prospect.confidenceScore || 50} />
+      <B2BLifecycleBar outreachStatus={prospect.outreachStatus} hasDeal={hasDeal} />
 
       <div className="flex items-center gap-2 flex-wrap">
         {quality.hasEmail ? (
@@ -1328,6 +1421,296 @@ function ResearchProgressPanel({
   );
 }
 
+// ─── Intelligence Tab Component ───────────────────────────────────────────────
+type AnalyticsRec = { icon: string; title: string; text: string };
+
+function IntelligenceTab({ analyticsData, revenueActions }: { analyticsData: any; revenueActions: any[] | undefined }) {
+  const { data: recs, isLoading: recsLoading, refetch: refetchRecs, isFetching: recsFetching } = useQuery<{ recommendations: AnalyticsRec[]; generatedAt: string; dataPoints: number }>({
+    queryKey: ["/api/admin/team-training/analytics/recommendations"],
+    staleTime: 300000,
+    enabled: false,
+  });
+
+  const { data: brief, refetch: refetchBrief, isFetching: briefFetching } = useQuery<any>({
+    queryKey: ["/api/admin/team-training/revenue-agent/brief"],
+    staleTime: 120000,
+    enabled: false,
+  });
+
+  const runAgentMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest("POST", "/api/admin/team-training/revenue-agent/run", {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/actions"] });
+      refetchBrief();
+    },
+  });
+
+  const executeMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/execute`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/actions"] });
+    },
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const res = await apiRequest("POST", `/api/admin/team-training/revenue-agent/actions/${id}/dismiss`, {});
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/team-training/revenue-agent/actions"] });
+    },
+  });
+
+  const summary = analyticsData?.summary;
+  const stageFunnel: { label: string; count: number }[] = analyticsData?.stageFunnel || [];
+  const pendingActions = (revenueActions || []).filter((a: any) => a.status === "pending");
+
+  return (
+    <div className="space-y-5" data-testid="intelligence-tab-content">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="font-semibold text-sm flex items-center gap-2">
+            <Brain className="h-4 w-4 text-primary" /> Revenue Intelligence
+          </h2>
+          <p className="text-xs text-muted-foreground mt-0.5">Real pipeline metrics and AI actions from your deal data.</p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => runAgentMutation.mutate()}
+          disabled={runAgentMutation.isPending}
+          data-testid="button-run-revenue-agent"
+        >
+          {runAgentMutation.isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Zap className="h-3.5 w-3.5 mr-1.5" />}
+          Run Revenue Agent
+        </Button>
+      </div>
+
+      {/* Pipeline Metrics */}
+      {summary ? (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <Card className="p-3 text-center" data-testid="card-intel-win-rate">
+            <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{summary.winRate ?? 0}%</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Win Rate</p>
+          </Card>
+          <Card className="p-3 text-center" data-testid="card-intel-reply-rate">
+            <p className="text-2xl font-bold">{summary.replyRate ?? 0}%</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Reply Rate</p>
+          </Card>
+          <Card className="p-3 text-center" data-testid="card-intel-avg-close">
+            <p className="text-2xl font-bold">{summary.avgDaysToClose ?? "—"}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Avg Days to Close</p>
+          </Card>
+          <Card className="p-3 text-center" data-testid="card-intel-won-revenue">
+            <p className="text-2xl font-bold text-primary">${(summary.totalWonRevenue ?? 0).toLocaleString()}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Total Won Revenue</p>
+          </Card>
+        </div>
+      ) : (
+        <Card className="p-4 text-center text-muted-foreground text-xs">
+          No pipeline data yet — create deals to unlock analytics.
+        </Card>
+      )}
+
+      {/* Stage Funnel */}
+      {stageFunnel.length > 0 && (
+        <Card className="p-4">
+          <p className="text-xs font-semibold mb-3 flex items-center gap-1.5">
+            <TrendingUp className="h-3.5 w-3.5" /> Deal Stage Funnel
+          </p>
+          <div className="flex items-end gap-2 flex-wrap">
+            {stageFunnel.map((s) => (
+              <div key={s.label} className="flex flex-col items-center gap-1 min-w-[52px]">
+                <span className="text-xs font-bold">{s.count}</span>
+                <div
+                  className="w-10 rounded-t bg-primary/70 dark:bg-primary/50"
+                  style={{ height: `${Math.max(8, (s.count / Math.max(1, stageFunnel[0].count)) * 48)}px` }}
+                />
+                <span className="text-[10px] text-muted-foreground text-center leading-tight max-w-[64px] truncate" title={s.label}>
+                  {s.label}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+
+      {/* AI Recommendations */}
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+          <Sparkles className="h-3.5 w-3.5 text-primary" /> AI Recommendations
+        </p>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs"
+          onClick={() => refetchRecs()}
+          disabled={recsFetching}
+          data-testid="button-fetch-recs"
+        >
+          {recsFetching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+          {recs ? "Refresh" : "Generate"}
+        </Button>
+      </div>
+
+      {recsLoading || recsFetching ? (
+        <div className="space-y-2">{[...Array(3)].map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : recs ? (
+        <div className="space-y-2">
+          {recs.recommendations.map((r, i) => (
+            <Card key={i} className="p-3 border-l-4 border-l-primary/40" data-testid={`card-rec-${i}`}>
+              <div className="flex items-start gap-2">
+                <span className="text-lg shrink-0">{r.icon}</span>
+                <div>
+                  <p className="text-xs font-semibold">{r.title}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{r.text}</p>
+                </div>
+              </div>
+            </Card>
+          ))}
+          {recs.generatedAt && (
+            <p className="text-[10px] text-muted-foreground text-right">
+              Generated {new Date(recs.generatedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} · {recs.dataPoints} deals analyzed
+            </p>
+          )}
+        </div>
+      ) : (
+        <Card className="p-6 text-center text-muted-foreground">
+          <Brain className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm font-medium">Click Generate to get AI recommendations</p>
+          <p className="text-xs mt-1">Based on your real deal data — no fabrication.</p>
+        </Card>
+      )}
+
+      {/* Revenue Agent Brief */}
+      <div className="flex items-center justify-between pt-2 border-t">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+          <Activity className="h-3.5 w-3.5" /> Revenue Agent Daily Brief
+        </p>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs"
+          onClick={() => refetchBrief()}
+          disabled={briefFetching}
+          data-testid="button-fetch-brief"
+        >
+          {briefFetching ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <RefreshCw className="h-3 w-3 mr-1" />}
+          {brief ? "Refresh" : "Load Brief"}
+        </Button>
+      </div>
+
+      {brief && (
+        <Card className="p-4 space-y-3">
+          {brief.summary && <p className="text-xs text-muted-foreground leading-relaxed">{brief.summary}</p>}
+          {Array.isArray(brief.highlights) && brief.highlights.length > 0 && (
+            <ul className="space-y-1.5">
+              {brief.highlights.map((h: string, i: number) => (
+                <li key={i} className="text-xs flex items-start gap-1.5">
+                  <span className="text-primary shrink-0 mt-0.5 font-bold">→</span>
+                  {h}
+                </li>
+              ))}
+            </ul>
+          )}
+          {Array.isArray(brief.urgentDeals) && brief.urgentDeals.length > 0 && (
+            <div>
+              <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-1.5">Urgent Deals</p>
+              <div className="space-y-1">
+                {brief.urgentDeals.map((d: any, i: number) => (
+                  <div key={i} className="text-xs flex items-center gap-1.5 text-amber-700 dark:text-amber-400">
+                    <Flame className="h-3 w-3 shrink-0" />
+                    <span>{d.name || d.dealName} — {d.reason}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </Card>
+      )}
+
+      {/* Priority Actions */}
+      <div className="flex items-center justify-between pt-2 border-t">
+        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+          <Zap className="h-3.5 w-3.5" /> Priority Actions
+          {pendingActions.length > 0 && (
+            <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[10px] font-medium">
+              {pendingActions.length} pending
+            </span>
+          )}
+        </p>
+      </div>
+
+      {!revenueActions ? (
+        <div className="space-y-2">{[...Array(2)].map((_, i) => <Skeleton key={i} className="h-14" />)}</div>
+      ) : pendingActions.length === 0 ? (
+        <Card className="p-6 text-center text-muted-foreground">
+          <Zap className="h-8 w-8 mx-auto mb-2 opacity-30" />
+          <p className="text-sm font-medium">No pending priority actions</p>
+          <p className="text-xs mt-1">Run the Revenue Agent to generate actions from your deal pipeline.</p>
+        </Card>
+      ) : (
+        <div className="space-y-2">
+          {pendingActions.slice(0, 10).map((action: any) => (
+            <Card key={action.id} className="p-3" data-testid={`card-action-${action.id}`}>
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 capitalize">
+                      {(action.actionType || "").replace(/_/g, " ")}
+                    </span>
+                    {action.estimatedValue ? (
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium flex items-center gap-0.5">
+                        <DollarSign className="h-2.5 w-2.5" />{Number(action.estimatedValue).toLocaleString()}
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-xs text-muted-foreground leading-snug">{action.reason}</p>
+                </div>
+                <div className="flex gap-1 shrink-0">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-6 text-[10px] px-2"
+                    onClick={() => executeMutation.mutate(action.id)}
+                    disabled={executeMutation.isPending}
+                    data-testid={`button-execute-action-${action.id}`}
+                  >
+                    Execute
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 text-[10px] px-2 text-muted-foreground"
+                    onClick={() => dismissMutation.mutate(action.id)}
+                    disabled={dismissMutation.isPending}
+                    data-testid={`button-dismiss-action-${action.id}`}
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+          {(revenueActions || []).filter((a: any) => a.status !== "pending").length > 0 && (
+            <p className="text-[10px] text-muted-foreground text-right">
+              + {(revenueActions || []).filter((a: any) => a.status !== "pending").length} completed/dismissed
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function AdminTeamTrainingLeadsPage() {
   const { toast } = useToast();
 
@@ -1335,6 +1718,7 @@ export default function AdminTeamTrainingLeadsPage() {
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterCity, setFilterCity] = useState("");
   const [searchText, setSearchText] = useState("");
+  const [sortBy, setSortBy] = useState<"confidence" | "last_contact" | "status" | "value" | "name">("confidence");
   const [researchDialogOpen, setResearchDialogOpen] = useState(false);
   const [researchLocation, setResearchLocation] = useState("");
   const [researchLocationTouched, setResearchLocationTouched] = useState(false);
@@ -1400,6 +1784,16 @@ export default function AdminTeamTrainingLeadsPage() {
 
   const { data: stats, isLoading: statsLoading } = useQuery<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>({
     queryKey: ["/api/admin/team-training/stats"],
+  });
+
+  const { data: analyticsData } = useQuery<any>({
+    queryKey: ["/api/admin/team-training/analytics"],
+    staleTime: 60000,
+  });
+
+  const { data: revenueActions } = useQuery<any[]>({
+    queryKey: ["/api/admin/team-training/revenue-agent/actions"],
+    staleTime: 60000,
   });
 
   const { data: pipelineCounts } = useQuery<{
@@ -1986,15 +2380,34 @@ export default function AdminTeamTrainingLeadsPage() {
     reader.readAsText(file);
   }
 
-  const filteredProspects = (prospects || []).filter((p) => {
-    if (filterSport && filterSport !== "all" && p.sport?.toLowerCase() !== filterSport.toLowerCase()) return false;
-    if (filterStatus && filterStatus !== "all" && p.outreachStatus !== filterStatus) return false;
-    if (filterCity && !p.city?.toLowerCase().includes(filterCity.toLowerCase())) return false;
-    if (searchText && !p.prospectName.toLowerCase().includes(searchText.toLowerCase()) && !p.contactName?.toLowerCase().includes(searchText.toLowerCase())) return false;
-    return true;
-  });
+  const STATUS_SORT_ORDER = ["Replied", "Contacted", "Approved", "New", "Needs Review", "Not Interested", "Do Not Contact"];
 
-  const pipelineValue = (prospects || []).filter((p) => !["Do Not Contact", "Not Interested"].includes(p.outreachStatus || "")).length * (parseInt(estimatedValue) || 500);
+  const filteredProspects = (prospects || [])
+    .filter((p) => {
+      if (filterSport && filterSport !== "all" && p.sport?.toLowerCase() !== filterSport.toLowerCase()) return false;
+      if (filterStatus && filterStatus !== "all" && p.outreachStatus !== filterStatus) return false;
+      if (filterCity && !p.city?.toLowerCase().includes(filterCity.toLowerCase())) return false;
+      if (searchText && !p.prospectName.toLowerCase().includes(searchText.toLowerCase()) && !p.contactName?.toLowerCase().includes(searchText.toLowerCase())) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (sortBy === "confidence") return (b.confidenceScore || 0) - (a.confidenceScore || 0);
+      if (sortBy === "last_contact") {
+        const ta = a.lastContactedAt ? (a.lastContactedAt instanceof Date ? a.lastContactedAt : new Date(a.lastContactedAt as unknown as string)).getTime() : 0;
+        const tb = b.lastContactedAt ? (b.lastContactedAt instanceof Date ? b.lastContactedAt : new Date(b.lastContactedAt as unknown as string)).getTime() : 0;
+        return tb - ta;
+      }
+      if (sortBy === "value") return (b.estimatedValue || 0) - (a.estimatedValue || 0);
+      if (sortBy === "name") return a.prospectName.localeCompare(b.prospectName);
+      if (sortBy === "status") {
+        return STATUS_SORT_ORDER.indexOf(a.outreachStatus || "New") - STATUS_SORT_ORDER.indexOf(b.outreachStatus || "New");
+      }
+      return 0;
+    });
+
+  const pipelineValue = (prospects || [])
+    .filter((p) => !["Do Not Contact", "Not Interested"].includes(p.outreachStatus || ""))
+    .reduce((sum, p) => sum + (p.estimatedValue || parseInt(estimatedValue) || 500), 0);
 
   const [editProspectForm, setEditProspectForm] = useState<Partial<TeamTrainingProspect>>({});
   const [editEnriching, setEditEnriching] = useState(false);
@@ -2253,6 +2666,9 @@ export default function AdminTeamTrainingLeadsPage() {
           <TabsTrigger value="discovery" data-testid="tab-discovery">
             Discovery Log
           </TabsTrigger>
+          <TabsTrigger value="intelligence" data-testid="tab-intelligence">
+            Intelligence
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="prospects" className="mt-4 space-y-4">
@@ -2292,6 +2708,19 @@ export default function AdminTeamTrainingLeadsPage() {
                 className="h-8 text-sm w-32"
                 data-testid="input-filter-city"
               />
+              <Select value={sortBy} onValueChange={(v) => setSortBy(v as typeof sortBy)}>
+                <SelectTrigger className="h-8 text-xs w-40" data-testid="select-sort-by">
+                  <ArrowUpDown className="h-3 w-3 mr-1 shrink-0" />
+                  <SelectValue placeholder="Sort by…" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="confidence">Sort: Confidence</SelectItem>
+                  <SelectItem value="last_contact">Sort: Last Contacted</SelectItem>
+                  <SelectItem value="status">Sort: Stage</SelectItem>
+                  <SelectItem value="value">Sort: Est. Value</SelectItem>
+                  <SelectItem value="name">Sort: Name</SelectItem>
+                </SelectContent>
+              </Select>
               {(() => {
                 const missingCount = (prospects || []).filter((p) => !p.decisionMakerEmail && p.contactQuality === "missing").length;
                 if (missingCount === 0) return null;
@@ -2409,6 +2838,10 @@ export default function AdminTeamTrainingLeadsPage() {
 
         <TabsContent value="discovery" className="mt-4">
           <DiscoveryLogTab />
+        </TabsContent>
+
+        <TabsContent value="intelligence" className="mt-4">
+          <IntelligenceTab analyticsData={analyticsData} revenueActions={revenueActions} />
         </TabsContent>
       </Tabs>
 

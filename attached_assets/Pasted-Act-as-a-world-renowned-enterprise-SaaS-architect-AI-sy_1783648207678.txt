@@ -1,0 +1,716 @@
+Act as a world-renowned enterprise SaaS architect, AI systems engineer, revenue operations expert, B2B CRM architect, Apple-level UX designer, and enterprise workflow specialist.
+
+We are conducting a production-grade page-by-page audit of TrainEfficiency.
+
+# Page
+
+**Team Training Leads**
+
+This page is NOT another Athlete Leads page.
+
+This is the B2B Revenue Operations engine for organizations purchasing team training services.
+
+Customers include:
+
+• Schools
+• Athletic Directors
+• Head Coaches
+• Club Organizations
+• Facilities
+• Youth Organizations
+• Teams
+• Businesses purchasing training services
+
+Do NOT redesign the page.
+
+Do NOT remove functionality.
+
+Do NOT create fake AI.
+
+Do NOT invent lead scores.
+
+Do NOT fabricate revenue attribution.
+
+Preserve the existing CRM, scheduling, AgentMail, onboarding, proposal workflow, and TrainEfficiency design system.
+
+Improve intelligence.
+
+Improve explainability.
+
+Improve measurable business value.
+
+---
+
+# Core Mission
+
+Leadership should immediately know:
+
+Which organizations require follow-up?
+
+Which proposals remain outstanding?
+
+Which evaluations have not been scheduled?
+
+Which organizations are highest priority?
+
+Where is the largest revenue opportunity?
+
+Which deals are stalled?
+
+Which contracts are ready?
+
+Which organizations should be contacted today?
+
+---
+
+# B2B Revenue Lifecycle
+
+Audit every organization.
+
+Verify support for:
+
+Lead Captured
+
+↓
+
+Qualified
+
+↓
+
+Discovery
+
+↓
+
+Proposal
+
+↓
+
+Follow-Up
+
+↓
+
+Negotiation
+
+↓
+
+Agreement
+
+↓
+
+Scheduling
+
+↓
+
+Active Organization
+
+↓
+
+Expansion
+
+↓
+
+Renewal
+
+↓
+
+Learning
+
+Surface existing lifecycle stages.
+
+Do not fabricate stages.
+
+Recommend production-safe implementation where missing.
+
+---
+
+# UX Audit
+
+Audit:
+
+Organization cards
+
+Pipeline
+
+Table
+
+Kanban
+
+Filters
+
+Search
+
+Sorting
+
+Status
+
+Proposal indicators
+
+Contract indicators
+
+Revenue indicators
+
+Primary contact
+
+Organization profile
+
+Activity timeline
+
+Communication history
+
+Loading
+
+Errors
+
+Success
+
+Accessibility
+
+Typography
+
+Spacing
+
+Responsive behavior
+
+The page should function as an executive B2B sales dashboard.
+
+---
+
+# Functional Audit
+
+Inspect every interaction.
+
+Create lead
+
+Edit lead
+
+Assign owner
+
+Status changes
+
+Proposal
+
+Email
+
+Phone
+
+Notes
+
+Tasks
+
+Schedule meeting
+
+Schedule demo
+
+Schedule evaluation
+
+Generate proposal
+
+AgentMail drafts
+
+Approve drafts
+
+Reject drafts
+
+Regenerate drafts
+
+Convert organization
+
+Archive
+
+Delete
+
+Bulk actions
+
+Search
+
+Filtering
+
+Sorting
+
+Determine:
+
+Does it work?
+
+Is it wired to real backend functionality?
+
+Permissions respected?
+
+Loading, success, undo?
+
+Dead buttons?
+
+Duplicate workflows?
+
+Placeholder actions?
+
+Fix production-safe issues only.
+
+---
+
+# Revenue Intelligence Audit
+
+Determine whether the page surfaces:
+
+Organization value
+
+Estimated contract value
+
+Pipeline value
+
+Days since last contact
+
+Days in stage
+
+Proposal outstanding
+
+Negotiation status
+
+Decision maker identified
+
+Meeting scheduled
+
+Evaluation scheduled
+
+Renewal opportunity
+
+Expansion opportunity
+
+Contract status
+
+Communication status
+
+Revenue concentration
+
+Only use deterministic intelligence.
+
+Do not fabricate win probabilities.
+
+---
+
+# Agent Utilization Audit
+
+Review participation from:
+
+Growth Agent
+
+Revenue Agent
+
+AgentMail
+
+Scheduling Agent
+
+Client Success
+
+Executive Agent
+
+CEO Heartbeat
+
+Hermes Learning
+
+Attention Inbox
+
+Determine ownership.
+
+Examples:
+
+Growth Agent qualifies organizations
+
+↓
+
+Revenue Agent estimates contract opportunity
+
+↓
+
+AgentMail drafts proposal follow-up
+
+↓
+
+Scheduling Agent schedules demos
+
+↓
+
+Client Success prepares onboarding
+
+↓
+
+CEO Heartbeat monitors pipeline health
+
+Avoid duplicate recommendations.
+
+Clarify ownership.
+
+---
+
+# Agent Intelligence & Closed-Loop Learning Assessment
+
+Review every intelligent workflow.
+
+---
+
+## Learning Loop
+
+Determine whether the platform learns from:
+
+Proposal acceptance
+
+Proposal rejection
+
+Meeting attendance
+
+Negotiation outcomes
+
+Contract signatures
+
+Organization onboarding
+
+Renewals
+
+Expansion
+
+Manual email edits
+
+Accepted AI drafts
+
+Rejected AI drafts
+
+Follow-up timing
+
+Determine whether learning:
+
+Improves recommendations
+
+Remains organization-scoped
+
+Can be reviewed
+
+Can be corrected
+
+Can retire obsolete learning
+
+---
+
+## Recommendation Lifecycle
+
+Every recommendation should support:
+
+Detected
+
+↓
+
+Analyzed
+
+↓
+
+Prioritized
+
+↓
+
+Recommended
+
+↓
+
+Human Review
+
+↓
+
+Approved
+
+↓
+
+Executed
+
+↓
+
+Outcome Measured
+
+↓
+
+Learning
+
+↓
+
+Future Optimization
+
+Surface existing lifecycle information.
+
+Do not fabricate lifecycle stages.
+
+---
+
+## Outcome Measurement
+
+Measure where deterministic evidence exists.
+
+Examples:
+
+Meetings booked
+
+Proposal replies
+
+Proposal acceptance
+
+Organization onboarding
+
+Revenue associated
+
+Renewal
+
+Expansion
+
+Time to close
+
+Observed business value
+
+Never fabricate attribution.
+
+---
+
+## Explainability
+
+Every recommendation should explain:
+
+Why this recommendation exists
+
+Which organization signals influenced it
+
+Expected operational impact
+
+Expected business impact
+
+Potential downside if ignored
+
+Confidence (if available)
+
+Recommended next step
+
+Whether similar recommendations historically succeeded
+
+Do not expose prompts.
+
+---
+
+## Human-in-the-Loop
+
+Verify every recommendation supports:
+
+Review
+
+Approve
+
+Reject
+
+Edit
+
+Undo
+
+Bulk approval
+
+Escalation
+
+No outbound communication should automatically send unless explicitly configured.
+
+---
+
+## Cross-Agent Coordination
+
+Review workflows such as:
+
+Growth Agent identifies organization
+
+↓
+
+Revenue Agent estimates contract value
+
+↓
+
+AgentMail drafts proposal
+
+↓
+
+Human approves
+
+↓
+
+Meeting scheduled
+
+↓
+
+Proposal delivered
+
+↓
+
+Negotiation
+
+↓
+
+Agreement
+
+↓
+
+Organization onboarded
+
+↓
+
+Client Success prepares launch
+
+↓
+
+Outcome measured
+
+↓
+
+Hermes Learning improves future recommendations
+
+↓
+
+CEO Heartbeat receives pipeline signal
+
+Surface collaboration instead of isolated recommendations.
+
+---
+
+## Organizational Learning
+
+Leadership should understand:
+
+Which organization types convert best?
+
+Which proposal timing performs best?
+
+Which outreach sequences work?
+
+Which contract sizes close fastest?
+
+Which sales stages create bottlenecks?
+
+Which AI recommendations succeed?
+
+Which campaigns generate enterprise customers?
+
+Which renewal strategies perform best?
+
+Surface learning without exposing prompts or internal reasoning.
+
+---
+
+## Operational Intelligence
+
+Leadership should immediately answer:
+
+Where is enterprise revenue leaking?
+
+Which organizations require attention?
+
+Which proposals are overdue?
+
+Which contracts are stalled?
+
+Which meetings remain unscheduled?
+
+Which organizations are ready for onboarding?
+
+Team Training Leads should become the B2B Revenue Operations engine for TrainEfficiency.
+
+---
+
+# Performance
+
+Review:
+
+Large organization pipelines
+
+Query efficiency
+
+Realtime updates
+
+Caching
+
+Pagination
+
+Filtering
+
+Sorting
+
+Rendering
+
+State management
+
+Type safety
+
+Maintainability
+
+Avoid unnecessary architecture rewrites.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Organization cards
+
+Pipeline
+
+Revenue indicators
+
+Proposal indicators
+
+Contract indicators
+
+Activity timeline
+
+Agent ownership
+
+Recommendation history
+
+Priority badges
+
+Outcome indicators
+
+Micro-interactions
+
+Typography
+
+Spacing
+
+Accessibility
+
+Maintain TrainEfficiency branding.
+
+Green = progressing
+
+Amber = attention
+
+Red = stalled
+
+Blue = AI recommendation
+
+---
+
+# Deliverables
+
+Return:
+
+1. UX Audit
+
+2. Functional Audit
+
+3. Revenue Intelligence Assessment
+
+4. Agent Intelligence & Closed-Loop Learning Assessment
+
+5. Organizational Learning Assessment
+
+6. Outcome Measurement Assessment
+
+7. Remaining Production Gaps
+
+8. Updated Production Readiness Score
+
+9. Files Changed
+
+10. TypeScript / Build Results
+
+This page should become the enterprise Revenue Operations engine for selling TrainEfficiency to organizations.
+
+Before introducing any new intelligence, determine whether it already exists in Athlete Leads, AgentMail, Command Center, Scheduling Copilot, CEO Heartbeat, or the onboarding workflow. Reuse existing intelligence wherever possible instead of creating parallel systems. B2B and B2C should share infrastructure while maintaining distinct sales workflows.
