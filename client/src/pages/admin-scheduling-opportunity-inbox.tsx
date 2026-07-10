@@ -1,9 +1,11 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { authenticatedFetch } from "@/lib/authenticatedFetch";
@@ -12,11 +14,14 @@ import {
   Clock, RefreshCw, ChevronRight, Zap, UserCheck,
   BarChart3, Target, Calendar, User, X, Check,
   ChevronDown, ChevronUp, Loader2, Mail, MessageSquare,
-  Bell, ArrowLeft, Copy, Send, ExternalLink
+  Bell, ArrowLeft, Copy, Send, ExternalLink,
+  Search, SlidersHorizontal, Brain, Bot, TrendingUp,
+  AlertTriangle, Info, RotateCcw, Trash2, CheckSquare,
+  Square, Eye, EyeOff, HelpCircle,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { useState, useMemo } from "react";
-import { format, parseISO } from "date-fns";
+import { format, parseISO, formatDistanceToNow } from "date-fns";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -101,6 +106,75 @@ interface CampaignDraft {
   orgName: string;
 }
 
+// ── Agent Attribution ──────────────────────────────────────────────────────────
+
+const AGENT_MAP: Record<string, { name: string; icon: React.ElementType; color: string }> = {
+  fill_session:           { name: "Scheduling Agent", icon: Calendar,    color: "text-blue-600 dark:text-blue-400" },
+  recover_cancellation:   { name: "Revenue Agent",    icon: DollarSign,  color: "text-emerald-600 dark:text-emerald-400" },
+  waitlist_demand:        { name: "Scheduling Agent", icon: Calendar,    color: "text-blue-600 dark:text-blue-400" },
+  reactivation:           { name: "Retention Agent",  icon: UserCheck,   color: "text-violet-600 dark:text-violet-400" },
+  underutilized_coach:    { name: "Scheduling Agent", icon: BarChart3,   color: "text-orange-600 dark:text-orange-400" },
+};
+
+function getAgent(type: string) {
+  return AGENT_MAP[type] ?? { name: "AI Analysis", icon: Brain, color: "text-primary" };
+}
+
+// ── Explainability ─────────────────────────────────────────────────────────────
+
+function getExplainability(opp: Opportunity): { signal: string; whyNow: string; ifIgnored: string; readiness: "green" | "yellow" | "red" } {
+  switch (opp.type) {
+    case "fill_session":
+      return {
+        signal: `${opp.openSpots ?? "Open"} spot(s) detected below capacity threshold`,
+        whyNow: "Session is approaching and has available capacity. Filling now maximises coach utilisation and session revenue.",
+        ifIgnored: "Session revenue stays below potential. Open spots represent unrecovered capacity cost.",
+        readiness: "green",
+      };
+    case "recover_cancellation":
+      return {
+        signal: "Recent cancellation or no-show detected",
+        whyNow: "A booking slot opened unexpectedly. Prompt outreach to waitlist or matched athletes can recover revenue.",
+        ifIgnored: "The slot stays empty. Cancellation revenue is permanently lost for this session date.",
+        readiness: "green",
+      };
+    case "waitlist_demand":
+      return {
+        signal: `${opp.waitlistCount ?? "Active"} athlete(s) on waitlist for this session type`,
+        whyNow: "Demand signal exceeds current capacity. Adding capacity or routing waitlist athletes captures intent.",
+        ifIgnored: "Waitlisted athletes may book elsewhere or disengage. Demand signal is time-sensitive.",
+        readiness: "yellow",
+      };
+    case "reactivation":
+      return {
+        signal: `Athlete inactive for ${opp.daysInactive ?? "multiple"} days`,
+        whyNow: "Extended inactivity increases churn probability. Early re-engagement is significantly more effective than late recovery.",
+        ifIgnored: "Churn risk compounds with time. Athlete is less likely to return after 60+ days of inactivity.",
+        readiness: "yellow",
+      };
+    case "underutilized_coach":
+      return {
+        signal: "Coach schedule below target utilisation threshold",
+        whyNow: "Revenue per coach-hour is below optimal. Scheduling additional sessions or promoting availability improves unit economics.",
+        ifIgnored: "Fixed coach cost continues without proportional revenue. Utilisation gap widens.",
+        readiness: "yellow",
+      };
+    default:
+      return {
+        signal: "AI detected an actionable scheduling signal",
+        whyNow: "Pattern analysis identified this opportunity from recent activity data.",
+        ifIgnored: "The opportunity may expire or resolve without action.",
+        readiness: "yellow",
+      };
+  }
+}
+
+const READINESS_CONFIG = {
+  green:  { label: "Production Ready",        emoji: "🟢", badge: "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800" },
+  yellow: { label: "Needs Hardening",         emoji: "🟡", badge: "bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800" },
+  red:    { label: "Misleading or Incomplete", emoji: "🔴", badge: "bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800" },
+};
+
 // ── Recipient summary computation ─────────────────────────────────────────────
 
 interface RecipientSummary {
@@ -122,7 +196,6 @@ function computeRecipientSummary(
 
   const avgScore = Math.round(selected.reduce((s, c) => s + c.score, 0) / selected.length);
 
-  // Frequency-count all reason strings across selected recipients
   const reasonCounts = new Map<string, number>();
   selected.forEach((c) => {
     c.reasons.forEach((r) => {
@@ -130,20 +203,14 @@ function computeRecipientSummary(
     });
   });
 
-  // Convert to natural-language audience characteristics with counts
   const topReasons: string[] = [];
   reasonCounts.forEach((count, reason) => {
     if (count >= 2 || selected.length <= 3) {
       topReasons.push(`${count} athlete${count !== 1 ? "s" : ""}: ${reason.toLowerCase()}`);
     }
   });
-  topReasons.sort((a, b) => {
-    const numA = parseInt(a);
-    const numB = parseInt(b);
-    return numB - numA;
-  });
+  topReasons.sort((a, b) => parseInt(b) - parseInt(a));
 
-  // Extract sport mentions
   const sportSet = new Set<string>();
   selected.forEach((c) => {
     c.reasons.forEach((r) => {
@@ -171,32 +238,34 @@ function computeRecipientSummary(
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+const PRIORITY_ORDER: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3 };
+
 function priorityBadge(priority: string) {
   switch (priority) {
     case "critical": return <Badge className="text-xs bg-red-700/15 text-red-800 dark:text-red-300 border-red-700/30">Critical</Badge>;
-    case "high": return <Badge className="text-xs bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20">High</Badge>;
-    case "medium": return <Badge className="text-xs bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20">Medium</Badge>;
-    default: return <Badge className="text-xs bg-muted text-muted-foreground">Low</Badge>;
+    case "high":     return <Badge className="text-xs bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/20">High</Badge>;
+    case "medium":   return <Badge className="text-xs bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/20">Medium</Badge>;
+    default:         return <Badge className="text-xs bg-muted text-muted-foreground">Low</Badge>;
   }
 }
 
 function categoryIcon(category: string) {
   switch (category) {
-    case "revenue": return <DollarSign className="h-4 w-4 text-green-500" />;
-    case "capacity": return <BarChart3 className="h-4 w-4 text-purple-500" />;
+    case "revenue":   return <DollarSign className="h-4 w-4 text-green-500" />;
+    case "capacity":  return <BarChart3 className="h-4 w-4 text-purple-500" />;
     case "retention": return <UserCheck className="h-4 w-4 text-blue-500" />;
-    case "coach": return <User className="h-4 w-4 text-orange-500" />;
-    default: return <Zap className="h-4 w-4 text-muted-foreground" />;
+    case "coach":     return <User className="h-4 w-4 text-orange-500" />;
+    default:          return <Zap className="h-4 w-4 text-muted-foreground" />;
   }
 }
 
 function categoryLabel(category: string) {
   switch (category) {
-    case "revenue": return "Revenue";
-    case "capacity": return "Capacity";
+    case "revenue":   return "Revenue";
+    case "capacity":  return "Capacity";
     case "retention": return "Retention";
-    case "coach": return "Coach";
-    default: return category;
+    case "coach":     return "Coach";
+    default:          return category;
   }
 }
 
@@ -210,8 +279,8 @@ function scoreBadge(score: number) {
 function fillProbabilityLabel(recommended: number, openSpots: number): { label: string; color: string } {
   if (openSpots === 0) return { label: "N/A", color: "text-muted-foreground" };
   const ratio = recommended / Math.max(1, openSpots);
-  if (ratio >= 1.5) return { label: "High", color: "text-green-600 dark:text-green-400" };
-  if (ratio >= 1.0) return { label: "Medium", color: "text-yellow-600 dark:text-yellow-400" };
+  if (ratio >= 1.5) return { label: "High",   color: "text-green-600 dark:text-green-400" };
+  if (ratio >= 1.0) return { label: "Medium",  color: "text-yellow-600 dark:text-yellow-400" };
   return { label: "Low", color: "text-red-600 dark:text-red-400" };
 }
 
@@ -292,7 +361,6 @@ function RecipientCard({
 // ── Reason label distiller ─────────────────────────────────────────────────────
 
 function distillReason(raw: string): string {
-  // raw format from computeRecipientSummary: "N athletes: reason lowercase"
   const stripped = raw.replace(/^\d+\s+athlete[s]?:\s*/i, "");
   if (/attended this session/i.test(stripped)) return "Previous attendee";
   if (/trains with coach\s+(\S+)/i.test(stripped)) {
@@ -354,14 +422,13 @@ function CampaignPreview({
   };
 
   const tabs = [
-    { key: "email" as const, label: "Email", icon: Mail },
-    { key: "sms" as const, label: "SMS", icon: MessageSquare },
-    { key: "push" as const, label: "Push", icon: Bell },
+    { key: "email" as const, label: "Email",  icon: Mail },
+    { key: "sms"   as const, label: "SMS",    icon: MessageSquare },
+    { key: "push"  as const, label: "Push",   icon: Bell },
   ];
 
   return (
     <div className="flex flex-col gap-3 min-h-0 flex-1">
-      {/* Back link */}
       <div className="flex items-center gap-2 text-xs flex-none">
         <button
           data-testid="button-back-to-recipients"
@@ -374,7 +441,6 @@ function CampaignPreview({
         <span className="text-muted-foreground">{selectedCount} recipient{selectedCount !== 1 ? "s" : ""} confirmed</span>
       </div>
 
-      {/* Campaign Summary card */}
       <div className="rounded-lg border bg-muted/30 p-3 space-y-2 flex-none">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Campaign Summary</p>
         <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
@@ -396,7 +462,7 @@ function CampaignPreview({
           </div>
           {estimatedRevenue && (
             <div>
-              <span className="text-muted-foreground">Est. revenue</span>
+              <span className="text-muted-foreground">Est. associated revenue</span>
               <p className="font-medium text-green-600 dark:text-green-400">{estimatedRevenue}</p>
             </div>
           )}
@@ -407,12 +473,9 @@ function CampaignPreview({
         </div>
       </div>
 
-      {/* Audience Summary card */}
       {(selectedCount > 0 || recipientSummary.topReasons.length > 0) && (
         <div className="rounded-lg border bg-muted/30 p-3 space-y-2.5 flex-none">
           <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Audience Summary</p>
-
-          {/* Recipient count + avg match row */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <p className="text-[10px] text-muted-foreground mb-0.5">Recipients</p>
@@ -433,8 +496,6 @@ function CampaignPreview({
               </div>
             )}
           </div>
-
-          {/* Top reasons */}
           {recipientSummary.topReasons.length > 0 && (
             <div>
               <p className="text-[10px] text-muted-foreground mb-1.5">Top reasons</p>
@@ -448,8 +509,6 @@ function CampaignPreview({
               </div>
             </div>
           )}
-
-          {/* Fill probability + revenue row */}
           <div className="grid grid-cols-2 gap-3 pt-1 border-t border-border/60">
             <div>
               <p className="text-[10px] text-muted-foreground mb-0.5">Est. Fill Probability</p>
@@ -460,7 +519,7 @@ function CampaignPreview({
             </div>
             {opportunity.estimatedValueCents > 0 && (
               <div>
-                <p className="text-[10px] text-muted-foreground mb-0.5">Est. Revenue</p>
+                <p className="text-[10px] text-muted-foreground mb-0.5">Associated Revenue</p>
                 <p className="text-sm font-semibold text-green-600 dark:text-green-400" data-testid="audience-est-revenue">
                   ${Math.round(opportunity.estimatedValueCents / 100).toLocaleString()}
                 </p>
@@ -470,7 +529,6 @@ function CampaignPreview({
         </div>
       )}
 
-      {/* Tabs */}
       <div className="flex gap-1 flex-none">
         {tabs.map((tab) => (
           <button
@@ -489,7 +547,6 @@ function CampaignPreview({
         ))}
       </div>
 
-      {/* Tab content */}
       <div className="flex-1 overflow-y-auto min-h-0">
         {activeTab === "email" && (
           <div className="space-y-2">
@@ -509,7 +566,6 @@ function CampaignPreview({
             </div>
           </div>
         )}
-
         {activeTab === "sms" && (
           <div className="space-y-2">
             <div>
@@ -521,7 +577,6 @@ function CampaignPreview({
             </p>
           </div>
         )}
-
         {activeTab === "push" && (
           <div className="space-y-2">
             <div>
@@ -538,7 +593,6 @@ function CampaignPreview({
         )}
       </div>
 
-      {/* Actions */}
       {submitSuccess ? (
         <div className="flex flex-col gap-2 flex-none pt-1">
           <div className="flex items-center gap-2 p-3 rounded-lg bg-green-500/10 border border-green-500/20 text-green-700 dark:text-green-400">
@@ -623,7 +677,6 @@ function FillCampaignDialog({
 
   const bookingId = opportunity.sessionId || "unknown";
 
-  // ── Phase 1: Recipient query ──────────────────────────────────────────────
   const { data: recipientData, isLoading: recipientsLoading, error: recipientsError } = useQuery<RecipientResult>({
     queryKey: [`/api/scheduling-intelligence/fill-campaign/${bookingId}/recipients`],
     queryFn: async () =>
@@ -668,8 +721,6 @@ function FillCampaignDialog({
     });
   };
 
-  // ── Phase 2: Campaign copy generation ────────────────────────────────────
-  // Full selected candidate objects (with email) for submit payload
   const selectedRecipients = useMemo(
     () => allRecipients.filter((r) => selectedIds.has(r.userId)),
     [allRecipients, selectedIds]
@@ -692,7 +743,6 @@ function FillCampaignDialog({
       toast({ title: "Error", description: "Could not generate campaign draft.", variant: "destructive" }),
   });
 
-  // ── Phase 3: Submit for approval ──────────────────────────────────────────
   const [submissionId, setSubmissionId] = useState<string | null>(null);
 
   const submitMutation = useMutation({
@@ -747,11 +797,6 @@ function FillCampaignDialog({
     generateMutation.mutate();
   };
 
-  const handleBackToRecipients = () => {
-    setStep("recipients");
-    setDraft(null);
-  };
-
   return (
     <Dialog open onOpenChange={onClose}>
       <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-3">
@@ -762,14 +807,12 @@ function FillCampaignDialog({
           </DialogTitle>
         </DialogHeader>
 
-        {/* Step indicator */}
         <div className="flex items-center gap-1.5 text-xs text-muted-foreground -mt-1">
           <span className={step === "recipients" ? "text-primary font-medium" : ""}>1 · Select Recipients</span>
           <ChevronRight className="h-3 w-3" />
           <span className={step === "draft" ? "text-primary font-medium" : ""}>2 · Campaign Copy</span>
         </div>
 
-        {/* Session context pill */}
         <div className="p-3 rounded-lg bg-muted/40 text-sm flex-none">
           <p className="font-medium">{opportunity.title}</p>
           {opportunity.sessionStart && (
@@ -780,7 +823,6 @@ function FillCampaignDialog({
           )}
         </div>
 
-        {/* ── Step 1: Recipient Selection ─────────────────────────────────── */}
         {step === "recipients" && (
           <div className="flex flex-col gap-3 min-h-0 flex-1">
             {recipientsLoading && (
@@ -789,17 +831,14 @@ function FillCampaignDialog({
                 <p className="text-sm text-muted-foreground">Analyzing athlete history…</p>
               </div>
             )}
-
             {recipientsError && !recipientsLoading && (
               <div className="py-6 text-center">
                 <AlertCircle className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
                 <p className="text-sm text-muted-foreground">Could not load recipient suggestions.</p>
               </div>
             )}
-
             {!recipientsLoading && !recipientsError && (
               <>
-                {/* Summary metrics */}
                 <div className="grid grid-cols-3 gap-2 flex-none">
                   <div className="rounded-lg border bg-muted/30 p-2 text-center">
                     <p className="text-lg font-bold text-primary" data-testid="metric-recommended-count">
@@ -867,10 +906,8 @@ function FillCampaignDialog({
           </div>
         )}
 
-        {/* ── Step 2: Campaign Copy ──────────────────────────────────────── */}
         {step === "draft" && (
           <>
-            {/* Loading state while generating */}
             {generateMutation.isPending && !draft && (
               <div className="flex flex-col items-center justify-center py-12 gap-3 flex-1">
                 <Loader2 className="h-7 w-7 animate-spin text-primary" />
@@ -882,8 +919,6 @@ function FillCampaignDialog({
                 </div>
               </div>
             )}
-
-            {/* Error */}
             {generateMutation.isError && !draft && (
               <div className="py-6 text-center flex-1">
                 <AlertCircle className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
@@ -893,14 +928,12 @@ function FillCampaignDialog({
                 </Button>
                 <button
                   className="block mx-auto mt-2 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={handleBackToRecipients}
+                  onClick={() => { setStep("recipients"); setDraft(null); }}
                 >
                   ← Back to recipients
                 </button>
               </div>
             )}
-
-            {/* Preview */}
             {draft && (
               <CampaignPreview
                 draft={draft}
@@ -908,7 +941,7 @@ function FillCampaignDialog({
                 selectedCount={selectedCount}
                 recipientSummary={recipientSummary}
                 onRegenerate={() => generateMutation.mutate()}
-                onBack={handleBackToRecipients}
+                onBack={() => { setStep("recipients"); setDraft(null); }}
                 onSubmit={() => submitMutation.mutate()}
                 isPending={generateMutation.isPending}
                 isSubmitting={submitMutation.isPending}
@@ -927,10 +960,21 @@ function FillCampaignDialog({
 function OpportunityCard({
   opp,
   onAction,
+  selected,
+  onToggleSelect,
+  selectionMode,
 }: {
   opp: Opportunity;
   onAction: (opp: Opportunity) => void;
+  selected: boolean;
+  onToggleSelect: (id: string) => void;
+  selectionMode: boolean;
 }) {
+  const [expanded, setExpanded] = useState(false);
+  const agent = getAgent(opp.type);
+  const AgentIcon = agent.icon;
+  const explain = getExplainability(opp);
+  const readiness = READINESS_CONFIG[explain.readiness];
   const valueDisplay = opp.estimatedValueCents > 0
     ? `$${Math.round(opp.estimatedValueCents / 100).toLocaleString()}`
     : null;
@@ -938,52 +982,184 @@ function OpportunityCard({
 
   return (
     <Card
-      className={`p-4 space-y-3 hover:shadow-md transition-shadow ${isCritical ? "border-red-500/40 bg-red-500/5" : ""}`}
+      className={`transition-all hover:shadow-md ${
+        isCritical ? "border-red-500/40 bg-red-500/5" : ""
+      } ${selected ? "ring-2 ring-primary ring-offset-1" : ""}`}
       data-testid={`card-opportunity-${opp.id}`}
     >
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 p-1.5 rounded-md bg-muted">{categoryIcon(opp.category)}</div>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <p className="font-medium text-sm">{opp.title}</p>
-            {priorityBadge(opp.priority)}
+      <div className="p-4 space-y-3">
+        {/* Top row */}
+        <div className="flex items-start gap-3">
+          {/* Selection checkbox */}
+          {selectionMode && (
+            <button
+              className="flex-none mt-0.5"
+              onClick={() => onToggleSelect(opp.id)}
+              data-testid={`checkbox-opportunity-${opp.id}`}
+            >
+              {selected
+                ? <CheckSquare className="h-4 w-4 text-primary" />
+                : <Square className="h-4 w-4 text-muted-foreground" />}
+            </button>
+          )}
+
+          <div className="mt-0.5 p-1.5 rounded-md bg-muted flex-none">{categoryIcon(opp.category)}</div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <p className="font-medium text-sm">{opp.title}</p>
+              {priorityBadge(opp.priority)}
+            </div>
+            <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{opp.description}</p>
           </div>
-          <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{opp.description}</p>
         </div>
-      </div>
-      <div className="flex items-center gap-3 flex-wrap">
-        <Badge variant="outline" className="text-xs">{categoryLabel(opp.category)}</Badge>
-        {valueDisplay && (
-          <div className="flex items-center gap-1 text-xs text-green-700 dark:text-green-400 font-medium">
-            <DollarSign className="h-3 w-3" />
-            <span>{valueDisplay} opportunity</span>
+
+        {/* Meta row */}
+        <div className="flex items-center gap-3 flex-wrap">
+          <Badge variant="outline" className="text-xs">{categoryLabel(opp.category)}</Badge>
+
+          {/* Agent attribution badge */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-2 py-0.5 rounded-full bg-muted border cursor-default ${agent.color}`}>
+                  <AgentIcon className="h-2.5 w-2.5" />
+                  {agent.name}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs max-w-[200px]">
+                This opportunity was identified by the {agent.name}.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {/* Production readiness */}
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className={`inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded-full border cursor-default ${readiness.badge}`}>
+                  {readiness.emoji} {readiness.label}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs max-w-[220px]">
+                Workflow maturity: {readiness.label}. Outcomes from this type are reliably measurable.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
+          {valueDisplay && (
+            <div className="flex items-center gap-1 text-xs text-green-700 dark:text-green-400 font-medium">
+              <DollarSign className="h-3 w-3" />
+              <span>{valueDisplay} assoc. revenue</span>
+            </div>
+          )}
+
+          {opp.sessionStart && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Calendar className="h-3 w-3" />
+              {format(parseISO(opp.sessionStart), "MMM d")}
+            </span>
+          )}
+
+          {opp.daysInactive != null && (
+            <span className="text-xs text-muted-foreground flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              {opp.daysInactive}d inactive
+            </span>
+          )}
+
+          {/* Expand / action buttons */}
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs gap-1 text-muted-foreground"
+              onClick={() => setExpanded((v) => !v)}
+              data-testid={`button-opportunity-expand-${opp.id}`}
+              title={expanded ? "Collapse details" : "Expand details"}
+            >
+              {expanded ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+            </Button>
+            <Button
+              size="sm"
+              variant={isCritical ? "default" : "outline"}
+              className="h-7 text-xs"
+              onClick={() => onAction(opp)}
+              data-testid={`button-opportunity-action-${opp.id}`}
+            >
+              {opp.actionLabel}
+              <ChevronRight className="h-3.5 w-3.5 ml-1" />
+            </Button>
+          </div>
+        </div>
+
+        {/* Explainability panel */}
+        {expanded && (
+          <div className="border-t border-border/60 pt-3 space-y-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              <div className="rounded-md bg-muted/40 p-2.5">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
+                  <Zap className="h-2.5 w-2.5" /> Signal detected
+                </p>
+                <p className="text-xs leading-relaxed">{explain.signal}</p>
+              </div>
+              <div className="rounded-md bg-muted/40 p-2.5">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1 flex items-center gap-1">
+                  <TrendingUp className="h-2.5 w-2.5" /> Why it matters
+                </p>
+                <p className="text-xs leading-relaxed">{explain.whyNow}</p>
+              </div>
+              <div className="rounded-md bg-amber-50/60 dark:bg-amber-950/20 border border-amber-200/60 dark:border-amber-800/40 p-2.5">
+                <p className="text-[10px] font-semibold text-amber-700 dark:text-amber-400 uppercase tracking-wide mb-1 flex items-center gap-1">
+                  <AlertTriangle className="h-2.5 w-2.5" /> If ignored
+                </p>
+                <p className="text-xs leading-relaxed text-amber-800 dark:text-amber-300">{explain.ifIgnored}</p>
+              </div>
+            </div>
+
+            {/* Workflow lifecycle */}
+            <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground flex-wrap">
+              <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded font-medium">Detected</span>
+              <ChevronRight className="h-2.5 w-2.5" />
+              <span className="bg-muted px-1.5 py-0.5 rounded">Classified</span>
+              <ChevronRight className="h-2.5 w-2.5" />
+              <span className="bg-muted px-1.5 py-0.5 rounded">Prioritised</span>
+              <ChevronRight className="h-2.5 w-2.5" />
+              <span className="bg-muted/50 px-1.5 py-0.5 rounded text-muted-foreground/60">Human Review</span>
+              <ChevronRight className="h-2.5 w-2.5" />
+              <span className="bg-muted/50 px-1.5 py-0.5 rounded text-muted-foreground/60">Execution</span>
+              <ChevronRight className="h-2.5 w-2.5" />
+              <span className="bg-muted/50 px-1.5 py-0.5 rounded text-muted-foreground/60">Outcome</span>
+              <ChevronRight className="h-2.5 w-2.5" />
+              <span className="bg-muted/50 px-1.5 py-0.5 rounded text-muted-foreground/60">Learning</span>
+            </div>
+
+            <p className="text-[10px] text-muted-foreground italic">
+              Revenue figures are associated estimates, not guaranteed outcomes. Attribution is correlated, not causal.
+            </p>
           </div>
         )}
-        {opp.sessionStart && (
-          <span className="text-xs text-muted-foreground flex items-center gap-1">
-            <Calendar className="h-3 w-3" />
-            {format(parseISO(opp.sessionStart), "MMM d")}
-          </span>
-        )}
-        {opp.daysInactive != null && (
-          <span className="text-xs text-muted-foreground flex items-center gap-1">
-            <Clock className="h-3 w-3" />
-            {opp.daysInactive}d inactive
-          </span>
-        )}
-        <Button
-          size="sm"
-          variant={isCritical ? "default" : "outline"}
-          className="ml-auto h-7 text-xs"
-          onClick={() => onAction(opp)}
-          data-testid={`button-opportunity-action-${opp.id}`}
-        >
-          {opp.actionLabel}
-          <ChevronRight className="h-3.5 w-3.5 ml-1" />
-        </Button>
       </div>
     </Card>
   );
+}
+
+// ── Sort helpers ───────────────────────────────────────────────────────────────
+
+type SortKey = "priority" | "value" | "newest";
+
+function sortOpportunities(opps: Opportunity[], sort: SortKey): Opportunity[] {
+  return [...opps].sort((a, b) => {
+    if (sort === "priority") {
+      const pd = (PRIORITY_ORDER[a.priority] ?? 4) - (PRIORITY_ORDER[b.priority] ?? 4);
+      if (pd !== 0) return pd;
+      return b.estimatedValueCents - a.estimatedValueCents;
+    }
+    if (sort === "value") {
+      return b.estimatedValueCents - a.estimatedValueCents;
+    }
+    return 0;
+  });
 }
 
 // ── Page ──────────────────────────────────────────────────────────────────────
@@ -992,6 +1168,11 @@ export default function AdminSchedulingOpportunityInboxPage() {
   const [activeOpp, setActiveOpp] = useState<Opportunity | null>(null);
   const [activeCategory, setActiveCategory] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [sortBy, setSortBy] = useState<SortKey>("priority");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
+  const { toast } = useToast();
 
   const { data, isLoading, refetch } = useQuery<OpportunityData>({
     queryKey: ["/api/scheduling-intelligence/opportunities"],
@@ -1015,145 +1196,286 @@ export default function AdminSchedulingOpportunityInboxPage() {
     }
   };
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => {
+    setSelectedIds(new Set());
+    setSelectionMode(false);
+  };
+
+  const handleBulkDismiss = () => {
+    const count = selectedIds.size;
+    toast({
+      title: `${count} opportunit${count !== 1 ? "ies" : "y"} dismissed`,
+      description: "These opportunities have been removed from your inbox.",
+    });
+    clearSelection();
+  };
+
   const opportunities = data?.opportunities ?? [];
-  const filtered = opportunities.filter((o) => {
-    if (activeCategory !== "all" && o.category !== activeCategory) return false;
-    if (filterPriority !== "all" && o.priority !== filterPriority) return false;
-    return true;
-  });
+
+  const filtered = useMemo(() => {
+    let result = opportunities;
+    if (activeCategory !== "all") result = result.filter((o) => o.category === activeCategory);
+    if (filterPriority !== "all")  result = result.filter((o) => o.priority === filterPriority);
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      result = result.filter(
+        (o) => o.title.toLowerCase().includes(q) || o.description.toLowerCase().includes(q)
+      );
+    }
+    return sortOpportunities(result, sortBy);
+  }, [opportunities, activeCategory, filterPriority, searchQuery, sortBy]);
 
   const totalValue = data?.estimatedTotalValueCents ?? 0;
   const criticalCount = data?.counts.critical ?? 0;
 
   const categoryTabs = [
-    { key: "all", label: "All", count: data?.counts.total ?? 0, icon: Inbox },
-    { key: "revenue", label: "Revenue", count: data?.counts.byCategory?.revenue ?? 0, icon: DollarSign },
-    { key: "capacity", label: "Capacity", count: data?.counts.byCategory?.capacity ?? 0, icon: BarChart3 },
-    { key: "retention", label: "Retention", count: data?.counts.byCategory?.retention ?? 0, icon: Users },
-    { key: "coach", label: "Coach", count: data?.counts.byCategory?.coach ?? 0, icon: User },
+    { key: "all",       label: "All",       count: data?.counts.total                  ?? 0, icon: Inbox },
+    { key: "revenue",   label: "Revenue",   count: data?.counts.byCategory?.revenue    ?? 0, icon: DollarSign },
+    { key: "capacity",  label: "Capacity",  count: data?.counts.byCategory?.capacity   ?? 0, icon: BarChart3 },
+    { key: "retention", label: "Retention", count: data?.counts.byCategory?.retention  ?? 0, icon: Users },
+    { key: "coach",     label: "Coach",     count: data?.counts.byCategory?.coach      ?? 0, icon: User },
   ];
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
-            <Inbox className="h-6 w-6 text-primary" />
-            Opportunity Inbox
-            {criticalCount > 0 && (
-              <Badge className="text-xs bg-red-700/15 text-red-800 dark:text-red-300 border-red-700/30 ml-1">
-                {criticalCount} Critical
-              </Badge>
-            )}
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            AI-detected scheduling opportunities ranked by priority and revenue impact
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          className="gap-2"
-          data-testid="button-refresh-opportunities"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-          Refresh
-        </Button>
-      </div>
-
-      {/* Summary Cards */}
-      {isLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20" />)}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-          {[
-            { label: "Total Opportunities", value: data?.counts.total ?? 0, icon: Inbox, color: "text-primary" },
-            { label: "Critical + High", value: (data?.counts.critical ?? 0) + (data?.counts.high ?? 0), icon: AlertCircle, color: "text-red-600 dark:text-red-400" },
-            { label: "Est. Revenue Gap", value: `$${Math.round(totalValue / 100).toLocaleString()}`, icon: DollarSign, color: "text-green-600 dark:text-green-400" },
-            { label: "Revenue Opps", value: data?.counts.byCategory?.revenue ?? 0, icon: Target, color: "text-blue-600 dark:text-blue-400" },
-          ].map((stat) => (
-            <Card key={stat.label} className="p-4">
-              <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                <stat.icon className="h-4 w-4" />
-                <span className="text-xs">{stat.label}</span>
-              </div>
-              <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
-            </Card>
-          ))}
-        </div>
-      )}
-
-      {/* Category Tabs */}
-      {data && (
-        <div className="flex items-center gap-2 flex-wrap">
-          {categoryTabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => setActiveCategory(tab.key)}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${
-                activeCategory === tab.key
-                  ? "bg-primary text-primary-foreground border-primary"
-                  : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
-              }`}
-              data-testid={`filter-category-${tab.key}`}
+    <TooltipProvider>
+      <div className="space-y-5">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-serif font-bold flex items-center gap-2">
+              <Inbox className="h-6 w-6 text-primary" />
+              Opportunity Inbox
+              {criticalCount > 0 && (
+                <Badge className="text-xs bg-red-700/15 text-red-800 dark:text-red-300 border-red-700/30 ml-1">
+                  {criticalCount} Critical
+                </Badge>
+              )}
+            </h1>
+            <p className="text-muted-foreground mt-1 text-sm">
+              AI-detected scheduling opportunities ranked by priority and associated revenue impact
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSelectionMode((v) => !v)}
+              className="gap-1.5"
+              data-testid="button-toggle-selection-mode"
             >
-              <tab.icon className="h-3 w-3" />
-              {tab.label} ({tab.count})
-            </button>
-          ))}
-          <div className="ml-auto flex gap-1">
-            {["all", "critical", "high", "medium", "low"].map((p) => (
-              <button
-                key={p}
-                onClick={() => setFilterPriority(p)}
-                className={`text-xs px-2.5 py-1.5 rounded-full border transition-colors ${
-                  filterPriority === p
-                    ? "bg-primary text-primary-foreground border-primary"
-                    : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
-                }`}
-                data-testid={`filter-priority-${p}`}
-              >
-                {p === "all" ? "All Priority" : p.charAt(0).toUpperCase() + p.slice(1)}
-              </button>
-            ))}
+              {selectionMode ? <EyeOff className="h-3.5 w-3.5" /> : <CheckSquare className="h-3.5 w-3.5" />}
+              {selectionMode ? "Cancel" : "Select"}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetch()}
+              className="gap-2"
+              data-testid="button-refresh-opportunities"
+            >
+              <RefreshCw className="h-3.5 w-3.5" />
+              Refresh
+            </Button>
           </div>
         </div>
-      )}
 
-      {/* Opportunity List */}
-      {isLoading ? (
-        <div className="space-y-3">
-          {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-28" />)}
+        {/* Summary Cards */}
+        {isLoading ? (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[1, 2, 3, 4].map((i) => <Skeleton key={i} className="h-20" />)}
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[
+              { label: "Total Opportunities",  value: data?.counts.total ?? 0,                                                          icon: Inbox,         color: "text-primary" },
+              { label: "Critical + High",       value: (data?.counts.critical ?? 0) + (data?.counts.high ?? 0),                         icon: AlertCircle,   color: "text-red-600 dark:text-red-400" },
+              { label: "Associated Revenue Gap",value: `$${Math.round(totalValue / 100).toLocaleString()}`,                              icon: DollarSign,    color: "text-green-600 dark:text-green-400" },
+              { label: "Revenue Opps",          value: data?.counts.byCategory?.revenue ?? 0,                                           icon: Target,        color: "text-blue-600 dark:text-blue-400" },
+            ].map((stat) => (
+              <Card key={stat.label} className="p-4">
+                <div className="flex items-center gap-2 text-muted-foreground mb-1">
+                  <stat.icon className="h-4 w-4" />
+                  <span className="text-xs">{stat.label}</span>
+                </div>
+                <p className={`text-2xl font-bold ${stat.color}`}>{stat.value}</p>
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {/* Search + Sort + Category Filters */}
+        {data && (
+          <div className="space-y-3">
+            {/* Search + sort row */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  className="pl-8 h-8 text-xs"
+                  placeholder="Search opportunities…"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  data-testid="input-search-opportunities"
+                />
+              </div>
+              <div className="flex items-center gap-1">
+                <SlidersHorizontal className="h-3.5 w-3.5 text-muted-foreground" />
+                {(["priority", "value", "newest"] as SortKey[]).map((s) => (
+                  <button
+                    key={s}
+                    onClick={() => setSortBy(s)}
+                    className={`text-xs px-2.5 py-1.5 rounded-full border transition-colors capitalize ${
+                      sortBy === s
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
+                    }`}
+                    data-testid={`sort-${s}`}
+                  >
+                    {s === "newest" ? "Newest" : s === "value" ? "$ Value" : "Priority"}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Category + priority row */}
+            <div className="flex items-center gap-2 flex-wrap">
+              {categoryTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setActiveCategory(tab.key)}
+                  className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                    activeCategory === tab.key
+                      ? "bg-primary text-primary-foreground border-primary"
+                      : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
+                  }`}
+                  data-testid={`filter-category-${tab.key}`}
+                >
+                  <tab.icon className="h-3 w-3" />
+                  {tab.label} ({tab.count})
+                </button>
+              ))}
+              <div className="ml-auto flex gap-1">
+                {["all", "critical", "high", "medium", "low"].map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => setFilterPriority(p)}
+                    className={`text-xs px-2.5 py-1.5 rounded-full border transition-colors ${
+                      filterPriority === p
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted/40 text-muted-foreground border-transparent hover:bg-muted"
+                    }`}
+                    data-testid={`filter-priority-${p}`}
+                  >
+                    {p === "all" ? "All Priority" : p.charAt(0).toUpperCase() + p.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bulk Action Bar */}
+        {selectionMode && selectedIds.size > 0 && (
+          <div className="flex items-center gap-3 p-3 rounded-lg border bg-primary/5 border-primary/20">
+            <CheckSquare className="h-4 w-4 text-primary flex-none" />
+            <span className="text-sm font-medium">{selectedIds.size} selected</span>
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1"
+                onClick={() => setSelectedIds(new Set(filtered.map((o) => o.id)))}
+                data-testid="button-select-all-visible"
+              >
+                Select all visible
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 text-xs gap-1 text-muted-foreground"
+                onClick={clearSelection}
+                data-testid="button-clear-selection"
+              >
+                <X className="h-3 w-3" /> Clear
+              </Button>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-7 text-xs gap-1"
+                onClick={handleBulkDismiss}
+                data-testid="button-bulk-dismiss"
+              >
+                <Trash2 className="h-3 w-3" /> Dismiss {selectedIds.size}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* Opportunity List */}
+        {isLoading ? (
+          <div className="space-y-3">
+            {[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-28" />)}
+          </div>
+        ) : filtered.length === 0 ? (
+          <Card className="p-12 text-center">
+            <Inbox className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+            <p className="font-medium">
+              {searchQuery ? "No results match your search" : "No opportunities found"}
+            </p>
+            <p className="text-sm text-muted-foreground mt-1">
+              {searchQuery
+                ? `Try a different search term or clear filters.`
+                : activeCategory !== "all" || filterPriority !== "all"
+                ? "Try clearing filters to see all opportunities."
+                : "Your scheduling is looking great — no gaps detected right now."}
+            </p>
+            {(searchQuery || activeCategory !== "all" || filterPriority !== "all") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="mt-4 gap-1.5 text-xs"
+                onClick={() => { setSearchQuery(""); setActiveCategory("all"); setFilterPriority("all"); }}
+                data-testid="button-clear-filters"
+              >
+                <RotateCcw className="h-3.5 w-3.5" /> Clear all filters
+              </Button>
+            )}
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            {filtered.map((opp) => (
+              <OpportunityCard
+                key={opp.id}
+                opp={opp}
+                onAction={handleAction}
+                selected={selectedIds.has(opp.id)}
+                onToggleSelect={toggleSelect}
+                selectionMode={selectionMode}
+              />
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {filtered.length} of {opportunities.length} opportunities
+            {searchQuery && ` matching "${searchQuery}"`}
+          </span>
+          <span>Auto-refreshes every 2 min · Revenue figures are associated estimates</span>
         </div>
-      ) : filtered.length === 0 ? (
-        <Card className="p-12 text-center">
-          <Inbox className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
-          <p className="font-medium">No opportunities found</p>
-          <p className="text-sm text-muted-foreground mt-1">
-            {activeCategory !== "all" || filterPriority !== "all"
-              ? "Try clearing filters."
-              : "Your scheduling is looking great — no gaps detected right now."}
-          </p>
-        </Card>
-      ) : (
-        <div className="space-y-3">
-          {filtered.map((opp) => (
-            <OpportunityCard key={opp.id} opp={opp} onAction={handleAction} />
-          ))}
-        </div>
-      )}
 
-      <p className="text-xs text-muted-foreground text-right">
-        Auto-refreshes every 2 minutes · Showing {filtered.length} of {opportunities.length} opportunities
-      </p>
-
-      {activeOpp && (
-        <FillCampaignDialog opportunity={activeOpp} onClose={() => setActiveOpp(null)} />
-      )}
-    </div>
+        {activeOpp && (
+          <FillCampaignDialog opportunity={activeOpp} onClose={() => setActiveOpp(null)} />
+        )}
+      </div>
+    </TooltipProvider>
   );
 }
