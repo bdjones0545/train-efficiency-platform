@@ -1,0 +1,662 @@
+Act as a world-renowned software architect, AI systems engineer, principal full-stack engineer, Apple-level product designer, and enterprise UX specialist.
+
+We are conducting a production-grade page-by-page audit of TrainEfficiency.
+
+# Page
+
+**Opportunity Inbox**
+
+This page should be the centralized work queue for business opportunities, operational risks, revenue recovery, lead follow-up, scheduling opportunities, client success actions, retention risks, and AI-recommended next steps.
+
+This page is not just an inbox.
+
+It is the place where TrainEfficiency turns signals into action.
+
+Do NOT redesign the page.
+
+Do NOT remove existing functionality.
+
+Do NOT create fake AI.
+
+Do NOT add placeholder buttons.
+
+Do NOT invent metrics.
+
+Preserve the existing architecture, backend intelligence, and TrainEfficiency neon green/black identity.
+
+Improve the experience, functionality, explainability, agent utilization, and closed-loop learning.
+
+---
+
+# Core Mission
+
+Opportunity Inbox should answer:
+
+What opportunities exist right now?
+
+Which one matters most?
+
+Why does it matter?
+
+Which agent found it?
+
+What is the expected business impact?
+
+What should I do next?
+
+Can I approve, reject, dismiss, or delegate it?
+
+Did the action work?
+
+Did the system learn from the outcome?
+
+The page should reduce decision fatigue and convert intelligence into measurable action.
+
+---
+
+# UX Audit
+
+Audit:
+
+Information hierarchy
+
+Opportunity prioritization
+
+Inbox density
+
+Filters
+
+Tabs
+
+Search
+
+Sorting
+
+Card clarity
+
+Bulk actions
+
+Empty states
+
+Loading states
+
+Error states
+
+Success states
+
+Mobile responsiveness
+
+Accessibility
+
+Typography
+
+Spacing
+
+Hover states
+
+Micro-interactions
+
+The page should feel like a premium command inbox, not a cluttered task list.
+
+---
+
+# Functional Audit
+
+Review every interactive element:
+
+Opportunity cards
+
+Approve buttons
+
+Reject buttons
+
+Dismiss buttons
+
+Open buttons
+
+View details
+
+Bulk actions
+
+Filters
+
+Search
+
+Tabs
+
+Sort
+
+Priority controls
+
+Agent filters
+
+Category filters
+
+Date filters
+
+Status filters
+
+Assignment controls
+
+Follow-up buttons
+
+AgentMail actions
+
+Revenue recovery actions
+
+Scheduling actions
+
+Retention actions
+
+Client success actions
+
+Drawers
+
+Modals
+
+Links
+
+Determine:
+
+Does it work?
+
+Is it wired to real backend functionality?
+
+Are permissions respected?
+
+Is there loading feedback?
+
+Is there success feedback?
+
+Is there error handling?
+
+Is there undo where appropriate?
+
+Are there dead buttons?
+
+Are there fake actions?
+
+Are duplicate opportunities handled?
+
+Fix production-safe issues directly.
+
+---
+
+# Opportunity Intelligence Audit
+
+Determine whether opportunities are clearly classified by:
+
+Revenue
+
+Scheduling
+
+Retention
+
+Client Success
+
+Growth
+
+Lead Capture
+
+Attendance
+
+Capacity
+
+Operations
+
+AgentMail
+
+System Health
+
+Risk
+
+Urgency
+
+Expected value
+
+Confidence
+
+Deadline
+
+Owner
+
+Recommended action
+
+If classification exists but is hidden, surface it.
+
+If classification does not exist, recommend safe implementation.
+
+---
+
+# Agent Utilization Audit
+
+Review participation from:
+
+Revenue Agent
+
+Scheduling Agent
+
+Retention Agent
+
+Client Success Agent
+
+Growth Agent
+
+Lead Agent
+
+AgentMail
+
+CEO Heartbeat
+
+Executive Agent
+
+Athlete Intelligence
+
+Hermes Learning
+
+Attention Inbox
+
+PAIL
+
+Determine:
+
+Which agent created the opportunity?
+
+Which agent owns follow-up?
+
+Which agents should collaborate?
+
+Should AgentMail draft outreach?
+
+Should Scheduling Agent suggest a move?
+
+Should Revenue Agent estimate value?
+
+Should Retention Agent score risk?
+
+Should Client Success suggest a personal touch?
+
+Should CEO Heartbeat receive escalation signals?
+
+Avoid duplicate recommendations.
+
+Clarify agent ownership.
+
+---
+
+# Closed-Loop Learning Assessment
+
+Every opportunity should support:
+
+Detected
+
+↓
+
+Classified
+
+↓
+
+Prioritized
+
+↓
+
+Recommended
+
+↓
+
+Human Review
+
+↓
+
+Approved / Rejected / Dismissed / Delegated
+
+↓
+
+Execution
+
+↓
+
+Outcome Measurement
+
+↓
+
+Learning
+
+↓
+
+Future Prioritization Improved
+
+Surface existing stages where possible.
+
+Do not fabricate stages.
+
+---
+
+# Outcome Measurement
+
+Determine whether each opportunity can measure:
+
+Revenue recovered
+
+Lead converted
+
+Session filled
+
+Athlete retained
+
+Follow-up completed
+
+Email opened or replied
+
+No-show reduced
+
+Capacity improved
+
+Risk reduced
+
+Time saved
+
+Only use deterministic or associated outcomes.
+
+Never fabricate causal attribution.
+
+Use language like:
+
+Associated revenue
+
+Observed outcome
+
+Correlated improvement
+
+Do not claim direct causation unless explicitly proven.
+
+---
+
+# Recommendation Explainability
+
+Every opportunity card should explain:
+
+Why it appeared
+
+Which signal triggered it
+
+Which agent found it
+
+Which data influenced it
+
+Expected impact
+
+Confidence if available
+
+What happens if ignored
+
+Recommended next action
+
+Keep the explanation user-facing.
+
+Do not expose prompts or internal reasoning.
+
+---
+
+# Human-in-the-Loop
+
+Verify users can:
+
+Review
+
+Expand
+
+Approve
+
+Reject
+
+Dismiss
+
+Delegate
+
+Edit
+
+Save
+
+Undo where appropriate
+
+Bulk approve where safe
+
+No important business action should execute without intended human approval.
+
+---
+
+# Cross-Agent Coordination
+
+Audit whether opportunity workflows coordinate across agents.
+
+Examples:
+
+Revenue Agent identifies underfilled session
+
+↓
+
+Scheduling Agent validates available capacity
+
+↓
+
+AgentMail drafts outreach
+
+↓
+
+Client Success reviews tone
+
+↓
+
+Human approves
+
+↓
+
+Outcome is measured
+
+↓
+
+Hermes learns
+
+↓
+
+CEO Heartbeat receives signal
+
+The page should show collaboration without overwhelming the user.
+
+---
+
+# Operational Intelligence
+
+Opportunity Inbox should help leadership answer:
+
+Where is the business leaving money on the table?
+
+Where are clients at risk?
+
+Where are coaches underutilized?
+
+Which opportunities are repeatedly ignored?
+
+Which opportunities convert?
+
+Which agents produce the highest-value opportunities?
+
+Which categories need leadership intervention?
+
+Which workflows need hardening?
+
+---
+
+# Production Readiness
+
+Classify every opportunity workflow:
+
+🟢 Production Ready
+
+🟡 Needs Hardening
+
+🔴 Misleading or Incomplete
+
+⚫ Placeholder / Not Production Ready
+
+Prioritize fixes by user impact and business value.
+
+---
+
+# Performance
+
+Review:
+
+Query efficiency
+
+Pagination
+
+Filtering
+
+Sorting
+
+Large inbox handling
+
+Realtime updates
+
+Polling
+
+Cache invalidation
+
+State management
+
+Component size
+
+Type safety
+
+Maintainability
+
+Avoid unnecessary architecture rewrites.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Opportunity cards
+
+Priority badges
+
+Agent badges
+
+Value indicators
+
+Confidence indicators
+
+Action buttons
+
+Bulk action bar
+
+Filters
+
+Tabs
+
+Empty states
+
+Drawer layout
+
+Timeline
+
+Outcome indicators
+
+Spacing
+
+Typography
+
+Icons
+
+Hover states
+
+Micro-interactions
+
+Maintain TrainEfficiency identity.
+
+Use neon green intentionally for primary actions, success, selected state, and AI confidence.
+
+---
+
+# Deliverables
+
+Return:
+
+1. UX Audit
+
+Strengths
+Weaknesses
+Improvements implemented
+Remaining opportunities
+
+---
+
+2. Functional Audit
+
+Interactive elements reviewed
+Issues found
+Fixes implemented
+Dead/fake/incomplete actions
+Remaining risks
+
+---
+
+3. Opportunity Intelligence Audit
+
+Signals surfaced
+Signals missing
+Classification quality
+Prioritization quality
+Operational risks
+
+---
+
+4. Agent Intelligence & Closed-Loop Learning Assessment
+
+Learning loops
+Recommendation lifecycle
+Outcome measurement
+Agent memory
+Explainability
+Human-in-the-loop
+Cross-agent coordination
+Operational intelligence
+Recommended implementation order
+
+---
+
+5. Production Readiness Score
+
+Score:
+
+UX
+Functionality
+Opportunity Intelligence
+Agent Utilization
+Closed-Loop Learning
+Explainability
+Cross-Agent Coordination
+Outcome Measurement
+Performance
+Production Readiness
+
+---
+
+6. Implementation Summary
+
+Files changed
+Architecture changes
+Production-safe improvements
+Agent/AI improvements
+Remaining TODOs
+TypeScript/build results
+
+The Opportunity Inbox should become the place where TrainEfficiency converts intelligence into action.
+
+It should not merely show opportunities.
+
+It should prioritize them, explain them, route them to the right agents, support human approval, measure outcomes, and improve future recommendations through closed-loop learning.
