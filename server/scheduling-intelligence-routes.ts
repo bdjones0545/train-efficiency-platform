@@ -3043,6 +3043,441 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
     }
   });
 
+  // ─── Phase 2: Recommendation Lifecycle & Continuous Learning ────────────────
+
+  // Ensure recommendation actions table exists
+  await db.execute(sql`
+    CREATE TABLE IF NOT EXISTS scheduling_recommendation_actions (
+      id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      org_id TEXT NOT NULL,
+      opportunity_id TEXT NOT NULL,
+      opportunity_title TEXT NOT NULL,
+      opportunity_type TEXT NOT NULL,
+      opportunity_category TEXT NOT NULL DEFAULT 'revenue',
+      action TEXT NOT NULL CHECK (action IN ('approved','rejected','dismissed','viewed')),
+      estimated_value_cents INTEGER DEFAULT 0,
+      notes TEXT,
+      user_id TEXT,
+      actioned_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `).catch(() => {});
+
+  // ── POST /api/scheduling-intelligence/recommendation-action ─────────────────
+  app.post("/api/scheduling-intelligence/recommendation-action", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      const userId = (req as any)._authProfile?.userId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+
+      const {
+        opportunityId, opportunityTitle, opportunityType, opportunityCategory,
+        action, estimatedValueCents = 0, notes = null,
+      } = req.body;
+
+      if (!opportunityId || !opportunityTitle || !action) {
+        return res.status(400).json({ message: "opportunityId, opportunityTitle, and action are required" });
+      }
+      if (!["approved","rejected","dismissed","viewed"].includes(action)) {
+        return res.status(400).json({ message: "Invalid action" });
+      }
+
+      await db.execute(sql`
+        INSERT INTO scheduling_recommendation_actions
+          (org_id, opportunity_id, opportunity_title, opportunity_type, opportunity_category,
+           action, estimated_value_cents, notes, user_id, actioned_at)
+        VALUES
+          (${orgId}, ${opportunityId}, ${opportunityTitle}, ${opportunityType || "unknown"},
+           ${opportunityCategory || "revenue"}, ${action}, ${estimatedValueCents}, ${notes}, ${userId}, NOW())
+      `);
+
+      res.json({ status: "recorded", action, opportunityId });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to record action", error: e.message });
+    }
+  });
+
+  // ── GET /api/scheduling-intelligence/recommendation-history ─────────────────
+  app.get("/api/scheduling-intelligence/recommendation-history", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+
+      const [actionsRaw, summaryRaw] = await Promise.all([
+        db.execute(sql`
+          SELECT id, opportunity_id, opportunity_title, opportunity_type, opportunity_category,
+                 action, estimated_value_cents, notes, actioned_at
+          FROM scheduling_recommendation_actions
+          WHERE org_id = ${orgId}
+          ORDER BY actioned_at DESC
+          LIMIT 40
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT
+            COUNT(*)::int AS total,
+            COUNT(*) FILTER (WHERE action = 'approved')::int AS approved,
+            COUNT(*) FILTER (WHERE action = 'rejected')::int AS rejected,
+            COUNT(*) FILTER (WHERE action = 'dismissed')::int AS dismissed,
+            COALESCE(SUM(estimated_value_cents) FILTER (WHERE action = 'approved'), 0)::int AS total_approved_value_cents
+          FROM scheduling_recommendation_actions
+          WHERE org_id = ${orgId}
+            AND actioned_at >= NOW() - INTERVAL '30 days'
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const actions = getRows(actionsRaw);
+      const summary = getRows(summaryRaw)[0] ?? { total: 0, approved: 0, rejected: 0, dismissed: 0, total_approved_value_cents: 0 };
+
+      const approvalRate = summary.total > 0 ? Math.round((summary.approved / summary.total) * 100) : 0;
+
+      res.json({
+        actions: actions.map((a: any) => ({
+          id: a.id,
+          opportunityId: a.opportunity_id,
+          title: a.opportunity_title,
+          type: a.opportunity_type,
+          category: a.opportunity_category,
+          action: a.action,
+          estimatedValueCents: parseInt(a.estimated_value_cents || 0),
+          notes: a.notes,
+          actionedAt: a.actioned_at,
+        })),
+        summary: {
+          total: summary.total,
+          approved: summary.approved,
+          rejected: summary.rejected,
+          dismissed: summary.dismissed,
+          approvalRate,
+          totalApprovedValueCents: parseInt(summary.total_approved_value_cents || 0),
+        },
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to load recommendation history", error: e.message });
+    }
+  });
+
+  // ── GET /api/scheduling-intelligence/agent-reputation ──────────────────────
+  app.get("/api/scheduling-intelligence/agent-reputation", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+
+      const [actionMetricsRaw, categoryBreakdownRaw, campaignMetricsRaw, signalVelocityRaw] = await Promise.all([
+        db.execute(sql`
+          SELECT
+            COUNT(*)::int AS total_actions,
+            COUNT(*) FILTER (WHERE action = 'approved')::int AS approved,
+            COUNT(*) FILTER (WHERE action = 'rejected')::int AS rejected,
+            COUNT(*) FILTER (WHERE action = 'dismissed')::int AS dismissed,
+            AVG(estimated_value_cents) FILTER (WHERE action = 'approved')::int AS avg_approved_value,
+            COALESCE(SUM(estimated_value_cents) FILTER (WHERE action = 'approved'), 0)::int AS total_approved_value
+          FROM scheduling_recommendation_actions
+          WHERE org_id = ${orgId}
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT opportunity_category,
+                 COUNT(*)::int AS total,
+                 COUNT(*) FILTER (WHERE action = 'approved')::int AS approved
+          FROM scheduling_recommendation_actions
+          WHERE org_id = ${orgId}
+          GROUP BY opportunity_category
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT
+            COUNT(*)::int AS total_campaigns,
+            COUNT(*) FILTER (WHERE status IN ('approved','completed'))::int AS approved_campaigns,
+            COUNT(*) FILTER (WHERE status = 'rejected')::int AS rejected_campaigns
+          FROM fill_campaign_submissions
+          WHERE org_id = ${orgId}
+        `).catch(() => ({ rows: [] })),
+        db.execute(sql`
+          SELECT DATE_TRUNC('day', actioned_at)::date AS day, COUNT(*)::int AS count
+          FROM scheduling_recommendation_actions
+          WHERE org_id = ${orgId}
+            AND actioned_at >= NOW() - INTERVAL '14 days'
+          GROUP BY DATE_TRUNC('day', actioned_at)
+          ORDER BY day ASC
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const m = getRows(actionMetricsRaw)[0] ?? {};
+      const catRows = getRows(categoryBreakdownRaw);
+      const camp = getRows(campaignMetricsRaw)[0] ?? {};
+      const velocity = getRows(signalVelocityRaw);
+
+      const total = parseInt(m.total_actions || 0);
+      const approved = parseInt(m.approved || 0);
+      const rejected = parseInt(m.rejected || 0);
+      const dismissed = parseInt(m.dismissed || 0);
+      const approvalRate = total > 0 ? Math.round((approved / total) * 100) : 0;
+      const avgValue = parseInt(m.avg_approved_value || 0);
+      const totalValue = parseInt(m.total_approved_value || 0);
+
+      const campTotal = parseInt(camp.total_campaigns || 0);
+      const campApproved = parseInt(camp.approved_campaigns || 0);
+      const campRejected = parseInt(camp.rejected_campaigns || 0);
+      const campaignApprovalRate = campTotal > 0 ? Math.round((campApproved / campTotal) * 100) : 0;
+
+      const trustTier = approvalRate >= 80 ? "High Trust" : approvalRate >= 50 ? "Moderate Trust" : approvalRate >= 20 ? "Building Trust" : "Establishing";
+
+      const categoryBreakdown = catRows.map((c: any) => ({
+        category: c.opportunity_category,
+        total: parseInt(c.total || 0),
+        approved: parseInt(c.approved || 0),
+        approvalRate: parseInt(c.total || 0) > 0 ? Math.round((parseInt(c.approved || 0) / parseInt(c.total)) * 100) : 0,
+      }));
+
+      res.json({
+        recommendations: { total, approved, rejected, dismissed, approvalRate, avgApprovedValueCents: avgValue, totalApprovedValueCents: totalValue },
+        campaigns: { total: campTotal, approved: campApproved, rejected: campRejected, approvalRate: campaignApprovalRate },
+        trustTier,
+        categoryBreakdown,
+        signalVelocity: velocity.map((v: any) => ({ day: v.day, count: parseInt(v.count || 0) })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to compute agent reputation", error: e.message });
+    }
+  });
+
+  // ── GET /api/scheduling-intelligence/learning-insights ─────────────────────
+  app.get("/api/scheduling-intelligence/learning-insights", isAuthenticated, privilegedOnly, async (req: Request, res: Response) => {
+    try {
+      const orgId = (req as any)._authProfile?.orgId;
+      if (!orgId) return res.status(403).json({ message: "No org" });
+
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+
+      const [servicePatternRaw, cancelDayRaw, coachFillRaw, reschedulerRaw, peakHourRaw, noShowRaw] = await Promise.all([
+        // Session types that consistently underfill
+        db.execute(sql`
+          SELECT s.name as service_name,
+                 COUNT(b.id)::int AS session_count,
+                 AVG(CASE WHEN b.max_participants > 0 THEN bpc.registered::float / b.max_participants ELSE 0 END * 100)::int AS avg_fill_pct,
+                 AVG(b.max_participants)::int AS avg_capacity
+          FROM bookings b
+          JOIN services s ON b.service_id = s.id
+          LEFT JOIN (
+            SELECT booking_id, COUNT(*) as registered FROM booking_participants GROUP BY booking_id
+          ) bpc ON bpc.booking_id = b.id
+          WHERE b.organization_id = ${orgId}
+            AND b.status IN ('CONFIRMED','COMPLETED')
+            AND b.start_at >= ${ninetyDaysAgo.toISOString()}
+          GROUP BY s.name
+          HAVING COUNT(b.id) >= 2
+          ORDER BY avg_fill_pct ASC
+          LIMIT 5
+        `).catch(() => ({ rows: [] })),
+
+        // Days with highest cancellation rate
+        db.execute(sql`
+          SELECT TO_CHAR(start_at AT TIME ZONE 'America/New_York', 'Day') AS day_name,
+                 EXTRACT(DOW FROM start_at AT TIME ZONE 'America/New_York') AS dow,
+                 COUNT(*) FILTER (WHERE status = 'CANCELLED')::int AS cancels,
+                 COUNT(*)::int AS total
+          FROM bookings
+          WHERE organization_id = ${orgId}
+            AND start_at >= ${thirtyDaysAgo.toISOString()}
+          GROUP BY TO_CHAR(start_at AT TIME ZONE 'America/New_York', 'Day'),
+                   EXTRACT(DOW FROM start_at AT TIME ZONE 'America/New_York')
+          HAVING COUNT(*) >= 2
+          ORDER BY (COUNT(*) FILTER (WHERE status = 'CANCELLED')::float / COUNT(*)) DESC
+          LIMIT 3
+        `).catch(() => ({ rows: [] })),
+
+        // Coach fill rate performance
+        db.execute(sql`
+          SELECT u.first_name, u.last_name,
+                 COUNT(b.id)::int AS sessions,
+                 AVG(CASE WHEN b.max_participants > 0 THEN bpc.registered::float / b.max_participants ELSE 0 END * 100)::int AS avg_fill_pct
+          FROM coach_profiles cp
+          JOIN users u ON cp.user_id = u.id
+          LEFT JOIN bookings b ON b.coach_id = cp.id
+            AND b.status IN ('CONFIRMED','COMPLETED')
+            AND b.start_at >= ${thirtyDaysAgo.toISOString()}
+          LEFT JOIN (
+            SELECT booking_id, COUNT(*) as registered FROM booking_participants GROUP BY booking_id
+          ) bpc ON bpc.booking_id = b.id
+          WHERE cp.organization_id = ${orgId}
+          GROUP BY u.first_name, u.last_name
+          HAVING COUNT(b.id) >= 2
+          ORDER BY avg_fill_pct DESC
+          LIMIT 5
+        `).catch(() => ({ rows: [] })),
+
+        // Athletes who frequently reschedule / cancel
+        db.execute(sql`
+          SELECT u.first_name, u.last_name,
+                 COUNT(*) FILTER (WHERE b.status = 'CANCELLED')::int AS cancels,
+                 COUNT(*)::int AS total_bookings
+          FROM booking_participants bp
+          JOIN bookings b ON b.id = bp.booking_id
+          JOIN users u ON u.id = bp.user_id
+          WHERE b.organization_id = ${orgId}
+            AND b.start_at >= ${thirtyDaysAgo.toISOString()}
+          GROUP BY u.first_name, u.last_name
+          HAVING COUNT(*) FILTER (WHERE b.status = 'CANCELLED') >= 2
+          ORDER BY cancels DESC
+          LIMIT 3
+        `).catch(() => ({ rows: [] })),
+
+        // Peak fill hours
+        db.execute(sql`
+          SELECT EXTRACT(HOUR FROM b.start_at AT TIME ZONE 'America/New_York')::int AS hour,
+                 AVG(CASE WHEN b.max_participants > 0 THEN bpc.registered::float / b.max_participants ELSE 0 END * 100)::int AS avg_fill_pct,
+                 COUNT(b.id)::int AS sessions
+          FROM bookings b
+          LEFT JOIN (
+            SELECT booking_id, COUNT(*) as registered FROM booking_participants GROUP BY booking_id
+          ) bpc ON bpc.booking_id = b.id
+          WHERE b.organization_id = ${orgId}
+            AND b.status IN ('CONFIRMED','COMPLETED')
+            AND b.start_at >= ${ninetyDaysAgo.toISOString()}
+          GROUP BY EXTRACT(HOUR FROM b.start_at AT TIME ZONE 'America/New_York')
+          HAVING COUNT(b.id) >= 3
+          ORDER BY avg_fill_pct DESC
+          LIMIT 3
+        `).catch(() => ({ rows: [] })),
+
+        // Sessions with high no-show / absent rate
+        db.execute(sql`
+          SELECT b.id, s.name as service_name,
+                 COUNT(sa.id) FILTER (WHERE sa.status = 'ABSENT')::int AS absents,
+                 COUNT(sa.id)::int AS total_attendance
+          FROM bookings b
+          JOIN services s ON b.service_id = s.id
+          LEFT JOIN session_attendance sa ON sa.booking_id = b.id
+          WHERE b.organization_id = ${orgId}
+            AND b.start_at >= ${thirtyDaysAgo.toISOString()}
+          GROUP BY b.id, s.name
+          HAVING COUNT(sa.id) > 0
+            AND COUNT(sa.id) FILTER (WHERE sa.status = 'ABSENT') >= 2
+          ORDER BY (COUNT(sa.id) FILTER (WHERE sa.status = 'ABSENT')::float / COUNT(sa.id)) DESC
+          LIMIT 5
+        `).catch(() => ({ rows: [] })),
+      ]);
+
+      const servicePatterns = getRows(servicePatternRaw);
+      const cancelDays = getRows(cancelDayRaw);
+      const coachFill = getRows(coachFillRaw);
+      const reschedulers = getRows(reschedulerRaw);
+      const peakHours = getRows(peakHourRaw);
+      const noShows = getRows(noShowRaw);
+
+      const insights: Array<{ type: string; insight: string; detail: string; severity: "info" | "warning" | "success" }> = [];
+
+      // Service pattern insights
+      servicePatterns.slice(0, 3).forEach((s: any) => {
+        const fill = parseInt(s.avg_fill_pct || 0);
+        if (fill < 50) {
+          insights.push({
+            type: "session_type",
+            insight: `"${s.service_name}" consistently underfills`,
+            detail: `${fill}% avg fill over ${s.session_count} sessions — consider reducing capacity or increasing outreach`,
+            severity: fill < 30 ? "warning" : "info",
+          });
+        } else if (fill >= 85) {
+          insights.push({
+            type: "session_type",
+            insight: `"${s.service_name}" is in high demand`,
+            detail: `${fill}% avg fill — strong candidate for additional sessions or capacity expansion`,
+            severity: "success",
+          });
+        }
+      });
+
+      // Cancellation day insights
+      cancelDays.forEach((d: any) => {
+        const cancels = parseInt(d.cancels || 0);
+        const total = parseInt(d.total || 0);
+        const rate = total > 0 ? Math.round((cancels / total) * 100) : 0;
+        if (rate >= 30) {
+          insights.push({
+            type: "cancellation_pattern",
+            insight: `${d.day_name?.trim()}s have a ${rate}% cancellation rate`,
+            detail: `${cancels} of ${total} sessions cancelled — consider reducing ${d.day_name?.trim()} bookings or adding buffer`,
+            severity: "warning",
+          });
+        }
+      });
+
+      // Coach performance insights
+      const topCoach = coachFill[0];
+      const bottomCoach = coachFill[coachFill.length - 1];
+      if (topCoach && parseInt(topCoach.avg_fill_pct || 0) >= 80) {
+        insights.push({
+          type: "coach_performance",
+          insight: `${topCoach.first_name} ${topCoach.last_name} drives the highest fill rates`,
+          detail: `${parseInt(topCoach.avg_fill_pct || 0)}% avg across ${topCoach.sessions} sessions — consider expanding their schedule`,
+          severity: "success",
+        });
+      }
+      if (bottomCoach && parseInt(bottomCoach.avg_fill_pct || 0) < 40 && bottomCoach !== topCoach) {
+        insights.push({
+          type: "coach_performance",
+          insight: `${bottomCoach.first_name} ${bottomCoach.last_name} sessions consistently underfill`,
+          detail: `${parseInt(bottomCoach.avg_fill_pct || 0)}% avg — review session type fit or marketing approach`,
+          severity: "warning",
+        });
+      }
+
+      // Peak hour insights
+      if (peakHours.length > 0) {
+        const best = peakHours[0];
+        const hour = parseInt(best.hour || 0);
+        const timeLabel = hour === 0 ? "12 AM" : hour < 12 ? `${hour} AM` : hour === 12 ? "12 PM" : `${hour - 12} PM`;
+        insights.push({
+          type: "peak_demand",
+          insight: `${timeLabel} sessions fill ${parseInt(best.avg_fill_pct || 0)}% on average`,
+          detail: `Your highest-demand time slot based on ${best.sessions} sessions — prioritize scheduling during this window`,
+          severity: "info",
+        });
+      }
+
+      // No-show insights
+      const noShowSessions = noShows.filter((n: any) => parseInt(n.total_attendance || 0) > 0);
+      if (noShowSessions.length > 0) {
+        const worstType = noShowSessions[0];
+        insights.push({
+          type: "no_show",
+          insight: `"${worstType.service_name}" has repeated absences`,
+          detail: `${worstType.absents} absences in last 30 days — send 24h reminders or require confirmations`,
+          severity: "warning",
+        });
+      }
+
+      // Frequent cancellers
+      if (reschedulers.length > 0) {
+        const top = reschedulers[0];
+        const rate = parseInt(top.total_bookings || 0) > 0
+          ? Math.round((parseInt(top.cancels || 0) / parseInt(top.total_bookings)) * 100) : 0;
+        if (rate >= 40) {
+          insights.push({
+            type: "athlete_behavior",
+            insight: `${top.first_name} ${top.last_name} cancels ${rate}% of bookings`,
+            detail: `${top.cancels} cancellations in 30 days — consider personalized outreach or flexible scheduling options`,
+            severity: "info",
+          });
+        }
+      }
+
+      res.json({
+        insights,
+        dataSourcesSampled: {
+          sessionTypes: servicePatterns.length,
+          cancellationDays: cancelDays.length,
+          coaches: coachFill.length,
+          athletes: reschedulers.length,
+          timeSlots: peakHours.length,
+        },
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      res.status(500).json({ message: "Failed to generate learning insights", error: e.message });
+    }
+  });
+
   // ─── Contract Alias Routes ─────────────────────────────────────────────────
   // These aliases ensure the API contract names are supported alongside the
   // implementation names, without duplicating handler logic.
