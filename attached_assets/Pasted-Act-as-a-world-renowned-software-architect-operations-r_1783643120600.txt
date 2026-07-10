@@ -1,0 +1,743 @@
+Act as a world-renowned software architect, operations researcher, workforce optimization expert, AI systems engineer, Apple-level product designer, and enterprise UX specialist.
+
+We are conducting a production-grade page-by-page audit of TrainEfficiency.
+
+# Page
+
+**Coach Capacity**
+
+This page is NOT simply a utilization report.
+
+It is the workforce optimization engine for TrainEfficiency.
+
+Its purpose is to continuously optimize coach utilization, workload, revenue generation, athlete experience, scheduling efficiency, and long-term organizational health.
+
+Do NOT redesign the page.
+
+Do NOT remove existing functionality.
+
+Do NOT create fake AI.
+
+Do NOT invent metrics.
+
+Do NOT add placeholder buttons.
+
+Preserve the existing architecture, backend intelligence, scheduling engine, and TrainEfficiency design system.
+
+Improve intelligence.
+
+Improve explainability.
+
+Improve operational value.
+
+Improve measurable outcomes.
+
+---
+
+# Core Mission
+
+Coach Capacity should answer:
+
+Which coaches are overloaded?
+
+Which coaches are underutilized?
+
+Where is revenue being lost?
+
+Where can sessions be moved?
+
+Who is approaching burnout?
+
+Who has capacity today?
+
+Which coach should receive the next athlete?
+
+Which recommendations create measurable business value?
+
+What should leadership do next?
+
+---
+
+# Workforce Optimization Audit
+
+Review whether this page supports the full optimization lifecycle.
+
+Observe
+
+↓
+
+Analyze Capacity
+
+↓
+
+Identify Bottlenecks
+
+↓
+
+Recommend Improvements
+
+↓
+
+Human Review
+
+↓
+
+Approve
+
+↓
+
+Execute
+
+↓
+
+Measure
+
+↓
+
+Learn
+
+↓
+
+Improve
+
+Identify missing stages.
+
+Recommend production-safe implementation.
+
+---
+
+# UX Audit
+
+Audit:
+
+Information hierarchy
+
+Coach cards
+
+Capacity visualization
+
+Workload visualization
+
+Revenue visualization
+
+Availability
+
+Filtering
+
+Sorting
+
+Search
+
+Timeline clarity
+
+Color usage
+
+Typography
+
+Spacing
+
+Accessibility
+
+Loading states
+
+Error states
+
+Success states
+
+Empty states
+
+Mobile responsiveness
+
+The page should communicate workforce health within five seconds.
+
+---
+
+# Functional Audit
+
+Review every interaction.
+
+Coach cards
+
+Filters
+
+Search
+
+Sorting
+
+Capacity controls
+
+Recommendations
+
+Session movement
+
+Assign coach
+
+Reassign coach
+
+Availability editing
+
+Capacity editing
+
+Calendar links
+
+Revenue actions
+
+Scheduling actions
+
+Approval actions
+
+Expand
+
+Collapse
+
+Bulk actions
+
+Determine:
+
+Does it work?
+
+Is it wired to real backend functionality?
+
+Are permissions respected?
+
+Are loading, success, error, and empty states handled?
+
+Are there dead buttons?
+
+Are there duplicate workflows?
+
+Fix production-safe issues only.
+
+---
+
+# Capacity Intelligence Audit
+
+Determine whether this page surfaces:
+
+Coach utilization %
+
+Available hours
+
+Booked hours
+
+Remaining capacity
+
+Revenue generated
+
+Revenue opportunity
+
+Idle capacity
+
+Overload risk
+
+Burnout risk
+
+Session distribution
+
+Peak utilization
+
+Coach demand
+
+Coach performance
+
+Coach specialization
+
+Travel burden
+
+Schedule density
+
+Gap opportunities
+
+Recommended athlete reassignment
+
+Recommended coach reassignment
+
+Future capacity shortages
+
+Future hiring signals
+
+Only surface deterministic intelligence.
+
+---
+
+# Agent Utilization Audit
+
+Review participation from:
+
+Scheduling Agent
+
+Revenue Agent
+
+Retention Agent
+
+Client Success Agent
+
+Executive Agent
+
+CEO Heartbeat
+
+Athlete Intelligence
+
+AgentMail
+
+Hermes Learning
+
+Attention Inbox
+
+Determine:
+
+Which recommendations belong to each agent?
+
+Should recommendations collaborate?
+
+Should Revenue Agent estimate financial impact?
+
+Should Scheduling Agent recommend coach moves?
+
+Should Client Success evaluate athlete continuity?
+
+Should CEO Heartbeat receive workforce health signals?
+
+Should AgentMail prepare coach communication?
+
+Clarify ownership.
+
+Avoid duplicated recommendations.
+
+---
+
+# Agent Intelligence & Closed-Loop Learning Assessment
+
+Review every intelligent workflow.
+
+---
+
+## Learning Loop
+
+Determine whether Coach Capacity learns from:
+
+Accepted recommendations
+
+Rejected recommendations
+
+Ignored recommendations
+
+Coach schedule edits
+
+Coach availability changes
+
+Coach workload adjustments
+
+Athlete reassignment
+
+Revenue outcomes
+
+Attendance outcomes
+
+Burnout events
+
+Coach preferences
+
+Determine whether learning:
+
+Improves recommendations
+
+Remains organization-scoped
+
+Can be reviewed
+
+Can be corrected
+
+Can retire obsolete learning
+
+---
+
+## Recommendation Lifecycle
+
+Every recommendation should support:
+
+Detected
+
+↓
+
+Analyzed
+
+↓
+
+Prioritized
+
+↓
+
+Recommended
+
+↓
+
+Human Review
+
+↓
+
+Approved
+
+↓
+
+Executed
+
+↓
+
+Outcome Measured
+
+↓
+
+Learning
+
+↓
+
+Future Optimization
+
+Surface existing lifecycle information.
+
+Do not fabricate stages.
+
+---
+
+## Outcome Measurement
+
+Determine whether recommendations measure:
+
+Coach utilization improvement
+
+Revenue improvement
+
+Idle time reduction
+
+Burnout reduction
+
+Athlete retention
+
+Coach retention
+
+Schedule efficiency
+
+Capacity recovery
+
+Time saved
+
+Observed business impact
+
+Never fabricate attribution.
+
+Only use deterministic evidence.
+
+---
+
+## Explainability
+
+Every recommendation should explain:
+
+Why it exists
+
+Which workforce signals influenced it
+
+Expected operational impact
+
+Expected financial impact
+
+Potential downside if ignored
+
+Confidence
+
+Recommended action
+
+Whether similar recommendations have succeeded previously
+
+No prompt exposure.
+
+No hidden reasoning.
+
+---
+
+## Human-in-the-Loop
+
+Verify every recommendation supports:
+
+Review
+
+Approve
+
+Reject
+
+Edit
+
+Undo
+
+Bulk approval
+
+Escalation
+
+No production schedule modifications should occur without intended approval.
+
+---
+
+## Cross-Agent Coordination
+
+Review coordinated workflows.
+
+Examples:
+
+Scheduling Agent identifies overload
+
+↓
+
+Revenue Agent estimates financial impact
+
+↓
+
+Client Success evaluates athlete continuity
+
+↓
+
+AgentMail drafts communication
+
+↓
+
+Human approves
+
+↓
+
+Coach schedule updated
+
+↓
+
+Outcome measured
+
+↓
+
+Hermes Learning improves future recommendations
+
+↓
+
+CEO Heartbeat receives workforce signal
+
+Surface collaboration instead of isolated recommendations.
+
+---
+
+## Organizational Learning
+
+Determine whether leadership can answer:
+
+Which coaches consistently exceed capacity?
+
+Which coaches remain underutilized?
+
+Which coach recommendations succeed?
+
+Which capacity recommendations fail?
+
+Which coaches generate the highest value?
+
+Which capacity problems repeat?
+
+When should additional coaches be hired?
+
+When should schedules be rebalanced?
+
+Surface learning without exposing prompts or internal reasoning.
+
+---
+
+## Operational Intelligence
+
+Determine whether leadership can answer:
+
+Are coaches healthy?
+
+Are coaches overloaded?
+
+Where is capacity wasted?
+
+Where is revenue lost?
+
+Where should new athletes go?
+
+Which coach should receive additional sessions?
+
+Which coaches need intervention?
+
+Where should hiring occur?
+
+Coach Capacity should become the workforce optimization engine of TrainEfficiency.
+
+---
+
+# Performance
+
+Review:
+
+Query efficiency
+
+Rendering
+
+Large organizations
+
+Realtime updates
+
+Caching
+
+Polling
+
+State management
+
+Component organization
+
+Type safety
+
+Maintainability
+
+Avoid unnecessary architecture changes.
+
+---
+
+# Visual Polish
+
+Improve:
+
+Coach cards
+
+Capacity visualization
+
+Burnout indicators
+
+Revenue indicators
+
+Availability visualization
+
+Recommendation cards
+
+Priority badges
+
+Outcome indicators
+
+Workload charts
+
+Micro-interactions
+
+Spacing
+
+Typography
+
+Hover states
+
+Accessibility
+
+Maintain TrainEfficiency identity.
+
+Use neon green intentionally for healthy capacity, successful optimization, and primary actions.
+
+Reserve amber and red for workload risk and burnout.
+
+---
+
+# Deliverables
+
+Return:
+
+1. UX Audit
+
+Strengths
+
+Weaknesses
+
+Improvements implemented
+
+Remaining opportunities
+
+---
+
+2. Functional Audit
+
+Interactive elements reviewed
+
+Issues found
+
+Fixes implemented
+
+Remaining risks
+
+---
+
+3. Capacity Intelligence Audit
+
+Signals surfaced
+
+Signals missing
+
+Optimization opportunities
+
+Operational risks
+
+---
+
+4. Agent Intelligence & Closed-Loop Learning Assessment
+
+Learning loops
+
+Recommendation lifecycle
+
+Outcome measurement
+
+Explainability
+
+Cross-agent coordination
+
+Organizational learning
+
+Operational intelligence
+
+Recommended implementation order
+
+---
+
+5. Production Readiness Score
+
+Score:
+
+UX
+
+Functionality
+
+Capacity Intelligence
+
+Agent Utilization
+
+Closed-Loop Learning
+
+Explainability
+
+Cross-Agent Coordination
+
+Outcome Measurement
+
+Performance
+
+Production Readiness
+
+---
+
+6. Implementation Summary
+
+Files changed
+
+Architecture changes
+
+Production-safe improvements
+
+Agent/AI improvements
+
+Remaining TODOs
+
+TypeScript/build results
+
+Coach Capacity should become the workforce optimization engine of TrainEfficiency.
+
+It should continuously optimize coach utilization, maximize revenue, reduce burnout, improve athlete assignment, coordinate multiple AI agents, measure workforce outcomes, and become more intelligent after every scheduling decision.
