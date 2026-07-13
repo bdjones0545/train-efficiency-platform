@@ -4,3 +4,5 @@ dist
 server/public
 vite.config.ts.*
 *.tar.gz
+# Kevin Phase-0 local secrets
+.env.kevin.local

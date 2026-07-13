@@ -220,6 +220,7 @@ const ALL_PAGES: PageDef[] = [
   { id: "deal-pipeline", label: "Deal Pipeline", url: "/admin/team-training-deals", icon: KanbanSquare, section: "Growth", keywords: "deals CRM pipeline sales", minRole: "ADMIN" },
   { id: "business-brain", label: "Business Brain", url: "/admin/business-brain", icon: Brain, section: "AI", keywords: "intelligence analytics AI insights", minRole: "ADMIN" },
   { id: "agent-ops", label: "Agent Ops Monitor", url: "/admin/agent-ops", icon: ShieldAlert, section: "AI", keywords: "health system monitor ops", minRole: "ADMIN", advancedOnly: true },
+  { id: "kevin-console", label: "Kevin Console", url: "/admin/kevin", icon: Bot, section: "AI", keywords: "kevin hermes orchestrator ops health capabilities", minRole: "ADMIN", advancedOnly: true },
   { id: "workflows", label: "Workflows", url: "/admin/workflows", icon: GitBranch, section: "AI", keywords: "automation trigger sequences", minRole: "ADMIN", advancedOnly: true },
   { id: "trigger-audit", label: "Trigger Audit", url: "/admin/trigger-audit", icon: Activity, section: "AI", keywords: "log decisions email agent", minRole: "ADMIN", advancedOnly: true },
   { id: "agent-tools", label: "Agent Tools", url: "/admin/agent-tools", icon: Plug, section: "AI", keywords: "tools approvals pending AI actions", minRole: "ADMIN", advancedOnly: true },
