@@ -1,0 +1,126 @@
+Kevin is fully integrated into the TrainEfficiency codebase, but the runtime configuration is incomplete.
+
+Current state:
+
+✅ Kevin UI exists (client/src/pages/admin-kevin.tsx)
+✅ Kevin server routes exist (server/kevin-routes.ts)
+✅ Kevin Hermes client exists (server/services/kevin-hermes-client.ts)
+✅ Kevin run service exists
+✅ Kevin audit service exists
+✅ Kevin middleware exists
+✅ Kevin routes are registered in server/routes.ts
+✅ Build passes
+✅ GitHub merge is complete
+
+The only remaining blocker is runtime configuration.
+
+The required environment variables are currently missing:
+
+- KEVIN_INTEGRATION_ENABLED
+- KEVIN_HERMES_BASE_URL
+- KEVIN_HERMES_API_KEY
+
+Your task is to complete the production runtime integration.
+
+Requirements:
+
+1. Determine the correct Hermes API endpoint for Kevin.
+
+   Inspect the Kevin VM integration and determine:
+
+   - Which host Kevin's Hermes API Server is listening on.
+   - Which port it is listening on.
+   - Whether it is reachable from outside the VM.
+   - Whether Hermes currently exposes an HTTP API suitable for TrainEfficiency.
+   - Whether a secure reverse proxy, tunnel, or external endpoint is required.
+
+2. Configure Replit Secrets.
+
+   Create or document the required Replit Secrets:
+
+   KEVIN_INTEGRATION_ENABLED=true
+
+   KEVIN_HERMES_BASE_URL=<actual reachable Kevin endpoint>
+
+   KEVIN_HERMES_API_KEY=<matching Hermes API key>
+
+Do not expose or print secret values.
+
+3. Verify connectivity.
+
+   From the TrainEfficiency backend verify:
+
+   - Kevin health endpoint
+   - Kevin capabilities endpoint
+   - Authentication succeeds
+   - Hermes profile "kevin" is reachable
+
+4. Validate every Kevin endpoint:
+
+   GET /api/kevin/health
+
+   GET /api/kevin/capabilities
+
+   GET /api/kevin/config-status
+
+   POST /api/kevin/runs
+
+   GET /api/kevin/runs
+
+   GET /api/kevin/runs/:id
+
+   GET /api/kevin/runs/:id/events
+
+5. Confirm:
+
+   - Kevin responds through Hermes.
+   - Kevin uses the stored TrainEfficiency briefing.
+   - Kevin identifies himself correctly.
+   - Kevin is not falling back to the generic assistant.
+
+6. Verify security.
+
+   Confirm:
+
+   - Browser never receives KEVIN_HERMES_API_KEY.
+   - Browser never communicates directly with Hermes.
+   - All Kevin traffic passes through the TrainEfficiency backend.
+   - ADMIN-only middleware is functioning correctly.
+
+7. Verify failure behavior.
+
+   Simulate Kevin being unavailable.
+
+   Confirm:
+
+   - TrainEfficiency remains operational.
+   - Kevin endpoints fail gracefully.
+   - Clear Kevin-specific error messages are returned.
+   - No generic assistant fallback occurs.
+
+8. Run final validation:
+
+   npm run check
+
+   npm run build
+
+9. Produce a deployment report including:
+
+   - Kevin endpoint
+   - Runtime health
+   - Configuration status
+   - Missing infrastructure (if any)
+   - Remaining blockers
+   - Required Replit Secrets
+   - Required VM configuration
+   - Network architecture
+   - Security verification
+   - End-to-end validation results
+
+Do not modify unrelated code.
+
+Do not weaken authentication.
+
+Do not expose secrets.
+
+If the Hermes API cannot currently be reached from Replit, identify the exact networking limitation and recommend the smallest production-safe solution (reverse proxy, secure tunnel, VPN, or public endpoint) required to complete the integration.
