@@ -68,6 +68,8 @@ integrations = ["javascript_log_in_with_replit:2.0.0", "javascript_database:1.0.
   AGENTMAIL_ORG_DOMAIN = "trainefficiency.com"
 GOOGLE_CLIENT_ID = "314571901016-72muc79kiniis3cksinr6e7ltud4636d.apps.googleusercontent.com"
 META_BOOK_PIXEL_ID = "1017450327750475"
+KEVIN_INTEGRATION_ENABLED = "true"
+KEVIN_HERMES_BASE_URL = "https://kevin-api.trainefficiency.com"
 
   [userenv.production]
   PUBLIC_APP_URL = "https://trainefficiency.com"
