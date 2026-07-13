@@ -763,6 +763,12 @@ export function AppSidebar() {
         testId: "nav-business-overview",
       },
       {
+        title: "Kevin Console",
+        url: "/admin/kevin",
+        icon: Bot,
+        testId: "nav-kevin-console",
+      },
+      {
         title: "Recommendations",
         url: "/admin/recommendations",
         icon: Zap,

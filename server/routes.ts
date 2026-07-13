@@ -32677,5 +32677,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerAgentmailOutcomeRoutes } = await import("./agentmail-outcome-routes");
   await registerAgentmailOutcomeRoutes(app, isAuthenticated, requireRole);
 
+  // ─── Kevin (Hermes orchestrator BFF) — Phase 0 health/capabilities ─────────
+  const { registerKevinRoutes } = await import("./kevin-routes");
+  await registerKevinRoutes(app);
+
   return httpServer;
 }
