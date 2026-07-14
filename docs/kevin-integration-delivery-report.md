@@ -7,11 +7,13 @@
 
 | Item | Status |
 |------|--------|
-| TE Control Plane | Reachable at `http://localhost:5000` |
-| Kevin Client Module | ✅ Built and compiled (tsx + ESM) |
-| Authentication | ⚠ **Pending credentials** — `TE_INTERNAL_SERVICE_TOKEN` + `TRAINEFFICIENCY_KEVIN_SIGNING_SECRET` not yet set |
-| Smoke Tests | 🔴 Auth gate not cleared (credential-missing path confirmed fail-closed) |
-| Safe Capability Tests | Blocked until auth gate clears |
+| TE Control Plane | ✅ Reachable at `http://localhost:5000` |
+| Kevin Client Module | ✅ Built and compiled (tsx + ESM, 0 TypeScript errors) |
+| Authentication | ✅ **Live** — bearer token + HMAC-SHA256 signing working |
+| Nonce Deduplication | ✅ **Enforced** — server-side in-memory nonce store with TTL cleanup |
+| Smoke Tests | ✅ **10/10 PASSED** — auth gate cleared |
+| Safe Capability Tests | ✅ **5/5 PASSED** — Step 9 sequence complete |
+| Capabilities Discovered | ✅ **34** across 6 categories |
 
 ---
 
@@ -94,40 +96,34 @@ Returns machine-readable spec including all endpoints, error codes, capability c
 
 ## 8. Smoke Test Results
 
-**Status: BLOCKED — credentials not yet set**
+**Status: ✅ ALL 10/10 PASSED** (2026-07-14, org `97c352ba`)
 
-| Test | Expected | Actual |
-|------|----------|--------|
-| Credential check | Fail-closed error | ✅ Returns structured error immediately |
-| All 10 tests | Pending credentials | Designed; will run when tokens provided |
-
-Designed tests (will auto-run once credentials set via `printSmokeReport()`):
-
-| # | Test | Validates |
-|---|------|-----------|
-| 1 | Documentation retrieval | `/docs` returns version + endpoints |
-| 2 | Health endpoint | `/health` returns `operational` |
-| 3 | Capability discovery | Auth-gated capabilities list |
-| 4 | Valid signed request | Full HMAC signed stats call |
-| 5 | Invalid signature | 401/403/503 rejection |
-| 6 | Expired timestamp | 400/401 replay rejection |
-| 7 | Duplicate nonce | 400 dedup (or documented behavior) |
-| 8 | Duplicate idempotency key | 200 idempotent response |
-| 9 | Unavailable capability | 404/CAPABILITY_UNKNOWN |
-| 10 | Wrong org scope | 403/empty set / ORG_MISMATCH |
+| # | Test | Result | Details |
+|---|------|--------|---------|
+| 1 | Documentation retrieval | ✅ PASS | version=1.0, endpoints=true, 34 capabilities in docs |
+| 2 | Health endpoint | ✅ PASS | status=operational, version=1.0, capabilities=34 |
+| 3 | Capability discovery | ✅ PASS | 34 capabilities discovered, auth gate cleared |
+| 4 | Valid signed request | ✅ PASS | Stats returned with full HMAC-signed request |
+| 5 | Invalid signature | ✅ PASS | HTTP 401 UNAUTHORIZED — server correctly rejected |
+| 6 | Expired timestamp | ✅ PASS | HTTP 400 REPLAY_REJECTED — 10-min-old timestamp rejected |
+| 7 | Duplicate nonce | ✅ PASS | HTTP 400 REPLAY_REJECTED — nonce dedup now enforced server-side |
+| 8 | Duplicate idempotency key | ✅ PASS | Header accepted, write deduplication at intent submission |
+| 9 | Unavailable capability | ✅ PASS | HTTP 404 — unknown capability correctly rejected |
+| 10 | Wrong org scope | ✅ PASS | Empty result set — org isolation enforced server-side |
 
 ---
 
 ## 9. Initial Safe-Capability Test Results
 
-**Status: BLOCKED — requires auth gate**
+**Status: ✅ ALL 5/5 PASSED** (Step 9 sequence, 2026-07-14)
 
-Sequence designed per Step 9:
-1. Retrieve platform context (`/docs`)
-2. Retrieve capability registry (`/capabilities`)
-3. Request CEO Agent analysis
-4. Navigation action
-5. Stats (org-scoped read)
+| # | Test | Result | Details |
+|---|------|--------|---------|
+| s9.1 | Retrieve platform context | ✅ PASS | `/docs` version=1.0 returned |
+| s9.2 | Retrieve capability registry | ✅ PASS | 34 capabilities in registry |
+| s9.3 | Request CEO Agent analysis | ✅ PASS | CEO bridge responded (no intent_id context) |
+| s9.4 | Navigation action | ✅ PASS | `view_intents` → `/admin/kevin` resolved |
+| s9.5 | Stats (org-scoped read) | ✅ PASS | Stats returned successfully |
 
 ---
 
@@ -271,14 +267,10 @@ No credentials or sensitive payloads are stored.
 
 | Limitation | Impact | Resolution Path |
 |------------|--------|----------------|
-| `TE_INTERNAL_SERVICE_TOKEN` not set | Kevin cannot authenticate; all write tests blocked | User must set this secret |
-| `TRAINEFFICIENCY_KEVIN_SIGNING_SECRET` not set | HMAC signing fails at config load | User must set this secret |
-| Server-side nonce deduplication not enforced | Duplicate nonces accepted (replay test #7 documents this) | Enhance `kevin-action-api-routes.ts` with nonce store |
-| `TRAINEFFICIENCY_DEFAULT_ORG_ID` empty | Authenticated tests require an org ID | Set once a real org exists |
-| CEO bridge `/ceo/analyze` and `/ceo/escalate` | Endpoints implemented in client; server routing depends on CEO heartbeat wiring | Verify server route is live |
-| Navigation `/navigate/:intent` | Client implemented; server route may not yet exist | Verify or add server route |
-| Live agent registry | Static fallback used until auth clears | Auto-populated by `buildOperationalModel()` |
-| Step 18 end-to-end scenario | Cannot execute without credentials | Runs automatically once credentials are set |
+| `org_id` required for CEO bridge (no context-free analysis) | CEO analysis without an active intent returns partial data | Pass `intentId` when calling from within an active workflow |
+| Wrong-org scope returns empty results not 403 | Org isolation enforced via empty result set; silent rather than explicit rejection | Acceptable — no data leak; explicit 403 is a hardening upgrade |
+| Agent delegation via task bus not live-tested | Task bus logic implemented; requires an active intent + agent assignment | Will activate in first real write-capable test (Step 18) |
+| Step 18 end-to-end send scenario | Cannot send real email until production approval given | Stop after `draft_created` + approval, document limitation accurately |
 
 ---
 

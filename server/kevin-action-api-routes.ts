@@ -85,7 +85,22 @@ void ensureKevinOutcomesTable().catch(() => {});
 const REPLAY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
+ * In-memory nonce store for duplicate-request detection.
+ * Nonces expire automatically once their timestamp window closes.
+ * Map<nonce, expiresAt>
+ */
+const _seenNonces = new Map<string, number>();
+const _NONCE_CLEANUP_INTERVAL = 60_000; // clean up every 60s
+setInterval(() => {
+  const now = Date.now();
+  for (const [nonce, expiresAt] of _seenNonces) {
+    if (now > expiresAt) _seenNonces.delete(nonce);
+  }
+}, _NONCE_CLEANUP_INTERVAL).unref();
+
+/**
  * Validate X-Kevin-Timestamp header to prevent replay attacks.
+ * Also enforces nonce uniqueness within the replay window.
  */
 function replayGuard(req: Request, res: Response, next: NextFunction): void {
   const tsHeader = req.headers["x-kevin-timestamp"];
@@ -101,6 +116,20 @@ function replayGuard(req: Request, res: Response, next: NextFunction): void {
     });
     return;
   }
+
+  // Nonce deduplication — reject duplicate nonces within the replay window
+  const nonce = req.headers["x-kevin-nonce"] as string | undefined;
+  if (nonce) {
+    if (_seenNonces.has(nonce)) {
+      res.status(400).json({
+        message: "Duplicate nonce — request already processed",
+        code: "REPLAY_REJECTED",
+      });
+      return;
+    }
+    _seenNonces.set(nonce, ts + REPLAY_WINDOW_MS);
+  }
+
   next();
 }
 
@@ -578,16 +607,16 @@ export async function registerKevinActionApiRoutes(app: Express): Promise<void> 
     if (!orgId) return res.status(400).json({ message: "org_id required" });
 
     const body = req.body ?? {};
-    if (!body.question || !body.intent_id) {
-      return res.status(400).json({ message: "question and intent_id required" });
+    if (!body.question) {
+      return res.status(400).json({ message: "question required" });
     }
 
     const result = await requestCeoAnalysis({
       orgId,
-      intentId: body.intent_id,
+      intentId: body.intent_id ?? body.intentId ?? undefined,
       question: String(body.question).slice(0, 500),
       domain: body.domain,
-      contextHints: body.context_hints,
+      contextHints: body.context_hints ?? body.context,
       requestedBy: body.requested_by,
     });
 

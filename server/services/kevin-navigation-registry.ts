@@ -142,6 +142,34 @@ const NAV_REGISTRY: NavEntry[] = [
     label: "View AI Infrastructure",
     description: "Review agent activation and AI system health",
   },
+  {
+    intent: "view_intents",
+    route: "/admin/kevin",
+    requiredRoles: ["ADMIN"],
+    label: "View Intent Queue",
+    description: "View all Kevin executive intents in the control console",
+  },
+  {
+    intent: "approvals.inbox",
+    route: "/admin/attention-inbox",
+    requiredRoles: ["ADMIN"],
+    label: "Open Approvals Inbox",
+    description: "Review pending approvals and attention items",
+  },
+  {
+    intent: "agentmail.drafts",
+    route: "/admin/agentmail",
+    requiredRoles: ["ADMIN"],
+    label: "Review AgentMail Drafts",
+    description: "Review email drafts awaiting approval or send",
+  },
+  {
+    intent: "view_outcomes",
+    route: "/admin/kevin",
+    requiredRoles: ["ADMIN"],
+    label: "View Outcomes",
+    description: "Review Kevin execution outcomes and verification results",
+  },
 ];
 
 const ALLOWED_INTENTS = new Set(NAV_REGISTRY.map((e) => e.intent));
