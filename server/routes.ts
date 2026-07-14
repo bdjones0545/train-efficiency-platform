@@ -33627,5 +33627,10 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { startKevinEventWorker } = await import("./services/kevin-event-service");
   startKevinEventWorker();
 
+  // u2500u2500u2500 Kevin Slack Executive Operations Hub u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+  const { registerKevinSlackRoutes, bootstrapKevinSlackTables } = await import("./kevin-slack-routes");
+  await bootstrapKevinSlackTables();
+  registerKevinSlackRoutes(app);
+
   return httpServer;
 }

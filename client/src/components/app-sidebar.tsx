@@ -769,6 +769,12 @@ export function AppSidebar() {
         testId: "nav-kevin-console",
       },
       {
+        title: "Kevin Slack EOH",
+        url: "/admin/kevin-slack",
+        icon: Bot,
+        testId: "nav-kevin-slack-eoh",
+      },
+      {
         title: "Recommendations",
         url: "/admin/recommendations",
         icon: Zap,

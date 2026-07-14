@@ -146,6 +146,7 @@ import AdminAgentToolsPage from "@/pages/admin-agent-tools";
 import AdminWorkflowsPage from "@/pages/admin-workflows";
 import AdminAgentOpsPage from "@/pages/admin-agent-ops";
 import AdminKevinPage from "@/pages/admin-kevin";
+import AdminKevinSlackPage from "@/pages/admin-kevin-slack";
 import AdminFinancialFailuresPage from "@/pages/admin-financial-failures";
 import AdminFinancialReconciliationPage from "@/pages/admin-financial-reconciliation";
 import AdminFinancialBrainPage from "@/pages/admin-financial-brain";
@@ -622,6 +623,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/workflows" component={AdminWorkflowsPage} />
                   <Route path="/admin/agent-ops" component={AdminAgentOpsPage} />
                   <Route path="/admin/kevin" component={AdminKevinPage} />
+                  <Route path="/admin/kevin-slack" component={AdminKevinSlackPage} />
                   <Route path="/admin/financial-failures" component={AdminFinancialFailuresPage} />
                   <Route path="/admin/financial-reconciliation" component={AdminFinancialReconciliationPage} />
                   <Route path="/admin/financial-brain" component={AdminFinancialBrainPage} />
