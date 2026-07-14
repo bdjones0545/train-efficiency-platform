@@ -39,6 +39,15 @@ import {
   ToggleLeft,
   BarChart3,
   CircuitBoard,
+  ShieldAlert,
+  List,
+  BookOpen,
+  CheckSquare,
+  Power,
+  Ban,
+  Clock,
+  LayoutDashboard,
+  Mail,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -818,6 +827,535 @@ function AuditTab({ auditQ }: { auditQ: ReturnType<typeof useQuery<KevinAuditRes
   );
 }
 
+// ─── Intent state badge helper ────────────────────────────────────────────────
+
+function intentStateBadge(state: string) {
+  const styles: Record<string, string> = {
+    received: "bg-slate-100 text-slate-700",
+    validating: "bg-blue-100 text-blue-700",
+    planned: "bg-indigo-100 text-indigo-700",
+    awaiting_approval: "bg-yellow-100 text-yellow-700",
+    queued: "bg-purple-100 text-purple-700",
+    executing: "bg-blue-100 text-blue-800 animate-pulse",
+    verifying: "bg-cyan-100 text-cyan-700",
+    completed: "bg-green-100 text-green-700",
+    partially_completed: "bg-lime-100 text-lime-700",
+    failed: "bg-red-100 text-red-700",
+    cancelled: "bg-gray-100 text-gray-700",
+    dead_lettered: "bg-red-200 text-red-800",
+  };
+  return (
+    <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${styles[state] ?? "bg-gray-100 text-gray-600"}`}>
+      {state}
+    </span>
+  );
+}
+
+function riskBadge(risk: string) {
+  const styles: Record<string, string> = {
+    low: "bg-green-100 text-green-700",
+    medium: "bg-yellow-100 text-yellow-700",
+    high: "bg-orange-100 text-orange-700",
+    critical: "bg-red-100 text-red-700",
+  };
+  return <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${styles[risk] ?? "bg-gray-100 text-gray-600"}`}>{risk}</span>;
+}
+
+// ─── Intents Tab ──────────────────────────────────────────────────────────────
+
+function IntentsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [stateFilter, setStateFilter] = useState("all");
+
+  const intentsQ = useQuery<{ intents: any[]; stats: any }>({
+    queryKey: ["/api/admin/kevin/intents", stateFilter],
+    queryFn: () => fetchJson(`/api/admin/kevin/intents${stateFilter !== "all" ? `?state=${stateFilter}` : ""}`),
+    refetchInterval: 15000,
+  });
+
+  const cancelMutation = useMutation({
+    mutationFn: (id: string) =>
+      apiRequest("POST", `/api/admin/kevin/intents/${id}/cancel`, { reason: "Cancelled via admin console" }),
+    onSuccess: () => {
+      toast({ title: "Intent cancelled" });
+      qc.invalidateQueries({ queryKey: ["/api/admin/kevin/intents"] });
+    },
+    onError: () => toast({ title: "Cancel failed", variant: "destructive" }),
+  });
+
+  const { intents = [], stats } = intentsQ.data ?? {};
+  const STATES = ["all", "received", "validating", "planned", "awaiting_approval", "queued", "executing", "verifying", "completed", "partially_completed", "failed", "cancelled", "dead_lettered"];
+
+  return (
+    <div className="space-y-4">
+      {stats && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          {[
+            { label: "Total", value: stats.total ?? 0 },
+            { label: "Completed", value: stats.byState?.completed ?? 0 },
+            { label: "Failed", value: stats.byState?.failed ?? 0 },
+            { label: "Active", value: (stats.byState?.executing ?? 0) + (stats.byState?.queued ?? 0) },
+          ].map((m) => (
+            <Card key={m.label}>
+              <CardContent className="pt-4">
+                <p className="text-2xl font-bold">{m.value}</p>
+                <p className="text-xs text-muted-foreground">{m.label}</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      <div className="flex items-center gap-2 flex-wrap">
+        <Select value={stateFilter} onValueChange={setStateFilter}>
+          <SelectTrigger className="w-[200px]" data-testid="select-intent-state">
+            <SelectValue placeholder="Filter by state" />
+          </SelectTrigger>
+          <SelectContent>
+            {STATES.map((s) => (
+              <SelectItem key={s} value={s}>{s === "all" ? "All states" : s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="outline" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["/api/admin/kevin/intents"] })} data-testid="button-refresh-intents">
+          <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+        </Button>
+      </div>
+
+      {intentsQ.isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full" />)}</div>
+      ) : intents.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">No intents found for this filter.</p>
+      ) : (
+        <div className="space-y-2">
+          {intents.map((intent: any) => (
+            <Card key={intent.id} data-testid={`card-intent-${intent.id}`}>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {intentStateBadge(intent.state)}
+                      <span className="text-xs font-mono text-muted-foreground">{intent.capability_key ?? intent.capabilityKey}</span>
+                      {riskBadge(intent.granted_mode ?? intent.grantedMode ?? "?")}
+                    </div>
+                    <p className="text-sm mt-1 font-medium truncate">{intent.goal}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(intent.created_at ?? intent.createdAt).toLocaleString()}</p>
+                  </div>
+                  {!["completed","failed","cancelled","dead_lettered"].includes(intent.state) && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-red-600 border-red-300 shrink-0"
+                      onClick={() => cancelMutation.mutate(intent.id)}
+                      disabled={cancelMutation.isPending}
+                      data-testid={`button-cancel-intent-${intent.id}`}
+                    >
+                      <Ban className="h-3 w-3 mr-1" /> Cancel
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Registry Tab ─────────────────────────────────────────────────────────────
+
+function RegistryTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [catFilter, setCatFilter] = useState("all");
+
+  const registryQ = useQuery<{ capabilities: any[]; categories: string[]; emergencyStatus: any }>({
+    queryKey: ["/api/admin/kevin/registry", catFilter],
+    queryFn: () => fetchJson(`/api/admin/kevin/registry${catFilter !== "all" ? `?category=${catFilter}` : ""}`),
+    refetchInterval: 30000,
+  });
+
+  const killMutation = useMutation({
+    mutationFn: ({ capabilityKey, active }: { capabilityKey: string; active: boolean }) =>
+      apiRequest("POST", "/api/admin/kevin/emergency/capability-kill", { capability_key: capabilityKey, active }),
+    onSuccess: (_data, vars) => {
+      toast({ title: vars.active ? "Capability suspended" : "Capability restored" });
+      qc.invalidateQueries({ queryKey: ["/api/admin/kevin/registry"] });
+    },
+    onError: () => toast({ title: "Action failed", variant: "destructive" }),
+  });
+
+  const { capabilities = [], categories = [] } = registryQ.data ?? {};
+  const cats = ["all", ...categories];
+
+  const CATEGORY_COLORS: Record<string, string> = {
+    communication: "bg-blue-50 border-blue-200",
+    agent_management: "bg-purple-50 border-purple-200",
+    scheduling: "bg-green-50 border-green-200",
+    crm_revenue: "bg-yellow-50 border-yellow-200",
+    platform_operations: "bg-gray-50 border-gray-200",
+    ceo_interface: "bg-indigo-50 border-indigo-200",
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2 flex-wrap">
+        <Select value={catFilter} onValueChange={setCatFilter}>
+          <SelectTrigger className="w-[220px]" data-testid="select-registry-category">
+            <SelectValue placeholder="Filter by category" />
+          </SelectTrigger>
+          <SelectContent>
+            {cats.map((c) => <SelectItem key={c} value={c}>{c === "all" ? "All categories" : c}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Badge variant="secondary">{capabilities.length} capabilities</Badge>
+      </div>
+
+      {registryQ.isLoading ? (
+        <div className="space-y-2">{[1,2,3,4].map(i => <Skeleton key={i} className="h-16 w-full" />)}</div>
+      ) : (
+        <div className="space-y-2">
+          {capabilities.map((cap: any) => (
+            <Card key={cap.key} className={`border ${cap.isKilled ? "border-red-400 bg-red-50" : CATEGORY_COLORS[cap.category] ?? ""}`} data-testid={`card-capability-${cap.key}`}>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-sm font-medium">{cap.displayName}</span>
+                      {riskBadge(cap.riskLevel)}
+                      <Badge variant="outline" className="text-xs">{cap.category}</Badge>
+                      {cap.isKilled && <Badge variant="destructive" className="text-xs">SUSPENDED</Badge>}
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5 truncate">{cap.description}</p>
+                    <div className="flex items-center gap-3 mt-1 text-xs text-muted-foreground">
+                      <span>Executor: <strong>{cap.executorService}</strong></span>
+                      <span>Default: <strong>{cap.defaultMode}</strong></span>
+                      <span>Timeout: <strong>{cap.timeoutSeconds}s</strong></span>
+                    </div>
+                  </div>
+                  <Button
+                    variant={cap.isKilled ? "default" : "outline"}
+                    size="sm"
+                    className={cap.isKilled ? "" : "text-red-600 border-red-300"}
+                    onClick={() => killMutation.mutate({ capabilityKey: cap.key, active: !cap.isKilled })}
+                    disabled={killMutation.isPending}
+                    data-testid={`button-cap-kill-${cap.key}`}
+                  >
+                    {cap.isKilled ? <><Power className="h-3 w-3 mr-1" /> Restore</> : <><Ban className="h-3 w-3 mr-1" /> Suspend</>}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Emergency Tab ────────────────────────────────────────────────────────────
+
+function EmergencyTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const statusQ = useQuery<{ globalKill: boolean; orgKills: string[]; capabilityKills: string[] }>({
+    queryKey: ["/api/admin/kevin/emergency/status"],
+    queryFn: () => fetchJson("/api/admin/kevin/emergency/status"),
+    refetchInterval: 10000,
+  });
+
+  const policyQ = useQuery<any>({
+    queryKey: ["/api/admin/kevin/policy-status"],
+    queryFn: () => fetchJson("/api/admin/kevin/policy-status"),
+    refetchInterval: 30000,
+  });
+
+  const globalKillMutation = useMutation({
+    mutationFn: (active: boolean) =>
+      apiRequest("POST", "/api/admin/kevin/emergency/global-kill", { active }),
+    onSuccess: (_data, active) => {
+      toast({
+        title: active ? "GLOBAL KILL ACTIVATED — All Kevin actions suspended" : "Global kill deactivated",
+        variant: active ? "destructive" : "default",
+      });
+      qc.invalidateQueries({ queryKey: ["/api/admin/kevin/emergency/status"] });
+      qc.invalidateQueries({ queryKey: ["/api/admin/kevin/policy-status"] });
+    },
+    onError: () => toast({ title: "Action failed", variant: "destructive" }),
+  });
+
+  const status = statusQ.data;
+  const policy = policyQ.data;
+
+  return (
+    <div className="space-y-6">
+      <Card className={status?.globalKill ? "border-red-500 bg-red-50" : "border-green-300 bg-green-50"}>
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShieldAlert className={`h-5 w-5 ${status?.globalKill ? "text-red-600" : "text-green-600"}`} />
+            Global Kill Switch
+          </CardTitle>
+          <CardDescription>
+            Immediately suspends ALL Kevin actions across all organizations. Use in emergencies only.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex items-center gap-4">
+            <Badge variant={status?.globalKill ? "destructive" : "default"} className="text-sm px-3 py-1">
+              {status?.globalKill ? "ACTIVE — Kevin suspended globally" : "INACTIVE — Kevin operating normally"}
+            </Badge>
+            <Button
+              variant={status?.globalKill ? "default" : "destructive"}
+              size="sm"
+              onClick={() => globalKillMutation.mutate(!status?.globalKill)}
+              disabled={globalKillMutation.isPending || statusQ.isLoading}
+              data-testid="button-global-kill"
+            >
+              {status?.globalKill ? <><Power className="h-4 w-4 mr-2" /> Restore Operations</> : <><ShieldAlert className="h-4 w-4 mr-2" /> Activate Global Kill</>}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Org-Level Suspensions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {status?.orgKills?.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No org-level suspensions active.</p>
+            ) : (
+              <ul className="space-y-1">
+                {status?.orgKills?.map((orgId) => (
+                  <li key={orgId} className="flex items-center justify-between text-sm">
+                    <span className="font-mono text-xs">{orgId}</span>
+                    <Badge variant="destructive" className="text-xs">Suspended</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Capability Suspensions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {status?.capabilityKills?.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No capability suspensions active.</p>
+            ) : (
+              <ul className="space-y-1">
+                {status?.capabilityKills?.map((key) => (
+                  <li key={key} className="flex items-center justify-between text-sm">
+                    <span className="font-mono text-xs">{key}</span>
+                    <Badge variant="destructive" className="text-xs">Suspended</Badge>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {policy && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm">Policy Engine Status</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center gap-4 flex-wrap">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Circuit:</span>
+                <Badge variant={policy.circuitState === "closed" ? "default" : "destructive"} className="text-xs">
+                  {policy.circuitState ?? "unknown"}
+                </Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Recent intents (1min):</span>
+                <Badge variant="secondary" className="text-xs">{policy.recentIntentCount ?? 0}</Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">Policy checks:</span>
+                <Badge variant="secondary" className="text-xs">{policy.policyChecks?.length ?? 0} checks</Badge>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ─── Approvals Tab ────────────────────────────────────────────────────────────
+
+function ApprovalsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+  const [statusFilter, setStatusFilter] = useState("pending");
+
+  const approvalsQ = useQuery<{ approvals: any[] }>({
+    queryKey: ["/api/admin/kevin/exec-approvals", statusFilter],
+    queryFn: () => fetchJson(`/api/admin/kevin/exec-approvals?status=${statusFilter}`),
+    refetchInterval: 15000,
+  });
+
+  const decideMutation = useMutation({
+    mutationFn: ({ id, decision, notes }: { id: string; decision: string; notes?: string }) =>
+      apiRequest("POST", `/api/admin/kevin/exec-approvals/${id}/decide`, { decision, notes }),
+    onSuccess: (_data, vars) => {
+      toast({ title: `Approval ${vars.decision}` });
+      qc.invalidateQueries({ queryKey: ["/api/admin/kevin/exec-approvals"] });
+    },
+    onError: () => toast({ title: "Decision failed", variant: "destructive" }),
+  });
+
+  const { approvals = [] } = approvalsQ.data ?? {};
+  const RISK_COLORS: Record<string, string> = { low: "text-green-600", medium: "text-yellow-600", high: "text-orange-600", critical: "text-red-600" };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Select value={statusFilter} onValueChange={setStatusFilter}>
+          <SelectTrigger className="w-[180px]" data-testid="select-approval-status">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {["pending","approved","rejected","expired","cancelled"].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+          </SelectContent>
+        </Select>
+        <Badge variant="secondary">{approvals.length} records</Badge>
+      </div>
+
+      {approvalsQ.isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-24 w-full" />)}</div>
+      ) : approvals.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-8 text-center">No {statusFilter} approvals.</p>
+      ) : (
+        <div className="space-y-3">
+          {approvals.map((ap: any) => (
+            <Card key={ap.id} data-testid={`card-approval-${ap.id}`}>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <span className="text-sm font-medium">{ap.action_summary}</span>
+                      <span className={`text-xs font-medium ${RISK_COLORS[ap.risk_level] ?? ""}`}>{ap.risk_level} risk</span>
+                      {ap.is_reversible ? (
+                        <Badge variant="outline" className="text-xs text-green-700 border-green-300">Reversible</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-xs text-red-700 border-red-300">Irreversible</Badge>
+                      )}
+                    </div>
+                    <p className="text-xs text-muted-foreground">{ap.capability_key} · {ap.producer_agent ?? "kevin"}</p>
+                    <p className="text-xs text-muted-foreground">{new Date(ap.created_at).toLocaleString()}</p>
+                  </div>
+                  {ap.status === "pending" && (
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        className="bg-green-600 hover:bg-green-700 text-white"
+                        onClick={() => decideMutation.mutate({ id: ap.id, decision: "approved" })}
+                        disabled={decideMutation.isPending}
+                        data-testid={`button-approve-${ap.id}`}
+                      >
+                        <CheckSquare className="h-3 w-3 mr-1" /> Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="text-red-600 border-red-300"
+                        onClick={() => decideMutation.mutate({ id: ap.id, decision: "rejected" })}
+                        disabled={decideMutation.isPending}
+                        data-testid={`button-reject-${ap.id}`}
+                      >
+                        <XCircle className="h-3 w-3 mr-1" /> Reject
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── AgentMail Bridge Tab ─────────────────────────────────────────────────────
+
+function AgentMailBridgeTab() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const draftsQ = useQuery<{ drafts: any[] }>({
+    queryKey: ["/api/admin/kevin/agentmail-drafts"],
+    queryFn: () => fetchJson("/api/admin/kevin/agentmail-drafts?limit=30"),
+    refetchInterval: 30000,
+  });
+
+  const { drafts = [] } = draftsQ.data ?? {};
+
+  const STATUS_COLORS: Record<string, string> = {
+    proposed: "bg-yellow-100 text-yellow-700",
+    approved: "bg-green-100 text-green-700",
+    executed: "bg-blue-100 text-blue-700",
+    rejected: "bg-red-100 text-red-700",
+    draft: "bg-gray-100 text-gray-700",
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-medium">Kevin-Initiated Email Drafts</h3>
+          <p className="text-sm text-muted-foreground">Emails drafted by Kevin on your organization's behalf. All require human approval before sending.</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={() => qc.invalidateQueries({ queryKey: ["/api/admin/kevin/agentmail-drafts"] })} data-testid="button-refresh-drafts">
+          <RefreshCw className="h-4 w-4 mr-1" /> Refresh
+        </Button>
+      </div>
+
+      {draftsQ.isLoading ? (
+        <div className="space-y-2">{[1,2,3].map(i => <Skeleton key={i} className="h-16 w-full" />)}</div>
+      ) : drafts.length === 0 ? (
+        <div className="py-12 text-center">
+          <Mail className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+          <p className="text-sm text-muted-foreground">No Kevin-initiated email drafts found.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {drafts.map((draft: any, i: number) => (
+            <Card key={draft.id ?? i} data-testid={`card-draft-${draft.id ?? i}`}>
+              <CardContent className="py-3 px-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`text-xs px-1.5 py-0.5 rounded font-medium ${STATUS_COLORS[draft.status] ?? "bg-gray-100 text-gray-600"}`}>
+                        {draft.status}
+                      </span>
+                      <span className="text-sm font-medium truncate">{draft.subject ?? "(no subject)"}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      To: {draft.to_email ?? draft.recipient_email ?? "—"} · {draft.communication_domain ?? "general"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">{draft.created_at ? new Date(draft.created_at).toLocaleString() : ""}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 
 export default function AdminKevinPage() {
@@ -886,6 +1424,21 @@ export default function AdminKevinPage() {
           <TabsTrigger value="chat" data-testid="tab-kevin-chat">
             <MessageSquare className="h-3.5 w-3.5 mr-1.5" /> Chat
           </TabsTrigger>
+          <TabsTrigger value="intents" data-testid="tab-kevin-intents">
+            <List className="h-3.5 w-3.5 mr-1.5" /> Intents
+          </TabsTrigger>
+          <TabsTrigger value="registry" data-testid="tab-kevin-registry">
+            <BookOpen className="h-3.5 w-3.5 mr-1.5" /> Registry
+          </TabsTrigger>
+          <TabsTrigger value="approvals" data-testid="tab-kevin-approvals">
+            <CheckSquare className="h-3.5 w-3.5 mr-1.5" /> Approvals
+          </TabsTrigger>
+          <TabsTrigger value="emergency" data-testid="tab-kevin-emergency">
+            <ShieldAlert className="h-3.5 w-3.5 mr-1.5" /> Emergency
+          </TabsTrigger>
+          <TabsTrigger value="agentmail" data-testid="tab-kevin-agentmail">
+            <Mail className="h-3.5 w-3.5 mr-1.5" /> AgentMail
+          </TabsTrigger>
           <TabsTrigger value="capabilities" data-testid="tab-kevin-capabilities">
             <ToggleLeft className="h-3.5 w-3.5 mr-1.5" /> Capabilities
           </TabsTrigger>
@@ -909,6 +1462,26 @@ export default function AdminKevinPage() {
 
         <TabsContent value="chat" className="mt-4">
           <ChatTab healthQ={healthQ} capsQ={capsQ} runsQ={runsQ} />
+        </TabsContent>
+
+        <TabsContent value="intents" className="mt-4">
+          <IntentsTab />
+        </TabsContent>
+
+        <TabsContent value="registry" className="mt-4">
+          <RegistryTab />
+        </TabsContent>
+
+        <TabsContent value="approvals" className="mt-4">
+          <ApprovalsTab />
+        </TabsContent>
+
+        <TabsContent value="emergency" className="mt-4">
+          <EmergencyTab />
+        </TabsContent>
+
+        <TabsContent value="agentmail" className="mt-4">
+          <AgentMailBridgeTab />
         </TabsContent>
 
         <TabsContent value="capabilities" className="mt-4">

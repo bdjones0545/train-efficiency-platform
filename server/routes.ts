@@ -33627,10 +33627,22 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { startKevinEventWorker } = await import("./services/kevin-event-service");
   startKevinEventWorker();
 
-  // u2500u2500u2500 Kevin Slack Executive Operations Hub u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500u2500
+  // ─── Kevin Slack Executive Operations Hub ──────────────────────────────────
   const { registerKevinSlackRoutes, bootstrapKevinSlackTables } = await import("./kevin-slack-routes");
   await bootstrapKevinSlackTables();
   registerKevinSlackRoutes(app);
+
+  // ─── Kevin Executive Operations Layer — Phase 2–15 ──────────────────────────
+  const { registerKevinActionApiRoutes } = await import("./kevin-action-api-routes");
+  await registerKevinActionApiRoutes(app);
+
+  // ─── Kevin Emergency Controls + Registry + Intent Admin ─────────────────────
+  const { registerKevinEmergencyRoutes } = await import("./kevin-emergency-routes");
+  registerKevinEmergencyRoutes(app);
+
+  // Ensure kevin intent tables exist
+  const { ensureIntentTables } = await import("./services/kevin-intent-service");
+  await ensureIntentTables();
 
   return httpServer;
 }
