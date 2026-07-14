@@ -1,0 +1,768 @@
+# TrainEfficiency × Kevin Ecosystem Integration
+
+Act as a world-renowned full-stack software architect, distributed systems engineer, AI platform designer, and Apple-level product designer.
+
+TrainEfficiency is now connected to Kevin, our persistent always-on AI computer and executive intelligence environment.
+
+Your task is to audit the current TrainEfficiency architecture and design Kevin’s proper role inside the ecosystem without breaking, duplicating, or removing any existing functionality.
+
+## Core Architectural Principle
+
+Kevin is not a single chatbot, page, or standalone feature.
+
+Kevin is the persistent intelligence, memory, monitoring, and orchestration layer that supports the entire TrainEfficiency platform.
+
+TrainEfficiency remains the primary application, user interface, system of engagement, and operational workspace.
+
+Kevin operates behind the application as the always-on intelligence infrastructure.
+
+The relationship should be:
+
+```text
+Users
+  ↓
+TrainEfficiency UI and APIs
+  ↓
+TrainEfficiency Agents and Workflows
+  ↓
+Kevin Intelligence and Orchestration Layer
+  ↓
+Memory, monitoring, repositories, infrastructure, tools, and external systems
+```
+
+## Existing TrainEfficiency Responsibilities
+
+TrainEfficiency should continue to own:
+
+* Organization and user authentication
+* Role-based permissions
+* Athlete and client data
+* Scheduling and availability
+* Payments, subscriptions, and revenue records
+* Leads and sales pipelines
+* Attendance and session operations
+* Workout and program delivery
+* Notifications and approvals
+* Agent-facing UI
+* Command Center
+* Attention Inbox
+* Agent reputation and outcome analytics
+* Human-in-the-loop controls
+* All customer-facing workflows
+
+Do not move these responsibilities into Kevin.
+
+## Kevin’s Role
+
+Kevin should serve as the persistent backend intelligence layer for the platform.
+
+Kevin’s responsibilities include:
+
+### 1. Executive Memory
+
+Kevin maintains long-term institutional memory across:
+
+* TrainEfficiency architecture
+* Product decisions
+* Agent decisions
+* Operational incidents
+* Lessons learned
+* Repository changes
+* Infrastructure changes
+* Schema changes
+* Integration changes
+* Business rules
+* Strategic priorities
+* Historical outcomes
+
+Kevin should help agents understand what has happened previously and why.
+
+### 2. Environment Awareness
+
+Kevin continuously observes approved system signals such as:
+
+* Git repositories
+* Deployment status
+* Application health
+* Background job health
+* Database migration state
+* Agent execution health
+* Integration health
+* Infrastructure changes
+* Failed workflows
+* Recurring errors
+* Configuration drift
+* Architectural changes
+
+Kevin must not make unrestricted production changes simply because it detects something.
+
+Observation, recommendation, drafting, approval, and execution must remain separate stages.
+
+### 3. Cross-Agent Intelligence
+
+Kevin should provide shared intelligence to existing TrainEfficiency agents, including:
+
+* CEO Heartbeat
+* Executive Agent
+* Revenue Agent
+* Growth Agent
+* Scheduling Agent
+* Retention Agent
+* Client Success Agent
+* AgentMail
+* Hermes
+* Future specialist agents
+
+Kevin should not replace these agents.
+
+Each agent should retain its domain-specific responsibilities while using Kevin for:
+
+* Historical context
+* Cross-agent context
+* Shared memory
+* Architectural context
+* Prior decisions
+* Similar incidents
+* Relevant lessons learned
+* Current environment state
+* Confidence calibration
+
+### 4. Orchestration
+
+Kevin may coordinate work across systems when explicitly authorized.
+
+Examples:
+
+* Detect an issue and create an Attention Inbox item
+* Enrich a CEO Heartbeat signal with repository or infrastructure context
+* Ask Hermes to analyze a recurring operational pattern
+* Request AgentMail to prepare a draft
+* Recommend that the Scheduling Agent investigate an availability issue
+* Create an engineering task proposal
+* Route a high-risk issue for human approval
+* Record the final outcome after resolution
+
+Kevin should coordinate agents, not silently bypass them.
+
+### 5. Tool and Integration Gateway
+
+Kevin may provide controlled access to approved tools and services such as:
+
+* GitHub
+* Gmail
+* Google Calendar
+* Slack
+* Obsidian
+* Composio integrations
+* Monitoring systems
+* Agent Phone
+* Agent Wallet
+* Future infrastructure tools
+
+All tool use must respect:
+
+* Organization isolation
+* User permissions
+* Least-privilege access
+* Approval policies
+* Audit logging
+* Secret protection
+* Rate limits
+* Idempotency
+* Failure handling
+
+## Required Integration Model
+
+Design Kevin as a separate service boundary, not as tightly coupled application code.
+
+Preferred architecture:
+
+```text
+TrainEfficiency
+  ├── Web application
+  ├── API layer
+  ├── Domain services
+  ├── Existing agents
+  ├── Job queue
+  ├── Attention Inbox
+  └── Kevin integration client
+          ↓
+Kevin Gateway
+  ├── Authentication
+  ├── Organization context
+  ├── Request validation
+  ├── Rate limiting
+  ├── Policy enforcement
+  ├── Audit logging
+  └── Request routing
+          ↓
+Kevin Runtime
+  ├── Executive Memory Engine
+  ├── Environment Monitors
+  ├── Knowledge Impact Analyzer
+  ├── Decision Engine
+  ├── Agent Orchestrator
+  ├── Obsidian knowledge layer
+  ├── Repository intelligence
+  └── Approved external tools
+```
+
+Kevin should be accessed through explicit APIs, event messages, or queued jobs.
+
+Do not allow random application files to directly SSH into Kevin, read Kevin’s filesystem, or call arbitrary scripts.
+
+## Integration Patterns to Implement
+
+### Pattern A: Context Retrieval
+
+TrainEfficiency agents request relevant Kevin context before making high-value decisions.
+
+Example:
+
+```text
+TrainEfficiency Agent
+  → request Kevin context
+  → Kevin returns relevant memories, system state, prior outcomes, and confidence
+  → agent makes domain-specific recommendation
+  → user approves or rejects
+  → outcome returns to Kevin
+```
+
+The response should be concise, source-aware, and limited to the organization and workflow involved.
+
+### Pattern B: Event Ingestion
+
+TrainEfficiency sends important events to Kevin.
+
+Examples:
+
+* Agent recommendation created
+* Recommendation approved
+* Recommendation rejected
+* Email sent
+* Lead converted
+* Lead lost
+* Athlete churn risk resolved
+* Booking filled
+* Scheduling conflict resolved
+* Incident opened
+* Incident closed
+* Deployment completed
+* Migration completed
+* Human correction submitted
+
+Kevin should analyze these events for institutional learning.
+
+### Pattern C: Kevin-Initiated Signal
+
+Kevin detects something important and sends a structured signal to TrainEfficiency.
+
+Kevin should not directly alter customer-facing data by default.
+
+The normal flow should be:
+
+```text
+Kevin detects change
+  → Kevin creates structured signal
+  → TrainEfficiency validates it
+  → Signal appears in CEO Heartbeat, Attention Inbox, Command Center, or engineering queue
+  → Human or approved agent takes action
+```
+
+### Pattern D: Outcome Feedback
+
+Every Kevin-supported recommendation should eventually record:
+
+* Was it accepted?
+* Was it modified?
+* Was it rejected?
+* What action was taken?
+* What was the result?
+* Did the issue recur?
+* Was the recommendation useful?
+* Which memory or evidence influenced the decision?
+
+This feedback must improve future recommendations.
+
+## Required Kevin API Contracts
+
+Design a versioned integration layer with endpoints or message contracts similar to:
+
+### Retrieve Context
+
+```http
+POST /v1/context/query
+```
+
+Example request:
+
+```json
+{
+  "organizationId": "org-id",
+  "actorId": "user-or-agent-id",
+  "agentType": "revenue_agent",
+  "workflow": "fill_campaign",
+  "entityType": "booking",
+  "entityId": "booking-id",
+  "question": "What historical context should influence this recommendation?",
+  "maxResults": 8
+}
+```
+
+Example response:
+
+```json
+{
+  "requestId": "request-id",
+  "summary": "Relevant historical context",
+  "memories": [],
+  "environmentSignals": [],
+  "priorOutcomes": [],
+  "confidence": 0.86,
+  "limitations": [],
+  "generatedAt": "ISO timestamp"
+}
+```
+
+### Submit Event
+
+```http
+POST /v1/events
+```
+
+### Submit Outcome
+
+```http
+POST /v1/outcomes
+```
+
+### Receive Kevin Signal
+
+```http
+POST /api/internal/kevin/signals
+```
+
+### Check Kevin Health
+
+```http
+GET /v1/health
+```
+
+### Request an Approved Task
+
+```http
+POST /v1/tasks
+```
+
+All contracts must include:
+
+* Request ID
+* Organization ID
+* Actor identity
+* Agent identity where relevant
+* Timestamp
+* Schema version
+* Correlation ID
+* Idempotency key
+* Source
+* Confidence
+* Risk classification
+* Audit metadata
+
+## Data Governance
+
+Kevin must not become an uncontrolled shadow database.
+
+Define clearly which system is authoritative.
+
+### TrainEfficiency is the source of truth for:
+
+* Users
+* Organizations
+* Roles
+* Athletes
+* Leads
+* Bookings
+* Payments
+* Programs
+* Attendance
+* Approvals
+* Customer-visible agent actions
+
+### Kevin is the source of truth for:
+
+* Institutional memory
+* Architectural history
+* Environment observations
+* Cross-system lessons
+* Knowledge impact analysis
+* Executive chronology
+* Prior reasoning context
+* Infrastructure intelligence
+* Kevin audit history
+
+### Obsidian is:
+
+* A human-readable knowledge and executive memory layer
+* Not the transactional source of truth for TrainEfficiency
+* Not a replacement for the production database
+
+## Security Requirements
+
+Implement Kevin integration as production infrastructure.
+
+Required controls:
+
+* Service-to-service authentication
+* Rotatable credentials
+* Signed requests or secure token authentication
+* Organization-scoped authorization
+* Strict schema validation
+* Request timeouts
+* Retry limits
+* Circuit breakers
+* Idempotency
+* Audit logs
+* Secret redaction
+* Prompt injection protection
+* Sensitive data filtering
+* Rate limiting
+* Replay protection
+* Dead-letter handling
+* Health monitoring
+* Kill switch
+* Feature flags
+* Per-capability permissions
+
+Kevin must never receive more customer data than is required for the task.
+
+Do not send full database records when a limited structured payload will work.
+
+## Failure Behavior
+
+TrainEfficiency must continue functioning when Kevin is offline.
+
+Kevin integration should degrade gracefully.
+
+Required behavior:
+
+* Core TrainEfficiency workflows remain available
+* Agent requests can continue with reduced context
+* The UI displays Kevin as temporarily unavailable when relevant
+* Requests may be queued for later retry
+* Duplicate retries must be prevented
+* Failures must be logged
+* No user action should silently disappear
+* Kevin downtime must not block scheduling, attendance, payments, or normal application use
+
+Kevin is an intelligence dependency, not a hard dependency for core business operations.
+
+## User Experience
+
+Kevin should be visible only where his presence improves trust or understanding.
+
+Do not add a giant Kevin chatbot to every page.
+
+Preferred UX surfaces:
+
+### Command Center
+
+Add a Kevin system status and intelligence summary showing:
+
+* Connection health
+* Last successful synchronization
+* Active high-priority signals
+* Memory freshness
+* Monitors operating
+* Recent system changes
+* Pending Kevin recommendations
+
+### CEO Heartbeat
+
+Allow Kevin to enrich signals with:
+
+* Likely root cause
+* Related prior incidents
+* Relevant code or infrastructure changes
+* Similar historical patterns
+* Confidence
+* Recommended next action
+
+### Attention Inbox
+
+Kevin-generated items should be clearly labeled and include:
+
+* Why this was surfaced
+* Evidence
+* Confidence
+* Risk level
+* Recommended owner
+* Recommended action
+* Approval requirement
+* Relevant history
+
+### Agent Decision Panels
+
+When Kevin context influences a recommendation, show a small expandable section:
+
+```text
+Informed by Kevin
+- 2 similar historical outcomes
+- 1 recent infrastructure change
+- Confidence: 86%
+```
+
+Do not overwhelm the user with raw memory dumps.
+
+### Admin Settings
+
+Add a Kevin integration control area for authorized administrators:
+
+* Connection status
+* Enabled capabilities
+* Allowed agents
+* Data-sharing controls
+* Approval modes
+* Kill switch
+* Health history
+* Last event received
+* Last context request
+* Error logs
+* Test connection
+
+## Approval Modes
+
+Support capability-specific modes:
+
+* Observe only
+* Recommend
+* Draft
+* Require approval
+* Auto-execute low-risk actions
+* Disabled
+
+Do not use one global autonomy setting for everything.
+
+Examples:
+
+```text
+Repository monitoring: Observe only
+CEO Heartbeat enrichment: Auto
+Attention Inbox creation: Auto
+Email drafting: Draft
+Email sending: Require approval
+Database migrations: Disabled
+Production deployment: Require approval
+Calendar changes: Require approval
+Slack summaries: Auto
+Financial actions: Disabled
+```
+
+## Closed-Loop Intelligence Requirements
+
+Audit Kevin integration against the following questions:
+
+1. Does Kevin learn from actual outcomes?
+2. Can Kevin distinguish correlation from causation?
+3. Can an agent explain which Kevin context influenced a decision?
+4. Can a human correct Kevin?
+5. Are corrections stored and reused?
+6. Can Kevin identify stale or conflicting memory?
+7. Can Kevin measure whether its involvement improved results?
+8. Can Kevin compare outcomes with and without its context?
+9. Can Kevin reduce confidence when evidence is weak?
+10. Can Kevin identify recurring operational patterns?
+11. Can Kevin coordinate agents without creating circular workflows?
+12. Can every action be traced from signal to decision to outcome?
+
+## Anti-Patterns to Avoid
+
+Do not:
+
+* Rebuild TrainEfficiency inside Kevin
+* Replace existing agents with Kevin
+* Give Kevin unrestricted database access
+* Let Kevin directly alter production records without policy checks
+* Make Kevin mandatory for core workflows
+* Store secrets in Obsidian
+* Send complete customer records unnecessarily
+* Allow cross-organization memory leakage
+* Create an unstructured chatbot-only integration
+* Duplicate the same memory across multiple systems without ownership rules
+* Let agents call Kevin recursively without limits
+* Let Kevin generate endless agent-to-agent loops
+* Display raw infrastructure noise to normal users
+* Treat every detected change as an emergency
+* Add visual features before the underlying contracts and controls exist
+
+## Implementation Deliverables
+
+Complete a full repository audit and produce:
+
+### 1. Current-State Architecture Map
+
+Identify:
+
+* Existing agents
+* Existing job queues
+* Existing webhook systems
+* Existing event tables
+* Existing audit logs
+* Existing knowledge or memory services
+* Existing CEO Heartbeat infrastructure
+* Existing Attention Inbox infrastructure
+* Existing Hermes integration
+* Existing Composio integration
+* Existing internal API authentication
+* Existing retry and idempotency patterns
+
+### 2. Kevin Integration Gap Analysis
+
+For every requirement, classify it as:
+
+* Already exists
+* Partially exists
+* Missing
+* Duplicated
+* Unsafe
+* Needs refactoring
+
+### 3. Target Architecture
+
+Provide the exact proposed:
+
+* Service boundaries
+* API contracts
+* Event contracts
+* Authentication model
+* Database tables
+* Queue structure
+* Retry strategy
+* Failure handling
+* UI surfaces
+* Permissions
+* Approval policies
+* Observability model
+
+### 4. Database Design
+
+Propose production-safe tables such as:
+
+* `kevin_connections`
+* `kevin_capabilities`
+* `kevin_context_requests`
+* `kevin_events`
+* `kevin_signals`
+* `kevin_tasks`
+* `kevin_outcomes`
+* `kevin_audit_logs`
+* `kevin_sync_state`
+
+Do not create tables blindly.
+
+Reuse existing tables and patterns when appropriate.
+
+### 5. Phased Implementation Plan
+
+Use this rollout sequence:
+
+#### Phase 0 — Discovery and Safety
+
+* Audit existing architecture
+* Identify duplicate systems
+* Define sources of truth
+* Define security boundary
+* Add feature flags
+* Add kill switch
+* Define contracts
+
+#### Phase 1 — Health and Connectivity
+
+* Kevin service authentication
+* Health endpoint
+* Connection status
+* Admin test connection
+* Timeout and circuit breaker
+* Audit logging
+
+#### Phase 2 — Event Ingestion
+
+* Send selected TrainEfficiency events to Kevin
+* Add idempotency
+* Add retry queue
+* Add dead-letter handling
+* Add event observability
+
+#### Phase 3 — Context Retrieval
+
+* Allow selected agents to request Kevin context
+* Start with CEO Heartbeat and Executive Agent
+* Add confidence and source metadata
+* Add graceful fallback
+
+#### Phase 4 — Kevin Signals
+
+* Receive structured Kevin signals
+* Validate and store them
+* Route them into Attention Inbox and CEO Heartbeat
+* Require human approval for consequential actions
+
+#### Phase 5 — Closed-Loop Outcomes
+
+* Send approvals, rejections, corrections, and results back to Kevin
+* Measure recommendation usefulness
+* Track outcome improvements
+* Detect stale or harmful memory
+
+#### Phase 6 — Cross-Agent Orchestration
+
+* Allow Kevin to coordinate approved agents
+* Add loop prevention
+* Add execution limits
+* Add capability-level autonomy
+* Add full audit trails
+
+#### Phase 7 — Production Hardening
+
+* Load testing
+* Security testing
+* Failure simulations
+* Secret rotation
+* Monitoring dashboards
+* Runbooks
+* Incident recovery
+* Permission review
+
+## Implementation Rules
+
+* Preserve all existing functionality.
+* Do not perform a broad rewrite.
+* Use existing repository conventions.
+* Prefer incremental, testable changes.
+* Do not expose Kevin directly to the public internet without a hardened gateway.
+* Do not place customer-facing secrets in frontend code.
+* Do not add autonomous execution before the approval and audit layers exist.
+* Do not claim success without verification.
+* Add tests for organization isolation, authentication, idempotency, retries, timeout behavior, and graceful degradation.
+* Run type checking, unit tests, integration tests, and security checks after each phase.
+* Document every new environment variable.
+* Document how to disable Kevin without taking down TrainEfficiency.
+
+## First Action
+
+Do not start coding immediately.
+
+First inspect the repository and return:
+
+1. The current architecture as it actually exists
+2. Where Kevin currently connects to TrainEfficiency
+3. Which existing systems Kevin should reuse
+4. Where duplication or conflict may occur
+5. The recommended service boundary
+6. The exact Phase 0 and Phase 1 implementation plan
+7. The files, routes, services, tables, and UI components likely to be affected
+8. The security risks that must be resolved before deeper integration
+
+Only begin implementation after the architecture has been grounded in the current codebase.
+
+The final result should make Kevin feel like the persistent brain and nervous system behind TrainEfficiency while TrainEfficiency remains the body, operating system, and customer-facing product.
