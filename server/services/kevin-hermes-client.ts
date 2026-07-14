@@ -521,3 +521,207 @@ export function mapHermesEventToKevinSse(
     at,
   };
 }
+
+// ─── Phase 3: Event submission ────────────────────────────────────────────────
+
+export type HermesEventInput = {
+  eventId: string;
+  orgId: string;
+  eventType: string;
+  entityType?: string;
+  entityId?: string;
+  payload: Record<string, unknown>;
+  occurredAt: string;
+  traceId?: string;
+};
+
+/**
+ * Submit a TE event to Hermes for Kevin's learning pipeline.
+ *
+ * NOTE: Hermes /v1/events endpoint is not yet available.
+ * This function is implemented and ready; dispatch is gated behind
+ * KEVIN_EVENT_DISPATCH_ENABLED. When Hermes provides the endpoint,
+ * enable dispatch and this queue will drain automatically.
+ *
+ * Required Hermes endpoint:
+ *   POST /v1/events
+ *   Body: { event_id, org_id, event_type, entity_type, entity_id,
+ *           payload, occurred_at, trace_id }
+ *   Response: { ok: true, event_id: string }
+ */
+export async function hermesSubmitEvent(input: HermesEventInput): Promise<void> {
+  const { baseUrl, apiKey } = requireReadyConfig();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const resp = await fetch(`${baseUrl}/v1/events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "X-TE-Version": "3",
+      },
+      body: JSON.stringify({
+        event_id: input.eventId,
+        org_id: input.orgId,
+        event_type: input.eventType,
+        entity_type: input.entityType ?? null,
+        entity_id: input.entityId ?? null,
+        payload: input.payload,
+        occurred_at: input.occurredAt,
+        trace_id: input.traceId ?? input.eventId,
+      }),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new KevinHermesError(`Hermes /v1/events ${resp.status}: ${text.slice(0, 200)}`, {
+        status: resp.status,
+        code: "HERMES_EVENT_ERROR",
+      });
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ─── Phase 3: Outcome submission ──────────────────────────────────────────────
+
+export type HermesOutcomeInput = {
+  outcomeId: string;
+  orgId: string;
+  outcomeType: string;
+  signalId?: string;
+  contextRequestId?: string;
+  entityType?: string;
+  entityId?: string;
+  wasUseful?: boolean;
+  wasModified?: boolean;
+  summary?: string;
+  occurredAt: string;
+};
+
+/**
+ * Forward a TE outcome to Hermes for closed-loop learning.
+ *
+ * NOTE: Hermes /v1/outcomes endpoint is not yet available.
+ * Gated behind KEVIN_OUTCOME_FORWARDING_ENABLED.
+ *
+ * Required Hermes endpoint:
+ *   POST /v1/outcomes
+ *   Body: { outcome_id, org_id, outcome_type, signal_id, context_request_id,
+ *           entity_type, entity_id, was_useful, was_modified, summary, occurred_at }
+ *   Response: { ok: true, outcome_id: string }
+ */
+export async function hermesSubmitOutcome(input: HermesOutcomeInput): Promise<void> {
+  const { baseUrl, apiKey } = requireReadyConfig();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const resp = await fetch(`${baseUrl}/v1/outcomes`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "X-TE-Version": "3",
+      },
+      body: JSON.stringify({
+        outcome_id: input.outcomeId,
+        org_id: input.orgId,
+        outcome_type: input.outcomeType,
+        signal_id: input.signalId ?? null,
+        context_request_id: input.contextRequestId ?? null,
+        entity_type: input.entityType ?? null,
+        entity_id: input.entityId ?? null,
+        was_useful: input.wasUseful ?? null,
+        was_modified: input.wasModified ?? null,
+        summary: input.summary ?? null,
+        occurred_at: input.occurredAt,
+      }),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new KevinHermesError(`Hermes /v1/outcomes ${resp.status}: ${text.slice(0, 200)}`, {
+        status: resp.status,
+        code: "HERMES_OUTCOME_ERROR",
+      });
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// ─── Phase 3: Context query ───────────────────────────────────────────────────
+
+export type HermesContextQueryInput = {
+  orgId: string;
+  agentType: string;
+  workflow: string;
+  entityType?: string;
+  entityId?: string;
+  question: string;
+  traceId: string;
+  depth: number;
+  requestedMemoryTypes?: string[];
+  maxResults?: number;
+  timeoutMs?: number;
+};
+
+/**
+ * Query Kevin/Hermes for historical context relevant to an agent's current task.
+ *
+ * Required Hermes endpoint:
+ *   POST /v1/context/query
+ *   Body: { org_id, agent_type, workflow, entity_type, entity_id,
+ *           question, trace_id, depth, requested_memory_types, max_results }
+ *   Response: { summary, memories: [{id, type, summary, confidence, occurred_at}],
+ *               patterns, prior_decisions, risks, confidence }
+ *
+ * PII rules (enforced by caller, reiterated here):
+ * - Never send athlete names, emails, phone numbers
+ * - Never send raw email content
+ * - Never send payment details or credentials
+ * - Send only aggregated counts, statuses, and high-level summaries
+ */
+export async function hermesContextQuery(
+  input: HermesContextQueryInput,
+): Promise<Record<string, unknown>> {
+  const { baseUrl, apiKey } = requireReadyConfig();
+  const timeoutMs = Math.min(input.timeoutMs ?? DEFAULT_TIMEOUT_MS, 10_000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(`${baseUrl}/v1/context/query`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+        "X-TE-Version": "3",
+      },
+      body: JSON.stringify({
+        org_id: input.orgId,
+        agent_type: input.agentType,
+        workflow: input.workflow,
+        entity_type: input.entityType ?? null,
+        entity_id: input.entityId ?? null,
+        question: input.question,
+        trace_id: input.traceId,
+        depth: input.depth,
+        requested_memory_types: input.requestedMemoryTypes ?? null,
+        max_results: input.maxResults ?? 8,
+      }),
+      signal: controller.signal,
+    });
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => "");
+      throw new KevinHermesError(
+        `Hermes /v1/context/query ${resp.status}: ${text.slice(0, 200)}`,
+        { status: resp.status, code: "HERMES_CONTEXT_ERROR" },
+      );
+    }
+    return (await resp.json()) as Record<string, unknown>;
+  } finally {
+    clearTimeout(timeout);
+  }
+}

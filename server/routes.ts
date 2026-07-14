@@ -33615,9 +33615,17 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerAgentmailOutcomeRoutes } = await import("./agentmail-outcome-routes");
   await registerAgentmailOutcomeRoutes(app, isAuthenticated, requireRole);
 
-  // ─── Kevin (Hermes orchestrator BFF) — Phase 0 health/capabilities ─────────
+  // ─── Kevin (Hermes orchestrator BFF) — Phases 0–3 ───────────────────────────
   const { registerKevinRoutes } = await import("./kevin-routes");
   await registerKevinRoutes(app);
+
+  // ─── Kevin signal intake — Phase 3 ──────────────────────────────────────────
+  const { registerKevinSignalRoutes } = await import("./kevin-signal-routes");
+  registerKevinSignalRoutes(app);
+
+  // ─── Kevin event worker — Phase 3 ───────────────────────────────────────────
+  const { startKevinEventWorker } = await import("./services/kevin-event-service");
+  startKevinEventWorker();
 
   return httpServer;
 }

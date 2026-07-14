@@ -499,6 +499,34 @@ export async function registerAgentMailReplyRoutes(
         console.error("[agentmail-approve] learning loop error (non-fatal):", learningErr);
       }
 
+      // Kevin outcome wire-in (Phase 3) — non-blocking, fail-open
+      void (async () => {
+        try {
+          const { recordAgentMailApproved } = await import("./services/kevin-outcome-service");
+          await recordAgentMailApproved({
+            orgId,
+            replyId: id,
+            approvedBy: approver,
+            hadEdits: hasEdits,
+          });
+          const { enqueueKevinEvent } = await import("./services/kevin-event-service");
+          await enqueueKevinEvent({
+            orgId,
+            eventType: "te.agentmail.reply.approved",
+            entityType: "agentmail_reply",
+            entityId: id,
+            idempotencyKey: `te.agentmail.reply.approved:${orgId}:${id}`,
+            payload: {
+              agentName: reply.agent_name ?? null,
+              hasEdits,
+              inbox: reply.inbox ?? null,
+              classification: reply.classification ?? null,
+            },
+            source: "agentmail_approve",
+          });
+        } catch {}
+      })();
+
       res.json({ ok: true, approvedBy: approver, approvedAt: new Date().toISOString() });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to approve reply" });
@@ -575,6 +603,33 @@ export async function registerAgentMailReplyRoutes(
           console.error("[agentmail-reject] learning loop error (non-fatal):", learningErr);
         }
       }
+
+      // Kevin outcome wire-in (Phase 3) — non-blocking, fail-open
+      void (async () => {
+        try {
+          const { recordAgentMailRejected } = await import("./services/kevin-outcome-service");
+          await recordAgentMailRejected({
+            orgId,
+            replyId: id,
+            rejectedBy: actor,
+            reason: reason ?? null,
+          });
+          const { enqueueKevinEvent } = await import("./services/kevin-event-service");
+          await enqueueKevinEvent({
+            orgId,
+            eventType: "te.agentmail.reply.rejected",
+            entityType: "agentmail_reply",
+            entityId: id,
+            idempotencyKey: `te.agentmail.reply.rejected:${orgId}:${id}`,
+            payload: {
+              agentName: reply.agent_name ?? null,
+              inbox: reply.inbox ?? null,
+              hasReason: Boolean(reason?.trim()),
+            },
+            source: "agentmail_reject",
+          });
+        } catch {}
+      })();
 
       res.json({ ok: true });
     } catch (e: any) {

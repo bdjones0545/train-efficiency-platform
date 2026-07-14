@@ -630,6 +630,30 @@ export async function runIntelligentLeadIntakePipeline(data: RawIntakeData): Pro
     }
   }
 
+  // Kevin event wire-in (Phase 3) — non-blocking, fail-open
+  void (async () => {
+    try {
+      const { enqueueKevinEvent } = await import("./kevin-event-service");
+      await enqueueKevinEvent({
+        orgId: data.orgId,
+        eventType: "te.lead.intake.completed",
+        entityType: "lead_intelligence_profile",
+        entityId: profileId ?? data.submissionId,
+        idempotencyKey: `te.lead.intake.completed:${data.orgId}:${data.submissionId}`,
+        payload: {
+          leadScore: scoring.leadScore,
+          temperature: scoring.temperature,
+          urgency: scoring.urgency,
+          suggestedNextAction,
+          processingDurationMs,
+          sport: (data as any).sport ?? null,
+          programId: data.programId ?? null,
+        },
+        source: "lead_intake",
+      });
+    } catch {}
+  })();
+
   return {
     profileId,
     normalizedProfile,

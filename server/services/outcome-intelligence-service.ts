@@ -99,6 +99,27 @@ export async function createOutcomeOnSend(opts: {
     outcomeStatus: "sent",
     outcomeSource: "gmail_reply",
   }).returning();
+
+  // Kevin event wire-in (Phase 3) — non-blocking, fail-open
+  void (async () => {
+    try {
+      const { enqueueKevinEvent } = await import("./kevin-event-service");
+      await enqueueKevinEvent({
+        orgId: opts.orgId,
+        eventType: "te.communication.sent",
+        entityType: "gmail_agent_action",
+        entityId: opts.gmailActionId,
+        idempotencyKey: `te.communication.sent:${opts.orgId}:${opts.gmailActionId}`,
+        payload: {
+          communicationDomain: opts.communicationDomain,
+          messageType: opts.messageType,
+          outcomeId: row.id,
+        },
+        source: "outcome_intelligence",
+      });
+    } catch {}
+  })();
+
   return row.id;
 }
 

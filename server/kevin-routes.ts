@@ -30,8 +30,20 @@ import {
   stopKevinRun,
   checkKevinRunRateLimit,
 } from "./services/kevin-run-service";
+import {
+  listKevinCapabilities,
+  setKevinCapabilityMode,
+  seedKevinCapabilitiesForOrg,
+  KEVIN_CAPABILITIES,
+  APPROVAL_MODE_ORDER,
+  CAPABILITY_DESCRIPTIONS,
+} from "./services/kevin-capability-service";
+import { getCircuitStatus } from "./services/kevin-circuit-breaker";
+import { flushPendingKevinEvents } from "./services/kevin-event-service";
+import { isInternalServiceTokenConfigured } from "./middleware/require-internal-service-token";
 import { db } from "./db";
-import { sql } from "drizzle-orm";
+import { sql, eq } from "drizzle-orm";
+import { kevinEvents, kevinOutcomes, kevinContextRequests } from "@shared/schema";
 
 function getUserId(req: any): string | null {
   return req.user?.claims?.sub ?? req.user?.id ?? req.user?.userId ?? null;
@@ -447,6 +459,278 @@ export async function registerKevinRoutes(app: Express): Promise<void> {
         res.end();
       } finally {
         req.off("close", onClose);
+      }
+    },
+  );
+
+  // ─── Phase 3: Circuit breaker status ──────────────────────────────────────
+  app.get(
+    "/api/admin/kevin/circuit-breaker",
+    isAuthenticated,
+    requireKevinAccess,
+    async (req: any, res) => {
+      try {
+        const status = getCircuitStatus();
+        return res.json(status);
+      } catch (e: any) {
+        return res.status(500).json({ message: e?.message ?? "Failed to get circuit status" });
+      }
+    },
+  );
+
+  // ─── Phase 3: Capabilities ─────────────────────────────────────────────────
+
+  app.get(
+    "/api/admin/kevin/capabilities",
+    isAuthenticated,
+    requireKevinAccess,
+    async (req: any, res) => {
+      try {
+        const orgId = await resolveOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const rows = await listKevinCapabilities(orgId);
+
+        // Fill in any missing capabilities from the catalogue
+        const existingKeys = new Set(rows.map((r) => r.capability));
+        const all = [...rows];
+        for (const cap of KEVIN_CAPABILITIES) {
+          if (!existingKeys.has(cap)) {
+            all.push({
+              id: "",
+              orgId,
+              capability: cap,
+              approvalMode: "observe",
+              enabled: true,
+              updatedBy: null,
+              description: CAPABILITY_DESCRIPTIONS[cap] ?? "Kevin capability",
+              createdAt: "",
+              updatedAt: "",
+            });
+          }
+        }
+        return res.json({
+          capabilities: all,
+          approvalModeOrder: APPROVAL_MODE_ORDER,
+          tokenConfigured: isInternalServiceTokenConfigured(),
+        });
+      } catch (e: any) {
+        return res.status(500).json({ message: e?.message ?? "Failed to list capabilities" });
+      }
+    },
+  );
+
+  app.patch(
+    "/api/admin/kevin/capabilities/:capability",
+    isAuthenticated,
+    requireKevinAccess,
+    async (req: any, res) => {
+      try {
+        const orgId = await resolveOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const actor = req.user?.claims?.email ?? req.user?.email ?? "admin";
+        const { capability } = req.params;
+        const { approvalMode, enabled } = req.body ?? {};
+
+        if (!approvalMode || !APPROVAL_MODE_ORDER.includes(approvalMode)) {
+          return res.status(400).json({
+            message: "approvalMode required: " + APPROVAL_MODE_ORDER.join("|"),
+          });
+        }
+
+        const result = await setKevinCapabilityMode({
+          orgId,
+          capability,
+          approvalMode,
+          enabled: enabled !== false,
+          updatedBy: actor,
+        });
+
+        if (!result.ok) return res.status(400).json({ message: result.error });
+        return res.json({ ok: true, capability, approvalMode, enabled: enabled !== false });
+      } catch (e: any) {
+        return res.status(500).json({ message: e?.message ?? "Failed to update capability" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/kevin/capabilities/seed",
+    isAuthenticated,
+    requireKevinAccess,
+    async (req: any, res) => {
+      try {
+        const orgId = await resolveOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        await seedKevinCapabilitiesForOrg(orgId);
+        return res.json({ ok: true, orgId });
+      } catch (e: any) {
+        return res.status(500).json({ message: e?.message ?? "Failed to seed capabilities" });
+      }
+    },
+  );
+
+  // ─── Phase 3: Events admin ─────────────────────────────────────────────────
+
+  app.get(
+    "/api/admin/kevin/events",
+    isAuthenticated,
+    requireKevinAccess,
+    async (req: any, res) => {
+      try {
+        const orgId = await resolveOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const limit = Math.min(Number(req.query.limit) || 50, 100);
+        const offset = Math.max(Number(req.query.offset) || 0, 0);
+        const status = typeof req.query.status === "string" ? req.query.status : null;
+
+        const result = await db.execute(sql`
+          SELECT id, org_id, event_type, entity_type, entity_id, idempotency_key,
+                 status, attempts, last_error, next_retry_at, created_at, sent_at, dead_lettered_at
+          FROM kevin_events
+          WHERE org_id = ${orgId}
+            ${status ? sql`AND status = ${status}` : sql``}
+          ORDER BY created_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `);
+        const rows = Array.isArray((result as any)?.rows)
+          ? (result as any).rows
+          : Array.isArray(result)
+            ? result
+            : [];
+
+        // Stats
+        const statsResult = await db.execute(sql`
+          SELECT
+            COUNT(*) FILTER (WHERE status = 'pending')       AS pending,
+            COUNT(*) FILTER (WHERE status = 'processing')    AS processing,
+            COUNT(*) FILTER (WHERE status = 'sent')          AS sent,
+            COUNT(*) FILTER (WHERE status = 'failed')        AS failed,
+            COUNT(*) FILTER (WHERE status = 'dead_lettered') AS dead_lettered
+          FROM kevin_events
+          WHERE org_id = ${orgId}
+        `);
+        const statsRows = Array.isArray((statsResult as any)?.rows)
+          ? (statsResult as any).rows
+          : Array.isArray(statsResult)
+            ? statsResult
+            : [];
+
+        return res.json({ events: rows, stats: statsRows[0] ?? {}, limit, offset });
+      } catch (e: any) {
+        return res.status(500).json({ message: e?.message ?? "Failed to list events" });
+      }
+    },
+  );
+
+  app.post(
+    "/api/admin/kevin/events/flush",
+    isAuthenticated,
+    requireKevinAccess,
+    async (req: any, res) => {
+      try {
+        const orgId = await resolveOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        void recordKevinAuditEvent({
+          orgId,
+          userId: req.user?.claims?.sub ?? req.user?.id ?? null,
+          eventType: "events.manual_flush",
+          payload: {},
+        });
+        const result = await flushPendingKevinEvents({ limit: 50 });
+        return res.json({ ok: true, ...result });
+      } catch (e: any) {
+        return res.status(500).json({ message: e?.message ?? "Failed to flush events" });
+      }
+    },
+  );
+
+  // ─── Phase 3: Outcomes admin ───────────────────────────────────────────────
+
+  app.get(
+    "/api/admin/kevin/outcomes",
+    isAuthenticated,
+    requireKevinAccess,
+    async (req: any, res) => {
+      try {
+        const orgId = await resolveOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const limit = Math.min(Number(req.query.limit) || 50, 100);
+        const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+        const result = await db.execute(sql`
+          SELECT id, org_id, signal_id, context_request_id, entity_type, entity_id,
+                 outcome, result_summary, was_useful, was_modified, recorded_by,
+                 forward_status, forward_attempts, created_at, forwarded_at
+          FROM kevin_outcomes
+          WHERE org_id = ${orgId}
+          ORDER BY created_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `);
+        const rows = Array.isArray((result as any)?.rows)
+          ? (result as any).rows
+          : Array.isArray(result)
+            ? result
+            : [];
+
+        return res.json({ outcomes: rows, limit, offset });
+      } catch (e: any) {
+        return res.status(500).json({ message: e?.message ?? "Failed to list outcomes" });
+      }
+    },
+  );
+
+  // ─── Phase 3: Context requests admin ──────────────────────────────────────
+
+  app.get(
+    "/api/admin/kevin/context-requests",
+    isAuthenticated,
+    requireKevinAccess,
+    async (req: any, res) => {
+      try {
+        const orgId = await resolveOrgId(req);
+        if (!orgId) return res.status(400).json({ message: "orgId required" });
+        const limit = Math.min(Number(req.query.limit) || 50, 100);
+        const offset = Math.max(Number(req.query.offset) || 0, 0);
+
+        const result = await db.execute(sql`
+          SELECT id, org_id, agent_type, workflow, entity_type, question,
+                 response_summary, confidence, memories_count, duration_ms,
+                 status, depth, created_at
+          FROM kevin_context_requests
+          WHERE org_id = ${orgId}
+          ORDER BY created_at DESC
+          LIMIT ${limit} OFFSET ${offset}
+        `);
+        const rows = Array.isArray((result as any)?.rows)
+          ? (result as any).rows
+          : Array.isArray(result)
+            ? result
+            : [];
+
+        const statsResult = await db.execute(sql`
+          SELECT
+            COUNT(*) FILTER (WHERE status = 'success')      AS success,
+            COUNT(*) FILTER (WHERE status = 'empty')        AS empty,
+            COUNT(*) FILTER (WHERE status = 'disabled')     AS disabled,
+            COUNT(*) FILTER (WHERE status = 'unavailable')  AS unavailable,
+            COUNT(*) FILTER (WHERE status = 'timeout')      AS timeout,
+            COUNT(*) FILTER (WHERE status = 'failed')       AS failed,
+            COUNT(*) FILTER (WHERE status = 'blocked_loop') AS blocked_loop,
+            AVG(duration_ms) FILTER (WHERE status = 'success') AS avg_duration_ms,
+            AVG(confidence)  FILTER (WHERE status = 'success') AS avg_confidence
+          FROM kevin_context_requests
+          WHERE org_id = ${orgId}
+            AND created_at > NOW() - INTERVAL '7 days'
+        `);
+        const statsRows = Array.isArray((statsResult as any)?.rows)
+          ? (statsResult as any).rows
+          : Array.isArray(statsResult)
+            ? statsResult
+            : [];
+
+        return res.json({ requests: rows, stats: statsRows[0] ?? {}, limit, offset });
+      } catch (e: any) {
+        return res.status(500).json({ message: e?.message ?? "Failed to list context requests" });
       }
     },
   );

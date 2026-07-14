@@ -113,6 +113,30 @@ export async function recordDecision(input: RecordDecisionInput): Promise<string
         ${JSON.stringify(input.metadata ?? {})}
       )
     `);
+
+    // Kevin event wire-in (Phase 3) — non-blocking, fail-open
+    void (async () => {
+      try {
+        const { enqueueKevinEvent } = await import("./kevin-event-service");
+        await enqueueKevinEvent({
+          orgId: input.orgId,
+          eventType: "te.decision.recorded",
+          entityType: "decision_journal_entry",
+          entityId: id,
+          idempotencyKey: `te.decision.recorded:${input.orgId}:${id}`,
+          payload: {
+            agent: input.agent,
+            sourceType: input.sourceType,
+            decisionType: input.decisionType ?? "action",
+            department: input.department ?? "Operations",
+            confidence: input.confidence ?? 75,
+            decision: (input.decision ?? "").slice(0, 200),
+          },
+          source: "decision_journal",
+        });
+      } catch {}
+    })();
+
     return id;
   } catch (err) {
     console.error("[decision-journal] recordDecision error:", err);

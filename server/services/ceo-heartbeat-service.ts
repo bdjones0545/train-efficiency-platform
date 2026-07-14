@@ -1249,6 +1249,39 @@ export async function runHeartbeatCycle(opts: {
       }).catch(() => {});
   }).catch(() => {});
 
+  // Kevin context enrichment (Phase 3) — non-blocking, fail-open
+  void (async () => {
+    try {
+      const { requestKevinContext, formatKevinContextForPrompt } = await import("./kevin-context-service");
+      const ctx = await requestKevinContext({
+        orgId,
+        agentType: "ceo_heartbeat",
+        workflow: "heartbeat_cycle",
+        question: "What historical patterns, prior incidents, or architectural context should inform this heartbeat cycle?",
+        capability: "ceo_heartbeat_enrichment",
+        traceId: heartbeatId,
+        depth: 0,
+      });
+      if (ctx.available && ctx.status === "success") {
+        await db.execute(sql`
+          UPDATE ceo_heartbeat_runs
+          SET metadata = jsonb_set(
+            COALESCE(metadata, '{}'::jsonb),
+            '{kevin_context}',
+            ${JSON.stringify({
+              available: true,
+              summary: ctx.summary.slice(0, 500),
+              memoriesCount: ctx.memories.length,
+              confidence: ctx.confidence ?? null,
+              contextRequestId: ctx.contextRequestId,
+            })}::jsonb
+          )
+          WHERE id = ${heartbeatId}
+        `).catch(() => {});
+      }
+    } catch {}
+  })();
+
   try {
     // Coordinate all agents
     const coordResult = await coordinateAgents(orgId, heartbeatId);

@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, time, pgEnum, uniqueIndex, jsonb, doublePrecision, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, boolean, timestamp, time, pgEnum, uniqueIndex, index, jsonb, doublePrecision, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -5375,3 +5375,186 @@ export const agentTrustOverrides = pgTable("agent_trust_overrides", {
   uniqueIndex("agent_trust_override_unique").on(t.orgId, t.agentName, t.communicationDomain),
 ]);
 export type AgentTrustOverride = typeof agentTrustOverrides.$inferSelect;
+
+// ─── Kevin Integration Tables ─────────────────────────────────────────────────
+
+export const kevinApprovalModeEnum = pgEnum("kevin_approval_mode", [
+  "disabled",
+  "observe",
+  "recommend",
+  "draft",
+  "require_approval",
+  "auto",
+]);
+
+export const kevinCapabilities = pgTable("kevin_capabilities", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  capability: text("capability").notNull(),
+  approvalMode: kevinApprovalModeEnum("approval_mode").notNull().default("observe"),
+  enabled: boolean("enabled").notNull().default(true),
+  updatedBy: text("updated_by"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("kevin_capabilities_unique").on(t.orgId, t.capability),
+  index("kevin_capabilities_org").on(t.orgId),
+]);
+export type KevinCapability = typeof kevinCapabilities.$inferSelect;
+
+export const kevinEventStatusEnum = pgEnum("kevin_event_status", [
+  "pending",
+  "processing",
+  "sent",
+  "failed",
+  "dead_lettered",
+]);
+
+export const kevinEvents = pgTable("kevin_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  eventType: text("event_type").notNull(),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+  payload: jsonb("payload").notNull().default({}),
+  idempotencyKey: text("idempotency_key").notNull(),
+  status: kevinEventStatusEnum("status").notNull().default("pending"),
+  attempts: integer("attempts").notNull().default(0),
+  lastError: text("last_error"),
+  nextRetryAt: timestamp("next_retry_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  sentAt: timestamp("sent_at", { withTimezone: true }),
+  deadLetteredAt: timestamp("dead_lettered_at", { withTimezone: true }),
+}, (t) => [
+  uniqueIndex("kevin_events_idem").on(t.idempotencyKey),
+  index("kevin_events_status").on(t.status),
+  index("kevin_events_retry").on(t.nextRetryAt),
+  index("kevin_events_org").on(t.orgId),
+  index("kevin_events_type").on(t.eventType),
+]);
+export type KevinEvent = typeof kevinEvents.$inferSelect;
+
+export const kevinRiskClassEnum = pgEnum("kevin_risk_class", [
+  "low",
+  "medium",
+  "high",
+  "critical",
+]);
+
+export const kevinSignalStatusEnum = pgEnum("kevin_signal_status", [
+  "pending",
+  "routed",
+  "actioned",
+  "dismissed",
+  "duplicate",
+  "rejected",
+]);
+
+export const kevinSignals = pgTable("kevin_signals", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  externalSignalId: text("external_signal_id"),
+  orgId: text("org_id").notNull(),
+  signalType: text("signal_type").notNull(),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+  title: text("title").notNull(),
+  summary: text("summary"),
+  evidence: jsonb("evidence").notNull().default({}),
+  confidence: doublePrecision("confidence"),
+  riskClass: kevinRiskClassEnum("risk_class"),
+  source: text("source"),
+  status: kevinSignalStatusEnum("status").notNull().default("pending"),
+  routedTo: text("routed_to"),
+  attentionItemId: text("attention_item_id"),
+  originTraceId: text("origin_trace_id"),
+  depth: integer("depth").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  routedAt: timestamp("routed_at", { withTimezone: true }),
+  actionedAt: timestamp("actioned_at", { withTimezone: true }),
+  dismissedAt: timestamp("dismissed_at", { withTimezone: true }),
+}, (t) => [
+  index("kevin_signals_org").on(t.orgId),
+  index("kevin_signals_status").on(t.status),
+  index("kevin_signals_risk").on(t.riskClass),
+]);
+export type KevinSignal = typeof kevinSignals.$inferSelect;
+
+export const kevinContextStatusEnum = pgEnum("kevin_context_status", [
+  "success",
+  "empty",
+  "timeout",
+  "disabled",
+  "unavailable",
+  "failed",
+  "blocked_loop",
+]);
+
+export const kevinContextRequests = pgTable("kevin_context_requests", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  agentType: text("agent_type").notNull(),
+  workflow: text("workflow"),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+  question: text("question"),
+  responseSummary: text("response_summary"),
+  confidence: doublePrecision("confidence"),
+  memoriesCount: integer("memories_count").notNull().default(0),
+  durationMs: integer("duration_ms"),
+  status: kevinContextStatusEnum("status").notNull(),
+  originTraceId: text("origin_trace_id"),
+  depth: integer("depth").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("kevin_context_requests_org").on(t.orgId),
+  index("kevin_context_requests_agent").on(t.agentType),
+]);
+export type KevinContextRequest = typeof kevinContextRequests.$inferSelect;
+
+export const kevinOutcomeEnum = pgEnum("kevin_outcome_type", [
+  "accepted",
+  "modified",
+  "rejected",
+  "dismissed",
+  "no_action",
+  "successful",
+  "unsuccessful",
+  "unknown",
+]);
+
+export const kevinOutcomes = pgTable("kevin_outcomes", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  signalId: text("signal_id"),
+  contextRequestId: text("context_request_id"),
+  runId: text("run_id"),
+  entityType: text("entity_type"),
+  entityId: text("entity_id"),
+  outcome: kevinOutcomeEnum("outcome").notNull(),
+  resultSummary: text("result_summary"),
+  wasUseful: boolean("was_useful"),
+  wasModified: boolean("was_modified"),
+  recurred: boolean("recurred"),
+  recordedBy: text("recorded_by"),
+  forwardStatus: text("forward_status").notNull().default("pending"),
+  forwardAttempts: integer("forward_attempts").notNull().default(0),
+  lastForwardError: text("last_forward_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  forwardedAt: timestamp("forwarded_at", { withTimezone: true }),
+}, (t) => [
+  index("kevin_outcomes_org").on(t.orgId),
+  index("kevin_outcomes_signal").on(t.signalId),
+  index("kevin_outcomes_forward").on(t.forwardStatus),
+]);
+export type KevinOutcome = typeof kevinOutcomes.$inferSelect;
+
+export const kevinRateLimits = pgTable("kevin_rate_limits", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  userId: text("user_id").notNull(),
+  windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
+  requestCount: integer("request_count").notNull().default(0),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  uniqueIndex("kevin_rate_limits_window").on(t.orgId, t.userId, t.windowStart),
+]);
