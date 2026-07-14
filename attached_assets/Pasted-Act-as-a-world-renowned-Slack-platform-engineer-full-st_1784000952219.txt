@@ -1,0 +1,1242 @@
+Act as a world-renowned Slack platform engineer, full-stack software architect, distributed-systems engineer, AI-agent infrastructure specialist, security engineer, and Apple-level product designer.
+
+You are working inside the existing TrainEfficiency monorepo and Kevin runtime integration.
+
+The Kevin Slack Executive Operations Hub Phase 0 foundation already exists.
+
+Current verified state:
+
+```text
+42/42 focused Kevin Slack EOH tests passing
+No project node_modules available on the previous host
+Full monorepo typecheck not verified
+Production build not verified
+Routes not wired
+Feature flags disabled
+No deployment occurred
+Current classification: NOT PRODUCTION READY
+```
+
+Your job is to complete the next production phase.
+
+Do not rebuild the Phase 0 foundation.
+
+Do not create duplicate Slack services, duplicate command registries, duplicate notification engines, or parallel authorization systems.
+
+Do not deploy automatically.
+
+# Primary objective
+
+Move the Kevin Slack Executive Operations Hub from isolated scaffold to a wired, production-safe integration that can:
+
+1. receive Slack events and commands
+2. authenticate Slack requests
+3. map Slack users to TrainEfficiency identities
+4. enforce organization and role permissions
+5. execute safe scheduling workflows through existing TrainEfficiency services
+6. support session cancellation and rescheduling
+7. expose read-only operational queries
+8. send improved Kevin notifications and digests
+9. record decisions and outcomes
+10. fail safely when Kevin or Slack is unavailable
+
+For this phase, prioritize TrainEfficiency scheduling and operational actions.
+
+Do not enable TrainChat workout generation through Slack until TrainEfficiency scheduling workflows are fully verified.
+
+---
+
+# Part 1 — Restore and verify the monorepo environment
+
+Inspect:
+
+```text
+package.json
+workspace configuration
+lockfiles
+monorepo package layout
+TypeScript configuration
+build scripts
+test scripts
+lint scripts
+database packages
+client packages
+server packages
+```
+
+Restore dependencies using the repository’s canonical package manager and lockfile.
+
+Do not regenerate or replace the lockfile unless necessary and explicitly documented.
+
+Run the actual repository commands for:
+
+```text
+dependency install
+full monorepo typecheck
+server typecheck
+client typecheck
+production build
+lint if configured
+existing unit tests
+existing integration tests
+Kevin Slack EOH tests
+```
+
+If dependency restoration fails:
+
+* identify the exact package or lockfile issue
+* make the smallest safe correction
+* do not bypass validation with `--force` unless fully justified
+* do not classify the implementation as production-ready
+
+---
+
+# Part 2 — Inspect the existing Phase 0 Slack foundation
+
+Locate and document all current Kevin Slack files.
+
+Identify:
+
+* Slack event receiver
+* Slack signature verifier
+* Slack Web API client
+* Slack identity mapper
+* Kevin notification priority engine
+* Block Kit builders
+* slash-command parser
+* conversational-command router
+* scheduling intent parser
+* approval handlers
+* digest generator
+* Slack action audit service
+* Obsidian-memory integration
+* feature-flag configuration
+* route files
+* tests
+* database tables or schema
+* background jobs
+* retry queues
+
+Do not assume filenames from prior prompts are correct.
+
+Create a concise architecture map showing what exists and what is still disconnected.
+
+---
+
+# Part 3 — Required feature flags
+
+Verify or add typed server-side configuration for:
+
+```text
+KEVIN_SLACK_ENABLED
+KEVIN_SLACK_EVENTS_ENABLED
+KEVIN_SLACK_COMMANDS_ENABLED
+KEVIN_SLACK_ACTIONS_ENABLED
+KEVIN_SLACK_NOTIFICATIONS_ENABLED
+KEVIN_SLACK_DIGESTS_ENABLED
+KEVIN_SLACK_SCHEDULING_ENABLED
+KEVIN_SLACK_APPROVALS_ENABLED
+KEVIN_SLACK_OBSIDIAN_MEMORY_ENABLED
+SLACK_SIGNING_SECRET
+SLACK_BOT_TOKEN
+SLACK_APP_ID
+SLACK_CLIENT_ID
+SLACK_CLIENT_SECRET
+```
+
+Rules:
+
+* every flag defaults to false
+* secrets are server-only
+* no secret may appear in API responses
+* no secret may appear in client code
+* no secret may appear in audit logs
+* the master Slack flag must disable all Slack behavior
+* TrainEfficiency must operate normally with every Slack flag disabled
+
+Document exact flag dependencies.
+
+Example:
+
+```text
+Scheduling from Slack requires:
+KEVIN_SLACK_ENABLED
+KEVIN_SLACK_EVENTS_ENABLED
+KEVIN_SLACK_COMMANDS_ENABLED
+KEVIN_SLACK_ACTIONS_ENABLED
+KEVIN_SLACK_SCHEDULING_ENABLED
+```
+
+---
+
+# Part 4 — Wire Slack HTTP routes
+
+Register the existing or corrected Slack routes in the production server.
+
+Required conceptual endpoints:
+
+```text
+POST /api/integrations/slack/events
+POST /api/integrations/slack/commands
+POST /api/integrations/slack/actions
+```
+
+Use the repository’s real route conventions.
+
+## Slack request verification
+
+Every Slack request must validate:
+
+```text
+X-Slack-Signature
+X-Slack-Request-Timestamp
+```
+
+Requirements:
+
+* use Slack signing-secret verification
+* reject stale timestamps
+* use timing-safe comparison
+* preserve the raw request body required for signature verification
+* reject invalid signatures with 401
+* never log the signing secret
+* never log complete raw requests containing sensitive content
+* handle Slack URL verification challenges safely
+* handle Slack retries using Slack retry headers
+* deduplicate retried events
+
+Do not accept normal TrainEfficiency browser sessions as a substitute for Slack signature verification.
+
+---
+
+# Part 5 — Slack identity mapping
+
+Slack user IDs are not sufficient authorization.
+
+Create or complete an explicit identity mapping model.
+
+Suggested fields:
+
+```text
+id
+slack_team_id
+slack_enterprise_id
+slack_user_id
+trainefficiency_user_id
+org_id
+mapping_status
+linked_by
+linked_at
+revoked_at
+last_verified_at
+```
+
+Mapping statuses:
+
+```text
+pending
+verified
+revoked
+disabled
+```
+
+Every command or action must resolve:
+
+```text
+Slack workspace
+Slack user
+TrainEfficiency user
+organization
+role
+permission
+```
+
+Rules:
+
+* no user mapping means no state-changing action
+* read-only help may still be returned
+* users may not select an arbitrary organization in free text
+* users with access to multiple organizations must select from an authorized list
+* organization context should be stored in bounded Slack conversation state
+* revoked mappings must stop working immediately
+* cross-org actions must be rejected
+* every mapping action must be audited
+
+Add an ADMIN-controlled linking flow or document the existing one.
+
+Do not auto-link solely through matching email addresses.
+
+---
+
+# Part 6 — Conversation and command state
+
+Slack conversations may be multi-step.
+
+Create or complete bounded conversation state.
+
+Suggested fields:
+
+```text
+conversation_id
+slack_team_id
+slack_channel_id
+slack_thread_ts
+slack_user_id
+org_id
+intent
+state
+collected_fields
+expires_at
+trace_id
+created_at
+updated_at
+```
+
+Requirements:
+
+* expire inactive state
+* scope by Slack user, channel, and thread
+* do not leak one user’s state to another
+* do not persist sensitive raw content unnecessarily
+* allow users to cancel the current workflow
+* support explicit confirmation
+* avoid duplicate execution from Slack retries
+* preserve trace IDs through actions
+
+Example:
+
+```text
+User:
+@Kevin schedule Bryan tomorrow
+
+Kevin:
+What time?
+
+User:
+4 PM
+
+Kevin:
+I found one matching athlete and one available coach.
+Create the session for tomorrow at 4:00 PM?
+
+[Confirm] [Edit] [Cancel]
+```
+
+No state-changing action should occur before confirmation unless existing organization policy explicitly permits it.
+
+---
+
+# Part 7 — TrainEfficiency scheduling integration
+
+Use existing TrainEfficiency scheduling APIs and services.
+
+Do not write directly to scheduling tables from Slack handlers.
+
+Identify the canonical production functions for:
+
+```text
+create session
+reschedule session
+cancel session
+delete session
+duplicate session
+create recurring session
+assign coach
+reassign coach
+add athlete
+remove athlete
+check availability
+check conflicts
+view daily schedule
+view weekly schedule
+find openings
+```
+
+For every Slack action:
+
+1. authenticate Slack request
+2. resolve verified user mapping
+3. resolve authorized organization
+4. parse intent
+5. resolve entities safely
+6. request clarification only when necessary
+7. validate role and permission
+8. check capability and feature flags
+9. run existing scheduling validation
+10. check coach, athlete, and facility conflicts
+11. show a confirmation preview
+12. execute through the existing service
+13. record audit
+14. enqueue Kevin event
+15. record outcome
+16. return Slack confirmation
+
+## Initial supported write actions
+
+Implement and verify first:
+
+```text
+create one-time session
+reschedule existing session
+cancel existing session
+```
+
+Support delete only if the requesting role already has deletion permission in TrainEfficiency.
+
+Do not treat cancellation and deletion as the same action.
+
+## Entity resolution
+
+Natural-language names may be ambiguous.
+
+Example:
+
+```text
+Cancel John's session tomorrow.
+```
+
+Kevin must:
+
+* search only within the authorized organization
+* return a bounded list of matches
+* show date, time, session type, and safe identifying context
+* require the user to select the intended session
+* never guess when multiple valid matches exist
+
+Do not expose unauthorized athlete details.
+
+---
+
+# Part 8 — Slack scheduling previews
+
+Use Slack Block Kit for confirmation previews.
+
+## Create-session preview
+
+Show:
+
+```text
+Session type
+Date
+Time
+Time zone
+Coach
+Athletes or participant count
+Location
+Recurrence
+Conflict status
+Approval requirement
+```
+
+Buttons:
+
+```text
+Confirm
+Edit
+Cancel
+Open in TrainEfficiency
+```
+
+## Reschedule preview
+
+Show:
+
+```text
+Current date and time
+Proposed date and time
+Coach availability
+Athlete availability
+Facility availability
+Conflicts
+Affected participants
+Notification behavior
+```
+
+## Cancellation preview
+
+Show:
+
+```text
+Session
+Date and time
+Coach
+Participant count
+Cancellation policy
+Who will be notified
+Reason category
+```
+
+Do not reveal sensitive contact details in Slack.
+
+---
+
+# Part 9 — Notification quality engine
+
+Complete or wire the existing Kevin Slack notification evaluator.
+
+Every event must be classified as:
+
+```text
+IGNORE
+SILENT_MEMORY
+AGGREGATE
+DAILY_DIGEST
+IMPORTANT
+CRITICAL
+EXECUTIVE_BRIEF
+```
+
+Use deterministic scoring before any model-based refinement.
+
+Suggested factors:
+
+```text
+urgency
+business impact
+revenue impact
+customer impact
+operational impact
+security impact
+confidence
+recurrence
+time sensitivity
+role relevance
+existing open alert
+duplicate similarity
+quiet hours
+user notification preferences
+```
+
+Kevin should not send routine messages for every scheduled session.
+
+Routine session activity should normally be aggregated.
+
+Immediate Slack messages should be reserved for:
+
+```text
+critical operational failures
+security concerns
+major integration failures
+high-impact scheduling conflicts
+high-volume cancellations
+dead-letter thresholds
+approval requests requiring action
+material revenue opportunities
+```
+
+---
+
+# Part 10 — Slack message format
+
+Every meaningful Kevin message must answer:
+
+```text
+What happened?
+Why does it matter?
+What should I do?
+How confident is Kevin?
+Where can I review or act?
+```
+
+## Critical format
+
+```text
+🚨 Critical
+
+What happened
+...
+
+Why it matters
+...
+
+Recommended action
+...
+
+Confidence
+...
+
+[Open Dashboard] [Acknowledge] [View Evidence]
+```
+
+## Important format
+
+```text
+⚠️ Attention Needed
+
+Summary
+...
+
+Impact
+...
+
+Kevin's recommendation
+...
+
+[Approve] [Modify] [Dismiss] [Open]
+```
+
+## Digest format
+
+```text
+Kevin Daily Brief
+
+TrainEfficiency
+...
+
+TrainChat
+...
+
+Scheduling
+...
+
+Revenue and leads
+...
+
+Infrastructure
+...
+
+Patterns
+...
+
+Recommended actions
+...
+```
+
+Do not produce walls of text.
+
+Use concise sections and Block Kit.
+
+---
+
+# Part 11 — Daily and weekly digests
+
+Wire scheduled digest jobs using the repository’s established job infrastructure.
+
+Support:
+
+```text
+daily executive brief
+weekly executive review
+optional role-specific operational digest
+```
+
+User or organization preferences should control:
+
+```text
+enabled
+delivery channel
+delivery time
+time zone
+quiet hours
+included sections
+minimum priority
+```
+
+Do not hardcode one global time zone.
+
+Kevin’s daily brief should aggregate both TrainEfficiency and TrainChat only where cross-application visibility is authorized.
+
+Otherwise produce separate application sections without user-level cross-linking.
+
+Add idempotency so a digest is sent only once per scheduled period.
+
+---
+
+# Part 12 — Approvals through Slack
+
+Slack may become an approval surface for existing TrainEfficiency workflows.
+
+Initial supported approvals may include:
+
+```text
+scheduling change
+AgentMail draft
+Kevin recommendation
+fill-campaign recommendation
+lead action
+```
+
+Do not implement approval types that do not already have canonical backend handlers.
+
+Every Slack approval must:
+
+* verify Slack signature
+* resolve user identity
+* verify organization
+* verify role
+* confirm the approval remains pending
+* use the existing approval handler
+* prevent double approval
+* audit the action
+* record Kevin outcome
+* update the Slack message
+* preserve existing send guards and autonomy policy
+
+Slack buttons must not contain raw authorization data.
+
+Use short-lived opaque action tokens or server-side action records.
+
+---
+
+# Part 13 — Read-only operational commands
+
+Implement safe read-only commands such as:
+
+```text
+show today's schedule
+show tomorrow's schedule
+find openings Friday
+show unresolved approvals
+show Kevin health
+show integration health
+show dead-letter counts
+show today's leads
+show coach utilization
+summarize today's activity
+```
+
+Use existing application services.
+
+Do not issue arbitrary SQL from natural-language requests.
+
+Return only data authorized for the requesting user.
+
+---
+
+# Part 14 — Slash commands and mentions
+
+Support the existing Slack interaction model.
+
+Suggested slash commands:
+
+```text
+/kevin help
+/kevin schedule
+/kevin sessions
+/kevin openings
+/kevin approvals
+/kevin summary
+/kevin health
+/kevin integrations
+```
+
+Also support:
+
+```text
+@Kevin
+```
+
+in allowed channels.
+
+Requirements:
+
+* ignore bot messages
+* prevent bot loops
+* deduplicate retries
+* preserve thread context
+* respond ephemerally when content is user-specific
+* use channel messages only when collaboration is appropriate
+* do not expose private organization data in public channels
+
+---
+
+# Part 15 — Obsidian memory integration
+
+Every meaningful Slack interaction should produce a sanitized Kevin memory event.
+
+Eligible memories:
+
+```text
+scheduling intent
+confirmed scheduling action
+cancellation decision
+approval decision
+notification preference
+digest preference
+repeated command pattern
+meaningful operational question
+action outcome
+```
+
+Do not store:
+
+```text
+full Slack transcripts
+casual conversation
+Slack access tokens
+signing secrets
+raw private-channel history
+hidden prompts
+chain-of-thought
+```
+
+Use structured summaries:
+
+```text
+intent
+decision
+action
+outcome
+organization
+application
+confidence
+trace ID
+```
+
+Obsidian failure must not block Slack actions or TrainEfficiency workflows.
+
+---
+
+# Part 16 — Audit and outcome learning
+
+Every Slack interaction should create an audit record containing:
+
+```text
+Slack workspace
+Slack user mapping
+TrainEfficiency user
+organization
+intent
+requested operation
+authorization result
+confirmation result
+execution result
+trace ID
+timestamp
+```
+
+Do not store secrets or unnecessary raw message content.
+
+Track outcomes:
+
+```text
+approved
+modified
+dismissed
+canceled
+executed
+failed
+ignored
+opened
+clicked
+```
+
+Kevin may learn:
+
+```text
+preferred notification priority
+preferred digest timing
+frequently used commands
+frequently accessed organization
+common scheduling workflow
+```
+
+Kevin must not learn elevated permissions from repeated approvals.
+
+Permission always comes from TrainEfficiency.
+
+---
+
+# Part 17 — Retry and failure handling
+
+Use durable retries for outbound Slack messages where practical.
+
+Classify Slack API failures:
+
+```text
+temporary
+rate_limited
+auth_failure
+invalid_channel
+user_not_found
+message_not_found
+permanent
+```
+
+Requirements:
+
+* respect Slack `Retry-After`
+* avoid duplicate messages
+* preserve idempotency
+* dead-letter permanent repeated failures
+* surface dead-letter counts in admin diagnostics
+* open the circuit breaker for repeated Slack platform failures if appropriate
+* do not block TrainEfficiency actions because a confirmation message failed after execution
+
+If a scheduling action succeeds but Slack response delivery fails:
+
+* preserve the successful action
+* record response-delivery failure separately
+* do not retry the scheduling action
+
+---
+
+# Part 18 — Admin diagnostics
+
+Add or complete protected diagnostics showing:
+
+```text
+Slack integration enabled
+Slack event receiver health
+signature verification status
+bot authentication status
+workspace mappings
+user mappings
+command counts
+action counts
+failed interactions
+dead-letter messages
+digest status
+last successful Slack API call
+Kevin Slack circuit state
+```
+
+Do not display tokens or secrets.
+
+Allow authorized admins to:
+
+```text
+disable Slack integration
+revoke a Slack identity mapping
+retry a dead-letter notification
+test a private diagnostic message
+view recent sanitized audit records
+```
+
+Do not permit admins to impersonate users for scheduling actions.
+
+---
+
+# Part 19 — Tests
+
+Add tests following the repository’s conventions.
+
+## Dependency and build verification
+
+* dependency installation succeeds
+* monorepo typecheck succeeds
+* production build succeeds
+* existing tests remain green
+* Kevin Slack EOH tests remain green
+
+## Slack signature verification
+
+* valid signature accepted
+* invalid signature rejected
+* stale timestamp rejected
+* missing signature rejected
+* raw-body handling works
+* signing secret never logged
+* Slack URL verification succeeds
+* retries are deduplicated
+
+## Identity mapping
+
+* verified mapping succeeds
+* missing mapping blocks write action
+* revoked mapping blocks all actions
+* cross-org action rejected
+* multi-org user receives authorized organization selection
+* arbitrary organization text cannot bypass membership
+
+## Scheduling
+
+* create-session preview
+* create-session confirmation
+* reschedule preview
+* reschedule confirmation
+* cancellation preview
+* cancellation confirmation
+* cancellation and deletion remain distinct
+* ambiguous athlete requires selection
+* ambiguous session requires selection
+* coach conflict blocks action
+* athlete conflict blocks action
+* facility conflict blocks action
+* unauthorized role blocked
+* duplicate Slack action does not duplicate session
+* existing scheduling service is used
+* audit and outcome records are created
+
+## Conversation state
+
+* follow-up answer resolves missing time
+* state scoped by user and thread
+* state expires
+* cancel clears state
+* another user cannot continue the workflow
+* Slack retry does not duplicate state transition
+
+## Notifications
+
+* routine events aggregate
+* critical event sends immediately
+* duplicate alert suppressed
+* quiet hours respected
+* role relevance respected
+* digest sent once
+* notification feedback recorded
+
+## Approvals
+
+* pending approval can be approved
+* already actioned approval cannot be repeated
+* unauthorized user blocked
+* existing approval handler used
+* send guards remain active
+* Slack message updates after action
+
+## Obsidian
+
+* meaningful action creates sanitized event
+* raw transcript not stored
+* secret removed
+* Obsidian failure does not block action
+
+## Failure handling
+
+* Slack API rate limit respected
+* successful scheduling action is not retried when message delivery fails
+* temporary Slack send failure retries
+* permanent failure dead-letters
+* TrainEfficiency works when Slack flags are off
+* TrainEfficiency works when Slack is unavailable
+
+---
+
+# Part 20 — Controlled activation
+
+Do not enable all behavior automatically.
+
+Prepare this staged rollout.
+
+## Stage 1 — Slack verification only
+
+```text
+KEVIN_SLACK_ENABLED=true
+KEVIN_SLACK_EVENTS_ENABLED=true
+```
+
+Verify:
+
+* signed events accepted
+* invalid signatures rejected
+* Slack challenge succeeds
+* no actions execute
+
+## Stage 2 — Read-only commands
+
+```text
+KEVIN_SLACK_COMMANDS_ENABLED=true
+```
+
+Enable:
+
+```text
+help
+health
+today's schedule
+openings
+summary
+```
+
+Verify identity and org filtering.
+
+## Stage 3 — Internal scheduling pilot
+
+```text
+KEVIN_SLACK_ACTIONS_ENABLED=true
+KEVIN_SLACK_SCHEDULING_ENABLED=true
+```
+
+Limit to one verified ADMIN test user and one organization.
+
+Enable only:
+
+```text
+create session
+reschedule session
+cancel session
+```
+
+Require explicit confirmation.
+
+## Stage 4 — Notifications
+
+```text
+KEVIN_SLACK_NOTIFICATIONS_ENABLED=true
+```
+
+Enable only critical and important notifications initially.
+
+## Stage 5 — Digests
+
+```text
+KEVIN_SLACK_DIGESTS_ENABLED=true
+```
+
+Verify time zone and idempotency.
+
+## Stage 6 — Approvals
+
+```text
+KEVIN_SLACK_APPROVALS_ENABLED=true
+```
+
+Enable one existing approval workflow at a time.
+
+## Stage 7 — Obsidian memory
+
+```text
+KEVIN_SLACK_OBSIDIAN_MEMORY_ENABLED=true
+```
+
+Verify sanitized memory summaries.
+
+---
+
+# Constraints
+
+Do not:
+
+* rebuild the existing Phase 0 foundation
+* create duplicate scheduling services
+* manipulate scheduling tables directly
+* trust Slack user IDs as authorization
+* auto-link identities by email
+* bypass TrainEfficiency permissions
+* bypass organization isolation
+* bypass scheduling validation
+* bypass conflicts
+* bypass approvals
+* bypass autonomy policy
+* bypass send guards
+* bypass audit logging
+* execute state-changing actions without confirmation during the pilot
+* treat cancellation and deletion as the same
+* expose private data in public Slack channels
+* store full Slack transcripts
+* expose secrets
+* execute arbitrary SQL
+* execute arbitrary tools returned by Kevin
+* allow arbitrary navigation URLs
+* retry successful business actions because Slack response delivery failed
+* enable TrainChat write actions in this phase
+* deploy automatically
+
+---
+
+# Verification
+
+Run:
+
+```text
+canonical dependency installation
+full monorepo typecheck
+server typecheck
+client typecheck
+production build
+lint if configured
+existing unit tests
+existing integration tests
+Kevin Slack EOH tests
+new Slack route tests
+new identity-mapping tests
+new scheduling tests
+new notification tests
+new approval tests
+secret search
+client-bundle secret search
+```
+
+Also perform controlled local smoke tests for:
+
+```text
+Slack URL verification
+invalid signature
+read-only schedule request
+create-session preview
+create-session confirmation
+reschedule preview
+cancel-session preview
+duplicate Slack retry
+unauthorized Slack user
+cross-org request
+Slack API failure after successful scheduling action
+```
+
+Do not claim production readiness unless the complete monorepo typecheck and production build succeed.
+
+---
+
+# Final delivery report
+
+Return:
+
+1. repository and Phase 0 inspection findings
+2. dependencies restored
+3. exact route registrations
+4. feature-flag matrix
+5. Slack verification behavior
+6. identity-mapping architecture
+7. scheduling workflows wired
+8. canonical TrainEfficiency services reused
+9. Block Kit interactions added
+10. read-only commands added
+11. notification-priority engine behavior
+12. digest behavior
+13. approval workflows added
+14. Obsidian memory behavior
+15. audit and outcome-learning behavior
+16. files created
+17. files modified
+18. migrations added
+19. tests added
+20. exact commands run
+21. complete verification results
+22. remaining limitations
+23. staged activation instructions
+24. rollback instructions
+25. confirmation that no deployment occurred
+
+Classify the result as:
+
+```text
+PRODUCTION READY
+PRODUCTION READY WITH DOCUMENTED LIMITATIONS
+NOT PRODUCTION READY
+```
+
+Do not classify it as production-ready if:
+
+* monorepo typecheck is not green
+* production build is not green
+* Slack signatures are not verified
+* identity mapping is not enforced
+* cross-org isolation is unverified
+* scheduling writes bypass existing services
+* duplicate Slack actions can create duplicate sessions
+* successful business actions can execute twice
+* feature flags do not default off
+* any Slack secret reaches the client
+* core tests fail
+
+The target result is:
+
+```text
+Slack user
+    ↓
+verified Slack request
+    ↓
+verified TrainEfficiency identity
+    ↓
+authorized organization and role
+    ↓
+Kevin understands intent
+    ↓
+existing TrainEfficiency workflow executes
+    ↓
+audit + outcome + memory
+    ↓
+clear Slack confirmation
+```
