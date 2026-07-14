@@ -1,0 +1,335 @@
+Step 2 — Configure the access plane
+Create an environment-only configuration for:
+TRAINEFFICIENCY_BASE_URL
+TRAINEFFICIENCY_KEVIN_SERVICE_ID
+TRAINEFFICIENCY_KEVIN_KEY_ID
+TRAINEFFICIENCY_KEVIN_SIGNING_SECRET
+TRAINEFFICIENCY_DEFAULT_ORG_ID
+TRAINEFFICIENCY_REQUEST_TIMEOUT_MS
+Use the actual environment-variable names defined by the live control-plane documentation if they differ.
+Requirements:
+secrets only in the environment or approved secret manager
+restrictive file permissions
+no secret values in logs
+no secret values in Obsidian
+no secret values committed to Git
+support credential rotation
+fail closed when credentials are missing
+redact signature and authorization headers from diagnostics
+Step 3 — Build the TrainEfficiency control-plane client
+Create a reusable client module inside Kevin’s runtime.
+The client must support:
+signed request generation
+current timestamp creation
+cryptographically secure nonce generation
+canonical request construction
+request signing
+idempotency keys
+correlation IDs
+configurable timeout
+bounded retry behavior
+typed response parsing
+typed error parsing
+sensitive-field redaction
+health checks
+capability discovery
+intent submission
+intent polling
+task polling
+approval-state handling
+outcome retrieval
+Do not retry:
+policy denials
+invalid signatures
+revoked credentials
+cross-organization denials
+malformed payloads
+disabled capabilities
+emergency-stop responses
+Retry only transient failures according to the documented policy.
+Step 4 — Run authentication smoke tests
+Test:
+Documentation retrieval.
+Health endpoint.
+Capability discovery.
+A valid signed request.
+An intentionally invalid signature.
+An expired timestamp.
+A duplicate nonce.
+A duplicate idempotency key.
+A request for an unavailable capability.
+A request using the wrong organization scope.
+Do not proceed to write-capable testing until authentication, scope validation, and replay protection behave exactly as documented.
+Record only sanitized evidence.
+Step 5 — Create the TrainEfficiency operational model
+Build a durable platform record containing:
+platform name
+environment
+base URL
+documentation endpoint
+authentication method
+available organizations
+capability catalog
+current capability modes
+supported agents
+intent states
+task states
+approval states
+outcome types
+emergency controls
+rate limits
+known restrictions
+last successful health check
+last capability refresh
+integration version
+Store this in your approved institutional-memory structure without credentials or sensitive payloads.
+Step 6 — Map available capabilities
+Retrieve the live capability registry.
+For each available capability, record:
+key
+version
+description
+category
+input schema
+output schema
+risk level
+current effective mode
+permitted roles
+approval policy
+executor
+verifier
+retry behavior
+idempotency behavior
+availability
+Do not treat registered-but-disabled capabilities as executable.
+Do not infer that a capability exists merely because a similar platform function exists.
+Step 7 — Implement the executive intent workflow
+Implement this operating loop:
+User request or platform signal
+        ↓
+Determine executive objective
+        ↓
+Discover applicable capability
+        ↓
+Validate required arguments
+        ↓
+Generate reason, confidence, and expected result
+        ↓
+Submit signed intent
+        ↓
+Track intent and task states
+        ↓
+Handle approval if required
+        ↓
+Retrieve verified outcome
+        ↓
+Report result
+        ↓
+Update institutional memory
+Every request must carry:
+request ID
+idempotency key
+correlation ID
+organization context
+initiating-user attribution when supplied by TrainEfficiency
+capability key and version
+structured arguments
+reason
+objective
+confidence
+expected result
+source context
+Never invent initiating-user authority.
+Never elevate the requested mode beyond the effective mode returned by TrainEfficiency.
+Step 8 — Handle capability modes correctly
+Interpret modes exactly:
+disabled
+→ explain that the action is unavailable
+
+observe
+→ retrieve or inspect only
+
+recommend
+→ provide a recommendation without creating side effects
+
+draft
+→ create a reversible draft or proposed artifact
+
+require_approval
+→ submit the action, surface the approval state, and stop execution
+
+auto
+→ permit execution only through the control plane
+Do not repeatedly resubmit approval-required actions while awaiting a human decision.
+Do not treat a draft as a completed external action.
+Step 9 — Validate the initial safe capabilities
+Test the safest available production capabilities first.
+Recommended sequence:
+Retrieve platform context.
+Retrieve capability registry.
+Request CEO Agent analysis.
+Request CEO Agent briefing.
+Request a specialist-agent analysis.
+Request a specialist-agent recommendation.
+Create an AgentMail draft using an approved test recipient.
+Request a revision to that draft.
+Create or inspect an approval request.
+Return a valid navigation action.
+Retrieve the final verified outcome.
+Use controlled test records and clearly label them as integration tests.
+Do not send a real email during the first validation unless explicitly approved through the platform.
+Step 10 — Integrate structured responses
+TrainEfficiency supports typed chat-action blocks.
+Map control-plane results into supported response types such as:
+direct_answer
+recommendation
+capability_unavailable
+action_available
+draft_created
+approval_required
+task_delegated
+task_in_progress
+task_completed
+navigation
+warning
+policy_denial
+failure
+outcome_report
+Return structured data when the TrainEfficiency interface supports it rather than embedding all actions in prose.
+Never invent internal routes.
+Use only navigation targets returned or approved by the control plane.
+Step 11 — CEO Agent integration
+Use the CEO Agent as TrainEfficiency’s native executive-analysis specialist.
+You may request:
+analysis
+briefing
+decision support
+risk evaluation
+recommendation review
+platform-specific interpretation
+You remain the persistent orchestrator responsible for tracking the objective through completion.
+Respect delegation-depth and circular-call limits.
+Do not repeatedly send the same request between yourself and the CEO Agent.
+Step 12 — Platform-agent delegation
+Retrieve the live agent registry.
+For each agent, understand:
+responsibilities
+accepted task types
+supported capabilities
+input schema
+output schema
+risk limits
+external-side-effect permissions
+current availability
+Delegate through the task bus only.
+Do not directly modify another agent’s memory, queue, prompt, or internal state.
+Validate returned outputs before using them in a subsequent action.
+Step 13 — AgentMail workflow
+For the first real email workflow:
+Identify objective
+→ request approved context
+→ create AgentMail draft
+→ inspect returned draft
+→ request revision if necessary
+→ submit for approval
+→ wait for approval
+→ request send only after valid approval
+→ retrieve verification
+→ monitor reply or downstream outcome
+Do not create an independent email system inside your runtime.
+Do not send using Gmail or another provider directly when the action originated through TrainEfficiency.
+TrainEfficiency remains the execution and audit authority.
+Step 14 — Approval handling
+When an action requires approval:
+report exactly what is awaiting approval
+include the approval reference returned by TrainEfficiency
+provide the approved navigation action when available
+stop the execution chain
+poll conservatively or respond to a platform event
+resume only after the approval state changes
+ensure the approved payload still matches the payload to be executed
+respect approval expiration
+A policy requiring approval is not an error.
+Step 15 — Verification and outcomes
+Do not mark work complete based on intent acceptance alone.
+Completion requires:
+terminal intent state
+terminal task state where applicable
+successful execution verification
+retrieved outcome record
+Record:
+expected result
+actual result
+verification status
+deviations
+final outcome
+confidence
+human approval or rejection
+downstream result when available
+Use these outcomes for learning, but never use them to expand your own permissions.
+Step 16 — Emergency behavior
+At runtime, respond correctly to:
+global kill switch
+organization kill switch
+capability kill switch
+read-only mode
+circuit breaker
+revoked credentials
+disabled automatic email sends
+paused agent delegation
+When an emergency condition is active:
+stop new writes
+do not bypass the restriction
+do not repeatedly retry
+clearly report the control that blocked execution
+preserve safe read-only functionality only when permitted
+Step 17 — Observability
+Add sanitized operational logging for:
+authentication result
+capability discovery
+intent submission
+task state transitions
+approval state transitions
+outcome retrieval
+retry decisions
+policy denials
+verification failures
+emergency-control responses
+Use the same correlation ID across the full operation.
+Never log secrets, signatures, full authorization headers, or unnecessary private message contents.
+Step 18 — Production readiness test
+Complete one end-to-end controlled scenario:
+User requests a follow-up with an approved test lead
+→ you determine email.create_draft is available
+→ submit an intent
+→ AgentMail creates the draft
+→ TrainEfficiency verifies the draft
+→ structured draft-created block is returned
+→ approval is requested
+→ the approval is reviewed inside TrainEfficiency
+→ after approval, send is requested only if permitted
+→ send verification is retrieved
+→ final outcome is recorded
+→ executive memory is updated
+If real sending is not yet approved, stop after approval or verified draft creation and record the limitation accurately.
+Required delivery report
+At completion, provide:
+Connection status.
+Documentation endpoint used.
+Authentication method implemented.
+Environment-variable names configured.
+Capability count discovered.
+Current available capability modes.
+Agents discovered.
+Smoke-test results.
+Initial safe-capability test results.
+Intent lifecycle validation.
+Approval lifecycle validation.
+Outcome and verification validation.
+Structured response integration.
+Emergency-control validation.
+Files created and modified in Kevin’s runtime.
+Institutional-memory records created.
+Known limitations.
+Exact production activation recommendation.
+Be precise about what is operational versus documented, mocked, disabled, or still awaiting credentials.
