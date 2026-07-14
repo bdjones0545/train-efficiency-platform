@@ -24,6 +24,9 @@
  *  10. On confirm: execute through storage layer
  *  11. Record audit + outcome
  *  12. Send Slack confirmation
+ *
+ * Action tokens are now database-backed, hashed, and atomically single-use.
+ * See action-token-service.ts for the full security model.
  */
 
 import { storage } from "../storage";
@@ -40,7 +43,18 @@ import {
   buildScheduleView,
 } from "./block-kit";
 import { isSchedulingEnabled } from "./config";
-import crypto from "crypto";
+
+import {
+  createActionToken,
+  consumeActionToken,
+  markActionTokenConsumed,
+  markActionTokenFailed,
+  invalidateActionToken,
+} from "./action-token-service";
+
+// Re-export so callers (approval-handler, tests) keep the same import path.
+// The implementation lives in action-token-service.ts.
+export { createActionToken, consumeActionToken, invalidateActionToken };
 
 // ─── Role permission check ────────────────────────────────────────────────────
 
@@ -52,59 +66,15 @@ function canDelete(role: string): boolean {
   return role === "ADMIN";
 }
 
-// ─── Action token store (in-memory with expiry) ───────────────────────────────
+// ─── Slack context threading ──────────────────────────────────────────────────
 
-interface ActionToken {
-  token: string;
-  intent: string;
-  orgId: string;
-  userId: string;
-  payload: Record<string, unknown>;
-  expiresAt: number;
+export interface SlackActionContext {
+  teamId?: string;
+  slackUserId?: string;
+  channelId?: string;
+  messageTs?: string;
+  traceId?: string;
 }
-
-const actionTokenStore = new Map<string, ActionToken>();
-
-export function createActionToken(
-  intent: string,
-  orgId: string,
-  userId: string,
-  payload: Record<string, unknown>,
-): string {
-  const token = crypto.randomBytes(16).toString("hex");
-  actionTokenStore.set(token, {
-    token,
-    intent,
-    orgId,
-    userId,
-    payload,
-    expiresAt: Date.now() + 15 * 60 * 1000, // 15 minutes
-  });
-  return token;
-}
-
-export function consumeActionToken(token: string): ActionToken | null {
-  const entry = actionTokenStore.get(token);
-  if (!entry) return null;
-  if (entry.expiresAt < Date.now()) {
-    actionTokenStore.delete(token);
-    return null;
-  }
-  // Do NOT delete — allow one confirmation + one abort (idempotent)
-  return entry;
-}
-
-export function invalidateActionToken(token: string): void {
-  actionTokenStore.delete(token);
-}
-
-// Periodic cleanup
-setInterval(() => {
-  const now = Date.now();
-  for (const [k, v] of actionTokenStore.entries()) {
-    if (v.expiresAt < now) actionTokenStore.delete(k);
-  }
-}, 5 * 60 * 1000);
 
 // ─── View today's schedule ────────────────────────────────────────────────────
 
@@ -161,6 +131,7 @@ export interface CreateSessionParams {
 export async function buildCreateSessionPreviewBlocks(
   identity: ResolvedIdentity,
   params: CreateSessionParams,
+  slackContext?: SlackActionContext,
 ): Promise<{ blocks: SlackBlock[]; ephemeral: boolean; actionToken?: string }> {
   if (!isSchedulingEnabled()) {
     return { blocks: buildErrorMessage("Scheduling via Slack is not enabled."), ephemeral: true };
@@ -200,7 +171,13 @@ export async function buildCreateSessionPreviewBlocks(
     }
   }
 
-  const actionToken = createActionToken("create_session", identity.orgId, identity.userId, params as any);
+  const actionToken = await createActionToken(
+    "create_session",
+    identity.orgId,
+    identity.userId,
+    params as unknown as Record<string, unknown>,
+    slackContext,
+  );
 
   const blocks = buildCreateSessionPreview({
     sessionType: params.sessionType ?? "Session",
@@ -221,27 +198,36 @@ export async function buildCreateSessionPreviewBlocks(
 // ─── Execute session creation ─────────────────────────────────────────────────
 
 export async function executeCreateSession(
-  actionToken: string,
+  rawToken: string,
   identity: ResolvedIdentity,
+  slackContext?: { teamId?: string; slackUserId?: string },
 ): Promise<{ ok: boolean; bookingId?: string; error?: string }> {
   if (!isSchedulingEnabled()) return { ok: false, error: "Scheduling disabled" };
   if (!canSchedule(identity.role)) return { ok: false, error: "Insufficient permissions" };
 
-  const token = consumeActionToken(actionToken);
-  if (!token) return { ok: false, error: "Action token expired or invalid" };
-  if (token.intent !== "create_session") return { ok: false, error: "Token intent mismatch" };
-  if (token.orgId !== identity.orgId) return { ok: false, error: "Organization mismatch" };
-  if (token.userId !== identity.userId) return { ok: false, error: "User mismatch" };
+  const tokenRecord = await consumeActionToken(rawToken, {
+    orgId: identity.orgId,
+    slackTeamId: slackContext?.teamId,
+    slackUserId: slackContext?.slackUserId,
+  });
 
-  const params = token.payload as CreateSessionParams;
+  if (!tokenRecord) return { ok: false, error: "Action token expired or invalid" };
+  if (tokenRecord.actionType !== "create_session") return { ok: false, error: "Token intent mismatch" };
+  if (tokenRecord.orgId !== identity.orgId) return { ok: false, error: "Organization mismatch" };
+  if (tokenRecord.trainefficiencyUserId !== identity.userId) return { ok: false, error: "User mismatch" };
+
+  const params = tokenRecord.actionPayload as unknown as CreateSessionParams;
 
   try {
     const booking = await storage.createBooking({
       clientId: identity.userId,
       coachId: params.coachId!,
       serviceId: undefined as any,
-      startAt: params.startAt!,
-      endAt: new Date(params.startAt!.getTime() + (params.durationMinutes ?? 60) * 60 * 1000),
+      startAt: params.startAt ? new Date(params.startAt as any) : new Date(),
+      endAt: new Date(
+        (params.startAt ? new Date(params.startAt as any) : new Date()).getTime() +
+        (params.durationMinutes ?? 60) * 60 * 1000,
+      ),
       status: "CONFIRMED",
       notes: params.notes ?? null,
       organizationId: identity.orgId,
@@ -249,9 +235,10 @@ export async function executeCreateSession(
       priceCents: 0,
     } as any);
 
-    invalidateActionToken(actionToken);
+    await markActionTokenConsumed(tokenRecord);
     return { ok: true, bookingId: booking.id };
   } catch (err: any) {
+    await markActionTokenFailed(tokenRecord, err?.message ?? "Failed to create booking");
     return { ok: false, error: err?.message ?? "Failed to create booking" };
   }
 }
@@ -263,6 +250,7 @@ export async function buildReschedulePreviewBlocks(
   bookingId: string,
   newStartAt: Date,
   durationMinutes = 60,
+  slackContext?: SlackActionContext,
 ): Promise<{ blocks: SlackBlock[]; ephemeral: boolean; actionToken?: string }> {
   if (!isSchedulingEnabled()) {
     return { blocks: buildErrorMessage("Scheduling via Slack is not enabled."), ephemeral: true };
@@ -300,11 +288,17 @@ export async function buildReschedulePreviewBlocks(
     }
   }
 
-  const actionToken = createActionToken("reschedule_session", identity.orgId, identity.userId, {
-    bookingId,
-    newStartAt: newStartAt.toISOString(),
-    newEndAt: newEnd.toISOString(),
-  });
+  const actionToken = await createActionToken(
+    "reschedule_session",
+    identity.orgId,
+    identity.userId,
+    {
+      bookingId,
+      newStartAt: newStartAt.toISOString(),
+      newEndAt: newEnd.toISOString(),
+    },
+    slackContext,
+  );
 
   const participants = await storage.getBookingParticipants(bookingId);
 
@@ -330,19 +324,25 @@ export async function buildReschedulePreviewBlocks(
 }
 
 export async function executeReschedule(
-  actionToken: string,
+  rawToken: string,
   identity: ResolvedIdentity,
+  slackContext?: { teamId?: string; slackUserId?: string },
 ): Promise<{ ok: boolean; bookingId?: string; error?: string }> {
   if (!isSchedulingEnabled()) return { ok: false, error: "Scheduling disabled" };
   if (!canSchedule(identity.role)) return { ok: false, error: "Insufficient permissions" };
 
-  const token = consumeActionToken(actionToken);
-  if (!token) return { ok: false, error: "Action token expired or invalid" };
-  if (token.intent !== "reschedule_session") return { ok: false, error: "Token intent mismatch" };
-  if (token.orgId !== identity.orgId) return { ok: false, error: "Organization mismatch" };
-  if (token.userId !== identity.userId) return { ok: false, error: "User mismatch" };
+  const tokenRecord = await consumeActionToken(rawToken, {
+    orgId: identity.orgId,
+    slackTeamId: slackContext?.teamId,
+    slackUserId: slackContext?.slackUserId,
+  });
 
-  const { bookingId, newStartAt, newEndAt } = token.payload as {
+  if (!tokenRecord) return { ok: false, error: "Action token expired or invalid" };
+  if (tokenRecord.actionType !== "reschedule_session") return { ok: false, error: "Token intent mismatch" };
+  if (tokenRecord.orgId !== identity.orgId) return { ok: false, error: "Organization mismatch" };
+  if (tokenRecord.trainefficiencyUserId !== identity.userId) return { ok: false, error: "User mismatch" };
+
+  const { bookingId, newStartAt, newEndAt } = tokenRecord.actionPayload as {
     bookingId: string;
     newStartAt: string;
     newEndAt: string;
@@ -355,9 +355,10 @@ export async function executeReschedule(
     });
     await storage.updateBookingStatus(bookingId, "RESCHEDULED");
 
-    invalidateActionToken(actionToken);
+    await markActionTokenConsumed(tokenRecord);
     return { ok: true, bookingId };
   } catch (err: any) {
+    await markActionTokenFailed(tokenRecord, err?.message ?? "Failed to reschedule");
     return { ok: false, error: err?.message ?? "Failed to reschedule" };
   }
 }
@@ -368,6 +369,7 @@ export async function buildCancelSessionPreviewBlocks(
   identity: ResolvedIdentity,
   bookingId: string,
   reasonCategory = "Operational change",
+  slackContext?: SlackActionContext,
 ): Promise<{ blocks: SlackBlock[]; ephemeral: boolean; actionToken?: string }> {
   if (!isSchedulingEnabled()) {
     return { blocks: buildErrorMessage("Scheduling via Slack is not enabled."), ephemeral: true };
@@ -399,10 +401,13 @@ export async function buildCancelSessionPreviewBlocks(
       ? `${(booking as any).coach.user.firstName ?? ""} ${(booking as any).coach.user.lastName ?? ""}`.trim()
       : "Assigned Coach";
 
-  const actionToken = createActionToken("cancel_session", identity.orgId, identity.userId, {
-    bookingId,
-    reasonCategory,
-  });
+  const actionToken = await createActionToken(
+    "cancel_session",
+    identity.orgId,
+    identity.userId,
+    { bookingId, reasonCategory },
+    slackContext,
+  );
 
   const blocks = buildCancellationPreview({
     bookingId,
@@ -423,26 +428,36 @@ export async function buildCancelSessionPreviewBlocks(
 }
 
 export async function executeCancelSession(
-  actionToken: string,
+  rawToken: string,
   identity: ResolvedIdentity,
+  slackContext?: { teamId?: string; slackUserId?: string },
 ): Promise<{ ok: boolean; bookingId?: string; error?: string }> {
   if (!isSchedulingEnabled()) return { ok: false, error: "Scheduling disabled" };
   if (!canSchedule(identity.role)) return { ok: false, error: "Insufficient permissions" };
 
-  const token = consumeActionToken(actionToken);
-  if (!token) return { ok: false, error: "Action token expired or invalid" };
-  if (token.intent !== "cancel_session") return { ok: false, error: "Token intent mismatch" };
-  if (token.orgId !== identity.orgId) return { ok: false, error: "Organization mismatch" };
-  if (token.userId !== identity.userId) return { ok: false, error: "User mismatch" };
+  const tokenRecord = await consumeActionToken(rawToken, {
+    orgId: identity.orgId,
+    slackTeamId: slackContext?.teamId,
+    slackUserId: slackContext?.slackUserId,
+  });
 
-  const { bookingId } = token.payload as { bookingId: string };
+  if (!tokenRecord) return { ok: false, error: "Action token expired or invalid" };
+  if (tokenRecord.actionType !== "cancel_session") return { ok: false, error: "Token intent mismatch" };
+  if (tokenRecord.orgId !== identity.orgId) return { ok: false, error: "Organization mismatch" };
+  if (tokenRecord.trainefficiencyUserId !== identity.userId) return { ok: false, error: "User mismatch" };
+
+  const { bookingId } = tokenRecord.actionPayload as { bookingId: string };
 
   try {
     const updated = await storage.updateBookingStatus(bookingId, "CANCELLED");
-    if (!updated) return { ok: false, error: "Session not found" };
-    invalidateActionToken(actionToken);
+    if (!updated) {
+      await markActionTokenFailed(tokenRecord, "Session not found");
+      return { ok: false, error: "Session not found" };
+    }
+    await markActionTokenConsumed(tokenRecord);
     return { ok: true, bookingId };
   } catch (err: any) {
+    await markActionTokenFailed(tokenRecord, err?.message ?? "Failed to cancel session");
     return { ok: false, error: err?.message ?? "Failed to cancel session" };
   }
 }

@@ -73,17 +73,200 @@ import { buildCriticalAlert, buildImportantAlert } from "./kevin-slack/block-kit
 import { storeSlackMemoryEvent } from "./kevin-slack/obsidian-bridge";
 
 import { getSlackBotToken } from "./kevin-slack/config";
+import { startTokenCleanupCron } from "./kevin-slack/action-token-service";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 import crypto from "crypto";
 
-// ─── Bootstrap tables ─────────────────────────────────────────────────────────
+// ─── Migration runner ─────────────────────────────────────────────────────────
+//
+// Replaces the old lazy-bootstrap pattern.
+// Runs the canonical Kevin Slack schema on startup — all statements are
+// idempotent (CREATE TABLE / INDEX IF NOT EXISTS).
+//
+// The committed SQL documentation lives at migrations/0002_kevin_slack_tables.sql.
+// Callers in routes.ts still use the original name for backward compatibility.
 
 export async function bootstrapKevinSlackTables(): Promise<void> {
-  await Promise.all([
-    ensureIdentityTables(),
-    ensureConversationTables(),
-    ensureAuditTables(),
-    ensureDigestTables(),
-  ]);
+  try {
+    // ── Table 1: identity mappings ────────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS kevin_slack_identity_mappings (
+        id                      TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        slack_team_id           TEXT        NOT NULL,
+        slack_enterprise_id     TEXT,
+        slack_user_id           TEXT        NOT NULL,
+        trainefficiency_user_id TEXT        NOT NULL,
+        org_id                  TEXT        NOT NULL,
+        mapping_status          TEXT        NOT NULL DEFAULT 'pending',
+        linked_by               TEXT,
+        linked_at               TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        revoked_at              TIMESTAMPTZ,
+        last_verified_at        TIMESTAMPTZ,
+        UNIQUE (slack_team_id, slack_user_id)
+      )
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_slack_identity_team_user
+        ON kevin_slack_identity_mappings (slack_team_id, slack_user_id)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_slack_identity_te_user
+        ON kevin_slack_identity_mappings (trainefficiency_user_id)
+    `);
+
+    // ── Table 2: conversation state ───────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS kevin_slack_conversation_state (
+        conversation_id  TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        slack_team_id    TEXT        NOT NULL,
+        slack_channel_id TEXT        NOT NULL,
+        slack_thread_ts  TEXT,
+        slack_user_id    TEXT        NOT NULL,
+        org_id           TEXT,
+        intent           TEXT        NOT NULL DEFAULT 'unknown',
+        step             TEXT        NOT NULL DEFAULT 'collecting',
+        collected_fields JSONB       NOT NULL DEFAULT '{}',
+        expires_at       TIMESTAMPTZ NOT NULL,
+        trace_id         TEXT        NOT NULL,
+        last_event_id    TEXT,
+        created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        UNIQUE (slack_team_id, slack_channel_id, slack_user_id, slack_thread_ts)
+      )
+    `);
+
+    // ── Table 3: event dedup ──────────────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS kevin_slack_event_dedup (
+        event_id    TEXT        NOT NULL,
+        team_id     TEXT        NOT NULL DEFAULT '',
+        received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at  TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '1 hour',
+        PRIMARY KEY (event_id, team_id)
+      )
+    `);
+
+    // ── Table 4: action audit ─────────────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS kevin_slack_action_audit (
+        id                      TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        slack_team_id           TEXT        NOT NULL,
+        slack_user_id           TEXT        NOT NULL,
+        trainefficiency_user_id TEXT,
+        org_id                  TEXT,
+        intent                  TEXT        NOT NULL DEFAULT 'unknown',
+        requested_operation     TEXT        NOT NULL,
+        authorization_result    TEXT        NOT NULL DEFAULT 'not_resolved',
+        confirmation_result     TEXT        NOT NULL DEFAULT 'pending',
+        execution_result        TEXT        NOT NULL DEFAULT 'pending',
+        outcome                 TEXT        NOT NULL DEFAULT 'ignored',
+        trace_id                TEXT        NOT NULL,
+        error_message           TEXT,
+        created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      )
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_slack_audit_team_user
+        ON kevin_slack_action_audit (slack_team_id, slack_user_id, created_at DESC)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_slack_audit_org
+        ON kevin_slack_action_audit (org_id, created_at DESC)
+        WHERE org_id IS NOT NULL
+    `);
+
+    // ── Table 5: digest runs ──────────────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS kevin_slack_digest_runs (
+        id          TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        org_id      TEXT        NOT NULL,
+        digest_type TEXT        NOT NULL,
+        period_key  TEXT        NOT NULL,
+        channel     TEXT        NOT NULL,
+        sent_at     TIMESTAMPTZ,
+        status      TEXT        NOT NULL DEFAULT 'pending',
+        error_msg   TEXT,
+        UNIQUE (org_id, digest_type, period_key)
+      )
+    `);
+
+    // ── Table 6: notification log ─────────────────────────────────────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS kevin_slack_notification_log (
+        id              TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        org_id          TEXT,
+        slack_team_id   TEXT        NOT NULL,
+        channel         TEXT        NOT NULL,
+        priority        TEXT        NOT NULL,
+        event_type      TEXT        NOT NULL,
+        dedup_key       TEXT,
+        sent_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        delivery_status TEXT        NOT NULL DEFAULT 'sent',
+        error_message   TEXT
+      )
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_slack_notif_dedup
+        ON kevin_slack_notification_log (dedup_key)
+        WHERE dedup_key IS NOT NULL
+    `);
+
+    // ── Table 7: durable action tokens (replaces in-memory Map) ──────────────
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS kevin_slack_action_tokens (
+        id                      TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
+        token_hash              TEXT        NOT NULL,
+        org_id                  TEXT        NOT NULL,
+        slack_team_id           TEXT        NOT NULL DEFAULT '',
+        slack_enterprise_id     TEXT,
+        slack_user_id           TEXT        NOT NULL DEFAULT '',
+        trainefficiency_user_id TEXT        NOT NULL,
+        action_type             TEXT        NOT NULL,
+        action_payload          JSONB       NOT NULL DEFAULT '{}',
+        idempotency_key         TEXT,
+        status                  TEXT        NOT NULL DEFAULT 'pending',
+        expires_at              TIMESTAMPTZ NOT NULL,
+        created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        processing_at           TIMESTAMPTZ,
+        consumed_at             TIMESTAMPTZ,
+        failed_at               TIMESTAMPTZ,
+        canceled_at             TIMESTAMPTZ,
+        last_error              TEXT,
+        trace_id                TEXT        NOT NULL DEFAULT '',
+        request_id              TEXT,
+        source_channel_id       TEXT,
+        source_message_ts       TEXT,
+        UNIQUE (token_hash)
+      )
+    `);
+    await db.execute(sql`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_slack_tokens_hash
+        ON kevin_slack_action_tokens (token_hash)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_slack_tokens_pending_expires
+        ON kevin_slack_action_tokens (expires_at)
+        WHERE status = 'pending'
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_slack_tokens_org
+        ON kevin_slack_action_tokens (org_id, created_at DESC)
+    `);
+    await db.execute(sql`
+      CREATE INDEX IF NOT EXISTS idx_slack_tokens_team_user
+        ON kevin_slack_action_tokens (slack_team_id, slack_user_id, created_at DESC)
+    `);
+
+    // Start token cleanup cron (transitions expired pending → expired, purges old records)
+    startTokenCleanupCron();
+
+    console.log("[Kevin Slack] Migration complete — 7 tables ready");
+  } catch (err: any) {
+    // Fail loudly — do not silently proceed if schema setup failed
+    console.error("[Kevin Slack] STARTUP ERROR: Migration failed:", err?.message);
+    throw new Error(`Kevin Slack schema migration failed: ${err?.message}`);
+  }
 }
 
 // ─── Slack API helper ─────────────────────────────────────────────────────────

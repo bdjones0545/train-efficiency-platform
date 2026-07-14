@@ -497,8 +497,8 @@ test("daily digest has all 5 required sections", () => {
 
 console.log("\n=== Action Tokens ===");
 
-test("createActionToken returns opaque hex string (no raw data)", () => {
-  const token = createActionToken("create_session", "org-123", "user-456", {
+test("createActionToken returns opaque hex string (no raw data)", async () => {
+  const token = await createActionToken("create_session", "org-123", "user-456", {
     startAt: "2025-01-01T10:00:00Z",
     coachId: "coach-789",
   });
@@ -511,33 +511,33 @@ test("createActionToken returns opaque hex string (no raw data)", () => {
   }
 });
 
-test("consumeActionToken returns null for unknown token", () => {
-  const result = consumeActionToken("totally-unknown-token-xyz");
+test("consumeActionToken returns null for unknown token", async () => {
+  const result = await consumeActionToken("totally-unknown-token-xyz");
   expect(result).toBeNull();
 });
 
-test("consumed token preserves intent and org isolation fields", () => {
-  const token = createActionToken("reschedule_session", "org-A", "user-1", {
+test("consumed token preserves intent and org isolation fields", async () => {
+  const token = await createActionToken("reschedule_session", "org-A", "user-1", {
     bookingId: "bk-123",
   });
-  const entry = consumeActionToken(token);
+  const entry = await consumeActionToken(token);
   if (!entry) throw new Error("Token should be consumable immediately after creation");
-  expect(entry.intent).toBe("reschedule_session");
+  expect(entry.actionType).toBe("reschedule_session");
   expect(entry.orgId).toBe("org-A");
-  expect(entry.userId).toBe("user-1");
-  expect((entry.payload as any).bookingId).toBe("bk-123");
+  expect(entry.trainefficiencyUserId).toBe("user-1");
+  expect((entry.actionPayload as any).bookingId).toBe("bk-123");
 });
 
-test("different token IDs are generated for same input (no determinism)", () => {
-  const t1 = createActionToken("cancel_session", "org-1", "user-1", {});
-  const t2 = createActionToken("cancel_session", "org-1", "user-1", {});
+test("different token IDs are generated for same input (no determinism)", async () => {
+  const t1 = await createActionToken("cancel_session", "org-1", "user-1", {});
+  const t2 = await createActionToken("cancel_session", "org-1", "user-1", {});
   if (t1 === t2) throw new Error("Tokens must be random, not deterministic");
 });
 
-test("invalidateActionToken causes subsequent consume to return null", () => {
-  const token = createActionToken("create_session", "org-X", "user-X", {});
-  invalidateActionToken(token);
-  const result = consumeActionToken(token);
+test("invalidateActionToken causes subsequent consume to return null", async () => {
+  const token = await createActionToken("create_session", "org-X", "user-X", {});
+  await invalidateActionToken(token);
+  const result = await consumeActionToken(token);
   expect(result).toBeNull();
 });
 
@@ -564,8 +564,8 @@ test("CLIENT role cannot create sessions (scheduling write blocked)", async () =
 });
 
 test("cross-org token is rejected by executeCreateSession", async () => {
-  const token = createActionToken("create_session", "org-A", "user-1", {});
-  const crossOrgEntry = consumeActionToken(token);
+  const token = await createActionToken("create_session", "org-A", "user-1", {});
+  const crossOrgEntry = await consumeActionToken(token);
   if (!crossOrgEntry) throw new Error("Token should be consumable");
   // Verify the org stored in token is org-A (not org-B)
   expect(crossOrgEntry.orgId).toBe("org-A");
@@ -576,15 +576,15 @@ test("cross-org token is rejected by executeCreateSession", async () => {
   }
 });
 
-test("cancellation and deletion are distinct operations", () => {
+test("cancellation and deletion are distinct operations", async () => {
   // Cancel uses updateBookingStatus("CANCELLED") - does not delete the record
   // Delete uses deleteBooking() - removes the record
-  // Verify the cancel token intent is 'cancel_session', not 'delete_session'
-  const token = createActionToken("cancel_session", "org-1", "user-1", { bookingId: "bk1" });
-  const entry = consumeActionToken(token);
+  // Verify the cancel token action type is 'cancel_session', not 'delete_session'
+  const token = await createActionToken("cancel_session", "org-1", "user-1", { bookingId: "bk1" });
+  const entry = await consumeActionToken(token);
   if (!entry) throw new Error("Token must be consumable");
-  expect(entry.intent).toBe("cancel_session");
-  if (entry.intent === "delete_session") {
+  expect(entry.actionType).toBe("cancel_session");
+  if (entry.actionType === "delete_session") {
     throw new Error("Cancellation must not be treated as deletion");
   }
 });

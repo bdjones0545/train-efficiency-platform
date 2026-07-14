@@ -40,42 +40,13 @@ export interface ResolvedIdentity {
   role: string;
 }
 
-let tablesEnsured = false;
-
+/**
+ * @deprecated Tables are created by migrations/0002_kevin_slack_tables.sql
+ * and by runKevinSlackMigration() in kevin-slack-routes.ts at startup.
+ * This function is retained for call-site compatibility only. It is a no-op.
+ */
 export async function ensureIdentityTables(): Promise<void> {
-  if (tablesEnsured) return;
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS kevin_slack_identity_mappings (
-        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        slack_team_id TEXT NOT NULL,
-        slack_enterprise_id TEXT,
-        slack_user_id TEXT NOT NULL,
-        trainefficiency_user_id TEXT NOT NULL,
-        org_id TEXT NOT NULL,
-        mapping_status TEXT NOT NULL DEFAULT 'pending',
-        linked_by TEXT,
-        linked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        revoked_at TIMESTAMPTZ,
-        last_verified_at TIMESTAMPTZ,
-        UNIQUE (slack_team_id, slack_user_id)
-      )
-    `);
-
-    await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_slack_identity_team_user
-        ON kevin_slack_identity_mappings (slack_team_id, slack_user_id)
-    `);
-
-    await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_slack_identity_te_user
-        ON kevin_slack_identity_mappings (trainefficiency_user_id)
-    `);
-
-    tablesEnsured = true;
-  } catch (err: any) {
-    console.error("[Kevin Slack] ensureIdentityTables error:", err?.message);
-  }
+  // No-op — tables are created at startup by the committed migration runner.
 }
 
 // ─── Lookup ───────────────────────────────────────────────────────────────────

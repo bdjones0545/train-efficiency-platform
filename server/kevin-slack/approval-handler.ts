@@ -23,7 +23,12 @@
 
 import { isApprovalsEnabled } from "./config";
 import type { ResolvedIdentity } from "./identity-service";
-import { consumeActionToken, executeCreateSession, executeReschedule, executeCancelSession } from "./scheduling-handler";
+import {
+  executeCreateSession,
+  executeReschedule,
+  executeCancelSession,
+} from "./scheduling-handler";
+import { invalidateActionToken, classifyClaimFailure } from "./action-token-service";
 import { recordAuditEvent } from "./audit-service";
 import type { SlackBlock } from "./block-kit";
 import crypto from "crypto";
@@ -51,6 +56,19 @@ export interface ApprovalResult {
   shouldUpdateMessage?: boolean;
 }
 
+/** Build a Block Kit "expired token" response for Slack display */
+function expiredTokenBlocks(): SlackBlock[] {
+  return [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: "⏰ *This confirmation has expired.* Ask Kevin to generate a new preview.",
+      },
+    },
+  ];
+}
+
 export async function handleSlackAction(
   payload: ActionPayload,
   identity: ResolvedIdentity | null,
@@ -59,6 +77,7 @@ export async function handleSlackAction(
   // are not state-changing writes that require the approvals feature flag.
   const alwaysAllowedActions = [
     "acknowledge_alert", "dismiss_action", "cancel_session_abort",
+    "create_session_cancel", "reschedule_cancel",
     "open_dashboard", "open_url", "open_approvals",
   ];
   const firstActionId = payload.actions[0]?.action_id ?? "";
@@ -80,6 +99,7 @@ export async function handleSlackAction(
   const { action_id, value } = action;
   const teamId = payload.team.id;
   const slackUserId = payload.user.id;
+  const slackContext = { teamId, slackUserId };
 
   // Read-only actions (no identity required)
   if (action_id === "open_dashboard" || action_id === "open_url" || action_id === "open_approvals") {
@@ -105,24 +125,37 @@ export async function handleSlackAction(
   // ─── Scheduling confirmations ──────────────────────────────────────────────
 
   if (action_id === "create_session_confirm") {
-    const result = await executeCreateSession(value, identity);
+    const result = await executeCreateSession(value, identity, slackContext);
+
+    // If the token was expired/consumed, show a clear Slack message
+    if (!result.ok && result.error === "Action token expired or invalid") {
+      const classification = await classifyClaimFailure(value);
+      await recordAuditEvent({
+        slackTeamId: teamId, slackUserId,
+        trainefficiencyUserId: identity.userId, orgId: identity.orgId,
+        intent: "create_session", requestedOperation: "create_session",
+        authorizationResult: "allowed", confirmationResult: "confirmed",
+        executionResult: "failure", outcome: "failed",
+        traceId, errorMessage: classification.reason,
+      });
+      return {
+        ok: false, shouldUpdateMessage: true,
+        responseBlocks: expiredTokenBlocks(),
+        error: classification.reason,
+      };
+    }
+
     await recordAuditEvent({
-      slackTeamId: teamId,
-      slackUserId,
-      trainefficiencyUserId: identity.userId,
-      orgId: identity.orgId,
-      intent: "create_session",
-      requestedOperation: "create_session",
-      authorizationResult: "allowed",
-      confirmationResult: "confirmed",
+      slackTeamId: teamId, slackUserId,
+      trainefficiencyUserId: identity.userId, orgId: identity.orgId,
+      intent: "create_session", requestedOperation: "create_session",
+      authorizationResult: "allowed", confirmationResult: "confirmed",
       executionResult: result.ok ? "success" : "failure",
       outcome: result.ok ? "executed" : "failed",
-      traceId,
-      errorMessage: result.error ?? null,
+      traceId, errorMessage: result.error ?? null,
     });
     return {
-      ok: result.ok,
-      shouldUpdateMessage: true,
+      ok: result.ok, shouldUpdateMessage: true,
       responseBlocks: result.ok
         ? [{ type: "section", text: { type: "mrkdwn", text: `✅ *Session created successfully.*\nBooking ID: \`${result.bookingId}\`` } }]
         : [{ type: "section", text: { type: "mrkdwn", text: `❌ Failed to create session: ${result.error}` } }],
@@ -131,46 +164,46 @@ export async function handleSlackAction(
   }
 
   if (action_id === "create_session_cancel") {
+    // Cancel the token so it cannot be used again
+    if (value) await invalidateActionToken(value);
+
     await recordAuditEvent({
-      slackTeamId: teamId,
-      slackUserId,
-      trainefficiencyUserId: identity.userId,
-      orgId: identity.orgId,
-      intent: "create_session",
-      requestedOperation: "create_session",
-      authorizationResult: "allowed",
-      confirmationResult: "cancelled",
-      executionResult: "skipped",
-      outcome: "canceled",
-      traceId,
-      errorMessage: null,
+      slackTeamId: teamId, slackUserId,
+      trainefficiencyUserId: identity.userId, orgId: identity.orgId,
+      intent: "create_session", requestedOperation: "create_session",
+      authorizationResult: "allowed", confirmationResult: "cancelled",
+      executionResult: "skipped", outcome: "canceled",
+      traceId, errorMessage: null,
     });
     return {
-      ok: true,
-      shouldUpdateMessage: true,
+      ok: true, shouldUpdateMessage: true,
       responseBlocks: [{ type: "section", text: { type: "mrkdwn", text: "✅ Session creation cancelled." } }],
     };
   }
 
   if (action_id === "reschedule_confirm") {
-    const result = await executeReschedule(value, identity);
+    const result = await executeReschedule(value, identity, slackContext);
+
+    if (!result.ok && result.error === "Action token expired or invalid") {
+      const classification = await classifyClaimFailure(value);
+      return {
+        ok: false, shouldUpdateMessage: true,
+        responseBlocks: expiredTokenBlocks(),
+        error: classification.reason,
+      };
+    }
+
     await recordAuditEvent({
-      slackTeamId: teamId,
-      slackUserId,
-      trainefficiencyUserId: identity.userId,
-      orgId: identity.orgId,
-      intent: "reschedule_session",
-      requestedOperation: "reschedule_session",
-      authorizationResult: "allowed",
-      confirmationResult: "confirmed",
+      slackTeamId: teamId, slackUserId,
+      trainefficiencyUserId: identity.userId, orgId: identity.orgId,
+      intent: "reschedule_session", requestedOperation: "reschedule_session",
+      authorizationResult: "allowed", confirmationResult: "confirmed",
       executionResult: result.ok ? "success" : "failure",
       outcome: result.ok ? "executed" : "failed",
-      traceId,
-      errorMessage: result.error ?? null,
+      traceId, errorMessage: result.error ?? null,
     });
     return {
-      ok: result.ok,
-      shouldUpdateMessage: true,
+      ok: result.ok, shouldUpdateMessage: true,
       responseBlocks: result.ok
         ? [{ type: "section", text: { type: "mrkdwn", text: `✅ *Session rescheduled successfully.*` } }]
         : [{ type: "section", text: { type: "mrkdwn", text: `❌ Reschedule failed: ${result.error}` } }],
@@ -178,32 +211,36 @@ export async function handleSlackAction(
   }
 
   if (action_id === "reschedule_cancel") {
+    if (value) await invalidateActionToken(value);
     return {
-      ok: true,
-      shouldUpdateMessage: true,
+      ok: true, shouldUpdateMessage: true,
       responseBlocks: [{ type: "section", text: { type: "mrkdwn", text: "✅ Reschedule cancelled." } }],
     };
   }
 
   if (action_id === "cancel_session_confirm") {
-    const result = await executeCancelSession(value, identity);
+    const result = await executeCancelSession(value, identity, slackContext);
+
+    if (!result.ok && result.error === "Action token expired or invalid") {
+      const classification = await classifyClaimFailure(value);
+      return {
+        ok: false, shouldUpdateMessage: true,
+        responseBlocks: expiredTokenBlocks(),
+        error: classification.reason,
+      };
+    }
+
     await recordAuditEvent({
-      slackTeamId: teamId,
-      slackUserId,
-      trainefficiencyUserId: identity.userId,
-      orgId: identity.orgId,
-      intent: "cancel_session",
-      requestedOperation: "cancel_session",
-      authorizationResult: "allowed",
-      confirmationResult: "confirmed",
+      slackTeamId: teamId, slackUserId,
+      trainefficiencyUserId: identity.userId, orgId: identity.orgId,
+      intent: "cancel_session", requestedOperation: "cancel_session",
+      authorizationResult: "allowed", confirmationResult: "confirmed",
       executionResult: result.ok ? "success" : "failure",
       outcome: result.ok ? "executed" : "failed",
-      traceId,
-      errorMessage: result.error ?? null,
+      traceId, errorMessage: result.error ?? null,
     });
     return {
-      ok: result.ok,
-      shouldUpdateMessage: true,
+      ok: result.ok, shouldUpdateMessage: true,
       responseBlocks: result.ok
         ? [{ type: "section", text: { type: "mrkdwn", text: `✅ *Session cancelled.*` } }]
         : [{ type: "section", text: { type: "mrkdwn", text: `❌ Cancellation failed: ${result.error}` } }],
@@ -211,9 +248,9 @@ export async function handleSlackAction(
   }
 
   if (action_id === "cancel_session_abort") {
+    if (value) await invalidateActionToken(value);
     return {
-      ok: true,
-      shouldUpdateMessage: true,
+      ok: true, shouldUpdateMessage: true,
       responseBlocks: [{ type: "section", text: { type: "mrkdwn", text: "✅ Session kept — no changes made." } }],
     };
   }
@@ -224,8 +261,7 @@ export async function handleSlackAction(
     const { buildCancelSessionPreviewBlocks } = await import("./scheduling-handler");
     const result = await buildCancelSessionPreviewBlocks(identity, bookingId);
     return {
-      ok: true,
-      shouldUpdateMessage: false,
+      ok: true, shouldUpdateMessage: false,
       responseBlocks: result.blocks,
     };
   }
@@ -233,22 +269,16 @@ export async function handleSlackAction(
   // Acknowledge/dismiss alerts
   if (action_id === "acknowledge_alert" || action_id === "dismiss_action") {
     await recordAuditEvent({
-      slackTeamId: teamId,
-      slackUserId,
-      trainefficiencyUserId: identity.userId,
-      orgId: identity.orgId,
-      intent: "alert_acknowledgement",
-      requestedOperation: action_id,
-      authorizationResult: "allowed",
-      confirmationResult: "confirmed",
+      slackTeamId: teamId, slackUserId,
+      trainefficiencyUserId: identity.userId, orgId: identity.orgId,
+      intent: "alert_acknowledgement", requestedOperation: action_id,
+      authorizationResult: "allowed", confirmationResult: "confirmed",
       executionResult: "success",
       outcome: action_id === "dismiss_action" ? "dismissed" : "approved",
-      traceId,
-      errorMessage: null,
+      traceId, errorMessage: null,
     });
     return {
-      ok: true,
-      shouldUpdateMessage: true,
+      ok: true, shouldUpdateMessage: true,
       responseBlocks: [{ type: "section", text: { type: "mrkdwn", text: "✅ Acknowledged." } }],
     };
   }

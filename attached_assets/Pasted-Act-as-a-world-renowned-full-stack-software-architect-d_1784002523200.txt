@@ -1,0 +1,920 @@
+Act as a world-renowned full-stack software architect, distributed-systems engineer, Slack platform engineer, database reliability engineer, and application-security specialist.
+
+You are working inside the existing TrainEfficiency Replit repository.
+
+The Kevin Slack Executive Operations Hub is already implemented and must not be rebuilt.
+
+Current completed architecture includes:
+
+* `config.ts`
+* `verifier.ts`
+* `block-kit.ts`
+* `notification-engine.ts`
+* `identity-service.ts`
+* `scheduling-handler.ts`
+* `event-handler.ts`
+* `approval-handler.ts`
+* `audit-service.ts`
+* `digest-service.ts`
+* `conversation-state.ts`
+* `command-router.ts`
+* `obsidian-bridge.ts`
+* `server/kevin-slack-routes.ts`
+* `/admin/kevin-slack`
+* 44/44 focused tests passing
+* master flag gating through `KEVIN_SLACK_ENABLED`
+
+Two production-hardening issues remain:
+
+1. six Kevin Slack tables are currently created lazily at application startup
+2. Slack action-confirmation tokens are stored in an in-memory `Map`
+
+Your job is to fix only those two issues, preserve all existing behavior, add complete verification, and avoid unrelated refactoring.
+
+Do not deploy automatically.
+
+# Objective
+
+Replace:
+
+```text
+bootstrapKevinSlackTables()
+```
+
+as the canonical schema-creation mechanism with a committed, idempotent migration.
+
+Replace:
+
+```text
+in-memory Slack action token Map
+```
+
+with a durable, database-backed, hashed, atomic, single-use action-token system.
+
+The resulting system must remain fail-safe, organization-isolated, replay-resistant, and compatible with Slack retries and server restarts.
+
+---
+
+# Part 1 — Inspect repository reality
+
+Before changing code, inspect:
+
+* current migration conventions
+* migration execution path
+* existing Kevin Slack schema definitions
+* `bootstrapKevinSlackTables()`
+* every SQL statement used by the bootstrap function
+* all six current Kevin Slack tables
+* indexes
+* constraints
+* defaults
+* foreign-key behavior
+* the action-token creation path
+* the action-token preview path
+* the Slack button value
+* the action-token consumption path
+* duplicate-click handling
+* Slack retry handling
+* scheduling and approval execution paths
+* audit logging
+* tests
+* server boot and shutdown lifecycle
+
+Document:
+
+* exact six table names
+* current live schema
+* any differences between ORM definitions, bootstrap SQL, and live DB schema
+* exact token lifecycle currently implemented
+* all callers that depend on the in-memory token service
+
+Do not guess table names from this prompt.
+
+Use the actual repository and database definitions.
+
+---
+
+# Part 2 — Committed Kevin Slack migration
+
+Create a committed migration using TrainEfficiency’s existing migration conventions.
+
+The migration must fully reproduce all six Kevin Slack tables currently created by `bootstrapKevinSlackTables()`.
+
+Requirements:
+
+* preserve existing production rows
+* do not drop or recreate existing tables
+* be safe on a fresh database
+* be safe on an existing database where bootstrap already created the tables
+* include all columns
+* include all defaults
+* include all not-null constraints
+* include all unique constraints
+* include all check constraints
+* include all required indexes
+* include all foreign keys where current architecture uses them
+* include org-scoped indexes
+* include Slack-team and Slack-user lookup indexes
+* include retry and audit lookup indexes where applicable
+* use `ADD COLUMN IF NOT EXISTS` reconciliation where needed
+* use safe conditional index or constraint creation consistent with repository conventions
+
+If the repository uses Drizzle or another ORM schema definition:
+
+* update the ORM schema to exactly match the migration
+* verify no column naming or nullability drift
+* verify timestamp types and defaults match
+* verify enum or check-constraint semantics match
+
+## Bootstrap behavior after migration
+
+Do not leave runtime table creation as the primary schema mechanism.
+
+Replace `bootstrapKevinSlackTables()` with one of these safe patterns:
+
+```text
+schema readiness verification only
+```
+
+or:
+
+```text
+no-op compatibility wrapper with deprecation comment
+```
+
+or remove it if all callers and startup behavior remain safe.
+
+The application should fail clearly during startup if required tables are missing after migrations should have run.
+
+Do not silently create production tables at runtime.
+
+Do not require broad DDL permissions during normal application startup.
+
+## Migration verification
+
+Verify both scenarios:
+
+### Fresh database
+
+```text
+empty database
+→ run complete migration chain
+→ all Kevin Slack tables exist
+→ application starts
+```
+
+### Existing bootstrapped database
+
+```text
+tables already exist from startup bootstrap
+→ apply new migration
+→ no duplicate-object errors
+→ existing rows preserved
+→ missing columns/indexes reconciled
+→ application starts
+```
+
+Document the reconciliation strategy.
+
+---
+
+# Part 3 — Durable Slack action token table
+
+Create or adapt a database table for Slack action confirmations.
+
+Use the repository’s naming conventions.
+
+Suggested conceptual schema:
+
+```text
+id
+token_hash
+org_id
+slack_team_id
+slack_enterprise_id
+slack_user_id
+trainefficiency_user_id
+action_type
+action_payload
+status
+expires_at
+created_at
+processing_at
+consumed_at
+failed_at
+last_error
+trace_id
+request_id
+source_message_ts
+source_channel_id
+```
+
+Required statuses:
+
+```text
+pending
+processing
+consumed
+expired
+failed
+canceled
+```
+
+Use existing status terminology if there is already a canonical convention, but preserve these semantics.
+
+Required constraints:
+
+```text
+UNIQUE(token_hash)
+```
+
+Add indexes supporting:
+
+* token lookup
+* pending unexpired lookup
+* org filtering
+* Slack team and user lookup
+* expiration cleanup
+* trace lookup
+* source-message lookup where used
+
+## Token storage rules
+
+Generate a cryptographically secure raw token.
+
+Minimum:
+
+```text
+32 bytes of random entropy
+```
+
+Encode safely for Slack button values.
+
+Store only:
+
+```text
+SHA-256 or HMAC-SHA-256 hash of the raw token
+```
+
+Do not store the raw token in the database.
+
+Do not log the raw token.
+
+Do not return the raw token from admin diagnostics.
+
+The raw token may exist only:
+
+* during creation
+* in the Slack interactive button value
+* in the incoming action request being verified
+
+Use a server-side pepper or HMAC key if the repository already has an appropriate secret-management pattern.
+
+If using plain SHA-256, ensure token entropy is sufficient to prevent offline guessing.
+
+---
+
+# Part 4 — Token creation service
+
+Replace the current in-memory `Map` with a durable service.
+
+Create or update a service equivalent to:
+
+```ts
+createSlackActionToken(input)
+consumeSlackActionToken(input)
+cancelSlackActionToken(input)
+markSlackActionFailed(input)
+expireSlackActionTokens()
+getSlackActionTokenStatus(...)
+```
+
+## Creation requirements
+
+When creating a token:
+
+* verify the Slack identity mapping
+* bind the token to the organization
+* bind the token to Slack team
+* bind the token to Slack user
+* bind the token to TrainEfficiency user
+* bind the token to the exact action type
+* store only a sanitized action payload
+* store the intended entity IDs
+* store the trace ID
+* store source channel and message context where useful
+* set a 15-minute expiration unless current product behavior requires a different value
+* write an audit record
+* return only the raw token for immediate Block Kit use
+
+The action payload must not contain:
+
+* secrets
+* OAuth tokens
+* raw credentials
+* unrestricted user-controlled URLs
+* hidden prompts
+* arbitrary SQL
+* unvalidated organization IDs
+* unvalidated role claims
+
+---
+
+# Part 5 — Atomic token consumption
+
+Token consumption must be atomic and single-use.
+
+Use a database transaction or conditional update equivalent to:
+
+```sql
+UPDATE slack_action_tokens
+SET
+  status = 'processing',
+  processing_at = NOW()
+WHERE
+  token_hash = ?
+  AND status = 'pending'
+  AND expires_at > NOW()
+  AND org_id = ?
+  AND slack_team_id = ?
+  AND slack_user_id = ?
+RETURNING *;
+```
+
+The exact SQL should follow repository conventions.
+
+Only one request may transition:
+
+```text
+pending → processing
+```
+
+If no row is returned, classify the reason safely:
+
+```text
+invalid
+expired
+already_consumed
+already_processing
+canceled
+wrong_user
+wrong_team
+wrong_org
+```
+
+Do not reveal unnecessary internal details to the Slack user.
+
+## Execution lifecycle
+
+After claiming the token:
+
+```text
+processing
+→ execute canonical TrainEfficiency action
+→ consumed
+```
+
+If the canonical business action fails:
+
+```text
+processing
+→ failed
+```
+
+Store a sanitized error.
+
+Do not automatically reset a failed token to pending unless the action is proven safe to retry.
+
+For ambiguous execution outcomes, fail closed and require a new confirmation preview.
+
+## Duplicate Slack retries and double-clicks
+
+Test and enforce:
+
+* two simultaneous clicks execute the business action once
+* Slack retry delivery does not execute twice
+* a consumed token cannot be reused
+* a processing token cannot be claimed by another request
+* an expired token cannot execute
+* a token issued to User A cannot be used by User B
+* a token issued for Org A cannot be used for Org B
+* a token issued in Team A cannot be used in Team B
+
+---
+
+# Part 6 — Business-action idempotency
+
+Durable action tokens reduce duplicate execution risk, but business actions should also use stable idempotency where the existing service supports it.
+
+For create-session actions, derive or store an operation idempotency key such as:
+
+```text
+slack:create_session:{token-record-id}
+```
+
+For reschedule and cancel actions:
+
+```text
+slack:reschedule_session:{token-record-id}
+slack:cancel_session:{token-record-id}
+```
+
+Pass the idempotency key into existing services if supported.
+
+If canonical TrainEfficiency services do not currently support idempotency:
+
+* document that limitation
+* ensure token atomicity still prevents normal double execution
+* do not perform a broad unrelated refactor unless a small, safe idempotency hook is possible
+
+Do not retry a successful business operation merely because the Slack message update failed.
+
+---
+
+# Part 7 — Process restart and multi-instance safety
+
+Verify:
+
+```text
+preview created
+→ server restarts
+→ button clicked
+→ token still works if unexpired
+```
+
+Verify:
+
+```text
+preview created on instance A
+→ action callback reaches instance B
+→ token is found and consumed atomically
+```
+
+The new token service must not rely on process-local memory for correctness.
+
+An optional short-lived in-memory cache may be used only as a performance optimization.
+
+The database remains the source of truth.
+
+---
+
+# Part 8 — Expiration cleanup
+
+Add a bounded cleanup mechanism.
+
+Options:
+
+* existing background-job infrastructure
+* scheduled cleanup
+* cleanup during token creation or consumption
+* database-native cleanup if already used
+
+Expired pending tokens should transition to:
+
+```text
+expired
+```
+
+Do not immediately delete them if audit history is valuable.
+
+Document retention.
+
+Recommended retention:
+
+```text
+retain consumed, expired, canceled, and failed token records for a bounded audit period
+```
+
+Use the repository’s existing retention conventions.
+
+Do not let the table grow indefinitely without a documented cleanup strategy.
+
+---
+
+# Part 9 — Slack message behavior
+
+When a token has expired, return a clear Slack response:
+
+```text
+This confirmation has expired. Ask Kevin to generate a new preview.
+```
+
+When a token was already consumed:
+
+```text
+This action was already completed.
+```
+
+When another user attempts to use it:
+
+```text
+This confirmation belongs to a different user.
+```
+
+When the action failed after claim:
+
+```text
+The action could not be completed. No automatic retry was attempted. Generate a new preview or open TrainEfficiency.
+```
+
+Do not expose internal IDs, token hashes, SQL errors, or stack traces.
+
+Update the original Slack message after successful execution where possible.
+
+Do not treat a message-update failure as a business-action failure.
+
+---
+
+# Part 10 — Audit logging
+
+Audit:
+
+## Token creation
+
+```text
+token record ID
+organization
+Slack team
+Slack user
+TrainEfficiency user
+action type
+entity type
+trace ID
+expiration
+```
+
+## Token claim
+
+```text
+claim result
+request ID
+Slack retry metadata
+timestamp
+```
+
+## Token completion
+
+```text
+business action result
+status
+canonical entity ID
+consumed time
+```
+
+## Failure
+
+```text
+sanitized error class
+failed time
+whether business state may have changed
+```
+
+Never audit:
+
+* raw token
+* token pepper
+* Slack signing secret
+* Slack bot token
+* raw credentials
+* unnecessary message contents
+
+---
+
+# Part 11 — Admin diagnostics
+
+Update `/admin/kevin-slack` only as needed.
+
+Add safe visibility for action tokens:
+
+```text
+action type
+status
+created time
+expiration
+consumed time
+Slack user mapping
+organization
+trace ID
+sanitized failure state
+```
+
+Do not display:
+
+```text
+raw token
+token hash
+full action payload
+secrets
+private user content
+```
+
+Provide filters for:
+
+```text
+pending
+processing
+consumed
+expired
+failed
+canceled
+```
+
+Do not add admin ability to consume or impersonate a token.
+
+An admin may cancel a pending token if consistent with existing permission patterns.
+
+Audit cancellation.
+
+---
+
+# Part 12 — Remove in-memory token correctness dependency
+
+Search the repository for:
+
+```text
+new Map
+actionTokens
+tokenStore
+pendingActions
+expiresAt
+consumeToken
+createActionToken
+```
+
+Replace every correctness-critical use of the old in-memory token store.
+
+Ensure no path still:
+
+* checks only process memory
+* creates a preview without a DB token record
+* executes an action from raw button payload alone
+* trusts action data returned directly by Slack
+* accepts an unbound token
+* marks a token consumed only after a non-atomic read
+
+Delete or clearly deprecate the old token implementation.
+
+Do not leave two active token systems.
+
+---
+
+# Part 13 — Tests
+
+Add comprehensive tests using repository conventions.
+
+## Migration tests
+
+* fresh database migration succeeds
+* existing bootstrapped schema migration succeeds
+* migration is idempotent
+* existing rows survive
+* all six Kevin Slack tables exist
+* action-token table exists
+* required indexes exist
+* required constraints exist
+* application starts without runtime DDL creation
+* startup fails clearly when migration is absent
+
+## Token creation tests
+
+* token uses at least 32 random bytes
+* raw token is returned only at creation
+* DB stores only hash
+* raw token does not appear in logs
+* raw token does not appear in admin API
+* token is bound to user, team, org, and action
+* token expires after configured TTL
+* action payload is sanitized
+
+## Atomic-consumption tests
+
+* valid pending token claims successfully
+* second consume attempt fails
+* simultaneous consume attempts execute once
+* expired token rejected
+* canceled token rejected
+* consumed token rejected
+* wrong Slack user rejected
+* wrong Slack team rejected
+* wrong organization rejected
+* wrong TrainEfficiency user rejected
+* malformed token rejected
+* unknown token rejected
+
+## Restart and multi-instance tests
+
+* token survives simulated process restart
+* token created by service instance A is consumed by instance B
+* no in-memory state is required
+
+## Slack retry tests
+
+* duplicate interactive request does not duplicate scheduling action
+* duplicate Slack retry returns safe already-processed response
+* source message update failure does not retry business action
+
+## Business-action tests
+
+* create session executes once
+* reschedule executes once
+* cancel executes once
+* cancellation and deletion remain separate
+* canonical scheduling service is used
+* action failure marks token failed
+* ambiguous failure does not auto-retry
+* audit record created
+
+## Cleanup tests
+
+* expired pending records transition to expired
+* cleanup is bounded
+* consumed audit records are retained
+* retention cleanup respects configured period
+
+## Security tests
+
+* no raw token in DB
+* no raw token in logs
+* no token hash in user-facing response
+* no Slack secret in client bundle
+* no arbitrary payload mutation after preview
+* token cannot change org
+* token cannot change action type
+* token cannot change entity after issuance
+
+---
+
+# Part 14 — Verification
+
+Run the repository’s actual commands for:
+
+```text
+dependency installation
+full monorepo typecheck
+server typecheck
+client typecheck
+production build
+lint if configured
+all Kevin Slack tests
+migration tests
+scheduling integration tests
+approval integration tests
+database reconciliation tests
+secret search
+client-bundle secret search
+```
+
+Perform controlled smoke tests:
+
+```text
+create preview
+restart server
+consume token
+```
+
+```text
+double-click same Slack action
+```
+
+```text
+send same Slack retry twice
+```
+
+```text
+attempt token use from wrong user
+```
+
+```text
+attempt token use from wrong org
+```
+
+```text
+expire token and attempt use
+```
+
+```text
+execute scheduling action successfully, then simulate Slack message-update failure
+```
+
+Confirm:
+
+* the action executes once
+* token status is correct
+* audit record exists
+* Slack response is safe
+* no secret or token leaks
+* no runtime DDL is required
+* existing TrainEfficiency functionality is unchanged
+
+---
+
+# Part 15 — Activation safety
+
+Do not enable write actions automatically.
+
+After this hardening pass, preserve the existing staged rollout.
+
+Recommended pilot:
+
+```text
+KEVIN_SLACK_ENABLED=true
+KEVIN_SLACK_EVENTS_ENABLED=true
+KEVIN_SLACK_COMMANDS_ENABLED=true
+```
+
+Then, for one verified ADMIN user and one organization:
+
+```text
+KEVIN_SLACK_ACTIONS_ENABLED=true
+KEVIN_SLACK_SCHEDULING_ENABLED=true
+```
+
+Allow only:
+
+```text
+create session
+reschedule session
+cancel session
+```
+
+Require explicit confirmation.
+
+Do not enable deletion unless separately verified.
+
+---
+
+# Constraints
+
+Do not:
+
+* rebuild the Kevin Slack EOH
+* replace existing scheduling services
+* manipulate scheduling tables directly
+* create duplicate Slack schema systems
+* leave runtime DDL as canonical schema creation
+* store raw action tokens
+* log raw action tokens
+* trust button payloads as business data
+* consume tokens with read-then-write logic
+* allow token reuse
+* allow cross-user token use
+* allow cross-org token use
+* allow cross-workspace token use
+* retry successful business actions because Slack delivery failed
+* auto-retry ambiguous failed business actions
+* bypass permissions
+* bypass identity mapping
+* bypass conflict checks
+* bypass approvals
+* expose tokens in admin UI
+* deploy automatically
+
+---
+
+# Final delivery report
+
+Return:
+
+1. repository inspection findings
+2. exact six existing Kevin Slack tables
+3. migration created
+4. schema reconciliation strategy
+5. runtime bootstrap changes
+6. action-token table schema
+7. token hashing design
+8. token binding rules
+9. atomic-consumption design
+10. duplicate-click behavior
+11. Slack retry behavior
+12. restart and multi-instance behavior
+13. cleanup and retention behavior
+14. admin diagnostics changes
+15. files created
+16. files modified
+17. tests added
+18. exact commands run
+19. full verification results
+20. known limitations
+21. staged activation instructions
+22. rollback instructions
+23. confirmation that no deployment occurred
+
+Classify the implementation as:
+
+```text
+PRODUCTION READY
+PRODUCTION READY WITH DOCUMENTED LIMITATIONS
+NOT PRODUCTION READY
+```
+
+Do not classify it as production-ready if:
+
+* runtime table creation is still the canonical schema mechanism
+* migration cannot safely apply to the existing bootstrapped database
+* raw tokens are stored
+* token consumption is not atomic
+* tokens do not survive restart
+* cross-user or cross-org token use is possible
+* duplicate Slack retries can execute actions twice
+* full typecheck or production build fails
+* core Slack or scheduling tests fail

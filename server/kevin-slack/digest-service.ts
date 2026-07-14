@@ -16,49 +16,13 @@ import { isDigestsEnabled, getSlackBotToken } from "./config";
 import { buildDailyDigest, type DigestInput } from "./block-kit";
 import { storage } from "../storage";
 
-let tablesEnsured = false;
-
+/**
+ * @deprecated Tables are created by migrations/0002_kevin_slack_tables.sql
+ * and by runKevinSlackMigration() in kevin-slack-routes.ts at startup.
+ * This function is retained for call-site compatibility only. It is a no-op.
+ */
 export async function ensureDigestTables(): Promise<void> {
-  if (tablesEnsured) return;
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS kevin_slack_digest_runs (
-        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        org_id TEXT NOT NULL,
-        digest_type TEXT NOT NULL,
-        period_key TEXT NOT NULL,
-        channel TEXT NOT NULL,
-        sent_at TIMESTAMPTZ,
-        status TEXT NOT NULL DEFAULT 'pending',
-        UNIQUE (org_id, digest_type, period_key)
-      )
-    `);
-
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS kevin_slack_notification_log (
-        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        org_id TEXT,
-        slack_team_id TEXT NOT NULL,
-        channel TEXT NOT NULL,
-        priority TEXT NOT NULL,
-        event_type TEXT NOT NULL,
-        dedup_key TEXT,
-        sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        delivery_status TEXT NOT NULL DEFAULT 'sent',
-        error_message TEXT
-      )
-    `);
-
-    await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_slack_notif_dedup
-        ON kevin_slack_notification_log (dedup_key)
-        WHERE dedup_key IS NOT NULL
-    `);
-
-    tablesEnsured = true;
-  } catch (err: any) {
-    console.error("[Kevin Slack] ensureDigestTables error:", err?.message);
-  }
+  // No-op — tables are created at startup by the committed migration runner.
 }
 
 // ─── Idempotency check ────────────────────────────────────────────────────────

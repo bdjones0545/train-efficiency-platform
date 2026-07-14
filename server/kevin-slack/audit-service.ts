@@ -41,41 +41,13 @@ export interface SlackAuditRecord {
   createdAt: Date;
 }
 
-let tablesEnsured = false;
-
+/**
+ * @deprecated Tables are created by migrations/0002_kevin_slack_tables.sql
+ * and by runKevinSlackMigration() in kevin-slack-routes.ts at startup.
+ * This function is retained for call-site compatibility only. It is a no-op.
+ */
 export async function ensureAuditTables(): Promise<void> {
-  if (tablesEnsured) return;
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS kevin_slack_action_audit (
-        id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        slack_team_id TEXT NOT NULL,
-        slack_user_id TEXT NOT NULL,
-        trainefficiency_user_id TEXT,
-        org_id TEXT,
-        intent TEXT NOT NULL DEFAULT 'unknown',
-        requested_operation TEXT NOT NULL,
-        authorization_result TEXT NOT NULL DEFAULT 'not_resolved',
-        confirmation_result TEXT NOT NULL DEFAULT 'pending',
-        execution_result TEXT NOT NULL DEFAULT 'pending',
-        outcome TEXT NOT NULL DEFAULT 'ignored',
-        trace_id TEXT NOT NULL,
-        error_message TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_slack_audit_team_user
-        ON kevin_slack_action_audit (slack_team_id, slack_user_id, created_at DESC)
-    `);
-    await db.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_slack_audit_org
-        ON kevin_slack_action_audit (org_id, created_at DESC)
-    `);
-    tablesEnsured = true;
-  } catch (err: any) {
-    console.error("[Kevin Slack] ensureAuditTables error:", err?.message);
-  }
+  // No-op — tables are created at startup by the committed migration runner.
 }
 
 export async function recordAuditEvent(

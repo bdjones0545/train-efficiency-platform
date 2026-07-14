@@ -54,42 +54,14 @@ export interface ConversationState {
 }
 
 const STATE_TTL_MINUTES = 10;
-let tablesEnsured = false;
 
+/**
+ * @deprecated Tables are created by migrations/0002_kevin_slack_tables.sql
+ * and by runKevinSlackMigration() in kevin-slack-routes.ts at startup.
+ * This function is retained for call-site compatibility only. It is a no-op.
+ */
 export async function ensureConversationTables(): Promise<void> {
-  if (tablesEnsured) return;
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS kevin_slack_conversation_state (
-        conversation_id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        slack_team_id TEXT NOT NULL,
-        slack_channel_id TEXT NOT NULL,
-        slack_thread_ts TEXT,
-        slack_user_id TEXT NOT NULL,
-        org_id TEXT,
-        intent TEXT NOT NULL DEFAULT 'unknown',
-        step TEXT NOT NULL DEFAULT 'collecting',
-        collected_fields JSONB NOT NULL DEFAULT '{}',
-        expires_at TIMESTAMPTZ NOT NULL,
-        trace_id TEXT NOT NULL,
-        last_event_id TEXT,
-        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        UNIQUE (slack_team_id, slack_channel_id, slack_user_id, slack_thread_ts)
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS kevin_slack_event_dedup (
-        event_id TEXT PRIMARY KEY,
-        team_id TEXT NOT NULL,
-        received_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        expires_at TIMESTAMPTZ NOT NULL DEFAULT NOW() + INTERVAL '1 hour'
-      )
-    `);
-    tablesEnsured = true;
-  } catch (err: any) {
-    console.error("[Kevin Slack] ensureConversationTables error:", err?.message);
-  }
+  // No-op — tables are created at startup by the committed migration runner.
 }
 
 // ─── Deduplication ────────────────────────────────────────────────────────────
