@@ -48,6 +48,10 @@ import {
   Clock,
   LayoutDashboard,
   Mail,
+  Settings,
+  Globe,
+  Lock,
+  Unlock,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -142,10 +146,129 @@ type CircuitStatus = {
   windowMs: number;
 };
 
+// ─── Phase 15 — Structured Action Block Types ─────────────────────────────────
+
+type ActionBlockAction = {
+  label: string;
+  action: "navigate" | "open_url" | "copy";
+  routeKey?: string;
+  url?: string;
+  value?: string;
+};
+
+type ActionBlock =
+  | { type: "direct_answer"; title: string; summary: string; markdown?: string }
+  | { type: "recommendation"; title: string; summary: string; confidence?: number; actions?: ActionBlockAction[] }
+  | { type: "capability_unavailable"; title: string; summary: string; capabilityKey?: string; reason?: string }
+  | { type: "action_available"; title: string; summary: string; capabilityKey?: string; actions?: ActionBlockAction[] }
+  | { type: "draft_created"; title: string; summary: string; draftId?: string; actions?: ActionBlockAction[] }
+  | { type: "approval_required"; title: string; summary: string; approvalId?: string; actions?: ActionBlockAction[] }
+  | { type: "task_delegated"; title: string; summary: string; taskId?: string; assignedAgent?: string; actions?: ActionBlockAction[] }
+  | { type: "task_in_progress"; title: string; summary: string; taskId?: string; progress?: number }
+  | { type: "task_completed"; title: string; summary: string; taskId?: string; actions?: ActionBlockAction[] }
+  | { type: "navigation"; title: string; summary: string; routeKey?: string; path?: string; actions?: ActionBlockAction[] }
+  | { type: "warning"; title: string; summary: string; severity?: "low" | "medium" | "high" }
+  | { type: "policy_denial"; title: string; summary: string; denialCode?: string; reason?: string }
+  | { type: "failure"; title: string; summary: string; errorCode?: string; retryable?: boolean }
+  | { type: "outcome_report"; title: string; summary: string; outcome?: string; actions?: ActionBlockAction[] };
+
 type ChatLine =
   | { role: "user"; text: string }
   | { role: "assistant"; text: string; runId?: string }
-  | { role: "system"; text: string };
+  | { role: "system"; text: string }
+  | { role: "block"; block: ActionBlock };
+
+// ─── Phase 15 — Action Block Renderer ────────────────────────────────────────
+
+const BLOCK_STYLES: Record<string, { border: string; icon: string; bg: string }> = {
+  direct_answer:        { border: "border-blue-200",   icon: "💬", bg: "bg-blue-50" },
+  recommendation:       { border: "border-indigo-200", icon: "💡", bg: "bg-indigo-50" },
+  capability_unavailable: { border: "border-gray-200", icon: "🚫", bg: "bg-gray-50" },
+  action_available:     { border: "border-green-200",  icon: "⚡", bg: "bg-green-50" },
+  draft_created:        { border: "border-teal-200",   icon: "📝", bg: "bg-teal-50" },
+  approval_required:    { border: "border-yellow-200", icon: "⏳", bg: "bg-yellow-50" },
+  task_delegated:       { border: "border-purple-200", icon: "🤖", bg: "bg-purple-50" },
+  task_in_progress:     { border: "border-blue-200",   icon: "⏱️", bg: "bg-blue-50" },
+  task_completed:       { border: "border-green-200",  icon: "✅", bg: "bg-green-50" },
+  navigation:           { border: "border-cyan-200",   icon: "🗺️", bg: "bg-cyan-50" },
+  warning:              { border: "border-orange-200", icon: "⚠️", bg: "bg-orange-50" },
+  policy_denial:        { border: "border-red-200",    icon: "🛡️", bg: "bg-red-50" },
+  failure:              { border: "border-red-200",    icon: "❌", bg: "bg-red-50" },
+  outcome_report:       { border: "border-emerald-200",icon: "📊", bg: "bg-emerald-50" },
+};
+
+function ActionBlockRenderer({ block }: { block: ActionBlock }) {
+  const [, navigate] = typeof window !== "undefined" ? [null, (p: string) => { window.location.href = p; }] : [null, (_: string) => {}];
+  const style = BLOCK_STYLES[block.type] ?? { border: "border-gray-200", icon: "ℹ️", bg: "bg-gray-50" };
+
+  const handleAction = (action: ActionBlockAction) => {
+    if (action.action === "navigate" && action.routeKey) {
+      // Map routeKey → path
+      const pathMap: Record<string, string> = {
+        "agentmail.drafts":       "/admin/agentmail",
+        "approvals.inbox":        "/admin/kevin?tab=approvals",
+        "command_center":         "/admin/command-center",
+        "attention_inbox":        "/admin/ceo-heartbeat",
+        "admin.kevin":            "/admin/kevin",
+        "admin.jobs":             "/admin/kevin?tab=events",
+        "scheduling.calendar":    "/admin/scheduling-command-center",
+        "leads.athlete_pipeline": "/admin/athlete-pipeline",
+        "leads.team_pipeline":    "/admin/team-training-leads",
+        "integrations":           "/admin/integrations",
+      };
+      window.location.href = pathMap[action.routeKey] ?? "/admin/kevin";
+    } else if (action.action === "open_url" && action.url) {
+      window.open(action.url, "_blank", "noopener");
+    } else if (action.action === "copy" && action.value) {
+      navigator.clipboard.writeText(action.value).catch(() => {});
+    }
+  };
+
+  const actions = "actions" in block ? (block as any).actions as ActionBlockAction[] | undefined : undefined;
+
+  return (
+    <div className={`rounded-lg border ${style.border} ${style.bg} p-3 text-sm`} data-testid={`block-${block.type}`}>
+      <div className="flex items-start gap-2">
+        <span className="text-base leading-tight">{style.icon}</span>
+        <div className="flex-1 min-w-0">
+          <p className="font-semibold text-sm">{block.title}</p>
+          <p className="text-sm text-muted-foreground mt-0.5 whitespace-pre-wrap">{block.summary}</p>
+
+          {"markdown" in block && block.markdown && (
+            <pre className="text-xs bg-white rounded border mt-1 p-2 overflow-x-auto whitespace-pre-wrap">{block.markdown}</pre>
+          )}
+          {"confidence" in block && block.confidence !== undefined && (
+            <p className="text-xs text-muted-foreground mt-1">Confidence: {Math.round(block.confidence * 100)}%</p>
+          )}
+          {"severity" in block && block.severity && (
+            <Badge variant={block.severity === "high" ? "destructive" : "secondary"} className="text-xs mt-1">{block.severity} severity</Badge>
+          )}
+          {"denialCode" in block && block.denialCode && (
+            <p className="text-xs font-mono text-red-600 mt-1">{block.denialCode}</p>
+          )}
+          {"assignedAgent" in block && block.assignedAgent && (
+            <p className="text-xs text-muted-foreground mt-1">Agent: <strong>{block.assignedAgent}</strong></p>
+          )}
+          {"retryable" in block && (
+            <p className="text-xs text-muted-foreground mt-1">{block.retryable ? "Retryable" : "Not retryable"}</p>
+          )}
+
+          {actions && actions.length > 0 && (
+            <div className="flex gap-2 mt-2 flex-wrap">
+              {actions.map((a, idx) => (
+                <Button key={idx} size="sm" variant="outline" className="h-7 text-xs" onClick={() => handleAction(a)}
+                  data-testid={`block-action-${block.type}-${idx}`}>
+                  {a.action === "navigate" && <LayoutDashboard className="h-3 w-3 mr-1" />}
+                  {a.label}
+                </Button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -423,10 +546,19 @@ function ChatTab({ healthQ, capsQ, runsQ }: {
                 if (last?.role === "assistant") copy[copy.length - 1] = { ...last, text: last.text + ev.delta };
                 return copy;
               });
+            } else if (ev.type === "action.block" && ev.block) {
+              // Phase 15 — typed structured response block
+              setLines((prev) => [...prev, { role: "block", block: ev.block as ActionBlock }]);
+            } else if (ev.type === "draft_created") {
+              setLines((prev) => [...prev, { role: "block", block: { type: "draft_created", title: "Email draft created", summary: ev.summary || `Draft ready for review.`, draftId: ev.draftId, actions: [{ label: "Review Draft", action: "navigate", routeKey: "agentmail.drafts" }] } as ActionBlock }]);
+            } else if (ev.type === "approval.requested") {
+              setLines((prev) => [...prev, { role: "block", block: { type: "approval_required", title: "Approval needed", summary: ev.summary || `Kevin wants to perform an action that requires your approval.`, approvalId: ev.approvalId, actions: [{ label: "Review Approval", action: "navigate", routeKey: "approvals.inbox" }] } as ActionBlock }]);
+            } else if (ev.type === "navigation") {
+              setLines((prev) => [...prev, { role: "block", block: { type: "navigation", title: ev.label || "Navigate", summary: ev.reason || "Kevin suggests navigating to a page.", routeKey: ev.routeKey, path: ev.path, actions: ev.path ? [{ label: ev.label || "Open", action: "navigate", routeKey: ev.routeKey }] : [] } as ActionBlock }]);
+            } else if (ev.type === "policy_denial") {
+              setLines((prev) => [...prev, { role: "block", block: { type: "policy_denial", title: "Action denied by policy", summary: ev.reason || "This action is not permitted.", denialCode: ev.code, reason: ev.reason } as ActionBlock }]);
             } else if (ev.type === "tool.progress") {
               setLines((prev) => [...prev, { role: "system", text: `tool: ${ev.tool || "?"} ${ev.message || ""}`.trim() }]);
-            } else if (ev.type === "approval.requested") {
-              setLines((prev) => [...prev, { role: "system", text: `Approval required: ${ev.summary || "host action"} risk=${ev.riskClass || "?"}` }]);
             } else if (ev.type === "run.failed") {
               setLines((prev) => [...prev, { role: "system", text: `Run failed: ${ev.message || "unknown"}` }]);
             }
@@ -466,17 +598,22 @@ function ChatTab({ healthQ, capsQ, runsQ }: {
               </p>
             )}
             <div className="space-y-3">
-              {lines.map((l, i) => (
-                <div
-                  key={i}
-                  className={
-                    l.role === "user" ? "text-sm ml-6" : l.role === "system" ? "text-xs text-muted-foreground" : "text-sm mr-6"
-                  }
-                >
-                  <span className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{l.role}</span>
-                  <div className="whitespace-pre-wrap mt-0.5">{l.text || (streaming && l.role === "assistant" ? "…" : "")}</div>
-                </div>
-              ))}
+              {lines.map((l, i) => {
+                if (l.role === "block") {
+                  return <ActionBlockRenderer key={i} block={l.block} />;
+                }
+                return (
+                  <div
+                    key={i}
+                    className={
+                      l.role === "user" ? "text-sm ml-6" : l.role === "system" ? "text-xs text-muted-foreground" : "text-sm mr-6"
+                    }
+                  >
+                    <span className="font-semibold text-xs uppercase tracking-wide text-muted-foreground">{l.role}</span>
+                    <div className="whitespace-pre-wrap mt-0.5">{l.text || (streaming && l.role === "assistant" ? "…" : "")}</div>
+                  </div>
+                );
+              })}
             </div>
           </ScrollArea>
           <div className="flex gap-2 items-end">
@@ -1289,6 +1426,135 @@ function ApprovalsTab() {
 
 // ─── AgentMail Bridge Tab ─────────────────────────────────────────────────────
 
+// ─── Org Settings Tab (Phase 3 — Org Capability Settings) ────────────────────
+
+type OrgCapSetting = {
+  orgId: string;
+  capabilityKey: string;
+  enabledOverride: boolean | null;
+  approvalModeOverride: string | null;
+  notes: string | null;
+  updatedAt: string | null;
+};
+
+function OrgSettingsTab() {
+  const { toast } = useToast();
+  const qc = useQueryClient();
+
+  const settingsQ = useQuery<{ settings: OrgCapSetting[] }>({
+    queryKey: ["/api/admin/kevin/org-capability-settings"],
+  });
+
+  const seedMut = useMutation({
+    mutationFn: () => apiRequest("POST", "/api/admin/kevin/org-capability-settings/seed-defaults"),
+    onSuccess: () => {
+      toast({ title: "Defaults seeded" });
+      qc.invalidateQueries({ queryKey: ["/api/admin/kevin/org-capability-settings"] });
+    },
+    onError: () => toast({ title: "Seed failed", variant: "destructive" }),
+  });
+
+  const updateMut = useMutation({
+    mutationFn: (payload: { capabilityKey: string; enabledOverride?: boolean | null; approvalModeOverride?: string | null; notes?: string }) =>
+      apiRequest("PUT", "/api/admin/kevin/org-capability-settings", payload),
+    onSuccess: () => {
+      toast({ title: "Setting updated" });
+      qc.invalidateQueries({ queryKey: ["/api/admin/kevin/org-capability-settings"] });
+    },
+    onError: () => toast({ title: "Update failed", variant: "destructive" }),
+  });
+
+  const obsQ = useQuery<{ snapshot: any }>({
+    queryKey: ["/api/admin/kevin/observability/snapshot"],
+  });
+
+  const settings = settingsQ.data?.settings ?? [];
+  const MODES = ["disabled", "observe", "recommend", "draft", "require_approval", "auto"];
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="font-semibold" data-testid="heading-orgsettings">Org Capability Settings</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Override global capability policy per-org. Null = use global default.</p>
+        </div>
+        <Button size="sm" variant="outline" onClick={() => seedMut.mutate()} disabled={seedMut.isPending}
+          data-testid="button-seed-defaults">
+          <Settings className="h-3.5 w-3.5 mr-1.5" /> Seed Defaults
+        </Button>
+      </div>
+
+      {settingsQ.isLoading && <Skeleton className="h-32" />}
+
+      {!settingsQ.isLoading && settings.length === 0 && (
+        <Card className="border-dashed">
+          <CardContent className="pt-6 text-center text-sm text-muted-foreground">
+            No org settings yet. Click "Seed Defaults" to populate from global capability registry.
+          </CardContent>
+        </Card>
+      )}
+
+      <div className="grid grid-cols-1 gap-3">
+        {settings.map((s) => (
+          <Card key={s.capabilityKey} data-testid={`card-orgsetting-${s.capabilityKey}`}>
+            <CardContent className="pt-4 pb-3">
+              <div className="flex flex-wrap items-start gap-3 justify-between">
+                <div className="min-w-0">
+                  <p className="font-mono text-xs font-semibold">{s.capabilityKey}</p>
+                  {s.notes && <p className="text-xs text-muted-foreground mt-0.5">{s.notes}</p>}
+                  {s.updatedAt && <p className="text-xs text-muted-foreground">Updated: {new Date(s.updatedAt).toLocaleDateString()}</p>}
+                </div>
+                <div className="flex items-center gap-3 flex-wrap">
+                  {/* Enable override */}
+                  <div className="flex items-center gap-1.5">
+                    {s.enabledOverride === null
+                      ? <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                      : s.enabledOverride
+                        ? <Unlock className="h-3.5 w-3.5 text-green-600" />
+                        : <Lock className="h-3.5 w-3.5 text-red-500" />}
+                    <Switch
+                      checked={s.enabledOverride ?? true}
+                      onCheckedChange={(v) => updateMut.mutate({ capabilityKey: s.capabilityKey, enabledOverride: v })}
+                      data-testid={`switch-enabled-${s.capabilityKey}`}
+                    />
+                  </div>
+                  {/* Approval mode override */}
+                  <Select
+                    value={s.approvalModeOverride ?? "__global__"}
+                    onValueChange={(v) => updateMut.mutate({ capabilityKey: s.capabilityKey, approvalModeOverride: v === "__global__" ? null : v })}
+                  >
+                    <SelectTrigger className="h-7 text-xs w-36" data-testid={`select-mode-${s.capabilityKey}`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__global__">Global default</SelectItem>
+                      {MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Observability Snapshot */}
+      {obsQ.data?.snapshot && (
+        <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Activity className="h-4 w-4" /> Observability Snapshot
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <pre className="text-xs bg-muted rounded p-2 overflow-x-auto">{JSON.stringify(obsQ.data.snapshot, null, 2)}</pre>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 function AgentMailBridgeTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -1454,6 +1720,9 @@ export default function AdminKevinPage() {
           <TabsTrigger value="audit" data-testid="tab-kevin-audit">
             <ScrollText className="h-3.5 w-3.5 mr-1.5" /> Audit
           </TabsTrigger>
+          <TabsTrigger value="orgsettings" data-testid="tab-kevin-orgsettings">
+            <Settings className="h-3.5 w-3.5 mr-1.5" /> Org Settings
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="health" className="mt-4">
@@ -1502,6 +1771,10 @@ export default function AdminKevinPage() {
 
         <TabsContent value="audit" className="mt-4">
           <AuditTab auditQ={auditQ} />
+        </TabsContent>
+
+        <TabsContent value="orgsettings" className="mt-4">
+          <OrgSettingsTab />
         </TabsContent>
       </Tabs>
     </div>

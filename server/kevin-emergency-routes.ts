@@ -22,6 +22,11 @@ import {
   getEmergencyStatus,
 } from "./services/kevin-policy-engine";
 import {
+  logKevinEmergency,
+  getObservabilitySnapshot,
+  getAlertThresholds,
+} from "./services/kevin-observability-service";
+import {
   CAPABILITY_REGISTRY,
   getCapabilityDefinition,
   serializeCapability,
@@ -361,6 +366,129 @@ export function registerKevinEmergencyRoutes(app: Express): void {
         "resource_ownership", "rate_limit", "idempotency", "mode_selection",
         "mode_supported", "approval_check", "decision",
       ],
+    });
+  });
+
+  // ── Org Capability Settings (Phase 3) ──────────────────────────────────────
+
+  /**
+   * GET /api/admin/kevin/org-capability-settings
+   * List all capability settings for the current org (or all orgs for superadmin).
+   */
+  app.get("/api/admin/kevin/org-capability-settings", isAuthenticated, requireKevinAccess, async (req: Request, res: Response) => {
+    try {
+      const orgId = req.query.org_id ? String(req.query.org_id) : null;
+      const rows = orgId
+        ? extractRows(await db.execute(sql`
+            SELECT * FROM kevin_org_capability_settings
+            WHERE org_id = ${orgId}
+            ORDER BY capability_key
+          `))
+        : extractRows(await db.execute(sql`
+            SELECT * FROM kevin_org_capability_settings
+            ORDER BY org_id, capability_key
+          `));
+      return res.json({ settings: rows, total: rows.length });
+    } catch (err: any) {
+      return res.status(500).json({ message: "Failed to fetch org settings", error: err.message });
+    }
+  });
+
+  /**
+   * PUT /api/admin/kevin/org-capability-settings/:capabilityKey
+   * Upsert a capability setting for an org.
+   */
+  app.put("/api/admin/kevin/org-capability-settings/:capabilityKey", isAuthenticated, requireKevinAccess, async (req: Request, res: Response) => {
+    const capabilityKey = req.params.capabilityKey;
+    const body = req.body ?? {};
+    const orgId = String(body.org_id ?? "");
+    if (!orgId) return res.status(400).json({ message: "org_id required" });
+
+    const executionMode = String(body.execution_mode ?? "require_approval");
+    const enabled = body.enabled !== false;
+    const maxVolumePerHour = Number(body.max_volume_per_hour ?? 10);
+    const approvalPolicy = String(body.approval_policy ?? "always");
+    const allowedScope = String(body.allowed_scope ?? "org");
+
+    try {
+      await db.execute(sql`
+        INSERT INTO kevin_org_capability_settings
+          (org_id, capability_key, enabled, execution_mode, max_volume_per_hour,
+           approval_policy, allowed_scope, configured_by, updated_at)
+        VALUES
+          (${orgId}, ${capabilityKey}, ${enabled}, ${executionMode}, ${maxVolumePerHour},
+           ${approvalPolicy}, ${allowedScope}, ${"admin"}, NOW())
+        ON CONFLICT (org_id, capability_key) DO UPDATE SET
+          enabled              = EXCLUDED.enabled,
+          execution_mode       = EXCLUDED.execution_mode,
+          max_volume_per_hour  = EXCLUDED.max_volume_per_hour,
+          approval_policy      = EXCLUDED.approval_policy,
+          allowed_scope        = EXCLUDED.allowed_scope,
+          configured_by        = EXCLUDED.configured_by,
+          updated_at           = NOW()
+      `);
+      return res.json({ ok: true, orgId, capabilityKey, executionMode, enabled });
+    } catch (err: any) {
+      return res.status(500).json({ message: "Failed to update setting", error: err.message });
+    }
+  });
+
+  /**
+   * POST /api/admin/kevin/org-capability-settings/seed-defaults
+   * Seed default capability settings for an org using Phase 3 safe defaults.
+   */
+  app.post("/api/admin/kevin/org-capability-settings/seed-defaults", isAuthenticated, requireKevinAccess, async (req: Request, res: Response) => {
+    const orgId = String(req.body?.org_id ?? "");
+    if (!orgId) return res.status(400).json({ message: "org_id required" });
+
+    const defaults: Array<{ key: string; mode: string }> = [
+      { key: "platform.retrieve_context",  mode: "observe" },
+      { key: "platform.open_location",     mode: "auto" },
+      { key: "ceo.request_analysis",       mode: "recommend" },
+      { key: "ceo.request_briefing",       mode: "recommend" },
+      { key: "ceo.ask_question",           mode: "recommend" },
+      { key: "agent.request_analysis",     mode: "recommend" },
+      { key: "agent.request_recommendation", mode: "recommend" },
+      { key: "email.create_draft",         mode: "draft" },
+      { key: "email.create_reply_draft",   mode: "draft" },
+      { key: "email.submit_for_approval",  mode: "draft" },
+      { key: "email.request_revision",     mode: "draft" },
+      { key: "agent.assign_task",          mode: "require_approval" },
+      { key: "email.send",                 mode: "require_approval" },
+      { key: "schedule.create_session",    mode: "require_approval" },
+      { key: "schedule.reschedule_session", mode: "require_approval" },
+      { key: "lead.create",               mode: "require_approval" },
+      { key: "lead.update",               mode: "require_approval" },
+      { key: "schedule.cancel_session",    mode: "disabled" },
+      { key: "agent.pause_task",           mode: "disabled" },
+      { key: "agent.cancel_task",          mode: "disabled" },
+      { key: "campaign.request_launch",    mode: "disabled" },
+    ];
+
+    let seeded = 0;
+    for (const d of defaults) {
+      try {
+        await db.execute(sql`
+          INSERT INTO kevin_org_capability_settings (org_id, capability_key, execution_mode, enabled)
+          VALUES (${orgId}, ${d.key}, ${d.mode}, ${d.mode !== "disabled"})
+          ON CONFLICT (org_id, capability_key) DO NOTHING
+        `);
+        seeded++;
+      } catch { /* skip */ }
+    }
+    return res.json({ ok: true, orgId, seeded, total: defaults.length });
+  });
+
+  // ── Observability Snapshot (Phase 17) ─────────────────────────────────────
+
+  /**
+   * GET /api/admin/kevin/observability
+   */
+  app.get("/api/admin/kevin/observability", isAuthenticated, requireKevinAccess, (_req: Request, res: Response) => {
+    return res.json({
+      snapshot: getObservabilitySnapshot(),
+      alertThresholds: getAlertThresholds(),
+      note: "Rolling in-memory counters reset on server restart",
     });
   });
 }

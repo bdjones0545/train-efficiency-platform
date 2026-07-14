@@ -1,0 +1,1091 @@
+Kevin Executive Control Plane — Internal API, Capabilities, Permissions, and Agent Execution
+Act as a world-renowned full-stack software architect, AI systems engineer, security engineer, and production SaaS operator.
+TrainEfficiency already contains Kevin integration infrastructure, platform agents, AgentMail, the CEO Agent, approval workflows, background workers, organization-level permissions, audit records, and operational services.
+Kevin is hosted externally inside an always-on virtual computer. He can reason, retain executive memory, analyze the platform, and communicate through Slack and TrainEfficiency. However, he currently cannot reliably perform meaningful actions inside TrainEfficiency.
+The goal of this project is to build the secure Executive Control Plane that allows Kevin to operate TrainEfficiency through explicit, authenticated, organization-scoped capabilities.
+This is not a request to give Kevin broad access to the Replit environment, database, or internal code.
+Kevin must only interact with TrainEfficiency through a controlled internal API that validates every requested action, determines the permitted execution mode, calls existing platform services, verifies the result, and records a complete audit trail.
+Core Principle
+The internal API is the permission boundary.
+Kevin VM
+    ↓ signed and authenticated intent
+TrainEfficiency Executive Control Plane
+    ↓
+Capability Registry
+    ↓
+Policy and Permission Engine
+    ↓
+Approval or Execution
+    ↓
+Existing TrainEfficiency Service
+    ↓
+Verification
+    ↓
+Outcome and Audit Record
+    ↓
+Result returned to Kevin
+Kevin must never receive unrestricted database access.
+Kevin must never directly modify another agent’s memory.
+Kevin must never bypass existing business services by writing directly to tables.
+Kevin must never be given one global “can manage TrainEfficiency” permission.
+Every action must be represented as an explicit capability with its own risk, permission, approval, execution, and verification policy.
+Phase 0 — Audit Before Implementation
+Before changing code, inspect the current TrainEfficiency codebase and produce a concise architecture audit covering:
+Existing Kevin routes, services, database tables, workers, retries, outcomes, context services, authentication, circuit breakers, and feature flags.
+Existing Kevin capability modes:
+disabled
+observe
+recommend
+draft
+require_approval
+auto
+Existing CEO Agent services and routes.
+Existing platform agents, their executors, queues, jobs, and communication mechanisms.
+Existing AgentMail draft, refinement, approval, send, reply, analytics, learning, and outcome services.
+Existing approval infrastructure.
+Existing role-based access controls.
+Existing organization-isolation protections.
+Existing service-to-service authentication patterns.
+Existing audit/event/outcome tables.
+Existing retry and dead-letter infrastructure.
+Existing frontend Kevin and CEO chat interfaces.
+Existing navigation route registry, if one exists.
+Existing OpenAPI, API documentation, or typed route contracts.
+Any existing code that already resembles a capability registry or task bus.
+Do not duplicate functioning systems.
+Extend and consolidate them.
+Before implementation, produce:
+current-state architecture
+reusable components
+missing components
+risks
+recommended implementation sequence
+Then proceed unless a critical architectural conflict is discovered.
+Phase 1 — Kevin Service Identity
+Create or harden a dedicated machine identity for Kevin.
+Kevin must authenticate as a service, not as an ordinary user and not through a hardcoded admin bypass.
+Implement or reuse:
+dedicated Kevin service identity
+short-lived signed credentials or signed requests
+secret rotation support
+request timestamps
+nonce or replay protection
+constant-time signature comparison
+organization authorization
+initiating-user attribution
+correlation IDs
+idempotency keys
+rate limiting
+credential revocation
+complete authentication audit logging
+Never trust the following solely because Kevin supplied them:
+organization ID
+user ID
+role
+capability mode
+approval state
+resource ownership
+execution authorization
+Resolve and validate them server-side.
+Do not expose Replit secrets, database credentials, internal session cookies, or unrestricted service tokens to the frontend.
+Phase 2 — Executive Capability Registry
+Create a central, typed capability registry.
+The registry must be the authoritative description of what Kevin is allowed to request.
+Each capability definition must include:
+type ExecutiveCapabilityDefinition = {
+  key: string;
+  version: string;
+  displayName: string;
+  description: string;
+  category: string;
+
+  inputSchema: unknown;
+  outputSchema: unknown;
+
+  riskLevel: "low" | "medium" | "high" | "critical";
+  supportedModes: Array<
+    | "disabled"
+    | "observe"
+    | "recommend"
+    | "draft"
+    | "require_approval"
+    | "auto"
+  >;
+
+  defaultMode: string;
+  permittedRoles: string[];
+  organizationScoped: boolean;
+
+  executor: string;
+  verifier: string;
+
+  reversible: boolean;
+  compensationStrategy?: string;
+
+  requiresConsent?: boolean;
+  approvalPolicy?: string;
+
+  timeoutMs: number;
+  maxAttempts: number;
+  idempotent: boolean;
+
+  auditCategory: string;
+  sensitiveFields?: string[];
+};
+Adapt this type to the existing stack rather than forcing an incompatible abstraction.
+Initial capability categories:
+Context and Navigation
+platform.retrieve_context
+platform.search_records
+platform.open_location
+platform.inspect_integration
+platform.inspect_job
+platform.retry_failed_job
+platform.create_attention_item
+CEO Communication
+ceo.request_analysis
+ceo.request_briefing
+ceo.ask_question
+ceo.request_decision
+ceo.submit_recommendation
+ceo.escalate_risk
+ceo.send_brief
+Agent Delegation
+agent.list_available
+agent.request_analysis
+agent.request_recommendation
+agent.assign_task
+agent.change_priority
+agent.review_output
+agent.request_revision
+agent.pause_task
+agent.resume_task
+agent.cancel_task
+Email and AgentMail
+email.create_draft
+email.create_reply_draft
+email.request_revision
+email.submit_for_approval
+email.send
+email.inspect_delivery
+email.inspect_reply
+email.archive
+Scheduling
+schedule.find_availability
+schedule.create_session
+schedule.reschedule_session
+schedule.cancel_session
+schedule.assign_coach
+schedule.inspect_conflicts
+Leads and Revenue
+lead.create
+lead.update
+lead.assign
+lead.rank
+lead.request_followup
+campaign.create_draft
+campaign.submit_for_approval
+campaign.launch
+Approvals
+approval.create
+approval.inspect
+approval.cancel
+approval.request_changes
+Do not implement every high-risk executor immediately merely because it appears in the registry.
+A capability may be registered as unavailable or disabled until its executor is production-ready.
+Provide a discovery endpoint so Kevin can retrieve only the capabilities available to the current organization and identity.
+Phase 3 — Organization-Level Capability Configuration
+Persist capability configuration per organization.
+Suggested data model:
+kevin_capability_definitions
+kevin_org_capability_settings
+kevin_service_identities
+kevin_service_credentials
+kevin_request_nonces
+kevin_intents
+kevin_intent_tasks
+kevin_agent_tasks
+kevin_action_attempts
+kevin_action_verifications
+kevin_action_outcomes
+kevin_action_approvals
+kevin_action_audit_events
+Reuse current Kevin tables where possible.
+Do not create parallel tables when an existing table can be safely extended.
+Each organization capability setting should support:
+capability key
+capability version
+enabled state
+execution mode
+allowed initiating roles
+maximum action volume
+approval policy
+auto-execution limits
+allowed resource scope
+effective date
+expiration date
+configured by
+last modified
+emergency override
+optional business rules
+Safe initial defaults:
+platform.retrieve_context       observe
+platform.open_location          auto
+ceo.request_analysis            recommend
+ceo.request_briefing            recommend
+agent.request_analysis          recommend
+agent.request_recommendation    recommend
+email.create_draft              draft
+email.create_reply_draft        draft
+email.submit_for_approval       draft
+agent.assign_task               require_approval
+email.send                      require_approval
+schedule.create_session         require_approval
+schedule.reschedule_session     require_approval
+schedule.cancel_session         disabled
+agent.pause_task                disabled
+agent.cancel_task               disabled
+campaign.launch                 disabled
+New capabilities must never default to unrestricted automatic execution.
+Phase 4 — Central Policy Engine
+Every Kevin request must pass through one policy engine before any executor is called.
+The policy engine must validate:
+Kevin service identity.
+Credential validity.
+Timestamp validity.
+Replay protection.
+Organization access.
+Initiating user existence.
+Initiating user organization membership.
+Initiating user role.
+Capability existence.
+Capability version.
+Organization capability configuration.
+Requested execution mode.
+Resource organization ownership.
+Consent requirements.
+Capability risk.
+Approval requirement.
+Rate limit.
+Idempotency.
+Circuit-breaker state.
+Emergency-stop state.
+Requested payload schema.
+Cross-agent delegation depth.
+Data sensitivity and redaction rules.
+Current provider or integration availability.
+Execution-mode behavior:
+disabled
+→ reject with a typed policy denial
+
+observe
+→ permit read-only context retrieval only
+
+recommend
+→ produce a recommendation or execution plan without creating a platform-side action
+
+draft
+→ create a reversible draft or proposed task without external side effects
+
+require_approval
+→ persist the proposed action and create a scoped approval request
+
+auto
+→ execute only within configured limits and only after every policy check passes
+Do not scatter permission logic across route handlers and executors.
+Routes should call the centralized policy engine.
+Executors should assume policy has passed, but they must still enforce resource ownership and invariants defensively.
+Phase 5 — Internal Kevin API
+Create a versioned internal API for Kevin.
+This is an internal service API, not a public developer API yet.
+Suggested route structure:
+GET  /api/internal/kevin/v1/capabilities
+GET  /api/internal/kevin/v1/capabilities/:capabilityKey
+
+POST /api/internal/kevin/v1/intents
+GET  /api/internal/kevin/v1/intents
+GET  /api/internal/kevin/v1/intents/:intentId
+POST /api/internal/kevin/v1/intents/:intentId/cancel
+
+POST /api/internal/kevin/v1/intents/:intentId/tasks
+GET  /api/internal/kevin/v1/tasks/:taskId
+POST /api/internal/kevin/v1/tasks/:taskId/cancel
+
+GET  /api/internal/kevin/v1/approvals/:approvalId
+POST /api/internal/kevin/v1/approvals/:approvalId/request-changes
+
+GET  /api/internal/kevin/v1/outcomes/:outcomeId
+GET  /api/internal/kevin/v1/health
+The exact structure may be adjusted to fit existing routes.
+Each intent request should support:
+{
+  "requestId": "uuid",
+  "idempotencyKey": "string",
+  "correlationId": "uuid",
+  "parentIntentId": null,
+  "organizationId": "untrusted-client-value",
+  "initiatingUserId": "untrusted-client-value",
+  "capabilityKey": "email.create_draft",
+  "capabilityVersion": "1",
+  "requestedMode": "draft",
+  "reason": "Follow up with an inactive lead",
+  "objective": "Create a personalized follow-up draft",
+  "confidence": 0.91,
+  "expectedResult": {
+    "type": "email_draft_created"
+  },
+  "arguments": {},
+  "sourceContext": {
+    "channel": "trainefficiency_chat"
+  }
+}
+Server-side validation must determine whether the requested organization, user, mode, and resources are permitted.
+Use typed error responses:
+authentication failed
+replay detected
+invalid payload
+capability unavailable
+capability disabled
+mode not permitted
+approval required
+organization mismatch
+forbidden resource
+consent missing
+rate limited
+circuit breaker open
+executor unavailable
+verification failed
+duplicate request
+emergency stop active
+Phase 6 — Durable Intent Model
+An intent represents Kevin’s executive objective.
+A task represents one action required to achieve it.
+Example:
+Intent:
+Recover inactive high-value leads.
+
+Tasks:
+1. Revenue Agent ranks eligible leads.
+2. Kevin reviews the ranking.
+3. AgentMail creates personalized drafts.
+4. Human approves selected drafts.
+5. AgentMail sends approved messages.
+6. TrainEfficiency monitors replies.
+7. Revenue outcomes are attributed.
+Intent states:
+received
+validating
+rejected
+planned
+awaiting_approval
+queued
+executing
+verifying
+completed
+partially_completed
+failed
+cancelled
+dead_lettered
+Task states:
+created
+blocked
+queued
+claimed
+executing
+awaiting_approval
+awaiting_dependency
+verifying
+completed
+failed
+cancelled
+dead_lettered
+Persist:
+objective
+capability
+execution plan
+organization
+initiating user
+requested mode
+effective mode
+confidence
+reason
+dependencies
+tasks
+assigned executor
+assigned specialist agent
+approval state
+attempts
+provider references
+outputs
+verification results
+final outcome
+failure reason
+correlation chain
+timestamps
+Use database-backed state.
+Do not use process-local maps for durable intents, tokens, approvals, or task state.
+Phase 7 — Agent Task Bus
+Build or extend a durable task bus through which Kevin communicates with TrainEfficiency agents.
+Kevin should act as the executive orchestrator.
+The specialist agents should retain their defined responsibilities.
+Use this flow:
+Kevin creates structured task
+    ↓
+Task bus validates and persists it
+    ↓
+Task routed to a named platform agent
+    ↓
+Agent accepts, rejects, or requests clarification
+    ↓
+Agent performs work
+    ↓
+Agent returns typed output
+    ↓
+Output schema is validated
+    ↓
+Kevin reviews the result
+    ↓
+Next task, approval, escalation, or completion
+Task fields:
+task ID
+parent intent ID
+organization ID
+requesting identity
+assigned agent
+capability
+objective
+structured inputs
+business constraints
+risk
+priority
+deadline
+dependency IDs
+expected output schema
+requested mode
+effective mode
+approval state
+status
+attempts
+output
+verification
+outcome
+Add:
+maximum delegation depth
+maximum task count per intent
+loop detection
+duplicate suppression
+agent allowlist
+capability allowlist per agent
+timeout handling
+retry handling
+dead-lettering
+cancellation
+structured failure reasons
+Agents must not communicate through untracked hidden prompt chains.
+Every inter-agent request must be represented as a durable task or event.
+Phase 8 — CEO Agent Relationship
+Do not replace the CEO Agent blindly.
+Define the relationship clearly:
+Kevin
+Persistent executive orchestrator, memory, cross-system reasoning, delegation, and follow-through
+
+CEO Agent
+TrainEfficiency-native executive analysis, platform interpretation, business intelligence, and user-facing executive interface
+Implement structured interactions such as:
+Kevin requests platform analysis from CEO Agent.
+Kevin requests a daily or event-driven executive briefing.
+Kevin asks CEO Agent to evaluate a proposed action.
+CEO Agent escalates an operational risk to Kevin.
+CEO Agent submits recommendations to Kevin.
+Kevin asks CEO Agent to explain platform context to the user.
+Kevin sends verified execution outcomes back to CEO Agent.
+Create loop protection:
+correlation chain
+parent-agent ID
+maximum executive-agent round trips
+no agent may recursively request the same capability with the same payload
+terminal escalation state when no progress occurs
+The CEO Agent must not be able to confer permissions on Kevin.
+Authorization remains server-controlled.
+Phase 9 — AgentMail Executor
+Connect Kevin to existing AgentMail services.
+Do not build a second email-generation system.
+The AgentMail executor should support:
+Draft creation
+identify approved recipient record
+load organization context
+load prior-contact context when permitted
+create subject and body using existing AgentMail services
+record whether prior context was used
+persist draft
+return draft ID and preview
+verify recipient, subject, and body exist
+Reply draft
+identify existing thread or message
+load allowed thread context
+create a reply draft
+preserve threading metadata
+return preview
+verify reply target and recipients
+Revision
+accept requested changes
+revise the existing draft
+preserve audit history
+return updated preview
+Approval
+create a scoped approval request
+display exact recipients, subject, body, reason, and context used
+support approve, reject, and request changes
+Send
+Only execute when:
+the capability is enabled
+the effective mode permits execution
+approval is valid when required
+recipient ownership is valid
+sending limits are not exceeded
+provider connection is healthy
+duplicate-send protection passes
+emergency stop is inactive
+After sending:
+record provider result
+verify provider acceptance
+retain provider message ID
+track delivery or reply when available
+feed outcomes into existing AgentMail analytics and Kevin outcome infrastructure
+Initial production default:
+Kevin requests draft
+→ AgentMail creates draft
+→ human reviews
+→ approval recorded
+→ AgentMail sends
+→ outcome tracked
+Phase 10 — Platform Agent Delegation
+Kevin must be able to direct the existing TrainEfficiency agents through tasks.
+Initial safe task types:
+request analysis
+request briefing
+request recommendation
+request prioritization
+request draft
+request record review
+request follow-up plan
+request scheduling options
+Higher-risk tasks should require approval or remain disabled:
+launch campaign
+send communication
+cancel sessions
+modify large groups of records
+pause an operational agent
+override scheduling
+change organization configuration
+Each platform agent must advertise:
+agent key
+display name
+responsibilities
+accepted task types
+input schema
+output schema
+capabilities
+maximum risk level
+whether it can cause external side effects
+supported execution modes
+current availability
+Kevin should be able to retrieve this registry instead of hardcoding agent behavior.
+Phase 11 — Navigation Capability
+Implement platform.open_location.
+Kevin should be able to direct a user to the correct TrainEfficiency page.
+Use a server-maintained route registry.
+Example registry entries:
+scheduling.calendar
+scheduling.availability
+scheduling.group_sessions
+leads.athlete_pipeline
+leads.team_pipeline
+agentmail.drafts
+agentmail.learning_center
+approvals.inbox
+command_center
+attention_inbox
+coach_capacity
+athlete_onboarding
+integrations
+admin.kevin
+admin.jobs
+A navigation response should contain:
+{
+  "type": "navigation",
+  "routeKey": "agentmail.drafts",
+  "path": "/agentmail/drafts",
+  "label": "Open AgentMail Drafts",
+  "reason": "Kevin created three follow-up drafts for review.",
+  "resourceId": null,
+  "requiredRole": "ADMIN",
+  "authorized": true
+}
+Never permit Kevin to invent arbitrary internal paths.
+Never permit open redirects.
+Validate user access before returning an actionable route.
+Phase 12 — Approval System
+Extend the current approval system rather than replacing it.
+A Kevin approval must clearly show:
+requested action
+requesting identity
+initiating user
+organization
+capability
+affected records
+recipient or external party
+exact payload
+reason
+supporting evidence
+source agent
+risk level
+expected benefit
+possible downside
+whether reversible
+compensation strategy
+expiration
+execution deadline
+related intent
+related tasks
+Approval actions:
+approve once
+reject
+request changes
+approve selected items
+cancel
+approve a narrowly defined similar action policy, only when explicitly supported
+Do not offer a vague approval such as:
+Let Kevin manage email.
+Approvals must be specific, scoped, and auditable.
+Approval tokens must be opaque, single-use where appropriate, expiring, and database-backed.
+Phase 13 — Execution Verification
+Do not mark an action complete merely because an executor returned HTTP 200.
+Each capability must have an explicit verifier.
+Examples:
+Email draft
+Verify:
+draft persisted
+organization matches
+recipients match requested records
+subject exists
+body exists
+no prohibited recipient is included
+Email send
+Verify:
+approved draft version is the sent version
+provider accepted the message
+provider message identifier exists
+no duplicate send occurred
+Agent task
+Verify:
+assigned agent completed the task
+output matches schema
+output addresses the objective
+no prohibited side effect occurred
+Schedule create
+Verify:
+session exists
+organization matches
+correct athlete or group is attached
+assigned coach is valid
+no disallowed conflict exists
+Record update
+Verify:
+correct organization-owned record changed
+only permitted fields changed
+resulting state matches expectation
+Persist:
+expected result
+actual result
+verification status
+verification evidence
+deviation
+remediation or compensation attempt
+final outcome
+Phase 14 — Closed-Loop Learning
+Connect execution outcomes to Kevin’s existing memory and outcome infrastructure.
+Record:
+intent
+capability
+recommendation
+draft
+approval result
+execution result
+verification result
+downstream business outcome
+human feedback
+specialist agent involved
+Kevin confidence
+time to completion
+whether the recommendation should be repeated
+whether the organization policy should be reconsidered
+Do not allow Kevin to autonomously grant himself broader permissions based on successful outcomes.
+Learning may improve recommendations and confidence.
+Permission changes require an authorized human or explicit organization policy.
+Minimize sensitive raw-data storage.
+Use pseudonymized identifiers where the current architecture already requires them.
+Phase 15 — Structured Chat Actions
+Upgrade the Kevin and CEO chat interfaces so they can render typed operational responses rather than plain text only.
+Support response blocks such as:
+direct_answer
+recommendation
+capability_unavailable
+action_available
+draft_created
+approval_required
+task_delegated
+task_in_progress
+task_completed
+navigation
+warning
+policy_denial
+failure
+outcome_report
+Examples:
+{
+  "type": "draft_created",
+  "title": "Follow-up email drafted",
+  "summary": "A personalized email draft was created for Jordan Smith.",
+  "actions": [
+    {
+      "label": "Review Draft",
+      "action": "navigate",
+      "routeKey": "agentmail.drafts"
+    }
+  ]
+}
+{
+  "type": "approval_required",
+  "title": "Approval needed",
+  "summary": "Kevin wants to send five lead follow-up emails.",
+  "approvalId": "uuid",
+  "actions": [
+    {
+      "label": "Review Approval",
+      "action": "navigate",
+      "routeKey": "approvals.inbox"
+    }
+  ]
+}
+Ensure markdown is rendered correctly.
+Do not display raw syntax such as **Direct Answer** unless intentionally shown as code.
+Phase 16 — Kevin Console
+Upgrade the existing Kevin admin console to show:
+service identity status
+credential status
+last successful authentication
+current health
+circuit-breaker status
+emergency-stop status
+available capabilities
+organization capability modes
+recent intents
+active tasks
+delegated agents
+pending approvals
+completed actions
+failed actions
+verification failures
+retries
+dead-lettered items
+policy denials
+email drafts
+email sends
+audit trail
+correlation-chain viewer
+Controls:
+global emergency stop
+organization Kevin disable
+read-only mode
+disable individual capability
+pause execution
+pause agent delegation
+disable email sending
+revoke credentials
+cancel queued intent
+retry eligible failed action
+retry dead-lettered action after explicit confirmation
+Every control action must itself be audited.
+Phase 17 — Observability
+Add structured logging and metrics for:
+authentication success and failure
+replay attempts
+intent creation
+intent completion
+task execution
+capability usage
+approval wait time
+action latency
+executor failure
+verification failure
+retry count
+dead-letter count
+policy denial reason
+agent delegation depth
+duplicate suppression
+email sends
+provider failures
+emergency-stop activation
+cross-organization access attempts
+Use correlation IDs across:
+incoming Kevin request
+intent
+task
+agent call
+executor call
+approval
+verification
+outcome
+Redact:
+credentials
+signatures
+tokens
+private email bodies where unnecessary
+sensitive athlete or client details
+protected integration secrets
+Add operational alerts for:
+repeated authentication failures
+replay attacks
+cross-org access attempts
+unusual email volume
+repeated duplicate sends
+dead-letter growth
+repeated verification failure
+delegation loops
+circuit breaker opening
+emergency stop activation
+Phase 18 — Emergency Controls
+Implement immediate controls for:
+global Kevin kill switch
+organization-level kill switch
+per-capability disable
+temporary read-only mode
+revoke Kevin credentials
+pause queued execution
+cancel queued intents
+pause specialist-agent delegation
+disable all automatic sends
+disable all automatic external side effects
+Emergency state must be checked:
+at request intake
+before task claim
+immediately before external execution
+before retry
+Do not rely on a single check performed when an intent was originally created.
+Phase 19 — Documentation for Kevin
+Generate machine-readable documentation Kevin can use to onboard TrainEfficiency as a production operating target.
+Create:
+Internal API documentation.
+Capability catalog.
+Capability input and output schemas.
+Authentication instructions.
+Error-code catalog.
+Intent lifecycle.
+Task lifecycle.
+Approval lifecycle.
+Retry behavior.
+Rate limits.
+Idempotency rules.
+Examples for every enabled initial capability.
+Security restrictions.
+Organization-scoping rules.
+Emergency-stop behavior.
+OpenAPI document if compatible with the existing stack.
+This documentation must accurately reflect implemented behavior.
+Do not document unimplemented actions as available.
+Phase 20 — Initial Production Scope
+Do not attempt to make every TrainEfficiency operation autonomous in the first release.
+The first production release should prioritize:
+Enabled and low risk
+retrieve approved platform context
+retrieve Kevin capability list
+request CEO Agent analysis
+request CEO Agent briefing
+request specialist-agent analysis
+request specialist-agent recommendation
+create AgentMail email draft
+create AgentMail reply draft
+request draft revision
+create approval request
+navigate user to a valid platform page
+inspect intent status
+inspect task status
+inspect approval status
+inspect verified outcome
+Approval required
+assign a task that may cause downstream work
+send an email
+create a session
+reschedule a session
+update a lead
+launch a limited follow-up workflow
+Disabled initially
+mass email
+cancel sessions automatically
+delete records
+change billing
+change organization permissions
+change agent permissions
+alter capability modes
+pause platform-wide agents
+launch large campaigns
+access secrets
+directly modify memory
+directly write to database
+execute arbitrary code
+execute arbitrary URLs or commands
+Phase 21 — Testing
+Add comprehensive automated tests.
+Required coverage:
+Authentication and security
+valid signed request
+invalid signature
+expired timestamp
+replayed nonce
+revoked credential
+missing credential
+malformed request
+rate limit
+emergency stop
+secret redaction
+Organization isolation
+valid same-organization access
+cross-organization intent rejected
+cross-organization resource rejected
+falsified organization ID rejected
+falsified initiating user rejected
+inactive organization rejected
+Capability modes
+disabled rejects
+observe allows read only
+recommend does not create side effect
+draft creates reversible artifact
+require approval creates approval and stops
+auto executes only within policy
+unsupported mode rejected
+Intents and tasks
+intent creation
+duplicate idempotency key
+task dependencies
+partial completion
+cancellation
+timeout
+retry
+stale processing recovery
+dead-lettering
+delegation-depth limit
+loop prevention
+malformed agent output
+CEO Agent
+valid analysis task
+valid briefing task
+circular-call prevention
+permission escalation rejected
+AgentMail
+draft creation
+reply draft creation
+revision
+approval creation
+send without approval rejected
+approved send succeeds
+duplicate send prevented
+recipient organization validation
+provider failure
+provider acceptance verification
+outcome recorded
+Navigation
+valid route returned
+unauthorized route blocked
+arbitrary URL rejected
+invalid resource ID rejected
+Verification
+successful verification
+verification failure
+mismatched resource
+unexpected output
+compensation attempt
+failure outcome persisted
+Emergency controls
+global stop
+organization stop
+per-capability stop
+stop checked before retry
+stop checked before external execution
+Do not claim completion unless:
+typecheck is clean
+all relevant tests pass
+migrations apply cleanly to a fresh database
+migrations are idempotent where required by project convention
+existing tests remain green
+no critical route bypasses authorization
+no action bypasses the policy engine
+no write bypasses existing domain services
+every action produces an audit record
+organization isolation is tested
+credentials and secrets are not logged
+Required Delivery Report
+At completion, provide:
+1. Executive summary
+Explain what Kevin can now do operationally.
+2. Architecture
+Show the full request-to-outcome flow.
+3. Existing systems reused
+List existing Kevin, AgentMail, CEO Agent, approval, worker, audit, and agent components that were extended.
+4. Files changed
+List all files created and modified.
+5. Migrations
+List every migration and table change.
+6. Authentication
+Explain the service identity and signed-request model.
+7. Capabilities
+Provide the implemented capability catalog and current default modes.
+8. Policy engine
+Explain every policy decision point.
+9. Intent and task model
+Explain states, dependencies, retries, cancellation, and dead-letter behavior.
+10. CEO Agent integration
+Explain the division of responsibilities and loop protection.
+11. Agent task bus
+Explain how Kevin assigns and reviews platform-agent work.
+12. AgentMail integration
+Explain drafting, approval, sending, verification, reply tracking, and outcome attribution.
+13. Navigation
+List supported route keys and authorization behavior.
+14. Frontend
+Show Kevin chat action blocks, approval UI, and Kevin Console changes.
+15. Safety
+Document emergency controls, rate limits, idempotency, organization isolation, and secret handling.
+16. Tests
+Provide exact test totals and results.
+17. Known limitations
+Be explicit about anything incomplete or simulated.
+18. Kevin connection package
+Provide the exact information needed on Kevin’s virtual computer:
+base URL
+authentication method
+required environment-variable names
+signing algorithm
+required headers
+timestamp format
+nonce rules
+capability discovery call
+example intent request
+status polling call
+approval-state behavior
+retry behavior
+error handling
+OpenAPI or machine-readable documentation path
+Do not expose actual secret values in the report.
+19. Production activation plan
+Provide a staged rollout:
+local tests
+→ staging
+→ observe mode
+→ recommend mode
+→ draft mode
+→ approval-required actions
+→ narrowly scoped automatic actions
+20. Recommended next step
+Explain the exact prompt that should then be given to Kevin so he can use his new platform-onboarding skill to onboard the TrainEfficiency Executive Control Plane.
+Begin with the audit. Do not rewrite working infrastructure, and do not grant Kevin broad environmental access as a shortcut.

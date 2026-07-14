@@ -64,9 +64,21 @@ import {
 import { resolveNavSuggestion } from "./services/kevin-navigation-registry";
 import { recordKevinAuditEvent } from "./services/kevin-audit-service";
 import { recordKevinOutcome } from "./services/kevin-outcome-service";
+import { verifyCapabilityExecution, persistVerificationResult } from "./services/kevin-verifier-service";
+import { recordKevinOutcomeLearning, ensureKevinOutcomesTable } from "./services/kevin-learning-service";
+import {
+  logKevinIntent,
+  logKevinTask,
+  logKevinPolicyDenial,
+  logKevinVerification,
+  logKevinAuth,
+} from "./services/kevin-observability-service";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
+
+// Ensure learning tables exist on first use
+void ensureKevinOutcomesTable().catch(() => {});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -657,5 +669,246 @@ export async function registerKevinActionApiRoutes(app: Express): Promise<void> 
     if (!orgId) return res.status(400).json({ message: "org_id required" });
     const stats = await getIntentStats(orgId);
     return res.json(stats);
+  });
+
+  // ── Verify ─────────────────────────────────────────────────────────────────
+
+  /**
+   * POST /api/internal/kevin/v1/verify
+   * Trigger post-execution verification for a capability result.
+   * Kevin calls this after receiving an execution result to confirm it.
+   */
+  app.post(`${base}/verify`, ...guard, async (req: Request, res: Response) => {
+    const orgId = await resolveOrgIdFromRequest(req);
+    if (!orgId) return res.status(400).json({ message: "org_id required" });
+
+    const body = req.body ?? {};
+    const { capability_key, resource_id, intent_id, task_id, additional_args } = body;
+    if (!capability_key || !resource_id) {
+      return res.status(400).json({ message: "capability_key and resource_id required", code: "VALIDATION_ERROR" });
+    }
+
+    const result = await verifyCapabilityExecution(capability_key, orgId, resource_id, additional_args ?? {});
+    await persistVerificationResult(intent_id ?? "", task_id ?? null, capability_key, result);
+
+    logKevinVerification({
+      status: result.status,
+      capabilityKey: capability_key,
+      intentId: intent_id ?? "",
+      orgId,
+      correlationId: req.headers["x-correlation-id"] as string | undefined,
+      deviation: result.deviation,
+    });
+
+    // Record learning from verification result
+    if (intent_id) {
+      void recordKevinOutcomeLearning({
+        orgId,
+        intentId: intent_id,
+        capabilityKey: capability_key,
+        outcomeType: result.status === "passed" ? "verification_passed" : "verification_failed",
+        outcome: result.status === "passed" ? "success" : "partial",
+        verificationResult: result.status,
+        correlationId: req.headers["x-correlation-id"] as string | undefined,
+      });
+    }
+
+    return res.json({ verification: result });
+  });
+
+  // ── Outcomes ───────────────────────────────────────────────────────────────
+
+  /**
+   * POST /api/internal/kevin/v1/outcomes
+   * Record a final business outcome for an intent (e.g., lead converted, session booked).
+   */
+  app.post(`${base}/outcomes`, ...guard, async (req: Request, res: Response) => {
+    const orgId = await resolveOrgIdFromRequest(req);
+    if (!orgId) return res.status(400).json({ message: "org_id required" });
+
+    const body = req.body ?? {};
+    const { intent_id, capability_key, outcome, downstream_business_outcome,
+            human_feedback, specialist_agent, kevin_confidence, should_repeat } = body;
+    if (!intent_id || !capability_key || !outcome) {
+      return res.status(400).json({ message: "intent_id, capability_key, and outcome are required" });
+    }
+
+    void recordKevinOutcomeLearning({
+      orgId,
+      intentId: intent_id,
+      capabilityKey: capability_key,
+      outcomeType: outcome === "success" ? "intent_completed" : "intent_failed",
+      outcome,
+      downstreamBusinessOutcome: downstream_business_outcome,
+      humanFeedback: human_feedback,
+      specialistAgent: specialist_agent,
+      kevinConfidence: kevin_confidence,
+      shouldRepeat: should_repeat,
+      correlationId: req.headers["x-correlation-id"] as string | undefined,
+    });
+
+    logKevinIntent({
+      action: outcome === "success" ? "completed" : "failed",
+      intentId: intent_id,
+      capabilityKey: capability_key,
+      orgId,
+      correlationId: req.headers["x-correlation-id"] as string | undefined,
+    });
+
+    return res.json({ ok: true, recorded: true });
+  });
+
+  // ── Machine-Readable Documentation (Phase 19) ──────────────────────────────
+
+  /**
+   * GET /api/internal/kevin/v1/docs
+   * Returns machine-readable API documentation Kevin can use to onboard TrainEfficiency.
+   * This endpoint does NOT require M2M auth (public docs).
+   */
+  app.get(`${base}/docs`, async (_req: Request, res: Response) => {
+    const capabilityKeys = listCapabilityKeys();
+    const capabilities = capabilityKeys.map((key) => {
+      const cap = getCapabilityDefinition(key)!;
+      return serializeCapability(cap);
+    });
+
+    const docs = {
+      version: "1.0",
+      generated_at: new Date().toISOString(),
+      base_url: "/api/internal/kevin/v1",
+      authentication: {
+        type: "bearer_token",
+        header: "Authorization",
+        format: "Bearer <TE_INTERNAL_SERVICE_TOKEN>",
+        env_variable: "TE_INTERNAL_SERVICE_TOKEN",
+        note: "Service token must be set as an environment variable on Kevin's virtual computer.",
+      },
+      replay_protection: {
+        header: "X-Kevin-Timestamp",
+        format: "unix_milliseconds",
+        window_ms: 300000,
+        nonce_header: "X-Kevin-Nonce",
+        note: "Timestamp must be within ±5 minutes of server time.",
+      },
+      correlation: {
+        header: "X-Correlation-ID",
+        format: "uuid",
+        note: "Thread this ID through all related requests for cross-system tracing.",
+      },
+      intent_lifecycle: {
+        states: ["received","validating","planned","awaiting_approval","queued","executing","verifying","completed","partially_completed","failed","cancelled","dead_lettered"],
+        description: "An intent represents Kevin's executive objective. Create one per goal. Poll for state changes.",
+      },
+      task_lifecycle: {
+        states: ["created","blocked","queued","claimed","executing","awaiting_approval","awaiting_dependency","verifying","completed","failed","cancelled","dead_lettered"],
+        description: "A task is one action required to achieve an intent. Tasks can have dependencies.",
+      },
+      approval_lifecycle: {
+        states: ["pending","approved","rejected","expired","cancelled"],
+        description: "High-risk actions require human approval before execution.",
+      },
+      idempotency: {
+        header: "idempotency_key",
+        note: "Include idempotency_key in POST /intents to prevent duplicate intents on retry.",
+      },
+      rate_limits: {
+        intents_per_minute: 20,
+        tasks_per_intent: 20,
+        delegation_depth: 3,
+      },
+      error_codes: {
+        "AUTHENTICATION_FAILED": "Service token is invalid or missing",
+        "REPLAY_REJECTED": "Request timestamp is outside the allowed window",
+        "VALIDATION_ERROR": "Request payload is missing required fields",
+        "CAPABILITY_UNKNOWN": "The requested capability key does not exist",
+        "CAPABILITY_DISABLED": "The capability is disabled for this organization",
+        "MODE_NOT_PERMITTED": "The requested execution mode is not allowed",
+        "APPROVAL_REQUIRED": "This action requires human approval before execution",
+        "ORG_MISMATCH": "The resource does not belong to the authorized organization",
+        "RATE_LIMITED": "Too many requests — slow down",
+        "DUPLICATE_REQUEST": "This idempotency key was already used",
+        "EMERGENCY_STOP_ACTIVE": "Global or org-level emergency stop is active",
+        "CIRCUIT_BREAKER_OPEN": "Too many recent failures — circuit breaker is open",
+        "EXECUTOR_UNAVAILABLE": "The executor service for this capability is not reachable",
+        "VERIFICATION_FAILED": "Execution completed but verification checks did not pass",
+        "POLICY_DENIED": "The policy engine rejected this request",
+        "NAV_NOT_FOUND": "The requested navigation intent is not in the route registry",
+      },
+      endpoints: [
+        { method: "GET",  path: "/capabilities",            auth: true,  description: "List all available capabilities for the org" },
+        { method: "GET",  path: "/capabilities/:key",       auth: true,  description: "Get a single capability definition" },
+        { method: "POST", path: "/intents",                 auth: true,  description: "Create a new executive intent" },
+        { method: "GET",  path: "/intents",                 auth: true,  description: "List intents for the org" },
+        { method: "GET",  path: "/intents/:id",             auth: true,  description: "Get a single intent with its tasks" },
+        { method: "POST", path: "/intents/:id/cancel",      auth: true,  description: "Cancel an active intent" },
+        { method: "POST", path: "/tasks",                   auth: true,  description: "Delegate a task to a platform agent" },
+        { method: "GET",  path: "/tasks/:id",               auth: true,  description: "Get a single task" },
+        { method: "POST", path: "/tasks/:id/cancel",        auth: true,  description: "Cancel a task" },
+        { method: "POST", path: "/tasks/:id/output",        auth: true,  description: "Submit task output (agent → Kevin)" },
+        { method: "POST", path: "/approvals",               auth: true,  description: "Create an approval request" },
+        { method: "GET",  path: "/approvals/:id",           auth: true,  description: "Inspect an approval" },
+        { method: "POST", path: "/agentmail/draft",         auth: true,  description: "Create an AgentMail email draft" },
+        { method: "POST", path: "/ceo/analyze",             auth: true,  description: "Request CEO Agent analysis" },
+        { method: "POST", path: "/ceo/escalate",            auth: true,  description: "Escalate a risk to the attention inbox" },
+        { method: "GET",  path: "/navigate/:intent",        auth: true,  description: "Get a navigation suggestion for a known intent" },
+        { method: "GET",  path: "/stats",                   auth: true,  description: "Intent statistics for the org" },
+        { method: "POST", path: "/verify",                  auth: true,  description: "Verify a capability execution result" },
+        { method: "POST", path: "/outcomes",                auth: true,  description: "Record a final business outcome" },
+        { method: "GET",  path: "/health",                  auth: false, description: "Health check — no auth required" },
+        { method: "GET",  path: "/docs",                    auth: false, description: "This machine-readable documentation" },
+      ],
+      intent_example: {
+        requestId: "550e8400-e29b-41d4-a716-446655440000",
+        idempotencyKey: "kevin-lead-followup-2024-01-15",
+        correlationId: "550e8400-e29b-41d4-a716-446655440001",
+        organizationId: "your-org-id",
+        initiatingUserId: "your-user-id",
+        capabilityKey: "email.create_draft",
+        capabilityVersion: "1",
+        requestedMode: "draft",
+        goal: "Create a personalized follow-up email for inactive lead Jordan Smith",
+        reason: "Jordan was a high-value prospect who went silent 30 days ago",
+        confidence: 0.91,
+        structuredArgs: { leadId: "lead_abc123", tone: "professional_warm" },
+        sourceContext: { channel: "trainefficiency_chat" },
+      },
+      capability_catalog: capabilities,
+      production_activation_plan: {
+        stages: ["local_tests", "observe_mode", "recommend_mode", "draft_mode", "require_approval", "narrowly_scoped_auto"],
+        current_safe_defaults: {
+          "platform.retrieve_context": "observe",
+          "platform.open_location": "auto",
+          "ceo.request_analysis": "recommend",
+          "email.create_draft": "draft",
+          "email.send": "require_approval",
+          "schedule.create_session": "require_approval",
+          "campaign.request_launch": "disabled",
+        },
+      },
+      security_restrictions: [
+        "Kevin must never receive unrestricted database access",
+        "Kevin must never directly modify another agent's memory",
+        "Kevin must never bypass existing business services",
+        "Kevin must never be given one global 'manage everything' permission",
+        "Every action must be an explicit capability with its own policy",
+        "Organization ID is always validated server-side — never trusted from Kevin",
+        "Emergency kill switches can halt all Kevin operations instantly",
+      ],
+    };
+
+    return res.json(docs);
+  });
+
+  /**
+   * GET /api/internal/kevin/v1/health
+   */
+  app.get(`${base}/health`, async (_req: Request, res: Response) => {
+    return res.json({
+      status: "operational",
+      version: "1.0",
+      timestamp: new Date().toISOString(),
+      capabilities: listCapabilityKeys().length,
+      docs_url: `${base}/docs`,
+    });
   });
 }
