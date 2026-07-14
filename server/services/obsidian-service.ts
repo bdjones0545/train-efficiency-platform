@@ -25,12 +25,17 @@ function getConfig() {
   return {
     baseUrl: process.env.OBSIDIAN_BASE_URL || "",
     apiKey: process.env.OBSIDIAN_API_KEY || "",
+    mcpUrl: process.env.OBSIDIAN_MCP_URL || "",
   };
 }
 
 export function isObsidianConfigured(): boolean {
   const { baseUrl, apiKey } = getConfig();
   return !!(baseUrl && apiKey);
+}
+
+export function isMcpConfigured(): boolean {
+  return !!getConfig().mcpUrl;
 }
 
 // ─── Vault Folders ───────────────────────────────────────────────────────────
@@ -777,10 +782,13 @@ export interface ObsidianStatus {
   version?: string;
   /** Specific reason why connected=false, only present when configured but not connected */
   connectionError?: string;
+  mcpConfigured: boolean;
+  mcpUrl?: string;
 }
 
 export function getObsidianStatus(): ObsidianStatus {
   resetDailyIfNeeded();
+  const { mcpUrl } = getConfig();
   return {
     configured: isObsidianConfigured(),
     connected: _metrics.connected,
@@ -788,6 +796,8 @@ export function getObsidianStatus(): ObsidianStatus {
     notesCreatedToday: _metrics.notesCreatedToday,
     searchesPerformed: _metrics.searchesPerformed,
     lastConnectionCheck: _metrics.lastConnectionCheck?.toISOString() ?? null,
+    mcpConfigured: !!mcpUrl,
+    mcpUrl: mcpUrl || undefined,
   };
 }
 

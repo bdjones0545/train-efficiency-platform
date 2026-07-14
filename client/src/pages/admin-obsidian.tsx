@@ -29,6 +29,8 @@ interface ObsidianStatus {
   version?: string;
   /** Specific reason why the connection failed, only present when configured but not connected */
   connectionError?: string;
+  mcpConfigured: boolean;
+  mcpUrl?: string;
 }
 
 interface VaultStats {
@@ -220,9 +222,14 @@ function DashboardTab() {
             )}
           </p>
         </div>
-        <Badge variant={status.connected ? "default" : "outline"} className={`text-xs shrink-0 ${!status.connected ? "border-amber-500 text-amber-500" : ""}`}>
-          {status.connected ? "Live" : "Unreachable"}
-        </Badge>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <Badge variant={status.connected ? "default" : "outline"} className={`text-xs ${!status.connected ? "border-amber-500 text-amber-500" : ""}`} data-testid="badge-rest-status">
+            {status.connected ? "REST Live" : "Unreachable"}
+          </Badge>
+          <Badge variant={status.mcpConfigured ? "default" : "outline"} className={`text-xs ${!status.mcpConfigured ? "border-zinc-400 text-zinc-400" : "bg-violet-600 hover:bg-violet-600"}`} data-testid="badge-mcp-status">
+            {status.mcpConfigured ? "MCP Ready" : "MCP —"}
+          </Badge>
+        </div>
       </div>
 
       {/* Metric grid */}
