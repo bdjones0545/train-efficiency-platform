@@ -74,8 +74,9 @@ KEVIN_CONTEXT_RETRIEVAL_ENABLED=false     # Enable /v1/context/query calls
 KEVIN_OUTCOME_FORWARDING_ENABLED=false    # Enable /v1/outcomes forwarding
 
 # ─── Behaviour ─────────────────────────────────────────────────────────────
-KEVIN_SIGNAL_INTAKE_ENABLED=true          # Signal intake (default enabled once
-                                          # TE_INTERNAL_SERVICE_TOKEN is set)
+KEVIN_SIGNAL_INTAKE_ENABLED=false         # Signal intake — default OFF.
+                                          # Enable only after TE_INTERNAL_SERVICE_TOKEN
+                                          # is set AND Stage 3 (outcomes) verified.
 ```
 
 ### Rotation procedure for TE_INTERNAL_SERVICE_TOKEN
@@ -92,14 +93,29 @@ KEVIN_SIGNAL_INTAKE_ENABLED=true          # Signal intake (default enabled once
 
 All flags use `truthy()` interpretation: `"1"`, `"true"`, or `"yes"` are true.
 
-**Recommended activation order:**
+**Staged activation sequence (recommended):**
 
 ```
-Phase 0: KEVIN_INTEGRATION_ENABLED=true        (health only)
-Phase 1: TE_INTERNAL_SERVICE_TOKEN=<secret>    (signal intake)
-Phase 2: KEVIN_CONTEXT_RETRIEVAL_ENABLED=true  (CEO Heartbeat enrichment)
-Phase 3: KEVIN_EVENT_DISPATCH_ENABLED=true     (event queue drains to Hermes)
-Phase 4: KEVIN_OUTCOME_FORWARDING_ENABLED=true (learning loop)
+Stage 1: KEVIN_INTEGRATION_ENABLED=true
+         KEVIN_CONTEXT_RETRIEVAL_ENABLED=true
+         → Verify CEO Heartbeat context requests appear in kevin_context_requests
+         → Confirm heartbeat continues when Hermes is unavailable
+
+Stage 2: KEVIN_EVENT_DISPATCH_ENABLED=true
+         → Verify: POST /api/admin/kevin/events/flush returns sent > 0
+         → Verify: no duplicate delivery (idempotency_key stays unique)
+
+Stage 3: KEVIN_OUTCOME_FORWARDING_ENABLED=true
+         → Approve/reject an AgentMail draft
+         → Verify: kevin_outcomes row appears with correct outcome type
+         → Verify: forward_status transitions to 'forwarded' after flush
+
+Stage 4: TE_INTERNAL_SERVICE_TOKEN=$(openssl rand -hex 32)   # min 32 chars
+         KEVIN_SIGNAL_INTAKE_ENABLED=true
+         → Test: POST /api/internal/kevin/signals with Bearer token → 201
+         → Test: wrong token → 401
+         → Test: correct token, depth=4 → 422 LOOP_DEPTH_EXCEEDED
+         → Test: duplicate signal → 200 with status=duplicate
 ```
 
 ---
@@ -434,3 +450,90 @@ UPDATE kevin_events
 SET status = 'pending', next_retry_at = NOW(), attempts = 0
 WHERE status = 'dead_lettered' AND org_id = 'your-org';
 ```
+
+---
+
+## 15. Route Authentication Classification
+
+| Route | Auth | Note |
+|---|---|---|
+| `GET /api/kevin/health` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/kevin/capabilities` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/kevin/config-status` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/kevin/audit` | isAuthenticated + ADMIN | Browser session |
+| `POST /api/kevin/runs` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/kevin/runs` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/kevin/runs/:id` | isAuthenticated + ADMIN | Browser session |
+| `POST /api/kevin/runs/:id/stop` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/kevin/runs/:id/events` | isAuthenticated + ADMIN | Browser session (SSE) |
+| `GET /api/admin/kevin/circuit-breaker` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/admin/kevin/capabilities` | isAuthenticated + ADMIN | Browser session |
+| `PATCH /api/admin/kevin/capabilities/:cap` | isAuthenticated + ADMIN | Browser session |
+| `POST /api/admin/kevin/capabilities/seed` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/admin/kevin/events` | isAuthenticated + ADMIN | Browser session |
+| `POST /api/admin/kevin/events/flush` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/admin/kevin/outcomes` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/admin/kevin/context-requests` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/admin/kevin/signals` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/admin/kevin/signals/:id` | isAuthenticated + ADMIN | Browser session |
+| `POST /api/admin/kevin/signals/:id/dismiss` | isAuthenticated + ADMIN | Browser session |
+| `GET /api/admin/kevin/signals/stats` | isAuthenticated + ADMIN | Browser session |
+| **`POST /api/internal/kevin/signals`** | **TE_INTERNAL_SERVICE_TOKEN bearer only** | **Machine-to-machine. Browser session NOT accepted.** |
+
+### Internal token security properties
+- Timing-safe comparison (SHA-256 hash, constant-time `timingSafeEqual`)
+- Never logged, never returned in responses, never included in client bundle
+- Missing or too-short token (< 24 chars): returns **503** (fail-closed, unambiguous)
+- Correct token + no browser session: **accepted** (intended machine-to-machine use)
+- Valid ADMIN browser session + no token: **rejected 401**
+- Feature gate checked AFTER token validation so Kevin gets a clear 503 (not 401) when intake is disabled
+
+---
+
+## 16. Hermes Endpoint Readiness Matrix
+
+| Endpoint | Status | Flag | TE contract |
+|---|---|---|---|
+| `GET /health` | ✅ When Hermes is up | `KEVIN_INTEGRATION_ENABLED` | `{ status }` |
+| `GET /health/detailed` | ✅ When Hermes is up | `KEVIN_INTEGRATION_ENABLED` | `{ gateway_state, readiness }` |
+| `GET /v1/capabilities` | ✅ When Hermes is up | `KEVIN_INTEGRATION_ENABLED` | `{ features: { runs, sse, approvals } }` |
+| `POST /v1/runs` | ✅ When Hermes is up | `KEVIN_INTEGRATION_ENABLED` | `{ run_id, status }` |
+| `GET /v1/runs/:id` | ✅ When Hermes is up | `KEVIN_INTEGRATION_ENABLED` | run object |
+| `POST /v1/runs/:id/stop` | ✅ When Hermes is up | `KEVIN_INTEGRATION_ENABLED` | `{ ok }` |
+| `GET /v1/runs/:id/events` | ✅ When Hermes is up | `KEVIN_INTEGRATION_ENABLED` | SSE stream |
+| **`POST /v1/events`** | **⏳ Pending — Hermes endpoint not yet available** | `KEVIN_EVENT_DISPATCH_ENABLED` | `{ ok: true, event_id: string }` |
+| **`POST /v1/context/query`** | **⏳ Pending — Hermes endpoint not yet available** | `KEVIN_CONTEXT_RETRIEVAL_ENABLED` | `{ summary, memories, patterns, confidence }` |
+| **`POST /v1/outcomes`** | **⏳ Pending — Hermes endpoint not yet available** | `KEVIN_OUTCOME_FORWARDING_ENABLED` | `{ ok: true, outcome_id: string }` |
+
+All three pending endpoints are fully implemented in `server/services/kevin-hermes-client.ts`.
+They will activate automatically when the corresponding feature flag is set to `true` and
+Hermes provides the endpoint. No code changes are required on the TE side.
+
+---
+
+## 17. Org Isolation Guarantees
+
+Every query touching `kevin_*` tables includes an explicit `org_id` predicate.
+The `org_id` is resolved from `user_profiles` for authenticated admin routes — never from the request body or query params.
+
+Kevin cannot:
+- Access another organization's capabilities, events, outcomes, signals, or context requests
+- Select tools outside the TE capability catalogue
+- Generate arbitrary navigation URLs (nav registry enforces an allowlist of valid TE admin routes)
+- Bypass the Autonomy Policy Engine, AgentMail Send Guards, or outbound audit logging
+- Cause a send without going through TE's existing approval chain (capability mode must be explicitly set to `auto` by an ADMIN)
+
+---
+
+## 18. Migration
+
+**File:** `migrations/0001_kevin_tables.sql`
+
+Creates all 9 Kevin tables plus 6 enum types using idempotent DDL:
+- Enums: `DO $$ BEGIN CREATE TYPE ...; EXCEPTION WHEN duplicate_object THEN NULL; END $$`
+- Tables: `CREATE TABLE IF NOT EXISTS`
+- Indexes: `CREATE [UNIQUE] INDEX IF NOT EXISTS`
+
+**Existing database (bootstrap path):** Safe to apply — all statements are no-ops if objects already exist.
+**Empty database:** Fully reproducible from zero using this migration alone.
+**Rollback:** Documented in the migration file header. Must be executed manually; no automatic rollback.

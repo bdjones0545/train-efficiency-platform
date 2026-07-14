@@ -1,0 +1,414 @@
+Perform a final production-hardening and controlled-activation audit of the completed TrainEfficiency × Kevin integration.
+
+Do not add broad new features. Do not deploy automatically.
+
+The current implementation reports:
+
+* 23/23 Kevin integration tests passing
+* TypeScript clean
+* six new Kevin tables
+* circuit breaker
+* capability service
+* event service and retry worker
+* outcome service
+* context service
+* signal router
+* navigation registry
+* CEO Heartbeat context enrichment
+* operational event wire-ins
+* seven-tab Kevin Admin Console
+* six ADMIN API routes
+* one internal Kevin signal endpoint
+
+Your job is to verify repository reality and close the remaining production-readiness gaps.
+
+## 1. Convert direct SQL schema creation into a proper migration
+
+The following tables were reportedly created directly through SQL:
+
+* `kevin_capabilities`
+* `kevin_events`
+* `kevin_signals`
+* `kevin_context_requests`
+* `kevin_outcomes`
+* `kevin_rate_limits`
+
+Inspect the actual database schema and application schema definitions.
+
+Create a committed migration using the repository’s normal migration conventions.
+
+Requirements:
+
+* preserve all existing rows
+* do not drop or recreate production tables
+* use additive and idempotent-safe migration logic where repository conventions allow
+* include every column, constraint, default, unique index, check constraint, and performance index required by the current services
+* ensure application schema definitions exactly match the database
+* confirm a fresh database can be migrated from zero
+* confirm an existing database containing the six tables can safely apply the migration
+* document any baseline or reconciliation mechanism used to avoid duplicate-object failures
+* create rollback documentation, but do not perform destructive rollback automatically
+
+Explicitly verify:
+
+* allowed capability modes
+* event statuses
+* signal statuses and risk classes
+* context-request statuses
+* outcome values
+* unique idempotency constraints
+* org-scoped indexes
+* retry-selection indexes
+* signal replay-deduplication indexes
+* persistent rate-limit unique constraint
+
+## 2. Verify authentication boundaries
+
+Classify every Kevin route accurately.
+
+The following routes should require authenticated TrainEfficiency sessions plus ADMIN authorization:
+
+```text
+GET /api/admin/kevin/circuit-breaker
+GET /api/admin/kevin/capabilities
+PATCH /api/admin/kevin/capabilities
+POST /api/admin/kevin/capabilities/seed
+GET /api/admin/kevin/events
+POST /api/admin/kevin/events/flush
+GET /api/admin/kevin/outcomes
+GET /api/admin/kevin/context-requests
+```
+
+The following route must not use browser-session ADMIN authorization as its primary protection:
+
+```text
+POST /api/internal/kevin/signals
+```
+
+It must require:
+
+```text
+TE_INTERNAL_SERVICE_TOKEN
+```
+
+Verify:
+
+* missing token returns 401
+* incorrect token returns 401
+* valid token reaches payload validation
+* a valid ADMIN browser session without the internal token is rejected
+* a valid internal token without a browser session is accepted
+* token comparison is timing-safe
+* token is never logged
+* token is never included in audit payloads
+* token is never exposed to the client bundle
+* token validation fails closed when the environment variable is missing or shorter than the required minimum
+
+Correct any misleading comments, tests, route descriptions, or documentation that describe the internal endpoint as ADMIN-only.
+
+## 3. Verify all feature flags
+
+Confirm the code consistently recognizes and documents:
+
+```text
+KEVIN_INTEGRATION_ENABLED
+KEVIN_EVENT_DISPATCH_ENABLED
+KEVIN_CONTEXT_RETRIEVAL_ENABLED
+KEVIN_OUTCOME_FORWARDING_ENABLED
+KEVIN_SIGNAL_INTAKE_ENABLED
+TE_INTERNAL_SERVICE_TOKEN
+KEVIN_HERMES_BASE_URL
+KEVIN_HERMES_API_KEY
+```
+
+All new behavior must default to disabled except passive local storage that is explicitly safe.
+
+Verify the behavior of each flag independently.
+
+Create a capability and flag matrix showing:
+
+* feature flag
+* capability name
+* required approval mode
+* operation allowed
+* failure behavior
+* audit behavior
+
+Master disable behavior:
+
+```text
+KEVIN_INTEGRATION_ENABLED=false
+```
+
+must prevent all outbound Kevin calls and inbound Kevin processing without breaking TrainEfficiency.
+
+## 4. Verify the event worker lifecycle
+
+Inspect how the event worker starts.
+
+Confirm:
+
+* it starts exactly once per application process
+* hot reload does not create duplicate intervals
+* tests do not leave background intervals running
+* graceful shutdown clears the worker
+* multiple instances cannot dispatch the same row simultaneously
+* rows are claimed before external delivery
+* database transactions are not held during the external HTTP request
+* stuck `processing` events can be recovered after a timeout
+* retry times match the documented schedule
+* fifth qualifying failure results in `dead_lettered`
+* only one Attention Inbox item is created for a dead-lettered event
+* manual retry preserves audit history and idempotency
+
+Add tests for any missing lifecycle behavior.
+
+## 5. Verify the Hermes contracts
+
+Inspect the actual Kevin/Hermes client methods used for:
+
+* event dispatch
+* context retrieval
+* outcome forwarding
+* health
+* capabilities
+* runs
+* SSE events
+
+For every method, document:
+
+* HTTP method
+* endpoint
+* request schema
+* response schema
+* timeout
+* retry behavior
+* error classification
+* feature flag
+* circuit-breaker participation
+
+Do not claim an endpoint is functional unless it has been exercised against the configured Kevin runtime.
+
+If an endpoint is not implemented on Kevin/Hermes:
+
+* classify it as pending
+* keep the relevant flag disabled
+* preserve locally queued records
+* provide the exact required Kevin-side contract
+* do not fake successful dispatch or forwarding
+
+## 6. Perform a controlled local smoke test
+
+Do not deploy.
+
+Using the current environment where possible, verify:
+
+### Master-disabled test
+
+With Kevin integration disabled:
+
+* TrainEfficiency boots
+* CEO Heartbeat still operates
+* decision recording still operates
+* AgentMail approval and rejection still operate
+* lead intake still operates
+* no outbound Kevin calls occur
+
+### Context-only test
+
+Enable only:
+
+```text
+KEVIN_INTEGRATION_ENABLED=true
+KEVIN_CONTEXT_RETRIEVAL_ENABLED=true
+```
+
+Keep event dispatch, outcome forwarding, and signal intake disabled.
+
+Verify:
+
+* CEO Heartbeat requests Kevin context
+* context request is recorded
+* unavailable Kevin produces an empty result
+* heartbeat continues
+* no event dispatch occurs
+* no outcomes are forwarded
+* no inbound signals are accepted
+
+### Event test
+
+Enable event dispatch only after confirming the Hermes event endpoint.
+
+Generate one known test event.
+
+Verify:
+
+* exactly one queue row
+* exactly one remote delivery
+* status becomes `sent`
+* retry does not duplicate it
+* idempotency key is stable
+
+### Outcome test
+
+Enable outcome forwarding only after confirming the Hermes endpoint.
+
+Record:
+
+* accepted
+* modified
+* rejected
+
+Verify approval is not confused with operational success.
+
+### Signal test
+
+Enable signal intake only with a strong internal token.
+
+Submit:
+
+* one valid high-risk signal
+* one duplicate
+* one invalid-org signal
+* one excessive-depth signal
+* one request with the wrong token
+
+Verify deterministic routing, deduplication, loop blocking, and authorization.
+
+## 7. Security review
+
+Search the complete repository for:
+
+```text
+TE_INTERNAL_SERVICE_TOKEN
+KEVIN_HERMES_API_KEY
+KEVIN_HERMES_BASE_URL
+KEVIN_SIGNAL_INTAKE_ENABLED
+KEVIN_EVENT_DISPATCH_ENABLED
+KEVIN_CONTEXT_RETRIEVAL_ENABLED
+KEVIN_OUTCOME_FORWARDING_ENABLED
+/api/internal/kevin
+/api/admin/kevin
+```
+
+Confirm:
+
+* server-only secrets do not appear in client code
+* API responses do not return secrets
+* errors do not reveal expected tokens
+* audit logs redact secrets
+* event payloads do not contain raw athlete or lead PII
+* context prompts contain aggregates only
+* Kevin output cannot select arbitrary tools
+* Kevin output cannot generate arbitrary navigation URLs
+* Kevin cannot bypass the Autonomy Policy Engine
+* Kevin cannot bypass approvals
+* Kevin cannot bypass send guards
+* Kevin cannot bypass outbound auditing
+* Kevin cannot bypass org isolation
+
+## 8. Org-isolation audit
+
+Inspect every query touching:
+
+* `kevin_capabilities`
+* `kevin_events`
+* `kevin_signals`
+* `kevin_context_requests`
+* `kevin_outcomes`
+* `kevin_rate_limits`
+* `kevin_runs`
+* `kevin_sessions`
+* `kevin_audit_events`
+
+Confirm all user-accessible reads and writes include the authenticated `org_id`.
+
+Add negative tests proving one organization cannot:
+
+* view another organization’s capabilities
+* view another organization’s events
+* flush another organization’s events
+* view another organization’s outcomes
+* view another organization’s context requests
+* dismiss another organization’s signal
+* retry another organization’s dead-letter event
+
+## 9. Documentation correction
+
+Update:
+
+* `replit.md`
+* `.env.example`
+* `docs/kevin-integration.md`
+
+Include a staged activation sequence:
+
+```text
+Stage 1:
+KEVIN_INTEGRATION_ENABLED=true
+KEVIN_CONTEXT_RETRIEVAL_ENABLED=true
+
+Stage 2:
+KEVIN_EVENT_DISPATCH_ENABLED=true
+
+Stage 3:
+KEVIN_OUTCOME_FORWARDING_ENABLED=true
+
+Stage 4:
+TE_INTERNAL_SERVICE_TOKEN=<strong unique value>
+KEVIN_SIGNAL_INTAKE_ENABLED=true
+```
+
+Explain what must be verified before progressing to each stage.
+
+Clarify that `/api/internal/kevin/signals` is internal-token protected, not ADMIN-session protected.
+
+## 10. Verification
+
+Run:
+
+* TypeScript typecheck
+* Kevin unit tests
+* full relevant unit-test suite
+* integration tests
+* fresh-database migration
+* existing-database migration reconciliation
+* production build
+* lint if configured
+* secret/client-bundle search
+* route authentication tests
+
+Do not stop after targeted Kevin tests if broader verification is available.
+
+## Final report
+
+Return:
+
+1. migration created
+2. schema reconciliation strategy
+3. authentication classification for every Kevin route
+4. feature-flag matrix
+5. Hermes endpoint readiness matrix
+6. event-worker lifecycle findings
+7. org-isolation findings
+8. security findings
+9. smoke-test results
+10. files created
+11. files modified
+12. tests added
+13. exact commands run
+14. complete results
+15. remaining Kevin-runtime requirements
+16. known limitations
+17. rollback steps
+18. confirmation that no deployment occurred
+
+Classify the implementation as:
+
+```text
+PRODUCTION READY
+PRODUCTION READY WITH DOCUMENTED LIMITATIONS
+NOT PRODUCTION READY
+```
+
+Do not classify it as production-ready if the schema cannot be reproduced through committed migrations or if any required Hermes endpoint remains unverified.

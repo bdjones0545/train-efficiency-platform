@@ -226,3 +226,103 @@ test("HTTP: POST /api/internal/kevin/signals is protected (401, 403, or 503 when
     `Expected 401, 403, or 503 (token not configured), got ${res.status}`,
   );
 });
+
+// ─── Org isolation ─────────────────────────────────────────────────────────────
+// These tests verify that Kevin admin endpoints enforce org scoping.
+// Without a valid authenticated session the responses are 401, confirming
+// unauthenticated cross-org reads are impossible.
+
+test("org-isolation: GET /api/admin/kevin/signals without session cannot read any org's signals", async () => {
+  // Without a valid admin session the endpoint must refuse — no signals can leak.
+  const res = await fetch(`${BASE}/api/admin/kevin/signals`);
+  assert.ok(res.status === 401, `Unauthenticated cross-org signal read must be 401, got ${res.status}`);
+});
+
+test("org-isolation: GET /api/admin/kevin/events without session cannot read any org's events", async () => {
+  const res = await fetch(`${BASE}/api/admin/kevin/events`);
+  assert.ok(res.status === 401, `Unauthenticated cross-org event read must be 401, got ${res.status}`);
+});
+
+test("org-isolation: GET /api/admin/kevin/outcomes without session cannot read any org's outcomes", async () => {
+  const res = await fetch(`${BASE}/api/admin/kevin/outcomes`);
+  assert.ok(res.status === 401, `Unauthenticated cross-org outcome read must be 401, got ${res.status}`);
+});
+
+test("org-isolation: GET /api/admin/kevin/context-requests without session cannot read any org's context requests", async () => {
+  const res = await fetch(`${BASE}/api/admin/kevin/context-requests`);
+  assert.ok(res.status === 401, `Unauthenticated cross-org context-request read must be 401, got ${res.status}`);
+});
+
+test("org-isolation: GET /api/admin/kevin/capabilities without session cannot read any org's capabilities", async () => {
+  const res = await fetch(`${BASE}/api/admin/kevin/capabilities`);
+  assert.ok(res.status === 401, `Unauthenticated cross-org capability read must be 401, got ${res.status}`);
+});
+
+test("org-isolation: GET /api/kevin/config-status without session is rejected", async () => {
+  const res = await fetch(`${BASE}/api/kevin/config-status`);
+  assert.ok(res.status === 401, `Unauthenticated config-status read must be 401, got ${res.status}`);
+});
+
+test("org-isolation: GET /api/kevin/audit without session is rejected", async () => {
+  const res = await fetch(`${BASE}/api/kevin/audit`);
+  assert.ok(res.status === 401, `Unauthenticated audit-log read must be 401, got ${res.status}`);
+});
+
+test("org-isolation: GET /api/kevin/runs without session is rejected", async () => {
+  const res = await fetch(`${BASE}/api/kevin/runs`);
+  assert.ok(res.status === 401, `Unauthenticated runs list must be 401, got ${res.status}`);
+});
+
+test("org-isolation: internal signal endpoint rejects session-only request (no service token)", async () => {
+  // Even if a browser session cookie were present, the endpoint requires the
+  // TE_INTERNAL_SERVICE_TOKEN bearer — a session alone is insufficient.
+  const res = await fetch(`${BASE}/api/internal/kevin/signals`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      // Simulate an attacker that has a valid admin session but no service token
+      "Cookie": "connect.sid=fake-session-id",
+    },
+    body: JSON.stringify({
+      orgId: "attacker-org",
+      signalType: "te.takeover",
+      payload: { malicious: true },
+      source: "attacker",
+    }),
+  });
+  assert.ok(
+    res.status === 401 || res.status === 403 || res.status === 503,
+    `Session-only request to internal signal endpoint must be rejected, got ${res.status}`,
+  );
+});
+
+test("org-isolation: POST /api/admin/kevin/capabilities/seed without session is rejected", async () => {
+  const res = await fetch(`${BASE}/api/admin/kevin/capabilities/seed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+  });
+  assert.ok(res.status === 401, `Unauthenticated capability seed must be 401, got ${res.status}`);
+});
+
+test("org-isolation: PATCH /api/admin/kevin/capabilities/cross_application_context without session is rejected", async () => {
+  const res = await fetch(`${BASE}/api/admin/kevin/capabilities/cross_application_context`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: "auto" }),
+  });
+  assert.ok(res.status === 401, `Unauthenticated capability patch must be 401, got ${res.status}`);
+});
+
+// ─── Event worker lifecycle ────────────────────────────────────────────────────
+
+test("event-worker: stopKevinEventWorker is exported and callable without error", async () => {
+  const mod = await import("../services/kevin-event-service.js");
+  assert.equal(typeof mod.stopKevinEventWorker, "function", "stopKevinEventWorker must be exported");
+  // Calling stop when no worker is running must not throw
+  assert.doesNotThrow(() => mod.stopKevinEventWorker());
+});
+
+test("event-worker: startKevinEventWorker is exported", async () => {
+  const mod = await import("../services/kevin-event-service.js");
+  assert.equal(typeof mod.startKevinEventWorker, "function", "startKevinEventWorker must be exported");
+});

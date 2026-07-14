@@ -729,4 +729,30 @@ app.use((req, res, next) => {
       log(`serving on port ${port}`);
     },
   );
+
+  // ── Graceful shutdown — stop Kevin event worker before exit ───────────────
+  // This prevents the 5-min interval from keeping the process alive during
+  // hot-reload or SIGTERM from the process manager.
+  async function gracefulShutdown(signal: string) {
+    console.log(`[Shutdown] ${signal} received — stopping background workers`);
+    try {
+      const { stopKevinEventWorker } = await import("./services/kevin-event-service");
+      stopKevinEventWorker();
+      console.log("[Shutdown] Kevin event worker stopped");
+    } catch {
+      // Non-fatal — worker may not have started
+    }
+    httpServer.close(() => {
+      console.log("[Shutdown] HTTP server closed");
+      process.exit(0);
+    });
+    // Force exit after 10 s if something hangs
+    setTimeout(() => {
+      console.warn("[Shutdown] Forcing exit after timeout");
+      process.exit(1);
+    }, 10_000).unref();
+  }
+
+  process.once("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  process.once("SIGINT",  () => gracefulShutdown("SIGINT"));
 })();

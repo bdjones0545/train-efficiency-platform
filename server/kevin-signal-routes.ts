@@ -2,11 +2,18 @@
  * Kevin Signal Routes — Phase 3
  *
  * Endpoints for:
- * 1. Kevin→TE inbound signal intake  (protected by internal service token)
- * 2. Admin signal management         (ADMIN only)
+ * 1. Kevin→TE inbound signal intake  (protected by TE_INTERNAL_SERVICE_TOKEN,
+ *                                     NOT browser session auth)
+ * 2. Admin signal management         (isAuthenticated + ADMIN only)
+ *
+ * Feature gates:
+ *   KEVIN_INTEGRATION_ENABLED   — master kill switch
+ *   KEVIN_SIGNAL_INTAKE_ENABLED — enables POST /api/internal/kevin/signals
  *
  * Security:
- * - Signal intake uses requireInternalServiceToken, NOT browser session auth.
+ * - Signal intake is guarded ONLY by requireInternalServiceToken.
+ *   A valid ADMIN browser session without the internal token is rejected.
+ *   A valid internal token without a browser session is accepted.
  * - Admin management uses isAuthenticated + requireKevinAccess (ADMIN).
  * - Never expose raw evidence payloads for security signals.
  * - Loop prevention: depth > 3 rejected at intake.
@@ -56,11 +63,34 @@ async function resolveOrgId(req: any): Promise<string | null> {
 export function registerKevinSignalRoutes(app: Express): void {
 
   // ── POST /api/internal/kevin/signals (Kevin→TE signal intake) ──────────────
+  //
+  // Auth:  requireInternalServiceToken (TE_INTERNAL_SERVICE_TOKEN bearer token)
+  // NOT:   browser session or ADMIN role — this is a machine-to-machine endpoint
+  //
+  // Gates: KEVIN_INTEGRATION_ENABLED AND KEVIN_SIGNAL_INTAKE_ENABLED must both
+  //        be set to "true"/"1"/"yes" for signals to be processed.
+  //        When disabled the endpoint still authenticates (token validated) and
+  //        returns 503 so Kevin knows TE is up but intake is paused.
   app.post(
     "/api/internal/kevin/signals",
     requireInternalServiceToken,
     async (req, res) => {
       try {
+        // Feature gate — checked AFTER token validation so Kevin gets a
+        // clear 503 rather than a silent failure when intake is disabled.
+        const masterOn = /^(1|true|yes)$/i.test(
+          (process.env.KEVIN_INTEGRATION_ENABLED || "").trim(),
+        );
+        const intakeOn = /^(1|true|yes)$/i.test(
+          (process.env.KEVIN_SIGNAL_INTAKE_ENABLED || "").trim(),
+        );
+        if (!masterOn || !intakeOn) {
+          return res.status(503).json({
+            message: "Kevin signal intake is currently disabled",
+            code: "SIGNAL_INTAKE_DISABLED",
+          });
+        }
+
         const body = req.body;
 
         // Validate required fields
