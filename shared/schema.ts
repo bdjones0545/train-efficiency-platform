@@ -5558,3 +5558,87 @@ export const kevinRateLimits = pgTable("kevin_rate_limits", {
 }, (t) => [
   uniqueIndex("kevin_rate_limits_window").on(t.orgId, t.userId, t.windowStart),
 ]);
+
+// ─── Kevin Agent Integration — Phase 1 ───────────────────────────────────────
+
+export const agentJobStatusEnum = pgEnum("agent_job_status", [
+  "requested",
+  "dispatching",
+  "queued",
+  "running",
+  "requires_approval",
+  "completed",
+  "failed",
+  "cancelled",
+  "timed_out",
+  "blocked_by_policy",
+]);
+
+export const agentJobs = pgTable("agent_jobs", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull(),
+  agentId: text("agent_id").notNull(),
+  taskType: text("task_type").notNull(),
+  status: agentJobStatusEnum("status").notNull().default("requested"),
+  requestedByUserId: text("requested_by_user_id").notNull(),
+  subjectType: text("subject_type"),
+  subjectId: text("subject_id"),
+  requestPayload: jsonb("request_payload"),
+  resultPayload: jsonb("result_payload"),
+  errorCode: text("error_code"),
+  errorMessage: text("error_message"),
+  remoteTaskId: text("remote_task_id"),
+  idempotencyKey: text("idempotency_key").notNull(),
+  correlationId: text("correlation_id").notNull(),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  requestedAt: timestamp("requested_at", { withTimezone: true }).notNull().defaultNow(),
+  acceptedAt: timestamp("accepted_at", { withTimezone: true }),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  failedAt: timestamp("failed_at", { withTimezone: true }),
+  cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("agent_jobs_org").on(t.organizationId),
+  index("agent_jobs_status").on(t.status),
+  index("agent_jobs_agent").on(t.agentId),
+  index("agent_jobs_subject").on(t.subjectType, t.subjectId),
+  index("agent_jobs_remote_task").on(t.remoteTaskId),
+  index("agent_jobs_created").on(t.createdAt),
+  uniqueIndex("agent_jobs_idempotency").on(t.idempotencyKey),
+]);
+
+export type AgentJob = typeof agentJobs.$inferSelect;
+export type InsertAgentJob = typeof agentJobs.$inferInsert;
+
+export const retentionRiskLevelEnum = pgEnum("retention_risk_level", [
+  "low",
+  "moderate",
+  "high",
+  "critical",
+]);
+
+export const retentionAgentAnalyses = pgTable("retention_agent_analyses", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  organizationId: text("organization_id").notNull(),
+  clientId: text("client_id").notNull(),
+  agentJobId: text("agent_job_id").notNull(),
+  riskLevel: retentionRiskLevelEnum("risk_level").notNull(),
+  riskScore: integer("risk_score").notNull(),
+  confidenceScore: integer("confidence_score").notNull(),
+  summary: text("summary").notNull(),
+  riskFactors: jsonb("risk_factors"),
+  recommendedActions: jsonb("recommended_actions"),
+  draftMessage: text("draft_message"),
+  evidence: jsonb("evidence"),
+  modelVersion: text("model_version"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [
+  index("raa_org").on(t.organizationId),
+  index("raa_client").on(t.clientId),
+  uniqueIndex("raa_job").on(t.agentJobId),
+]);
+
+export type RetentionAgentAnalysis = typeof retentionAgentAnalyses.$inferSelect;

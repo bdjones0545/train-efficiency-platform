@@ -1,0 +1,700 @@
+We are beginning the production integration between TrainEfficiency and our always-on virtual computer, Kevin.
+
+Kevin is already reachable through a Cloudflare Tunnel and will serve as the AI control plane for TrainEfficiency’s specialized agents.
+
+Do not move TrainEfficiency, its database, authentication, business logic, or frontend onto the virtual computer.
+
+The architecture must remain:
+
+TrainEfficiency frontend
+→ TrainEfficiency backend
+→ signed request through Cloudflare Tunnel
+→ Kevin agent gateway
+→ specialized Hermes agent
+→ signed callback
+→ TrainEfficiency database and UI
+
+TrainEfficiency remains the system of record.
+
+Kevin owns agent execution, identities, skills, memory, tool use, orchestration, retries, and health monitoring.
+
+## Objective
+
+Build the foundational agent-integration layer inside TrainEfficiency.
+
+For this phase, implement one complete production-style vertical slice using the Retention Agent.
+
+The first workflow will be:
+
+1. An authorized TrainEfficiency user clicks “Analyze Retention Risk.”
+2. TrainEfficiency creates an internal agent job.
+3. The TrainEfficiency backend sends a signed asynchronous task request to Kevin.
+4. Kevin accepts the request and returns a task ID.
+5. Kevin later sends a signed callback containing the result.
+6. TrainEfficiency validates the callback.
+7. TrainEfficiency stores the result.
+8. The UI displays the Retention Agent’s findings and recommendations.
+
+Do not connect the browser directly to Kevin.
+
+All Kevin traffic must pass through the TrainEfficiency backend.
+
+---
+
+# Phase 1 Requirements
+
+## 1. Environment Configuration
+
+Add support for the following production environment variables:
+
+```text
+KEVIN_GATEWAY_BASE_URL
+KEVIN_OUTBOUND_HMAC_SECRET
+KEVIN_CALLBACK_HMAC_SECRET
+KEVIN_REQUEST_TIMEOUT_MS
+KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS
+KEVIN_AGENT_INTEGRATION_ENABLED
+```
+
+Requirements:
+
+* Never expose these values to the frontend.
+* Fail safely when configuration is missing.
+* Do not log secrets.
+* Validate required configuration on startup when the integration is enabled.
+* Allow the integration to be disabled without breaking the rest of TrainEfficiency.
+
+Use separate secrets for outbound requests and inbound callbacks.
+
+---
+
+## 2. Agent Registry
+
+Create a centralized agent registry in TrainEfficiency.
+
+The registry must initially contain the Retention Agent.
+
+Example:
+
+```ts
+{
+  id: "retention-agent",
+  name: "Retention Agent",
+  version: "1.0.0",
+  enabled: true,
+  executionLevel: "recommend",
+  capabilities: [
+    "evaluate_client_retention_risk",
+    "recommend_retention_intervention",
+    "draft_retention_message"
+  ],
+  allowedTaskTypes: [
+    "evaluate_client_retention_risk"
+  ]
+}
+```
+
+The registry should be designed so we can later add:
+
+* Executive Agent
+* Revenue Agent
+* Growth Agent
+* Scheduling Agent
+* Client Success Agent
+* CEO Agent
+* Retention Agent
+
+Do not hardcode agent behavior throughout the application.
+
+Agent metadata and task permissions should be resolved through the registry.
+
+---
+
+## 3. Agent Jobs Database Model
+
+Create a durable `agent_jobs` table or equivalent model.
+
+Include at minimum:
+
+```text
+id
+organization_id
+agent_id
+task_type
+status
+requested_by_user_id
+subject_type
+subject_id
+request_payload
+result_payload
+error_code
+error_message
+remote_task_id
+idempotency_key
+correlation_id
+attempt_count
+requested_at
+accepted_at
+started_at
+completed_at
+failed_at
+cancelled_at
+created_at
+updated_at
+```
+
+Supported statuses:
+
+```text
+requested
+dispatching
+queued
+running
+requires_approval
+completed
+failed
+cancelled
+timed_out
+blocked_by_policy
+```
+
+Requirements:
+
+* Every job belongs to an organization.
+* Every job records who requested it.
+* Enforce organization isolation.
+* Add indexes for organization, status, agent, subject, remote task ID, and creation date.
+* Enforce uniqueness for the idempotency key within the appropriate organization or task scope.
+* Do not allow duplicate callbacks to create duplicate results.
+* Preserve the original request and final structured result for auditing.
+
+Use the project’s existing database and migration conventions.
+
+---
+
+## 4. Retention Analysis Data Model
+
+Create a durable model for Retention Agent analysis results.
+
+Suggested name:
+
+```text
+retention_agent_analyses
+```
+
+Include:
+
+```text
+id
+organization_id
+client_id
+agent_job_id
+risk_level
+risk_score
+confidence_score
+summary
+risk_factors
+recommended_actions
+draft_message
+evidence
+model_version
+created_at
+updated_at
+```
+
+Suggested values for `risk_level`:
+
+```text
+low
+moderate
+high
+critical
+```
+
+Structured fields such as risk factors, recommendations, and evidence may use validated JSON if that matches the project’s conventions.
+
+Require every analysis to be linked to its originating agent job.
+
+---
+
+## 5. Internal API to Start an Analysis
+
+Create a backend endpoint similar to:
+
+```text
+POST /api/clients/:clientId/retention-analysis
+```
+
+Requirements:
+
+* Require authentication.
+* Require the user to belong to the organization.
+* Require an authorized role.
+* Confirm that the client belongs to the same organization.
+* Validate that the Retention Agent is enabled.
+* Create the agent job before dispatching.
+* Generate an idempotency key.
+* Generate a correlation ID.
+* Return quickly after Kevin accepts the task.
+* Do not keep the HTTP request open while Hermes performs the analysis.
+
+Suggested response:
+
+```json
+{
+  "success": true,
+  "job": {
+    "id": "uuid",
+    "status": "queued",
+    "agentId": "retention-agent",
+    "taskType": "evaluate_client_retention_risk",
+    "clientId": "uuid",
+    "createdAt": "ISO-8601"
+  }
+}
+```
+
+If the same idempotent request is received more than once, return the existing job rather than creating another job.
+
+---
+
+## 6. Kevin Task Contract
+
+Send Kevin a structured request.
+
+Example:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "taskId": "local-agent-job-uuid",
+  "agentId": "retention-agent",
+  "taskType": "evaluate_client_retention_risk",
+  "organizationId": "uuid",
+  "requestedBy": {
+    "userId": "uuid",
+    "role": "owner"
+  },
+  "subject": {
+    "type": "client",
+    "id": "uuid"
+  },
+  "context": {
+    "clientProfile": {},
+    "attendanceSummary": {},
+    "upcomingSessions": [],
+    "engagementSignals": {},
+    "paymentSignals": {}
+  },
+  "callback": {
+    "url": "https://<production-domain>/api/agent-callbacks/kevin"
+  },
+  "idempotencyKey": "string",
+  "correlationId": "uuid",
+  "requestedAt": "ISO-8601"
+}
+```
+
+Only include data necessary for retention analysis.
+
+Do not send unrestricted database access, raw credentials, secrets, or unrelated organization data.
+
+Build the context from server-side TrainEfficiency services.
+
+The Retention Agent should initially operate at the `recommend` execution level.
+
+It may analyze and recommend.
+
+It may not autonomously send messages, change schedules, alter payments, delete records, or modify client accounts.
+
+---
+
+## 7. Outbound HMAC Signing
+
+Sign every outbound request to Kevin.
+
+Use headers similar to:
+
+```text
+X-TE-Timestamp
+X-TE-Request-ID
+X-TE-Correlation-ID
+X-TE-Idempotency-Key
+X-TE-Body-SHA256
+X-TE-Signature
+```
+
+The signature should cover a canonical representation of:
+
+```text
+HTTP method
+request path
+timestamp
+request ID
+body hash
+```
+
+Requirements:
+
+* Use SHA-256.
+* Use constant-time comparison where verification is performed.
+* Use exact raw request bytes or deterministic canonical serialization.
+* Prevent accidental signature differences caused by JSON key ordering.
+* Do not log the HMAC secret or full signature.
+* Add structured logs for dispatch success and failure.
+
+Create reusable signing utilities rather than placing HMAC logic directly inside the route.
+
+---
+
+## 8. Kevin Client Service
+
+Create a dedicated service such as:
+
+```text
+KevinGatewayClient
+```
+
+Responsibilities:
+
+* Build the remote request.
+* Sign the request.
+* Dispatch the task.
+* Apply timeout handling.
+* Parse and validate Kevin’s response.
+* Convert failures into safe internal error codes.
+* Update the agent job status.
+* Record the remote task ID.
+* Emit structured logs.
+
+Do not scatter direct `fetch` calls throughout TrainEfficiency.
+
+Suggested error codes:
+
+```text
+kevin_disabled
+kevin_configuration_missing
+kevin_unreachable
+kevin_timeout
+kevin_authentication_failed
+kevin_request_rejected
+kevin_invalid_response
+kevin_rate_limited
+kevin_internal_error
+```
+
+Do not expose sensitive infrastructure details to regular users.
+
+---
+
+## 9. Callback Endpoint
+
+Create:
+
+```text
+POST /api/agent-callbacks/kevin
+```
+
+This endpoint must:
+
+* Be server-to-server only.
+* Read the raw request body.
+* Validate the callback HMAC.
+* Validate the timestamp.
+* Reject requests outside the allowed time window.
+* Validate the callback schema.
+* Confirm the local job exists.
+* Match the organization, agent, task type, correlation ID, and remote task ID.
+* Be idempotent.
+* Reject mismatched or replayed callbacks.
+* Persist results transactionally.
+* Update the job status.
+* Return a stable acknowledgment response.
+
+Suggested callback body:
+
+```json
+{
+  "schemaVersion": "1.0",
+  "taskId": "local-agent-job-uuid",
+  "remoteTaskId": "kevin-task-uuid",
+  "agentId": "retention-agent",
+  "taskType": "evaluate_client_retention_risk",
+  "organizationId": "uuid",
+  "correlationId": "uuid",
+  "status": "completed",
+  "completedAt": "ISO-8601",
+  "result": {
+    "clientId": "uuid",
+    "riskLevel": "high",
+    "riskScore": 82,
+    "confidenceScore": 88,
+    "summary": "Attendance and engagement have declined.",
+    "riskFactors": [],
+    "recommendedActions": [],
+    "draftMessage": "Optional draft message",
+    "evidence": [],
+    "modelVersion": "retention-agent-1.0.0"
+  }
+}
+```
+
+The callback must support at minimum:
+
+```text
+running
+requires_approval
+completed
+failed
+blocked_by_policy
+cancelled
+```
+
+For failed callbacks, require a safe structured error object.
+
+---
+
+## 10. Callback Persistence
+
+For a completed Retention Agent task, persist the result and update the agent job in one database transaction.
+
+The transaction should:
+
+1. Lock or safely select the agent job.
+2. Confirm the callback has not already been processed.
+3. Validate all identifiers.
+4. Insert or update the retention analysis.
+5. Mark the agent job completed.
+6. Save the structured result payload.
+7. Set `completed_at`.
+8. Write an audit event.
+9. Commit atomically.
+
+A callback must never create a completed analysis while leaving the job in a failed or running state.
+
+---
+
+## 11. Read APIs
+
+Create endpoints for the frontend to retrieve status and results.
+
+Suggested endpoints:
+
+```text
+GET /api/agent-jobs/:jobId
+GET /api/clients/:clientId/retention-analyses
+GET /api/clients/:clientId/retention-analyses/latest
+```
+
+Requirements:
+
+* Enforce organization authorization.
+* Return normalized response shapes.
+* Return safe error messages.
+* Include whether the user may rerun the analysis.
+* Include whether a result is current, stale, pending, failed, or unavailable.
+
+---
+
+## 12. Retention Analysis UI
+
+Add a Retention Intelligence section to the appropriate client profile or retention workflow.
+
+The UI should include:
+
+* “Analyze Retention Risk” button
+* Current job status
+* Last analysis date
+* Risk level
+* Risk score
+* Confidence score
+* Summary
+* Risk factors
+* Supporting evidence
+* Recommended interventions
+* Draft retention message
+* Retry action when appropriate
+
+Do not pretend the analysis is complete while the job is still queued or running.
+
+Suggested UI states:
+
+```text
+Not analyzed
+Requesting
+Queued
+Analyzing
+Completed
+Requires approval
+Failed
+Unavailable
+```
+
+Use polling initially if the application does not already have a job-event or websocket system.
+
+Polling should stop when the job reaches a terminal state.
+
+Use reasonable backoff and avoid aggressive requests.
+
+---
+
+## 13. Audit Logging
+
+Create structured audit events for:
+
+```text
+agent.job.requested
+agent.job.dispatching
+agent.job.accepted
+agent.job.running
+agent.job.callback_received
+agent.job.completed
+agent.job.failed
+agent.job.blocked
+agent.job.cancelled
+agent.job.replayed_callback_rejected
+agent.job.invalid_signature_rejected
+retention.analysis.created
+retention.analysis.viewed
+```
+
+Include safe metadata:
+
+```text
+organizationId
+userId
+agentId
+taskType
+jobId
+remoteTaskId
+clientId
+correlationId
+status
+durationMs
+errorCode
+```
+
+Never log secrets, full HMAC signatures, sensitive payment details, or unnecessary personal information.
+
+---
+
+## 14. Security Requirements
+
+Implement all of the following:
+
+* Authentication and organization authorization
+* Role-based permission checks
+* HMAC signing
+* Timestamp validation
+* Replay prevention
+* Idempotency
+* Schema validation
+* Safe structured errors
+* Rate limiting on task creation
+* Rate limiting on callbacks
+* Request size limits
+* Constant-time signature comparison
+* No browser access to Kevin
+* No arbitrary callback URLs supplied by the client
+* No arbitrary agent IDs supplied without registry validation
+* No arbitrary task types
+* No unrestricted SQL or database tools
+* No cross-organization access
+* No automatic outbound client communication
+
+Treat the Cloudflare Tunnel as transport, not authorization.
+
+---
+
+## 15. Testing
+
+Add thorough tests using the project’s existing testing conventions.
+
+Cover at minimum:
+
+### Agent job creation
+
+* Authorized user can create a job.
+* Unauthorized user is rejected.
+* Cross-organization client access is rejected.
+* Disabled agent is rejected.
+* Duplicate idempotent request returns the existing job.
+* Missing Kevin configuration fails safely.
+* Kevin timeout is handled.
+* Kevin rejection is handled.
+* Invalid Kevin response is handled.
+* Successful acceptance stores the remote task ID.
+
+### HMAC
+
+* Valid signature passes.
+* Invalid signature fails.
+* Modified body fails.
+* Modified timestamp fails.
+* Expired timestamp fails.
+* Replay is rejected.
+* Canonical request generation is deterministic.
+
+### Callbacks
+
+* Valid completed callback persists the result.
+* Duplicate callback is idempotent.
+* Unknown job is rejected.
+* Wrong organization is rejected.
+* Wrong agent is rejected.
+* Wrong task type is rejected.
+* Wrong correlation ID is rejected.
+* Wrong remote task ID is rejected.
+* Invalid schema is rejected.
+* Failed callback updates the job correctly.
+* Completion is transactional.
+* Cross-organization data cannot be created.
+
+### UI and read APIs
+
+* Pending state renders correctly.
+* Completed result renders correctly.
+* Failed state renders correctly.
+* Polling stops at terminal state.
+* Users cannot retrieve jobs from another organization.
+
+Run the full existing test suite after implementation.
+
+Do not weaken or delete existing tests to make this feature pass.
+
+---
+
+## 16. Implementation Constraints
+
+* Follow the existing TrainEfficiency architecture and naming conventions.
+* Reuse current authentication, organization, database, logging, and validation utilities.
+* Do not create a parallel authentication system.
+* Do not introduce a second database.
+* Do not expose Kevin secrets to the client.
+* Do not mark remote work completed until a validated callback is received.
+* Do not allow the Retention Agent to execute client-facing actions yet.
+* Do not modify unrelated TrainEfficiency features.
+* Keep the integration modular so additional agents can reuse the same infrastructure.
+
+---
+
+## 17. Completion Report
+
+After implementation, provide:
+
+1. Files created and modified
+2. Database migrations added
+3. Environment variables required
+4. API endpoints added
+5. Agent job lifecycle implemented
+6. HMAC signing design
+7. Callback verification design
+8. Retention Agent contract
+9. UI states added
+10. Security protections
+11. Tests added
+12. Full test-suite results
+13. Any unresolved risks
+14. Exact steps needed to configure the Kevin gateway URL and secrets
+
+Do not claim production readiness unless the full test suite passes and the complete request → Kevin acceptance → signed callback → persistence → UI flow has been verified.

@@ -33644,5 +33644,12 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { ensureIntentTables } = await import("./services/kevin-intent-service");
   await ensureIntentTables();
 
+  // ─── Kevin Agent Integration — Phase 1 (Retention Agent) ─────────────────
+  const { registerKevinAgentRoutes, createAgentTables } = await import("./kevin-agent-routes");
+  await createAgentTables();
+  const { validateKevinAgentConfig } = await import("./services/kevin-agent-config");
+  validateKevinAgentConfig();
+  registerKevinAgentRoutes(app);
+
   return httpServer;
 }
