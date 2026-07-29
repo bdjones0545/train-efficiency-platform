@@ -53,6 +53,8 @@ export interface KevinTaskRequest {
   taskId: string;
   agentId: string;
   taskType: string;
+  /** Agent capability identifier (e.g. "retention_risk_analysis"). */
+  capability?: string;
   organizationId: string;
   requestedBy: {
     userId: string;
@@ -113,11 +115,15 @@ export async function dispatchKevinTask(
   }
 
   // ── Build request body ────────────────────────────────────────────────────
+  // Capability: derived from agentId + taskType (agent-specific convention)
+  const capability = taskType; // Kevin uses taskType as the capability identifier
+
   const requestBody: KevinTaskRequest = {
     schemaVersion: "1.0",
     taskId: jobId,
     agentId,
     taskType,
+    capability,
     organizationId,
     requestedBy: {
       userId: requestedByUserId,
@@ -129,7 +135,8 @@ export async function dispatchKevinTask(
     },
     context,
     callback: {
-      url: `${cfg.callbackBaseUrl}/api/agent-callbacks/kevin`,
+      // Use the canonical webhook path; Kevin will POST results here
+      url: `${cfg.callbackBaseUrl}/api/kevin/webhooks/hermes`,
     },
     idempotencyKey,
     correlationId,

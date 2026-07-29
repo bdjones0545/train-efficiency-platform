@@ -25,7 +25,6 @@ import { getAgent, isTaskTypeAllowed } from "./services/kevin-agent-registry";
 import { getKevinAgentConfig, validateKevinAgentConfig } from "./services/kevin-agent-config";
 import { dispatchKevinTask, KevinDispatchError } from "./services/kevin-gateway-client";
 import { buildRetentionContext } from "./services/retention-context-service";
-import { verifyCallbackSignature } from "./lib/kevin-hmac";
 import { auditAgentJob } from "./services/kevin-agent-audit";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -36,15 +35,6 @@ const TERMINAL_STATUSES = new Set([
   "cancelled",
   "timed_out",
   "blocked_by_policy",
-]);
-
-const ALLOWED_CALLBACK_STATUSES = new Set([
-  "running",
-  "requires_approval",
-  "completed",
-  "failed",
-  "blocked_by_policy",
-  "cancelled",
 ]);
 
 // ─── DB Bootstrap ─────────────────────────────────────────────────────────────
@@ -74,30 +64,37 @@ export async function createAgentTables(): Promise<void> {
   // agent_jobs table
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS agent_jobs (
-      id                  TEXT PRIMARY KEY,
-      organization_id     TEXT NOT NULL,
-      agent_id            TEXT NOT NULL,
-      task_type           TEXT NOT NULL,
-      status              agent_job_status NOT NULL DEFAULT 'requested',
+      id                   TEXT PRIMARY KEY,
+      organization_id      TEXT NOT NULL,
+      agent_id             TEXT NOT NULL,
+      task_type            TEXT NOT NULL,
+      status               agent_job_status NOT NULL DEFAULT 'requested',
       requested_by_user_id TEXT NOT NULL,
-      subject_type        TEXT,
-      subject_id          TEXT,
-      request_payload     JSONB,
-      result_payload      JSONB,
-      error_code          TEXT,
-      error_message       TEXT,
-      remote_task_id      TEXT,
-      idempotency_key     TEXT NOT NULL,
-      correlation_id      TEXT NOT NULL,
-      attempt_count       INTEGER NOT NULL DEFAULT 0,
-      requested_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      accepted_at         TIMESTAMPTZ,
-      started_at          TIMESTAMPTZ,
-      completed_at        TIMESTAMPTZ,
-      failed_at           TIMESTAMPTZ,
-      cancelled_at        TIMESTAMPTZ,
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      subject_type         TEXT,
+      subject_id           TEXT,
+      request_payload      JSONB,
+      result_payload       JSONB,
+      error_code           TEXT,
+      error_message        TEXT,
+      remote_task_id       TEXT,
+      idempotency_key      TEXT NOT NULL,
+      correlation_id       TEXT NOT NULL,
+      attempt_count        INTEGER NOT NULL DEFAULT 0,
+      -- Phase 1.1 additions (gateway compatibility hardening)
+      execution_id         TEXT,
+      capability           TEXT,
+      callback_id          TEXT,
+      callback_receipt_at  TIMESTAMPTZ,
+      retryable            BOOLEAN NOT NULL DEFAULT FALSE,
+      last_callback_status TEXT,
+      requested_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      accepted_at          TIMESTAMPTZ,
+      started_at           TIMESTAMPTZ,
+      completed_at         TIMESTAMPTZ,
+      failed_at            TIMESTAMPTZ,
+      cancelled_at         TIMESTAMPTZ,
+      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
 
@@ -110,6 +107,23 @@ export async function createAgentTables(): Promise<void> {
   await db.execute(sql`
     CREATE UNIQUE INDEX IF NOT EXISTS agent_jobs_idempotency ON agent_jobs(idempotency_key)
   `);
+
+  // Phase 1.1: Add new columns to existing agent_jobs table (idempotent ALTER TABLE)
+  const alterCols = [
+    `ALTER TABLE agent_jobs ADD COLUMN IF NOT EXISTS execution_id TEXT`,
+    `ALTER TABLE agent_jobs ADD COLUMN IF NOT EXISTS capability TEXT`,
+    `ALTER TABLE agent_jobs ADD COLUMN IF NOT EXISTS callback_id TEXT`,
+    `ALTER TABLE agent_jobs ADD COLUMN IF NOT EXISTS callback_receipt_at TIMESTAMPTZ`,
+    `ALTER TABLE agent_jobs ADD COLUMN IF NOT EXISTS retryable BOOLEAN NOT NULL DEFAULT FALSE`,
+    `ALTER TABLE agent_jobs ADD COLUMN IF NOT EXISTS last_callback_status TEXT`,
+  ];
+  for (const stmt of alterCols) {
+    try {
+      await db.execute(sql.raw(stmt));
+    } catch {
+      // Column already exists — safe to ignore
+    }
+  }
 
   // retention_agent_analyses table
   await db.execute(sql`
@@ -150,8 +164,6 @@ export async function createAgentTables(): Promise<void> {
 
 // 10 task creation requests per user per minute
 const taskCreationLimiter = publicRateLimiter(10, 60_000, "kevin-task-create");
-// 100 callbacks per minute (server-to-server from Kevin)
-const callbackLimiter = publicRateLimiter(100, 60_000, "kevin-callback");
 
 // ─── Auth helpers ─────────────────────────────────────────────────────────────
 
@@ -513,320 +525,9 @@ export function registerKevinAgentRoutes(app: Express): void {
     },
   );
 
-  // ── POST /api/agent-callbacks/kevin ───────────────────────────────────────
-  // Server-to-server callback from Kevin. Must NOT be authenticated as a user.
-  // Reads raw body for HMAC verification.
-  app.post(
-    "/api/agent-callbacks/kevin",
-    callbackLimiter,
-    // Raw body capture for HMAC verification.
-    // Fast path: express.json() already consumed the body — reconstitute from parsed JSON.
-    // Slow path: body not yet consumed — collect raw bytes from stream.
-    (req: any, res: any, next: any) => {
-      // Already captured
-      if (Buffer.isBuffer(req.rawBody) || typeof req.rawBody === "string") return next();
-      // express.json() or express.urlencoded() already parsed it
-      if (req.body !== undefined) {
-        req.rawBody = Buffer.from(
-          typeof req.body === "string" ? req.body : JSON.stringify(req.body),
-        );
-        return next();
-      }
-      // Stream not yet consumed — collect raw bytes
-      const chunks: Buffer[] = [];
-      req.on("data", (chunk: Buffer) => chunks.push(chunk));
-      req.on("end", () => {
-        req.rawBody = Buffer.concat(chunks);
-        next();
-      });
-      req.on("error", () => next());
-    },
-    async (req: any, res: any) => {
-      const rawBody: Buffer = req.rawBody ?? (Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {})));
-
-      const cfg = getKevinAgentConfig();
-
-      // ── HMAC verification ─────────────────────────────────────────────────
-      if (cfg.enabled && cfg.callbackHmacSecret) {
-        const verification = verifyCallbackSignature(
-          rawBody,
-          req.headers as Record<string, string | string[] | undefined>,
-          cfg.callbackHmacSecret,
-          cfg.callbackAllowedSkewSeconds,
-        );
-
-        if (!verification.ok) {
-          auditAgentJob("agent.job.invalid_signature_rejected", {
-            reason: verification.reason,
-          });
-          console.log(
-            JSON.stringify({
-              event: "KEVIN_CALLBACK_SIGNATURE_REJECTED",
-              reason: verification.reason,
-              timestamp: new Date().toISOString(),
-            }),
-          );
-          // Return 200 to avoid Kevin retrying with a bad signature
-          return res.status(200).json({ ok: false, error: "SIGNATURE_INVALID" });
-        }
-      }
-
-      // ── Parse body ────────────────────────────────────────────────────────
-      let body: any;
-      try {
-        body = JSON.parse(rawBody.toString("utf8"));
-      } catch {
-        return res.status(400).json({ ok: false, error: "INVALID_JSON" });
-      }
-
-      const {
-        schemaVersion,
-        taskId: jobId,
-        remoteTaskId,
-        agentId,
-        taskType,
-        organizationId,
-        correlationId,
-        status: callbackStatus,
-        completedAt,
-        result,
-        error: callbackError,
-      } = body ?? {};
-
-      // ── Schema validation ─────────────────────────────────────────────────
-      if (
-        schemaVersion !== "1.0" ||
-        !jobId ||
-        !agentId ||
-        !taskType ||
-        !organizationId ||
-        !callbackStatus ||
-        !ALLOWED_CALLBACK_STATUSES.has(callbackStatus)
-      ) {
-        return res.status(400).json({ ok: false, error: "INVALID_SCHEMA" });
-      }
-
-      auditAgentJob("agent.job.callback_received", {
-        jobId,
-        remoteTaskId,
-        agentId,
-        taskType,
-        organizationId,
-        correlationId,
-        status: callbackStatus,
-      });
-
-      // ── Load and validate the job ─────────────────────────────────────────
-      const jobRows = await db.execute(sql`
-        SELECT id, organization_id, agent_id, task_type, status,
-               correlation_id, remote_task_id, subject_id
-        FROM agent_jobs
-        WHERE id = ${jobId}
-        LIMIT 1
-      `);
-      const jobData = Array.isArray(jobRows) ? jobRows : (jobRows as any).rows ?? [];
-
-      if (!jobData.length) {
-        return res.status(200).json({ ok: false, error: "JOB_NOT_FOUND" });
-      }
-
-      const job = jobData[0];
-
-      // Validate org, agent, task type, correlation, remote task
-      if (String(job.organization_id) !== String(organizationId)) {
-        return res.status(200).json({ ok: false, error: "ORG_MISMATCH" });
-      }
-      if (String(job.agent_id) !== agentId) {
-        return res.status(200).json({ ok: false, error: "AGENT_MISMATCH" });
-      }
-      if (String(job.task_type) !== taskType) {
-        return res.status(200).json({ ok: false, error: "TASK_TYPE_MISMATCH" });
-      }
-      if (correlationId && String(job.correlation_id) !== correlationId) {
-        return res.status(200).json({ ok: false, error: "CORRELATION_MISMATCH" });
-      }
-      if (
-        remoteTaskId &&
-        job.remote_task_id &&
-        String(job.remote_task_id) !== remoteTaskId
-      ) {
-        return res.status(200).json({ ok: false, error: "REMOTE_TASK_ID_MISMATCH" });
-      }
-
-      // ── Idempotency: reject replayed callbacks on terminal jobs ───────────
-      if (TERMINAL_STATUSES.has(String(job.status))) {
-        auditAgentJob("agent.job.replayed_callback_rejected", {
-          jobId,
-          currentStatus: String(job.status),
-          callbackStatus,
-          remoteTaskId,
-        });
-        // Acknowledge without re-processing
-        return res.status(200).json({ ok: true, idempotent: true });
-      }
-
-      // ── Process by status ─────────────────────────────────────────────────
-
-      if (callbackStatus === "running") {
-        await db.execute(sql`
-          UPDATE agent_jobs
-          SET status = 'running', started_at = COALESCE(started_at, NOW()), updated_at = NOW()
-          WHERE id = ${jobId}
-        `);
-        auditAgentJob("agent.job.running", { jobId, remoteTaskId, agentId, organizationId });
-        return res.status(200).json({ ok: true });
-      }
-
-      if (callbackStatus === "requires_approval") {
-        await db.execute(sql`
-          UPDATE agent_jobs
-          SET status = 'requires_approval', updated_at = NOW()
-          WHERE id = ${jobId}
-        `);
-        return res.status(200).json({ ok: true });
-      }
-
-      if (callbackStatus === "blocked_by_policy") {
-        await db.execute(sql`
-          UPDATE agent_jobs
-          SET status = 'blocked_by_policy', updated_at = NOW()
-          WHERE id = ${jobId}
-        `);
-        auditAgentJob("agent.job.blocked", { jobId, agentId, organizationId });
-        return res.status(200).json({ ok: true });
-      }
-
-      if (callbackStatus === "cancelled") {
-        await db.execute(sql`
-          UPDATE agent_jobs
-          SET status = 'cancelled', cancelled_at = NOW(), updated_at = NOW()
-          WHERE id = ${jobId}
-        `);
-        auditAgentJob("agent.job.cancelled", { jobId, agentId, organizationId });
-        return res.status(200).json({ ok: true });
-      }
-
-      if (callbackStatus === "failed") {
-        const errCode = callbackError?.code ?? "kevin_internal_error";
-        const errMsg = callbackError?.message ?? "Agent task failed.";
-        await db.execute(sql`
-          UPDATE agent_jobs
-          SET status = 'failed', error_code = ${errCode}, error_message = ${errMsg},
-              failed_at = NOW(), result_payload = ${JSON.stringify(body)}, updated_at = NOW()
-          WHERE id = ${jobId}
-        `);
-        auditAgentJob("agent.job.failed", {
-          jobId,
-          agentId,
-          organizationId,
-          errorCode: errCode,
-          remoteTaskId,
-        });
-        return res.status(200).json({ ok: true });
-      }
-
-      // ── COMPLETED — persist result transactionally ────────────────────────
-      if (callbackStatus === "completed") {
-        if (!result) {
-          return res.status(400).json({ ok: false, error: "MISSING_RESULT" });
-        }
-
-        const {
-          clientId: resultClientId,
-          riskLevel,
-          riskScore,
-          confidenceScore,
-          summary,
-          riskFactors,
-          recommendedActions,
-          draftMessage,
-          evidence,
-          modelVersion,
-        } = result;
-
-        if (!riskLevel || riskScore == null || confidenceScore == null || !summary) {
-          return res.status(400).json({ ok: false, error: "INCOMPLETE_RESULT" });
-        }
-
-        const VALID_RISK_LEVELS = ["low", "moderate", "high", "critical"];
-        if (!VALID_RISK_LEVELS.includes(riskLevel)) {
-          return res.status(400).json({ ok: false, error: "INVALID_RISK_LEVEL" });
-        }
-
-        const clientId = resultClientId ?? String(job.subject_id);
-        const analysisId = crypto.randomUUID();
-        const completedTs = completedAt ? new Date(completedAt).toISOString() : new Date().toISOString();
-
-        // Atomic transaction: insert analysis + update job
-        await db.execute(sql`
-          BEGIN;
-
-          INSERT INTO retention_agent_analyses (
-            id, organization_id, client_id, agent_job_id,
-            risk_level, risk_score, confidence_score, summary,
-            risk_factors, recommended_actions, draft_message,
-            evidence, model_version, created_at, updated_at
-          ) VALUES (
-            ${analysisId}, ${organizationId}, ${clientId}, ${jobId},
-            ${riskLevel}, ${riskScore}, ${confidenceScore}, ${summary},
-            ${JSON.stringify(riskFactors ?? [])},
-            ${JSON.stringify(recommendedActions ?? [])},
-            ${draftMessage ?? null},
-            ${JSON.stringify(evidence ?? [])},
-            ${modelVersion ?? null},
-            NOW(), NOW()
-          )
-          ON CONFLICT (agent_job_id) DO UPDATE SET
-            risk_level = EXCLUDED.risk_level,
-            risk_score = EXCLUDED.risk_score,
-            confidence_score = EXCLUDED.confidence_score,
-            summary = EXCLUDED.summary,
-            risk_factors = EXCLUDED.risk_factors,
-            recommended_actions = EXCLUDED.recommended_actions,
-            draft_message = EXCLUDED.draft_message,
-            evidence = EXCLUDED.evidence,
-            model_version = EXCLUDED.model_version,
-            updated_at = NOW();
-
-          UPDATE agent_jobs
-          SET
-            status = 'completed',
-            completed_at = ${completedTs},
-            result_payload = ${JSON.stringify(result)},
-            updated_at = NOW()
-          WHERE id = ${jobId};
-
-          COMMIT;
-        `);
-
-        const durationMs =
-          job.requested_at
-            ? Date.now() - new Date(job.requested_at as string).getTime()
-            : undefined;
-
-        auditAgentJob("agent.job.completed", {
-          jobId,
-          agentId,
-          taskType,
-          organizationId,
-          remoteTaskId,
-          clientId,
-          correlationId,
-          durationMs,
-        });
-        auditAgentJob("retention.analysis.created", {
-          jobId,
-          organizationId,
-          clientId,
-          agentId,
-        });
-
-        return res.status(200).json({ ok: true, analysisId });
-      }
-
-      return res.status(400).json({ ok: false, error: "UNHANDLED_STATUS" });
-    },
-  );
+  // NOTE: Callback endpoints (POST /api/kevin/webhooks/hermes and
+  // POST /api/agent-callbacks/kevin) are registered by registerKevinWebhookRoutes()
+  // in server/kevin-webhook-routes.ts — do NOT add them here.
 }
 
 // ─── Formatters ───────────────────────────────────────────────────────────────

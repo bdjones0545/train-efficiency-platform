@@ -33651,5 +33651,13 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   validateKevinAgentConfig();
   registerKevinAgentRoutes(app);
 
+  // ─── Kevin Webhook Receiver — hardened callback handler (Phase 1.1) ────────
+  // Registers POST /api/kevin/webhooks/hermes (canonical) +
+  //           POST /api/agent-callbacks/kevin (legacy alias).
+  // Must be registered AFTER registerKevinAgentRoutes so the job tables exist.
+  const { registerKevinWebhookRoutes, ensureCallbackNoncesTable } = await import("./kevin-webhook-routes");
+  await ensureCallbackNoncesTable();
+  registerKevinWebhookRoutes(app);
+
   return httpServer;
 }

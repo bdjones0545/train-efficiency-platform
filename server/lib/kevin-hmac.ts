@@ -142,13 +142,23 @@ export type CallbackVerificationResult =
  *   X-Kevin-Signature   — sha256={hex}
  *
  * Signature covers:
- *   POST\n/api/agent-callbacks/kevin\n{timestamp}\n{requestId}\n{bodySha256}
+ *   POST\n{path}\n{timestamp}\n{requestId}\n{bodySha256}
+ *
+ * The `path` parameter MUST match the exact path Kevin POST-ed to (i.e. the
+ * path used in Kevin's canonical signing string). Pass the request path
+ * directly from `req.path` — do not hardcode.
+ *
+ * Accepted paths (both are valid):
+ *   /api/kevin/webhooks/hermes   ← canonical (new)
+ *   /api/agent-callbacks/kevin   ← legacy alias
  */
 export function verifyCallbackSignature(
   rawBody: Buffer | string,
   headers: Record<string, string | string[] | undefined>,
   secret: string,
   allowedSkewSeconds: number,
+  /** The request path Kevin actually POST-ed to. Defaults to the legacy path for backward compat. */
+  path: string = "/api/agent-callbacks/kevin",
 ): CallbackVerificationResult {
   const timestamp = extractHeader(headers, "x-kevin-timestamp");
   const requestId = extractHeader(headers, "x-kevin-request-id");
@@ -181,11 +191,11 @@ export function verifyCallbackSignature(
   }
   const providedSigHex = sigHeader.slice(expectedPrefix.length);
 
-  // Compute expected signature
+  // Compute expected signature — signs over the path Kevin actually called
   const bodySha256 = sha256Hex(rawBody);
   const canonical = buildCanonicalRequest(
     "POST",
-    "/api/agent-callbacks/kevin",
+    path,
     timestamp,
     requestId,
     bodySha256,
@@ -207,6 +217,16 @@ export function verifyCallbackSignature(
   }
 
   return { ok: true };
+}
+
+/**
+ * Extracts the `X-Kevin-Request-ID` header from an inbound callback.
+ * Returns undefined if absent or malformed.
+ */
+export function extractCallbackNonce(
+  headers: Record<string, string | string[] | undefined>,
+): string | undefined {
+  return extractHeader(headers, "x-kevin-request-id");
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
