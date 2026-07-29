@@ -519,17 +519,27 @@ export function registerKevinAgentRoutes(app: Express): void {
   app.post(
     "/api/agent-callbacks/kevin",
     callbackLimiter,
-    // Raw body parser for this route so we can verify HMAC over exact bytes
+    // Raw body capture for HMAC verification.
+    // Fast path: express.json() already consumed the body — reconstitute from parsed JSON.
+    // Slow path: body not yet consumed — collect raw bytes from stream.
     (req: any, res: any, next: any) => {
-      // If body is already a Buffer (from express.raw earlier), proceed
-      if (Buffer.isBuffer(req.body)) return next();
-      // Otherwise collect raw bytes manually
+      // Already captured
+      if (Buffer.isBuffer(req.rawBody) || typeof req.rawBody === "string") return next();
+      // express.json() or express.urlencoded() already parsed it
+      if (req.body !== undefined) {
+        req.rawBody = Buffer.from(
+          typeof req.body === "string" ? req.body : JSON.stringify(req.body),
+        );
+        return next();
+      }
+      // Stream not yet consumed — collect raw bytes
       const chunks: Buffer[] = [];
       req.on("data", (chunk: Buffer) => chunks.push(chunk));
       req.on("end", () => {
         req.rawBody = Buffer.concat(chunks);
         next();
       });
+      req.on("error", () => next());
     },
     async (req: any, res: any) => {
       const rawBody: Buffer = req.rawBody ?? (Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {})));

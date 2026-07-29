@@ -27,11 +27,9 @@ export function getKevinAgentConfig(): KevinAgentConfig {
     gatewayBaseUrl: process.env.KEVIN_GATEWAY_BASE_URL ?? "",
     outboundHmacSecret: process.env.KEVIN_OUTBOUND_HMAC_SECRET ?? "",
     callbackHmacSecret: process.env.KEVIN_CALLBACK_HMAC_SECRET ?? "",
-    requestTimeoutMs: parseInt(process.env.KEVIN_REQUEST_TIMEOUT_MS ?? "30000", 10),
-    callbackAllowedSkewSeconds: parseInt(
-      process.env.KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS ?? "300",
-      10,
-    ),
+    requestTimeoutMs: parseInt(process.env.KEVIN_REQUEST_TIMEOUT_MS ?? "30000", 10) || 30000,
+    callbackAllowedSkewSeconds:
+      parseInt(process.env.KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS ?? "300", 10) || 300,
     callbackBaseUrl:
       process.env.KEVIN_CALLBACK_BASE_URL ??
       (process.env.REPLIT_DEV_DOMAIN

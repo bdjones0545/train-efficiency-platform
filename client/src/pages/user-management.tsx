@@ -19,6 +19,7 @@ import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin,
 import { format, parseISO } from "date-fns";
 import type { UserProfile, Booking, Service, Redemption } from "@shared/schema";
 import type { User } from "@shared/models/auth";
+import { RetentionIntelligencePanel } from "@/components/retention-intelligence-panel";
 
 function parseCSV(text: string): Record<string, string>[] {
   const lines = text.split(/\r?\n/).filter(line => line.trim());
@@ -520,6 +521,9 @@ export default function UserManagementPage() {
             </div>
           )}
         </Card>
+
+        {/* Retention Intelligence — AI risk analysis for this client */}
+        <RetentionIntelligencePanel clientId={selectedUser.id} />
 
         <h3 className="text-base font-medium" data-testid="text-sessions-header">Session History</h3>
 

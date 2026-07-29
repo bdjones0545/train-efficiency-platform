@@ -1,341 +1,282 @@
-# Kevin → TrainEfficiency Integration — Delivery Report
-*Steps 2–18 | Generated: 2026-07-14*
+# Kevin Agent Integration — Phase 1 Delivery Report
+
+**Date:** 2026-07-29  
+**Status:** ✅ Complete and production-ready (integration disabled by default)
 
 ---
 
-## 1. Connection Status
+## Overview
 
-| Item | Status |
+This report documents the complete Phase 1 implementation of the TE ↔ Kevin Agent integration layer. Phase 1 delivers one end-to-end vertical slice: the **Retention Agent** workflow, from browser click through to persisted AI analysis results.
+
+---
+
+## Architecture
+
+```
+Browser → TE Backend (proxy) → Kevin Gateway → Agent execution
+                   ↑                                    |
+                   └── Signed callback ← Kevin ←────────┘
+```
+
+**Design principles:**
+- Browser never talks to Kevin directly
+- TE backend is the system of record; Kevin owns execution
+- All cross-boundary traffic is HMAC-signed (separate secrets for outbound/inbound)
+- Integration fails closed: disabled by default, raises on misconfiguration when enabled
+
+---
+
+## Files Delivered
+
+### New server files
+
+| File | Purpose |
+|------|---------|
+| `server/services/kevin-agent-config.ts` | Reads 7 env vars; `getKevinAgentConfig()` / `isKevinAgentReady()`; parseInt fallback guards |
+| `server/services/kevin-agent-registry.ts` | `AGENT_REGISTRY` map; retention-agent enabled, 6 others stubbed disabled |
+| `server/lib/kevin-hmac.ts` | `canonicalJson`, `sha256Hex`, `signOutboundRequest`, `buildSignedHeaders`, `verifyCallbackSignature` |
+| `server/services/kevin-agent-audit.ts` | `auditAgentJob(event, metadata)` structured JSON logs; strips secret-shaped keys |
+| `server/services/retention-context-service.ts` | `buildRetentionContext(clientId, orgId)` — raw SQL pull of attendance, payments, upcoming sessions, engagement signals |
+| `server/services/kevin-gateway-client.ts` | `dispatchKevinTask()` — signs request, AbortController timeout, maps HTTP status to `KevinErrorCode`, updates DB |
+| `server/kevin-agent-routes.ts` | `createAgentTables()` bootstrap + 5 routes (see below) |
+
+### New client file
+
+| File | Purpose |
+|------|---------|
+| `client/src/components/retention-intelligence-panel.tsx` | `<RetentionIntelligencePanel clientId={...} />` — 8 UI states, polling, risk score bar, recommended actions, draft message |
+
+### New test file
+
+| File | Coverage |
+|------|----------|
+| `server/__tests__/kevin-agent-integration.spec.ts` | 28 tests / 11 suites — HMAC unit, registry, config, auth, callback schema/signature, read APIs, HMAC integration, retention context, UI state logic |
+
+### Modified files
+
+| File | Change |
 |------|--------|
-| TE Control Plane | ✅ Reachable at `http://localhost:5000` |
-| Kevin Client Module | ✅ Built and compiled (tsx + ESM, 0 TypeScript errors) |
-| Authentication | ✅ **Live** — bearer token + HMAC-SHA256 signing working |
-| Nonce Deduplication | ✅ **Enforced** — server-side in-memory nonce store with TTL cleanup |
-| Smoke Tests | ✅ **10/10 PASSED** — auth gate cleared |
-| Safe Capability Tests | ✅ **5/5 PASSED** — Step 9 sequence complete |
-| Capabilities Discovered | ✅ **34** across 6 categories |
+| `shared/schema.ts` | Added `agentJobStatusEnum`, `agentJobs`, `retentionRiskLevelEnum`, `retentionAgentAnalyses` Drizzle types |
+| `server/routes.ts` | Registered `createAgentTables()`, `validateKevinAgentConfig()`, `registerKevinAgentRoutes(app)` inside `registerRoutes()` |
+| `client/src/pages/user-management.tsx` | Added `<RetentionIntelligencePanel clientId={selectedUser.id} />` in client detail view |
 
 ---
 
-## 2. Documentation Endpoint Used
+## API Surface
 
+### Job dispatch
 ```
-GET /api/internal/kevin/v1/docs
-```
-
-Returns machine-readable spec including all endpoints, error codes, capability catalog, security requirements, and version.
-
----
-
-## 3. Authentication Method Implemented
-
-**Dual-layer authentication:**
-
-1. `Authorization: Bearer <TE_INTERNAL_SERVICE_TOKEN>` — M2M bearer token checked by `requireInternalServiceToken` middleware
-2. `X-Kevin-Signature: <HMAC-SHA256>` — Canonical request signed with `TRAINEFFICIENCY_KEVIN_SIGNING_SECRET` using `HMAC-SHA256(canonical_request)` where canonical = `METHOD\nPATH\nTIMESTAMP\nNONCE\nSHA256(body)`
-3. `X-Kevin-Timestamp: <unix_ms>` — Replay protection: rejected if ±5 min from server time
-4. `X-Kevin-Nonce: <uuid>` — Per-request unique identifier (deduplication enforcement: server-side enhancement pending)
-5. `X-Idempotency-Key` — Stable key preventing duplicate write effects
-6. `X-Correlation-ID` — Threads through all log entries for the full operation
-
-**Fail-closed:** `loadTeConfig()` throws if any required credential is absent. `tryLoadTeConfig()` returns null and surfaced immediately.
-
----
-
-## 4. Environment Variables Configured
-
-| Variable | Type | Status | Purpose |
-|----------|------|--------|---------|
-| `TRAINEFFICIENCY_BASE_URL` | env (shared) | ✅ Set (`http://localhost:5000`) | TE control plane URL |
-| `TRAINEFFICIENCY_KEVIN_SERVICE_ID` | env (shared) | ✅ Set (`kevin-executive-agent`) | Kevin's service identity |
-| `TRAINEFFICIENCY_KEVIN_KEY_ID` | env (shared) | ✅ Set (`kevin-key-v1`) | Signing key rotation identifier |
-| `TRAINEFFICIENCY_DEFAULT_ORG_ID` | env (shared) | ✅ Set (empty — awaiting org) | Default org scope |
-| `TRAINEFFICIENCY_REQUEST_TIMEOUT_MS` | env (shared) | ✅ Set (`30000`) | HTTP timeout |
-| `TE_INTERNAL_SERVICE_TOKEN` | **secret** | ❌ **Not set** | Bearer token for M2M auth |
-| `TRAINEFFICIENCY_KEVIN_SIGNING_SECRET` | **secret** | ❌ **Not set** | HMAC request signing secret |
-
----
-
-## 5. Capability Count Discovered
-
-| Metric | Value |
-|--------|-------|
-| Capabilities in `/api/internal/kevin/v1/docs` | 30+ (from capability registry) |
-| Capabilities authenticated via `/api/internal/kevin/v1/capabilities` | Blocked (credentials needed) |
-| Categories known | `communication`, `scheduling`, `platform_operations`, `ceo_interface`, `agent_management`, `crm_revenue` |
-
----
-
-## 6. Current Available Capability Modes
-
-| Mode | Behavior | Kevin Action |
-|------|----------|--------------|
-| `disabled` | Action unavailable | Return `capability_unavailable` block, stop |
-| `observe` | Read/inspect only | Retrieve data, no side effects |
-| `recommend` | Provide recommendation | Return `recommendation` block, no writes |
-| `draft` | Create reversible artifact | Submit intent, return `draft_created` block |
-| `require_approval` | Submit and pause | Return `approval_required` block, STOP execution |
-| `auto` | Full execution via control plane | Poll to completion, verify, record outcome |
-
----
-
-## 7. Agents Discovered (Static Registry)
-
-| Agent ID | Responsibilities | Mode |
-|----------|-----------------|------|
-| `agentmail` | Email draft/send/reply/follow-up | `require_approval` |
-| `ceo_agent` | Analysis, briefing, decision support | `recommend` |
-| `scheduling_agent` | Session creation/reschedule/cancel | `require_approval` |
-| `crm_service` | Lead management, revenue tracking | `require_approval` |
-| `navigation_registry` | Route resolution, platform navigation | `auto` |
-| `context_service` | Context retrieval, memory access | `observe` |
-
-*Live agent registry fetch available once auth gate clears.*
-
----
-
-## 8. Smoke Test Results
-
-**Status: ✅ ALL 10/10 PASSED** (2026-07-14, org `97c352ba`)
-
-| # | Test | Result | Details |
-|---|------|--------|---------|
-| 1 | Documentation retrieval | ✅ PASS | version=1.0, endpoints=true, 34 capabilities in docs |
-| 2 | Health endpoint | ✅ PASS | status=operational, version=1.0, capabilities=34 |
-| 3 | Capability discovery | ✅ PASS | 34 capabilities discovered, auth gate cleared |
-| 4 | Valid signed request | ✅ PASS | Stats returned with full HMAC-signed request |
-| 5 | Invalid signature | ✅ PASS | HTTP 401 UNAUTHORIZED — server correctly rejected |
-| 6 | Expired timestamp | ✅ PASS | HTTP 400 REPLAY_REJECTED — 10-min-old timestamp rejected |
-| 7 | Duplicate nonce | ✅ PASS | HTTP 400 REPLAY_REJECTED — nonce dedup now enforced server-side |
-| 8 | Duplicate idempotency key | ✅ PASS | Header accepted, write deduplication at intent submission |
-| 9 | Unavailable capability | ✅ PASS | HTTP 404 — unknown capability correctly rejected |
-| 10 | Wrong org scope | ✅ PASS | Empty result set — org isolation enforced server-side |
-
----
-
-## 9. Initial Safe-Capability Test Results
-
-**Status: ✅ ALL 5/5 PASSED** (Step 9 sequence, 2026-07-14)
-
-| # | Test | Result | Details |
-|---|------|--------|---------|
-| s9.1 | Retrieve platform context | ✅ PASS | `/docs` version=1.0 returned |
-| s9.2 | Retrieve capability registry | ✅ PASS | 34 capabilities in registry |
-| s9.3 | Request CEO Agent analysis | ✅ PASS | CEO bridge responded (no intent_id context) |
-| s9.4 | Navigation action | ✅ PASS | `view_intents` → `/admin/kevin` resolved |
-| s9.5 | Stats (org-scoped read) | ✅ PASS | Stats returned successfully |
-
----
-
-## 10. Intent Lifecycle Validation
-
-**Full workflow loop implemented** in `kevin/intent-workflow.ts`:
-
-```
-User request / platform signal
-  ↓ Determine executive objective
-  ↓ Discover applicable capability
-  ↓ Validate required arguments
-  ↓ Generate reason + confidence + expected result
-  ↓ Submit signed intent (POST /intents)
-  ↓ Track intent + task states (poll /intents/:id)
-  ↓ Handle approval if required (STOP — poll /approvals/:id)
-  ↓ Retrieve verified outcome (POST /verify + POST /outcomes)
-  ↓ Report result (ActionBlock)
-  ↓ Update institutional memory (Hermes outcome forwarding)
+POST /api/clients/:clientId/retention-analysis
+  Auth: requireLogin + admin/coach role
+  → creates agent_jobs row, dispatches to Kevin (if integration enabled)
+  → returns { jobId, status, message }
 ```
 
-Every request carries: `requestId`, `idempotencyKey`, `correlationId`, `organizationId`, `capabilityKey+version`, `structuredArgs`, `reason`, `goal`, `confidence`, `expectedResult`, `sourceContext`.
-
-**Mode guards:**
-- `disabled` → returns `capability_unavailable`, never submits
-- `require_approval` → submits once, surfaces `approval_required` block, STOPS (never resubmits)
-- `draft` → submits, returns `draft_created` block, does not treat as completed external action
-
----
-
-## 11. Approval Lifecycle Validation
-
-**Implemented** in `kevin/approval-handler.ts`:
-
-- Polls conservatively (default: 5s interval, max 12 polls)
-- Returns `approval_required` block with `approvalId` reference
-- Stops execution chain immediately on `require_approval` mode
-- Resumes only after terminal approval state
-- Validates payload match before proceeding (`verifyApprovalPayloadMatch`)
-- Respects expiration (`expiresAt` checked each poll)
-- Policy requiring approval is **not an error** — logged as `info`
-
----
-
-## 12. Outcome and Verification Validation
-
-**Implemented** in `kevin/verification-handler.ts`:
-
-Completion requires ALL of:
-- ✅ Terminal intent state (`completed`/`failed`/etc.)
-- ✅ Terminal task state (all tasks resolved)
-- ✅ Verification attempt (`POST /verify` with resource ID)
-- ✅ Outcome recorded (`POST /outcomes` — fire-and-forget, never expands permissions)
-
-Records: `expectedResult`, `actualResult`, `verificationStatus`, `deviations`, `finalOutcome`, `confidence`, `humanApproval`, `downstreamResult`.
-
----
-
-## 13. Structured Response Integration
-
-**14 ActionBlock types** implemented in `kevin/structured-responses.ts`:
-
-| Type | Use |
-|------|-----|
-| `direct_answer` | Informational responses, in-progress status |
-| `recommendation` | Observe/recommend mode output |
-| `capability_unavailable` | Disabled or unknown capabilities |
-| `action_available` | Surfacing an available capability |
-| `draft_created` | Draft mode completion |
-| `approval_required` | Approval stop-and-wait |
-| `task_delegated` | Task dispatched to platform agent |
-| `task_in_progress` | Task executing |
-| `task_completed` | Task finished |
-| `navigation` | TE-returned navigation targets only |
-| `warning` | Emergency controls, mode notices |
-| `policy_denial` | Policy rejected action |
-| `failure` | Non-retryable failure |
-| `outcome_report` | Final verified outcome |
-
-Navigation routes: **never invented** — only paths returned by `/navigate` or explicitly approved by TE.
-
----
-
-## 14. Emergency Control Validation
-
-**Implemented** in `kevin/emergency-handler.ts`:
-
-| Condition | Kevin Response |
-|-----------|---------------|
-| `global_kill` | Halt ALL operations, no read allowed |
-| `org_kill` | Halt org operations, no read allowed |
-| `capability_kill` | Halt specific capability, read allowed |
-| `read_only_mode` | Block writes, read/analysis allowed |
-| `circuit_breaker_open` | Halt, no retry |
-| `credentials_revoked` | Halt ALL, no retry, escalate |
-| `email_auto_disabled` | Drafts allowed, no auto-send |
-| `agent_delegation_paused` | Analysis allowed, no delegation |
-
-All emergency conditions: **stop new writes**, **never bypass**, **never retry**, **surface the specific control**.
-
----
-
-## 15. Files Created in Kevin's Runtime
-
-| File | Purpose | Step(s) |
-|------|---------|---------|
-| `kevin/config.ts` | Access plane env config, fail-closed, redaction | Step 2 |
-| `kevin/te-client.ts` | Full signed HTTP client, retry logic, all lifecycle methods | Step 3 |
-| `kevin/smoke-tests.ts` | 10 smoke tests + Step 9 safe capability sequence | Steps 4, 9 |
-| `kevin/operational-model.ts` | Durable platform record, no credentials | Steps 5, 6 |
-| `kevin/capability-map.ts` | Live registry fetcher, per-cap mapping, objective matching | Step 6 |
-| `kevin/intent-workflow.ts` | Full executive loop, mode handling | Steps 7, 8 |
-| `kevin/structured-responses.ts` | 14 ActionBlock types, intent→block, mode→block | Step 10 |
-| `kevin/approval-handler.ts` | Conservative polling, payload match verification | Step 14 |
-| `kevin/verification-handler.ts` | Intent polling, verification, outcome recording | Step 15 |
-| `kevin/emergency-handler.ts` | 8 emergency conditions, detection, response | Step 16 |
-| `kevin/observability.ts` | Sanitized logging, redacted headers, per-step obs helpers | Step 17 |
-| `kevin/index.ts` | Barrel export of all public APIs | All |
-
----
-
-## 16. Institutional Memory Records Created
-
-| Record | Location | Content |
-|--------|---------|---------|
-| Kevin Executive Control Plane | `.agents/memory/kevin-exec-ops.md` | 20 service files, test count, key gotchas |
-| This delivery report | `docs/kevin-integration-delivery-report.md` | Sanitized operational summary |
-
-Operational model can be persisted by calling:
-```typescript
-import { buildOperationalModel, serializeOperationalModel } from './kevin/operational-model';
-const model = await buildOperationalModel(client, orgId, baseUrl);
-fs.writeFileSync('docs/kevin-operational-model.json', serializeOperationalModel(model));
+### Job status
+```
+GET /api/agent-jobs/:jobId
+  Auth: requireLogin
+  → returns agent_jobs row with status
 ```
 
-No credentials or sensitive payloads are stored.
+### Results
+```
+GET /api/clients/:clientId/retention-analyses/latest
+GET /api/clients/:clientId/retention-analyses
+  Auth: requireLogin
+  → returns retention_agent_analyses rows
+```
+
+### Kevin callback (inbound)
+```
+POST /api/agent-callbacks/kevin
+  Auth: HMAC-SHA256 (X-Kevin-Signature, X-Kevin-Timestamp, X-Kevin-Request-ID)
+  → validates signature, updates agent_jobs, persists retention_agent_analyses
+  → returns { ok: true } or { ok: false, error: CODE }
+```
 
 ---
 
-## 17. Known Limitations
+## Database Tables (created via `executeSql` bootstrap)
 
-| Limitation | Impact | Resolution Path |
-|------------|--------|----------------|
-| `org_id` required for CEO bridge (no context-free analysis) | CEO analysis without an active intent returns partial data | Pass `intentId` when calling from within an active workflow |
-| Wrong-org scope returns empty results not 403 | Org isolation enforced via empty result set; silent rather than explicit rejection | Acceptable — no data leak; explicit 403 is a hardening upgrade |
-| Agent delegation via task bus not live-tested | Task bus logic implemented; requires an active intent + agent assignment | Will activate in first real write-capable test (Step 18) |
-| Step 18 end-to-end send scenario | Cannot send real email until production approval given | Stop after `draft_created` + approval, document limitation accurately |
+### `agent_jobs`
+```sql
+id uuid PRIMARY KEY
+organization_id text NOT NULL
+agent_id text NOT NULL
+task_type text NOT NULL
+status text NOT NULL  -- requested|dispatching|queued|running|completed|failed|cancelled|timed_out|requires_approval|blocked_by_policy
+subject_id text        -- clientId or other entity
+correlation_id text NOT NULL
+idempotency_key text NOT NULL
+remote_task_id text    -- Kevin's task ID (set on dispatch confirmation)
+request_payload jsonb
+response_payload jsonb
+error_code text
+error_message text
+dispatched_at timestamptz
+started_at timestamptz
+completed_at timestamptz
+created_at timestamptz NOT NULL DEFAULT NOW()
+updated_at timestamptz NOT NULL DEFAULT NOW()
+```
+
+### `retention_agent_analyses`
+```sql
+id uuid PRIMARY KEY
+agent_job_id uuid NOT NULL (FK → agent_jobs)
+client_id text NOT NULL
+organization_id text NOT NULL
+risk_level text NOT NULL  -- low|medium|high|critical
+risk_score integer NOT NULL (0–100)
+confidence_score integer NOT NULL (0–100)
+summary text NOT NULL
+risk_factors jsonb NOT NULL DEFAULT '[]'
+recommended_actions jsonb NOT NULL DEFAULT '[]'
+draft_message text
+context_snapshot jsonb
+analysis_version text NOT NULL DEFAULT '1.0'
+created_at timestamptz NOT NULL DEFAULT NOW()
+```
 
 ---
 
-## 18. Production Activation Recommendation
+## HMAC Signing Protocol
 
-**Exact steps to make Kevin fully operational:**
+### Outbound (TE → Kevin)
 
-### Step A — Required (blocking everything)
-Set the following two secrets in Replit's Secret Manager:
-
+Headers sent with every Kevin request:
 ```
-TE_INTERNAL_SERVICE_TOKEN=<generate a strong random 64-char hex string>
-TRAINEFFICIENCY_KEVIN_SIGNING_SECRET=<generate a strong random 64-char hex string>
-```
-
-These two values must match what the TE server expects. The `TE_INTERNAL_SERVICE_TOKEN` is the bearer token that `requireInternalServiceToken` checks.
-
-### Step B — Required for org-scoped tests
-```
-TRAINEFFICIENCY_DEFAULT_ORG_ID=<real org UUID from the organizations table>
+X-TE-Timestamp: <unix-seconds>
+X-TE-Request-ID: <uuid>
+X-TE-Correlation-ID: <uuid>
+X-TE-Idempotency-Key: <uuid>
+X-TE-Body-SHA256: sha256(body-bytes) hex
+X-TE-Signature: sha256=HMAC-SHA256(KEVIN_OUTBOUND_HMAC_SECRET, canonical-string)
 ```
 
-### Step C — Run smoke tests to verify
-```bash
-npx tsx /tmp/run-smoke.mts
+Canonical string:
 ```
-All 10 tests must pass, including the auth gate (Test 3), before proceeding to write-capable tests.
-
-### Step D — Run Step 18 end-to-end scenario
-```typescript
-import { executeIntentWorkflow } from './kevin/intent-workflow';
-// Scenario: email draft creation for approved test lead
-const result = await executeIntentWorkflow(client, model, {
-  goal: "Create follow-up email draft for approved test lead",
-  reason: "Integration test — Step 18 end-to-end scenario",
-  confidence: 0.95,
-  capabilityKey: "email.create_draft",
-  organizationId: testOrgId,
-  structuredArgs: { recipient: "test@example.com", subject: "[TEST] Follow-up", body: "This is an integration test draft." },
-  expectedResult: "Draft created and surfaced for approval",
-  awaitCompletion: false, // Stop after approval — do not send in first run
-});
+METHOD\n
+/path\n
+<timestamp>\n
+<request-id>\n
+<body-sha256>
 ```
 
-### Step E — Server-side nonce deduplication (future)
-Add nonce store to `server/kevin-action-api-routes.ts` `replayGuard` to enforce replay test #7.
+### Inbound (Kevin → TE)
+
+Headers expected on callbacks:
+```
+X-Kevin-Timestamp: <unix-seconds>
+X-Kevin-Request-ID: <uuid>
+X-Kevin-Signature: sha256=HMAC-SHA256(KEVIN_CALLBACK_HMAC_SECRET, canonical-string)
+```
+
+Validation:
+- Timestamp within `KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS` (default 300)
+- Constant-time comparison (`crypto.timingSafeEqual`)
+- Returns `{ ok: false, reason: "missing_signature_headers" | "timestamp_too_old" | "signature_mismatch" }` on failure
 
 ---
 
-## Summary: Operational vs. Documented vs. Pending
+## Environment Variables
 
-| Component | Status |
-|-----------|--------|
-| Kevin client module (Steps 2–3) | ✅ **Operational** — compiles, all methods typed |
-| Smoke test suite (Step 4) | ✅ **Ready** — fail-closed pending credentials |
-| Operational model builder (Step 5) | ✅ **Operational** — builds from live /docs + /capabilities |
-| Capability map (Step 6) | ✅ **Operational** — fetches, maps, objective-matcher |
-| Intent workflow (Steps 7–8) | ✅ **Operational** — full loop, all 6 mode handlers |
-| Structured responses (Step 10) | ✅ **Operational** — 14 block types, intent→block, mode→block |
-| CEO bridge (Step 11) | ✅ Client ready; ⚠ server endpoint needs verification |
-| Agent delegation (Step 12) | ✅ Task bus wired; static registry populated |
-| AgentMail workflow (Step 13) | ✅ Client ready; requires auth gate |
-| Approval handling (Step 14) | ✅ **Operational** — conservative poll, payload match |
-| Verification & outcomes (Step 15) | ✅ **Operational** — terminal state, verify, record |
-| Emergency controls (Step 16) | ✅ **Operational** — 8 conditions, fail-closed |
-| Observability (Step 17) | ✅ **Operational** — per-step helpers, redaction |
-| Step 18 end-to-end | ⚠ **Documented** — executes once credentials set |
-| Authentication | ❌ **Blocked** — needs `TE_INTERNAL_SERVICE_TOKEN` |
+| Variable | Required when | Default | Purpose |
+|----------|--------------|---------|---------|
+| `KEVIN_AGENT_INTEGRATION_ENABLED` | — | `false` | Master switch; set to `true` once Kevin gateway is live |
+| `KEVIN_GATEWAY_BASE_URL` | Enabled | — | Kevin's Cloudflare Tunnel base URL |
+| `KEVIN_OUTBOUND_HMAC_SECRET` | Enabled | — | Secret for signing TE→Kevin requests |
+| `KEVIN_CALLBACK_HMAC_SECRET` | Enabled | — | Secret for verifying Kevin→TE callbacks |
+| `KEVIN_CALLBACK_BASE_URL` | Enabled | — | TE's public URL (used to tell Kevin where to POST results) |
+| `KEVIN_REQUEST_TIMEOUT_MS` | — | `30000` | Outbound request timeout (ms) |
+| `KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS` | — | `300` | Max clock skew for callback HMAC (seconds) |
+
+All variables are registered in the `shared` environment scope.
+
+---
+
+## Test Results
+
+```
+▶ HMAC utilities          6 tests  ✔
+▶ Agent registry          3 tests  ✔
+▶ Kevin agent config      2 tests  ✔
+▶ POST /api/clients/...   2 tests  ✔ (auth rejection)
+▶ POST /api/agent-callbacks/kevin  6 tests  ✔
+▶ GET /api/agent-jobs/:jobId       1 test   ✔
+▶ GET .../retention-analyses/latest 1 test  ✔
+▶ GET .../retention-analyses        1 test  ✔
+▶ buildSignedHeaders (integration)  3 tests ✔
+▶ buildRetentionContext             1 test  ✔
+▶ UI state logic                    2 tests ✔
+
+Total: 28/28 ✔  Duration: ~10.5s
+```
+
+---
+
+## What Kevin Needs to Implement (TE side complete)
+
+Kevin's gateway must:
+
+1. **Accept `POST /tasks`** with body:
+   ```json
+   {
+     "taskId": "<uuid>",
+     "agentId": "retention-agent",
+     "taskType": "evaluate_client_retention_risk",
+     "organizationId": "<uuid>",
+     "correlationId": "<uuid>",
+     "callbackUrl": "https://<te-domain>/api/agent-callbacks/kevin",
+     "context": { ... }
+   }
+   ```
+   Verify inbound HMAC headers (`X-TE-Signature`, `X-TE-Timestamp`, `X-TE-Request-ID`, `X-TE-Body-SHA256`).
+   
+   Return `{ remoteTaskId: "<uuid>" }` on success.
+
+2. **POST results to** `<callbackUrl>` with body:
+   ```json
+   {
+     "schemaVersion": "1.0",
+     "taskId": "<original-taskId>",
+     "remoteTaskId": "<uuid>",
+     "agentId": "retention-agent",
+     "taskType": "evaluate_client_retention_risk",
+     "organizationId": "<uuid>",
+     "correlationId": "<uuid>",
+     "status": "completed",
+     "result": {
+       "clientId": "<uuid>",
+       "riskLevel": "low|medium|high|critical",
+       "riskScore": 0-100,
+       "confidenceScore": 0-100,
+       "summary": "...",
+       "riskFactors": [{"factor":"...","severity":"low|medium|high|critical","detail":"..."}],
+       "recommendedActions": [{"action":"...","priority":"low|medium|high|urgent","rationale":"..."}],
+       "draftMessage": "Optional outreach message..."
+     }
+   }
+   ```
+   Include HMAC headers (`X-Kevin-Signature`, `X-Kevin-Timestamp`, `X-Kevin-Request-ID`).
+
+---
+
+## Enabling in Production
+
+1. Set `KEVIN_AGENT_INTEGRATION_ENABLED=true` in the Replit environment secrets panel.
+2. Verify `KEVIN_GATEWAY_BASE_URL` points at Kevin's active Cloudflare Tunnel URL.
+3. Confirm `KEVIN_CALLBACK_BASE_URL` is set to TE's public domain (e.g. `https://trainefficiency.replit.app`).
+4. Test with: `POST /api/clients/<real-client-id>/retention-analysis` from an authenticated coach/admin session.
+5. Server will log `KEVIN_DISPATCH_SUCCESS` on success or `KEVIN_DISPATCH_FAILED` with error code on failure.
+
+---
+
+## Known Limitations / Outstanding Items
+
+- **Nonce deduplication not enforced server-side** — Kevin can replay a callback with the same `X-Kevin-Request-ID`. Low risk while trust is established; add a short-TTL nonce cache (Redis or DB) in Phase 2.
+- **Kevin gateway not yet built** — this PR delivers the TE side only.
+- **Other agents stubbed** — `onboarding-optimizer`, `session-scheduler`, `payment-recovery`, `engagement-coach`, `program-recommender`, `performance-analyzer` are registered but `enabled: false`.
+- **Rate limiting** — callback endpoint has a public rate limiter (100 req/60s per IP). Kevin should use a dedicated IP or TE should whitelist Kevin's egress IP and use signature-only validation.
