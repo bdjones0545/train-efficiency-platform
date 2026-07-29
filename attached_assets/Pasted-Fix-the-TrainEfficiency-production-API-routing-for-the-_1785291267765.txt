@@ -1,0 +1,275 @@
+Fix the TrainEfficiency production API routing for the Kevin/Hermes callback endpoint.
+
+## Current state
+
+Local callback tests pass 8/8 at:
+
+`http://localhost:5000/api/kevin/webhooks/hermes`
+
+The canonical production callback URL is:
+
+`https://trainefficiency.com/api/kevin/webhooks/hermes`
+
+Kevin is already configured to use that URL.
+
+However, an unsigned POST from Kevin to the production URL currently returns the TrainEfficiency SPA HTML instead of the Express JSON response.
+
+Expected unsigned response:
+
+```json
+{
+  "ok": false,
+  "retryable": false,
+  "error": "SIGNATURE_INVALID"
+}
+```
+
+Actual response:
+
+* HTML
+* TrainEfficiency frontend SPA
+* No callback handler execution
+
+Kevin’s final verdict is currently:
+
+`NOT READY`
+
+Do not modify Kevin’s gateway in this task. Fix the production TrainEfficiency deployment and routing only.
+
+## Objective
+
+Ensure that production requests to:
+
+`POST /api/kevin/webhooks/hermes`
+
+are handled by the existing Express callback route before any frontend SPA fallback is applied.
+
+## 1. Inspect the production architecture
+
+Determine how `trainefficiency.com` is currently deployed and routed.
+
+Inspect:
+
+* Replit deployment configuration
+* Production run command
+* Express server startup
+* Static frontend serving
+* SPA fallback behavior
+* Custom-domain attachment
+* Reverse proxy or routing configuration
+* Whether the deployed application is Autoscale, Reserved VM, Static Deployment, or another deployment type
+* Whether `trainefficiency.com` points to the same deployment running the Express backend
+
+Do not assume that the local development server and production deployment use the same entrypoint.
+
+## 2. Confirm route registration order
+
+Verify that the canonical callback route is registered before static serving and before the catch-all SPA route.
+
+The effective order must be equivalent to:
+
+```ts
+app.use(express.json());
+
+app.post("/api/kevin/webhooks/hermes", callbackHandler);
+app.post("/api/agent-callbacks/kevin", callbackHandler);
+
+// Other API routes
+app.use("/api", apiRouter);
+
+// Static frontend serving
+app.use(express.static(...));
+
+// SPA fallback must be last
+app.get("*", serveFrontendIndex);
+```
+
+The SPA fallback must never handle `/api/*`.
+
+Add an explicit API 404 JSON handler before the SPA fallback if necessary:
+
+```ts
+app.use("/api", (_req, res) => {
+  res.status(404).json({
+    ok: false,
+    retryable: false,
+    error: "API_ROUTE_NOT_FOUND"
+  });
+});
+```
+
+Do not create a second callback handler. Preserve the existing canonical handler and HMAC behavior.
+
+## 3. Verify the production server entrypoint
+
+Confirm the production start command runs the Express application, not only a frontend preview or static build server.
+
+Check:
+
+* `package.json`
+* Replit deployment run command
+* `server/index.ts`
+* built server entrypoint
+* build output paths
+* environment mode
+* port binding
+
+The production server must:
+
+* bind to `0.0.0.0`
+* use the Replit-provided port where required
+* serve both the API and frontend from the same public deployment, unless an intentional API origin is documented
+* register the Kevin callback route in production
+* load the required production secrets
+
+If the domain is pointing at a frontend-only deployment, correct the deployment target or provide the real public API origin.
+
+## 4. Protect API paths from SPA fallback
+
+Make `/api/*` categorically ineligible for frontend fallback.
+
+For any unmatched `/api/*` request, return JSON rather than `index.html`.
+
+Verify that:
+
+* `POST /api/kevin/webhooks/hermes` reaches Express
+* `GET /api/nonexistent-test-route` returns JSON 404
+* neither request returns HTML
+* `GET /some-frontend-page` still returns the SPA normally
+
+## 5. Confirm production environment variables
+
+Verify production has the required variables, without printing secret values:
+
+* `KEVIN_CALLBACK_HMAC_SECRET`
+* `KEVIN_AGENT_INTEGRATION_ENABLED`
+* all other documented Kevin integration variables
+
+Keep:
+
+```text
+KEVIN_AGENT_INTEGRATION_ENABLED=false
+```
+
+Do not rotate the HMAC secret.
+
+Fail closed if `KEVIN_CALLBACK_HMAC_SECRET` is missing in production.
+
+## 6. Deploy the fix
+
+Build and deploy the corrected application to the production deployment attached to:
+
+`https://trainefficiency.com`
+
+Do not treat a successful local preview as proof.
+
+Confirm the custom domain points to the newly deployed backend-capable deployment.
+
+## 7. Production verification
+
+After deployment, run these checks against the public domain.
+
+### Unsigned canonical callback
+
+```bash
+curl -i -X POST \
+  https://trainefficiency.com/api/kevin/webhooks/hermes \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Required behavior:
+
+* JSON response
+* no HTML
+* no redirect
+* callback route reached
+* error such as `SIGNATURE_INVALID`
+* content type includes `application/json`
+
+### Unsigned legacy callback
+
+```bash
+curl -i -X POST \
+  https://trainefficiency.com/api/agent-callbacks/kevin \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Required behavior:
+
+* JSON response
+* no HTML
+* same callback security behavior as the canonical route
+
+### Unknown API route
+
+```bash
+curl -i https://trainefficiency.com/api/nonexistent-kevin-test
+```
+
+Required behavior:
+
+* JSON 404
+* no SPA HTML
+
+### Frontend route
+
+Verify an ordinary frontend route still loads correctly.
+
+## 8. Regression tests
+
+Run the full Kevin integration suite and the broader relevant server tests.
+
+Confirm at least:
+
+* canonical callback route
+* legacy callback route
+* invalid signature
+* missing signature
+* replay handling
+* callback idempotency
+* API 404 JSON behavior
+* SPA fallback behavior
+* production route ordering
+
+Report exact test counts and failures.
+
+## 9. Do not run the signed live test yet unless routing is fixed
+
+Once the unsigned production POST returns the expected JSON authentication rejection, report that Kevin can retry its connectivity check.
+
+Do not enable:
+
+`KEVIN_AGENT_INTEGRATION_ENABLED`
+
+Do not submit autonomous production tasks.
+
+Do not claim `READY TO ENABLE`.
+
+## Final report
+
+Return:
+
+* Root cause
+* Production deployment type
+* Production run command
+* Files modified
+* Route ordering before and after
+* Whether the domain pointed to the correct deployment
+* Deployment result
+* Public canonical callback curl result
+* Public legacy callback curl result
+* Public unknown API route result
+* Frontend regression result
+* Test command and exact results
+* Remaining risks
+* Final verdict using exactly one of:
+
+  * NOT READY
+  * READY FOR END-TO-END TEST
+  * READY TO ENABLE
+
+Return `READY FOR END-TO-END TEST` only when the public production callback URL returns the correct authenticated JSON API behavior and Kevin can reach it.
+
+Return `READY TO ENABLE` only after the later signed TrainEfficiency → Kevin → TrainEfficiency round trip succeeds with replay and idempotency demonstrated.

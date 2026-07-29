@@ -26,6 +26,14 @@ export function serveStatic(app: Express) {
     }),
   );
 
+  // Explicit API 404 — any unmatched /api/* path returns JSON, never HTML.
+  // This prevents the SPA catch-all from swallowing API requests that have
+  // no registered route (e.g. a mis-typed route name, a route missing from
+  // the bundle because of a stale build, etc.).
+  app.use("/api", (_req, res) => {
+    res.status(404).json({ ok: false, retryable: false, error: "API_ROUTE_NOT_FOUND" });
+  });
+
   // fall through to index.html if the file doesn't exist
   app.use("/{*path}", async (req, res) => {
     try {

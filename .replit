@@ -13,10 +13,10 @@ externalPort = 80
   PORT = "5000"
 
   [deployment]
-  deploymentTarget = "autoscale"
-  run = ["node", "dist/index.cjs"]
-  build = ["npm", "run", "build"]
-  publicDir = "dist/public"
+deploymentTarget = "autoscale"
+run = ["node", "dist/index.cjs"]
+build = ["npm", "run", "build"]
+publicDir = "dist/public"
 
   [workflows]
   runButton = "Project"
@@ -78,10 +78,11 @@ TRAINEFFICIENCY_REQUEST_TIMEOUT_MS = "30000"
 KEVIN_GATEWAY_BASE_URL = "https://kevin-api.trainefficiency.com"
 KEVIN_OUTBOUND_HMAC_SECRET = "79f3830a8761a5c18bc8788a3558947642f4d6d8a14b9d48d181cf94041e6e6e"
 KEVIN_CALLBACK_HMAC_SECRET = "9f3930a8761a5c18bc8788a3558947642f4d6d8a14b9d40d181c f94041ебебе"
-KEVIN_REQUEST_TIMEOUT_MS = "MS=8000"
+KEVIN_REQUEST_TIMEOUT_MS = "8000"
 KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS = "300"
 KEVIN_AGENT_INTEGRATION_ENABLED = "false"
 KEVIN_CALLBACK_BASE_URL = "https://app.trainefficiency.com"
+KEVIN_INBOUND_HMAC_SECRET = "79f3930a8761a5c18bc8788a3558947642f4d6d8a14b9d40d181g f94041ебебе"
 
   [userenv.production]
   PUBLIC_APP_URL = "https://trainefficiency.com"
