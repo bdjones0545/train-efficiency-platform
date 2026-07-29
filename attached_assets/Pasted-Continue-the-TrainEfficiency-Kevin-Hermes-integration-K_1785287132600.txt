@@ -1,0 +1,303 @@
+Continue the TrainEfficiency ↔ Kevin/Hermes integration.
+
+Kevin’s Hermes gateway has now been implemented and has returned:
+
+`READY FOR INTEGRATION TEST`
+
+Do not modify Kevin’s VM in this task. Work only on the TrainEfficiency application and verify compatibility with the gateway contract.
+
+Kevin’s gateway implementation is located at:
+
+`~/.hermes/profiles/kevin/services/agent_gateway/`
+
+Its authoritative contract is:
+
+`~/.hermes/profiles/kevin/services/agent_gateway/CONTRACT.md`
+
+Current constraints:
+
+* `KEVIN_AGENT_INTEGRATION_ENABLED` must remain `false`
+* Kevin’s signed ingress through Cloudflare Tunnel is implemented
+* Task execution is implemented
+* Idempotency and replay protection are implemented
+* Signed callback delivery is implemented
+* TrainEfficiency’s production callback URL is not yet reachable from Kevin
+* Compatibility of `POST /api/kevin/webhooks/hermes` with the real gateway callback schema is not yet proven
+
+## Objective
+
+Make TrainEfficiency fully compatible with Kevin’s implemented Hermes gateway and prepare both systems for a controlled end-to-end integration test.
+
+Do not enable production execution yet.
+
+## 1. Inspect and compare the contracts
+
+Read:
+
+* `docs/kevin-integration-delivery-report.md`
+* The current TrainEfficiency Kevin integration routes
+* The implementation and tests for `POST /api/kevin/webhooks/hermes`
+* Kevin’s `CONTRACT.md`, if it is available in the workspace or provided as input
+
+Build a field-by-field compatibility matrix covering:
+
+* Outbound task request
+* Gateway acknowledgement
+* Started callback
+* Completed callback
+* Failed callback
+* Status response
+* HMAC headers
+* Timestamp format
+* Signature canonicalization
+* Correlation ID
+* Request ID
+* Idempotency key
+* Execution ID
+* Callback ID
+* Schema version
+* Error codes
+* Result payload
+
+Do not assume the earlier TrainEfficiency design and the implemented Kevin gateway are identical.
+
+## 2. Callback endpoint
+
+Verify and harden:
+
+`POST /api/kevin/webhooks/hermes`
+
+It must accept Kevin’s actual callback states:
+
+* `started`
+* `completed`
+* `failed`
+
+The endpoint must:
+
+* Preserve or reconstruct the exact body representation required for HMAC validation
+* Validate the callback signature
+* Validate the callback timestamp
+* Reject expired callbacks
+* Reject malformed signatures
+* Use constant-time comparison
+* Reject replayed callback IDs or nonce values
+* Handle duplicate callback delivery idempotently
+* Validate the callback payload schema
+* Confirm the referenced request or job exists
+* Confirm the correlation ID matches
+* Prevent a completed job from being moved backward to started
+* Prevent a failed job from being overwritten improperly
+* Record callback attempts and receipt timestamps
+* Store safe error information
+* Return a stable success response Kevin can recognize
+* Return clear retryable versus non-retryable errors
+
+## 3. Callback state transitions
+
+Define and enforce valid transitions.
+
+At minimum:
+
+* queued → started
+* queued → completed
+* queued → failed
+* started → completed
+* started → failed
+
+Reject or safely ignore invalid regressions such as:
+
+* completed → started
+* completed → failed
+* failed → started
+
+Duplicate completed or failed callbacks with the same callback ID must return success without applying the result twice.
+
+## 4. Public callback URL
+
+Create or confirm the production HTTPS callback URL Kevin will use.
+
+Requirements:
+
+* Reachable from Kevin’s VM
+* Protected by HMAC, not browser session authentication
+* Does not redirect
+* Accepts POST requests directly
+* Preserves the request body contract
+* Returns a response within Kevin’s configured callback timeout
+* Does not expose secrets in the URL
+* Uses the exact canonical route expected by configuration
+
+Document the final URL but do not expose the HMAC secret.
+
+## 5. Environment configuration
+
+Validate and document the TrainEfficiency variables required for the integration.
+
+Confirm the exact variable names for:
+
+* Kevin gateway URL
+* Shared ingress HMAC secret
+* Callback verification HMAC secret
+* Integration enable flag
+* Allowed timestamp drift
+* Request timeout
+* Callback replay window
+* Environment mode
+
+Prefer separate ingress and callback secrets if the implemented contract supports them. Do not silently change Kevin’s existing secret values.
+
+Add missing variables to `.env.example` using names only and safe placeholder values.
+
+Fail closed when required secrets are missing in production.
+
+## 6. Outbound request compatibility
+
+Verify TrainEfficiency’s outbound request matches Kevin’s implemented gateway contract exactly.
+
+Confirm:
+
+* HTTP method
+* Path
+* Header names
+* Timestamp units and formatting
+* Signature encoding
+* Canonical signing string
+* JSON serialization rules
+* Capability name
+* Agent name
+* Correlation ID
+* Idempotency key
+* Request ID
+* Callback URL
+* Schema version
+* Timeout metadata
+* Payload envelope
+
+Do not modify Kevin’s contract simply to match assumptions in TrainEfficiency. Adapt TrainEfficiency where necessary unless the contract contains an obvious security defect.
+
+## 7. Database persistence
+
+Ensure TrainEfficiency durably records:
+
+* Request ID
+* Correlation ID
+* Idempotency key
+* Kevin execution ID
+* Capability
+* Agent
+* Request payload or safe snapshot
+* Current status
+* Started timestamp
+* Completed timestamp
+* Failed timestamp
+* Callback ID
+* Callback receipt timestamp
+* Result
+* Safe error code
+* Retryable flag
+* Last callback status
+* Created and updated timestamps
+
+Add a migration only if required.
+
+Ensure duplicate callbacks cannot create duplicate results or duplicate retention recommendations.
+
+## 8. Retention Intelligence integration
+
+Verify the existing:
+
+`<RetentionIntelligencePanel clientId={selectedUser.id} />`
+
+uses the persisted Kevin/Hermes job state.
+
+The UI should correctly represent:
+
+* Not requested
+* Queued
+* Processing
+* Completed
+* Failed
+* Retryable failure
+* Integration disabled
+
+Do not show completed recommendations until a valid signed completed callback has been persisted.
+
+Do not allow repeated user clicks to create duplicate executions for the same active request.
+
+## 9. Automated tests
+
+Add or update tests for:
+
+* Valid started callback
+* Valid completed callback
+* Valid failed callback
+* Invalid signature
+* Missing signature
+* Expired timestamp
+* Future timestamp outside tolerance
+* Replayed callback
+* Duplicate callback delivery
+* Unknown request ID
+* Correlation ID mismatch
+* Invalid state regression
+* Malformed JSON
+* Invalid schema
+* Completed result persistence
+* Failed error persistence
+* Stable success acknowledgement
+* Retryable server error behavior
+* Integration-disabled behavior
+* Duplicate UI-triggered request protection
+
+Keep the test suite deterministic. Do not use an excessive concurrent stress test that hides functional hangs.
+
+## 10. Integration-test tooling
+
+Create a safe integration-test script or documented command that can:
+
+1. Generate a TrainEfficiency request.
+2. Sign it exactly as production does.
+3. Send it to Kevin’s Cloudflare Tunnel gateway.
+4. Record the gateway acknowledgement.
+5. Wait for or poll the TrainEfficiency job.
+6. Verify the signed callback was accepted.
+7. Print the final job state.
+8. Replay the same request and prove no duplicate execution occurred.
+
+Use a non-destructive test capability only.
+
+Do not turn on autonomous production actions.
+
+## 11. Enablement protection
+
+Keep:
+
+`KEVIN_AGENT_INTEGRATION_ENABLED=false`
+
+The application must not enable the integration automatically.
+
+Provide a separate documented activation step that is only performed after the complete end-to-end test passes.
+
+## Final report
+
+Return:
+
+* Files modified
+* Database migrations added
+* Contract compatibility matrix
+* Final callback URL
+* HMAC verification behavior
+* Callback state-transition rules
+* Test command
+* Exact test results
+* End-to-end test command
+* Remaining risks
+* Whether Kevin needs any configuration updates
+* Final verdict using exactly one of:
+
+  * NOT READY
+  * READY FOR END-TO-END TEST
+  * READY TO ENABLE
+
+Only return `READY TO ENABLE` after a real signed request travels from TrainEfficiency through the Cloudflare Tunnel to Kevin and a real signed callback returns to TrainEfficiency, with idempotency and replay protection demonstrated.
