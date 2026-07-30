@@ -1085,11 +1085,6 @@ export default function AdminAiWorkforceSettingsPage() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Link href="/admin/ai-operations">
-            <Button variant="outline" size="sm" className="gap-1.5 text-xs h-8" data-testid="button-ai-operations">
-              <Activity className="h-3.5 w-3.5" />Live Operations
-            </Button>
-          </Link>
           <Link href="/onboarding/ai-workforce">
             <Button variant="outline" size="sm" className="gap-1.5 text-muted-foreground h-8 text-xs" data-testid="button-rerun-wizard">
               <RotateCcw className="h-3.5 w-3.5" />Customize Preferences
@@ -1258,9 +1253,7 @@ export default function AdminAiWorkforceSettingsPage() {
       {/* ── Governance ───────────────────────────────────────────────────── */}
       <Card data-testid="section-governance">
         <CardHeader className="pb-3">
-          <SectionHeader icon={Shield} title="Governance" subtitle="Approval rules and autonomy settings"
-            action={<Link href="/admin/ai-governance"><Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" data-testid="button-edit-governance"><Edit2 className="h-3.5 w-3.5" />Edit Governance<ChevronRight className="h-3.5 w-3.5" /></Button></Link>}
-          />
+          <SectionHeader icon={Shield} title="Governance" subtitle="Approval rules and autonomy settings" />
         </CardHeader>
         <CardContent className="space-y-3">
           <div className={`flex items-start gap-3 p-3 rounded-lg border-2 ${settings.governanceMode === "supervised" ? "border-green-300 bg-green-50 dark:bg-green-900/20 dark:border-green-800" : settings.governanceMode === "autonomous" ? "border-violet-300 bg-violet-50 dark:bg-violet-900/20 dark:border-violet-800" : "border-blue-300 bg-blue-50 dark:bg-blue-900/20 dark:border-blue-800"}`}>
@@ -1330,18 +1323,13 @@ export default function AdminAiWorkforceSettingsPage() {
               })}
             </div>
           )}
-          {selectedIntegrations.length > 0 && !editingIntegrations && (
-            <p className="text-[10px] text-muted-foreground mt-2">Connect integrations in <Link href="/admin/integrations" className="text-primary hover:underline">Integration settings</Link>.</p>
-          )}
         </CardContent>
       </Card>
 
       {/* ── Workflows & Automations ───────────────────────────────────────── */}
       <Card data-testid="section-workflows">
         <CardHeader className="pb-3">
-          <SectionHeader icon={GitBranch} title="Workflows & Automations" subtitle="Starter workflows created from your setup"
-            action={<Link href="/admin/workflow-builder"><Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" data-testid="button-edit-automations"><Edit2 className="h-3.5 w-3.5" />Edit Automations<ChevronRight className="h-3.5 w-3.5" /></Button></Link>}
-          />
+          <SectionHeader icon={GitBranch} title="Workflows & Automations" subtitle="Starter workflows created from your setup" />
         </CardHeader>
         <CardContent>
           {selectedTemplates.length > 0 && (

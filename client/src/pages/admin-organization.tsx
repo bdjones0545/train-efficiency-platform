@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft, Building2, ChevronRight, Layers, RefreshCw, Plus,
+  Building2, ChevronRight, Layers, RefreshCw, Plus,
   X, CheckCircle, AlertTriangle, BarChart3, TrendingUp, Users,
   Activity, Shield, GitBranch, Network, Target, Star, Zap,
 } from "lucide-react";
@@ -668,13 +668,6 @@ export default function AdminOrganizationPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <Link href="/admin/governance">
-              <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground h-7 px-2 -ml-2">
-                <ArrowLeft className="h-3.5 w-3.5" />Governance Center
-              </Button>
-            </Link>
-          </div>
           <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
             <Building2 className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             Organization Center
@@ -709,7 +702,6 @@ export default function AdminOrganizationPage() {
         {[
           { label: "Org Memory",  href: "/admin/organizational-memory" },
           { label: "SOPs",        href: "/admin/procedures"            },
-          { label: "Governance",  href: "/admin/governance"            },
           { label: "Organization",href: null                           },
         ].map((step, i) => (
           <div key={step.label} className="flex items-center gap-1.5 shrink-0">

@@ -101,16 +101,17 @@ export async function buildRetentionContext(
   const attendanceRows = await db.execute(sql`
     SELECT
       COUNT(*)                                                   AS total_bookings,
-      COUNT(*) FILTER (WHERE booking_status = 'CONFIRMED')       AS attended_count,
-      COUNT(*) FILTER (WHERE booking_status = 'CANCELLED')       AS cancelled_count,
-      COUNT(*) FILTER (WHERE booking_status = 'NO_SHOW')         AS no_show_count,
-      COUNT(*) FILTER (WHERE scheduled_at >= ${day30})           AS last_30_days,
-      COUNT(*) FILTER (WHERE scheduled_at >= ${day30} AND booking_status = 'CONFIRMED') AS last_30_attended,
-      COUNT(*) FILTER (WHERE scheduled_at >= ${day90})           AS last_90_days,
-      COUNT(*) FILTER (WHERE scheduled_at >= ${day90} AND booking_status = 'CONFIRMED') AS last_90_attended,
-      MAX(CASE WHEN booking_status = 'CONFIRMED' THEN scheduled_at END) AS last_attended_at
+      COUNT(*) FILTER (WHERE status = 'CONFIRMED')       AS attended_count,
+      COUNT(*) FILTER (WHERE status = 'CANCELLED')       AS cancelled_count,
+      COUNT(*) FILTER (WHERE status = 'NO_SHOW')         AS no_show_count,
+      COUNT(*) FILTER (WHERE start_at >= ${day30})           AS last_30_days,
+      COUNT(*) FILTER (WHERE start_at >= ${day30} AND status = 'CONFIRMED') AS last_30_attended,
+      COUNT(*) FILTER (WHERE start_at >= ${day90})           AS last_90_days,
+      COUNT(*) FILTER (WHERE start_at >= ${day90} AND status = 'CONFIRMED') AS last_90_attended,
+      MAX(CASE WHEN status = 'CONFIRMED' THEN start_at END) AS last_attended_at
     FROM bookings
     WHERE client_id = ${clientId}
+      AND organization_id = ${organizationId}
   `);
 
   const atRows = Array.isArray(attendanceRows) ? attendanceRows : (attendanceRows as any).rows ?? [];
@@ -140,20 +141,21 @@ export async function buildRetentionContext(
 
   // ── 3. Upcoming sessions ──────────────────────────────────────────────────
   const upcomingRows = await db.execute(sql`
-    SELECT b.id, b.scheduled_at, s.name AS service_type
+    SELECT b.id, b.start_at, s.name AS service_type
     FROM bookings b
     LEFT JOIN services s ON s.id = b.service_id
     WHERE b.client_id = ${clientId}
-      AND b.scheduled_at > NOW()
-      AND b.booking_status = 'CONFIRMED'
-    ORDER BY b.scheduled_at ASC
+      AND b.organization_id = ${organizationId}
+      AND b.start_at > NOW()
+      AND b.status = 'CONFIRMED'
+    ORDER BY b.start_at ASC
     LIMIT 5
   `);
 
   const upRows = Array.isArray(upcomingRows) ? upcomingRows : (upcomingRows as any).rows ?? [];
   const upcomingSessions: UpcomingSession[] = upRows.map((r: any) => ({
     bookingId: String(r.id),
-    scheduledAt: new Date(r.scheduled_at as string).toISOString(),
+    scheduledAt: new Date(r.start_at as string).toISOString(),
     serviceType: r.service_type ? String(r.service_type) : null,
   }));
 
@@ -162,12 +164,12 @@ export async function buildRetentionContext(
     SELECT
       us.status,
       sp.name AS plan_name,
-      COALESCE(SUM(b.price_cents), 0) AS lifetime_cents
+      COALESCE(sp.amount_cents, 0) AS lifetime_cents
     FROM user_subscriptions us
-    LEFT JOIN subscription_plans sp ON sp.id = us.plan_id
-    LEFT JOIN bookings b ON b.client_id = ${clientId}
-    WHERE us.client_id = ${clientId}
-    GROUP BY us.status, sp.name
+    LEFT JOIN organization_subscription_plans sp ON sp.id = us.plan_id
+    WHERE us.user_id = ${clientId}
+      AND us.organization_id = ${organizationId}
+    ORDER BY us.created_at DESC
     LIMIT 1
   `);
 

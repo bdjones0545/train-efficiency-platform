@@ -70,7 +70,6 @@ import AdminGuardianDetailPage from "@/pages/admin-guardian-detail";
 import AdminOutreachCenterPage from "@/pages/admin-outreach-center";
 import BusinessCommandCenterPage from "@/pages/business-command-center";
 import BusinessBrainPage from "@/pages/business-brain";
-import AdminAiOperationsPage from "@/pages/admin-ai-operations";
 import AdminExecutiveIntelligencePage from "@/pages/admin-executive-intelligence";
 import AdminAutonomousManagementPage from "@/pages/admin-autonomous-management";
 import AdminTrustAttributionPage from "@/pages/admin-trust-attribution";
@@ -78,9 +77,6 @@ import AdminMarketIntelligencePage from "@/pages/admin-market-intelligence";
 import AdminNetworkIntelligencePage from "@/pages/admin-network-intelligence";
 import AdminBillingIntelligencePage from "@/pages/admin-billing-intelligence";
 import AdminPlatformHealthPage from "@/pages/admin-platform-health";
-import AdminExecutionCenterPage from "@/pages/admin-execution-center";
-import AdminEcosystemPage from "@/pages/admin-ecosystem";
-import AdminAiGovernancePage from "@/pages/admin-ai-governance";
 import AdminAiWorkforcePage from "@/pages/admin-ai-workforce";
 import AdminAiWorkforceSettingsPage from "@/pages/admin-ai-workforce-settings";
 import AdminAiWorkforceCapabilitiesPage from "@/pages/admin-ai-workforce-capabilities";
@@ -91,30 +87,18 @@ import AdminAiWorkforceOptimizationPage from "@/pages/admin-ai-workforce-optimiz
 import AdminAiWorkforceApprovalsPage from "@/pages/admin-ai-workforce-approvals";
 import AdminAiWorkforceExecutionsPage from "@/pages/admin-ai-workforce-executions";
 import AdminAiWorkforceSimulatorPage from "@/pages/admin-ai-workforce-simulator";
-import AdminAgentMarketplacePage from "@/pages/admin-agent-marketplace";
-import AdminIntegrationsPage from "@/pages/admin-integrations";
-import AdminWorkforceOsPage from "@/pages/admin-workforce-os";
 import AdminUnifiedCommandPage from "@/pages/admin-unified-command";
 import AdminCustomerSuccessOsPage from "@/pages/admin-customer-success-os";
-import AdminPlatformBrainPage from "@/pages/admin-platform-brain";
 import AdminPlatformEngineeringPage from "@/pages/admin-platform-engineering";
 import AdminAgentCommunicationsPage from "@/pages/admin-agent-communications";
 import AdminAgentTasksPage from "@/pages/admin-agent-tasks";
 import AdminOrgMemoryPage from "@/pages/admin-organizational-memory";
 import AdminProceduresPage from "@/pages/admin-procedures";
-import AdminGovernancePage from "@/pages/admin-governance";
 import AdminOrganizationPage from "@/pages/admin-organization";
 import AdminStrategyPage from "@/pages/admin-strategy";
 import AdminOpportunityAcquisitionPage from "@/pages/admin-opportunity-acquisition";
-import AdminHiringPage from "@/pages/admin-hiring";
-import AdminPartnershipsPage from "@/pages/admin-partnerships";
-import AdminSponsorshipsPage from "@/pages/admin-sponsorships";
-import AdminDepartmentsPage from "@/pages/admin-departments";
-import AdminDepartmentFactoryPage from "@/pages/admin-department-factory";
-import AdminDepartmentOsV2Page from "@/pages/admin-department-os-v2";
 import AdminProductionReadinessPage from "@/pages/admin-production-readiness";
 import AdminLaunchReadinessPage from "@/pages/admin-launch-readiness";
-import AdminEcosystemHealthPage from "@/pages/admin-ecosystem-health";
 import AdminCommunityPage from "@/pages/admin-community";
 import AdminMarketplaceActivationPage from "@/pages/admin-marketplace-activation";
 import AdminAgentEconomyPage from "@/pages/admin-agent-economy";
@@ -129,22 +113,15 @@ import AdminMarketplaceProofPage from "@/pages/admin-marketplace-proof";
 import DeveloperPortalPage from "@/pages/developer-portal";
 import DeveloperSandboxPage from "@/pages/developer-sandbox";
 import MarketplaceStorePage from "@/pages/marketplace-store";
-import AdminWorkflowBuilderPage from "@/pages/admin-workflow-builder";
 import AdminWorkflowLivePage from "@/pages/admin-workflow-live";
 import AdminWorkflowHeatmapPage from "@/pages/admin-workflow-heatmap";
 import AdminWorkflowsLibraryPage from "@/pages/admin-workflows-library";
 import OnboardingAiWorkforcePage from "@/pages/onboarding-ai-workforce";
 import AdminRecommendationsPage from "@/pages/admin-recommendations";
-import AdminActionCenterPage from "@/pages/admin-action-center";
-import AdminHermesPage from "@/pages/admin-hermes";
 import AdminAiEmployeeProfilePage from "@/pages/admin-ai-employee-profile";
-import EmailTriggerAuditPage from "@/pages/email-trigger-audit";
 import AdminAiApprovalsPage from "@/pages/admin-ai-approvals";
 import AdminAiOutreachOpportunitiesPage from "@/pages/admin-ai-outreach-opportunities";
-import AdminGmailConversationsPage from "@/pages/admin-gmail-conversations";
-import AdminAgentToolsPage from "@/pages/admin-agent-tools";
 import AdminWorkflowsPage from "@/pages/admin-workflows";
-import AdminAgentOpsPage from "@/pages/admin-agent-ops";
 import AdminKevinPage from "@/pages/admin-kevin";
 import AdminKevinSlackPage from "@/pages/admin-kevin-slack";
 import AdminFinancialFailuresPage from "@/pages/admin-financial-failures";
@@ -153,14 +130,12 @@ import AdminFinancialBrainPage from "@/pages/admin-financial-brain";
 import AdminOperatorActionsPage from "@/pages/admin-operator-actions";
 import AdminRetentionWorkflowsPage from "@/pages/admin-retention-workflows";
 import AdminOutreachQueuePage from "@/pages/admin-outreach-queue";
-import AdminWorkflowOrchestratorPage from "@/pages/admin-workflow-orchestrator";
 import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { CommandPalette } from "@/components/command-palette";
 import { ChatWidget } from "@/components/chat-widget";
 import { Search } from "lucide-react";
 import AttentionInboxPage from "@/pages/attention-inbox";
-import AdminAutonomyControlsPage from "@/pages/admin-autonomy-controls";
 import { AttentionBell } from "@/components/attention-bell";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -200,15 +175,11 @@ import LeadCaptureProgramEditorPage from "@/pages/lead-capture-program-editor";
 import AthleteSignupPage from "@/pages/athlete-signup";
 import AdminLeadPipelinePage from "@/pages/admin-lead-pipeline";
 import AdminCeoHeartbeatPage from "@/pages/admin-ceo-heartbeat";
-import AdminAgentQualityPage from "@/pages/admin-agent-quality";
-import AdminReliabilityPage from "@/pages/admin-reliability";
-import AdminSoftwareImprovementPage from "@/pages/admin-software-improvement";
 import AdminGmailDraftReviewPage from "@/pages/admin-gmail-draft-review";
 import AdminSlackAlertReviewPage from "@/pages/admin-slack-alert-review";
 import AdminAgentMailPage from "@/pages/admin-agentmail";
 import AdminAgentmailLearningPage from "@/pages/admin-agentmail-learning";
 import AdminAgentmailAnalyticsPage from "@/pages/admin-agentmail-analytics";
-import AdminAiInfrastructurePage from "@/pages/admin-ai-infrastructure";
 import AdminAthleteIntelligencePage from "@/pages/admin-athlete-intelligence";
 import AdminCoachCapacityPage from "@/pages/admin-coach-capacity";
 import AdminSchedulingCommandCenterPage from "@/pages/admin-scheduling-command-center";
@@ -225,10 +196,7 @@ import AdminAttendanceTrackerPage from "@/pages/admin-attendance-tracker";
 import AdminNotificationSettingsPage from "@/pages/admin-notification-settings";
 import AdminObsidianPage from "@/pages/admin-obsidian";
 import AdminAgentOutcomePage from "@/pages/admin-agent-outcome";
-import AdminAutonomyTrustPage from "@/pages/admin-autonomy-trust";
 import AdminForecastPage from "@/pages/admin-forecast";
-import AdminEmailAuditPage from "@/pages/admin-email-audit";
-import AdminCommunicationIntelligencePage from "@/pages/admin-communication-intelligence";
 import HomePage from "@/pages/home";
 import SetupWizardPage from "@/pages/setup-wizard";
 import { isPlatformAdminOrg } from "@/lib/platform-access";
@@ -560,10 +528,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/notification-settings" component={AdminNotificationSettingsPage} />
                   <Route path="/admin/obsidian" component={AdminObsidianPage} />
                   <Route path="/admin/agent-outcome" component={AdminAgentOutcomePage} />
-                  <Route path="/admin/autonomy" component={AdminAutonomyTrustPage} />
                   <Route path="/admin/forecast" component={AdminForecastPage} />
-                  <Route path="/admin/email-audit" component={AdminEmailAuditPage} />
-                  <Route path="/admin/communication-intelligence" component={AdminCommunicationIntelligencePage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
                   <Route path="/bookings" component={MyBookingsPage} />
                   <Route path="/settings" component={SettingsPage} />
@@ -603,7 +568,6 @@ function AuthenticatedLayout() {
                   <Route path="/admin/outreach-center" component={AdminOutreachCenterPage} />
                   <Route path="/admin/lead-pipeline" component={AdminLeadPipelinePage} />
                   <Route path="/admin/business-brain" component={BusinessBrainPage} />
-                  <Route path="/admin/ai-operations" component={AdminAiOperationsPage} />
                   <Route path="/admin/executive-intelligence" component={AdminExecutiveIntelligencePage} />
                   <Route path="/admin/autonomous-management" component={AdminAutonomousManagementPage} />
                   <Route path="/admin/trust-attribution" component={AdminTrustAttributionPage} />
@@ -611,17 +575,11 @@ function AuthenticatedLayout() {
                   <Route path="/admin/network-intelligence" component={AdminNetworkIntelligencePage} />
                   <Route path="/admin/billing-intelligence" component={AdminBillingIntelligencePage} />
                   <Route path="/admin/platform-health" component={AdminPlatformHealthPage} />
-                  <Route path="/admin/execution-center" component={AdminExecutionCenterPage} />
-                  <Route path="/admin/ecosystem" component={AdminEcosystemPage} />
                   {/* TODO Phase 2 cleanup: /command-center redirected to unified Home Screen */}
                   <Route path="/command-center" component={RedirectToHome} />
-                  <Route path="/admin/trigger-audit" component={EmailTriggerAuditPage} />
                   <Route path="/admin/ai-approvals" component={AdminAiApprovalsPage} />
                   <Route path="/admin/ai-outreach-opportunities" component={AdminAiOutreachOpportunitiesPage} />
-                  <Route path="/admin/gmail-conversations" component={AdminGmailConversationsPage} />
-                  <Route path="/admin/agent-tools" component={AdminAgentToolsPage} />
                   <Route path="/admin/workflows" component={AdminWorkflowsPage} />
-                  <Route path="/admin/agent-ops" component={AdminAgentOpsPage} />
                   <Route path="/admin/kevin" component={AdminKevinPage} />
                   <Route path="/admin/kevin-slack" component={AdminKevinSlackPage} />
                   <Route path="/admin/financial-failures" component={AdminFinancialFailuresPage} />
@@ -630,10 +588,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/operator-actions" component={AdminOperatorActionsPage} />
                   <Route path="/admin/retention-workflows" component={AdminRetentionWorkflowsPage} />
                   <Route path="/admin/outreach-queue" component={AdminOutreachQueuePage} />
-                  <Route path="/admin/workflow-orchestrator" component={AdminWorkflowOrchestratorPage} />
                   <Route path="/admin/attention" component={AttentionInboxPage} />
-                  <Route path="/admin/autonomy-controls" component={AdminAutonomyControlsPage} />
-                  <Route path="/admin/ai-governance" component={AdminAiGovernancePage} />
                   <Route path="/admin/ai-workforce" component={AdminAiWorkforcePage} />
                   <Route path="/admin/ai-workforce/settings" component={AdminAiWorkforceSettingsPage} />
                   <Route path="/admin/ai-workforce/capabilities" component={AdminAiWorkforceCapabilitiesPage} />
@@ -644,31 +599,18 @@ function AuthenticatedLayout() {
                   <Route path="/admin/ai-workforce/approvals" component={AdminAiWorkforceApprovalsPage} />
                   <Route path="/admin/ai-workforce/executions" component={AdminAiWorkforceExecutionsPage} />
                   <Route path="/admin/ai-workforce/simulator" component={AdminAiWorkforceSimulatorPage} />
-                  <Route path="/admin/agent-marketplace" component={AdminAgentMarketplacePage} />
-                  <Route path="/admin/ecosystem" component={AdminEcosystemPage} />
-                  <Route path="/admin/integrations" component={AdminIntegrationsPage} />
-                  <Route path="/admin/workforce-os" component={AdminWorkforceOsPage} />
                   <Route path="/admin/command-center" component={AdminUnifiedCommandPage} />
                   <Route path="/admin/customer-success-os" component={() => <PlatformAdminRoute component={AdminCustomerSuccessOsPage} />} />
-                  <Route path="/admin/platform-brain" component={AdminPlatformBrainPage} />
                   <Route path="/admin/platform-engineering" component={AdminPlatformEngineeringPage} />
                   <Route path="/admin/agent-communications" component={AdminAgentCommunicationsPage} />
                   <Route path="/admin/agent-tasks" component={AdminAgentTasksPage} />
                   <Route path="/admin/organizational-memory" component={AdminOrgMemoryPage} />
                   <Route path="/admin/procedures" component={AdminProceduresPage} />
-                  <Route path="/admin/governance" component={AdminGovernancePage} />
                   <Route path="/admin/organization" component={AdminOrganizationPage} />
                   <Route path="/admin/strategy" component={AdminStrategyPage} />
                   <Route path="/admin/opportunity-acquisition" component={AdminOpportunityAcquisitionPage} />
-                  <Route path="/admin/hiring" component={AdminHiringPage} />
-                  <Route path="/admin/partnerships" component={AdminPartnershipsPage} />
-                  <Route path="/admin/sponsorships" component={AdminSponsorshipsPage} />
-                  <Route path="/admin/departments" component={AdminDepartmentsPage} />
-                  <Route path="/admin/department-factory" component={AdminDepartmentFactoryPage} />
-                  <Route path="/admin/department-os-v2" component={AdminDepartmentOsV2Page} />
                   <Route path="/admin/production-readiness" component={AdminProductionReadinessPage} />
                   <Route path="/admin/launch-readiness" component={AdminLaunchReadinessPage} />
-                  <Route path="/admin/ecosystem-health" component={AdminEcosystemHealthPage} />
                   <Route path="/community" component={AdminCommunityPage} />
                   <Route path="/admin/marketplace-activation" component={AdminMarketplaceActivationPage} />
                   <Route path="/admin/agent-economy" component={AdminAgentEconomyPage} />
@@ -681,10 +623,6 @@ function AuthenticatedLayout() {
                   <Route path="/admin/org-recruitment" component={AdminOrgRecruitmentPage} />
                   <Route path="/admin/marketplace-proof" component={AdminMarketplaceProofPage} />
                   <Route path="/admin/ceo-heartbeat" component={AdminCeoHeartbeatPage} />
-                  <Route path="/admin/ai-infrastructure" component={AdminAiInfrastructurePage} />
-                  <Route path="/admin/agent-quality" component={AdminAgentQualityPage} />
-                  <Route path="/admin/reliability" component={AdminReliabilityPage} />
-                  <Route path="/admin/software-improvement" component={AdminSoftwareImprovementPage} />
                   <Route path="/admin/gmail-draft-review" component={AdminGmailDraftReviewPage} />
                   <Route path="/admin/slack-alert-review" component={AdminSlackAlertReviewPage} />
                   <Route path="/admin/agentmail" component={AdminAgentMailPage} />
@@ -705,9 +643,6 @@ function AuthenticatedLayout() {
                   <Route path="/admin/pulse-agent" component={AdminPulseAgentPage} />
                   <Route path="/admin/ai-employee/:agentId" component={AdminAiEmployeeProfilePage} />
                   <Route path="/admin/recommendations" component={AdminRecommendationsPage} />
-                  <Route path="/admin/action-center" component={AdminActionCenterPage} />
-                  <Route path="/admin/hermes" component={AdminHermesPage} />
-                  <Route path="/admin/workflow-builder" component={AdminWorkflowBuilderPage} />
                   <Route path="/admin/workflows/:id/live" component={AdminWorkflowLivePage} />
                   <Route path="/admin/workflow-heatmap" component={AdminWorkflowHeatmapPage} />
                   <Route path="/admin/workflows-library" component={AdminWorkflowsLibraryPage} />

@@ -465,6 +465,40 @@ async function handleKevinCallback(req: any, res: any, requestPath: string): Pro
         return void res.status(400).json({ ok: false, retryable: false, error: "MISSING_RESULT" });
       }
 
+      // ── Generic agents (non-retention): persist result on the job itself ────
+      if (agentId !== "retention-agent") {
+        const completedTsGeneric = completedAt
+          ? new Date(completedAt).toISOString()
+          : new Date().toISOString();
+        try {
+          await db.execute(sql`
+            UPDATE agent_jobs
+            SET status               = 'completed',
+                completed_at         = ${completedTsGeneric},
+                execution_id         = COALESCE(execution_id, ${executionId ?? null}),
+                last_callback_status = ${rawCallbackStatus},
+                callback_receipt_at  = COALESCE(callback_receipt_at, NOW()),
+                result_payload       = ${JSON.stringify(result)},
+                updated_at           = NOW()
+            WHERE id = ${jobId}
+          `);
+        } catch (err) {
+          retryableFailure = true;
+          console.error(JSON.stringify({
+            event: "KEVIN_CALLBACK_COMPLETED_DB_ERROR",
+            jobId, error: String((err as Error)?.message ?? err),
+            timestamp: new Date().toISOString(),
+          }));
+          return void res.status(500).json({ ok: false, retryable: true, error: "DB_ERROR" });
+        }
+
+        auditAgentJob("agent.job.completed", {
+          jobId, agentId, taskType, organizationId, remoteTaskId,
+          executionId, correlationId,
+        });
+        return void res.status(200).json({ ok: true, retryable: false });
+      }
+
       const {
         clientId: resultClientId,
         riskLevel,

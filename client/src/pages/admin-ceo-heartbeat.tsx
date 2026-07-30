@@ -423,9 +423,6 @@ export default function AdminCeoHeartbeatPage() {
               </div>
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button size="sm" variant="outline" className="h-7 text-xs" asChild>
-                <a href="/admin/reliability" data-testid="link-reliability-dashboard">View Dashboard</a>
-              </Button>
               {reliabilitySummary.criticalAlerts > 0 && (
                 <Button
                   size="sm"
@@ -1188,9 +1185,6 @@ export default function AdminCeoHeartbeatPage() {
               <Zap className="h-4 w-4 text-green-500" />
               Execution Engine
             </CardTitle>
-            <a href="/admin/action-center" className="text-xs text-green-500 hover:underline flex items-center gap-1">
-              Action Center <ArrowRight className="h-3 w-3" />
-            </a>
           </div>
           <CardDescription className="text-xs">Unified approval queue · execution outcomes · cross-agent coordination</CardDescription>
         </CardHeader>
@@ -1258,9 +1252,6 @@ export default function AdminCeoHeartbeatPage() {
               <Star className="h-4 w-4 text-blue-500" />
               Agent Quality &amp; Trust
             </CardTitle>
-            <a href="/admin/agent-quality" className="text-xs text-blue-500 hover:underline flex items-center gap-1">
-              Full Dashboard <ArrowRight className="h-3 w-3" />
-            </a>
           </div>
           <CardDescription className="text-xs">30-day rolling trust scores and risk signals across all agents</CardDescription>
         </CardHeader>

@@ -352,11 +352,6 @@ export default function AdminWorkflowLivePage() {
             <RefreshCw className="h-3.5 w-3.5" />
             Refresh
           </Button>
-          <Link href={`/admin/workflow-builder?graphId=${graphId}`}>
-            <Button variant="ghost" size="sm" className="h-7 text-xs gap-1" data-testid="button-edit-graph">
-              Edit Workflow
-            </Button>
-          </Link>
         </div>
       </div>
 

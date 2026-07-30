@@ -7,14 +7,12 @@
 
 import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  ArrowLeft, Flame, AlertTriangle, ShieldAlert, Zap, CheckCircle,
-  BarChart2, Layers, Activity, Clock, GitBranch, TrendingUp,
+  Flame, AlertTriangle, ShieldAlert, Zap, CheckCircle,
+  BarChart2, Layers, Activity, Clock, TrendingUp,
 } from "lucide-react";
 
 // ─── Risk Color Maps ──────────────────────────────────────────────────────────
@@ -137,12 +135,6 @@ export default function AdminWorkflowHeatmapPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <Link href="/admin/agent-ops">
-            <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs">
-              <ArrowLeft className="h-3.5 w-3.5" />
-              Agent Ops
-            </Button>
-          </Link>
           <div>
             <h1 className="text-xl font-bold flex items-center gap-2">
               <Flame className="h-5 w-5 text-red-500" />
@@ -151,12 +143,6 @@ export default function AdminWorkflowHeatmapPage() {
             <p className="text-sm text-muted-foreground">Workflow risk, complexity, and bottleneck visualization</p>
           </div>
         </div>
-        <Link href="/admin/workflow-builder">
-          <Button size="sm" className="gap-1.5 h-8 text-xs" data-testid="button-new-workflow">
-            <GitBranch className="h-3.5 w-3.5" />
-            New Workflow
-          </Button>
-        </Link>
       </div>
 
       {/* Summary stats */}
@@ -311,12 +297,6 @@ export default function AdminWorkflowHeatmapPage() {
             <div className="text-center py-8">
               <Layers className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">No workflows yet</p>
-              <Link href="/admin/workflow-builder">
-                <Button variant="outline" size="sm" className="mt-3 text-xs gap-1">
-                  <GitBranch className="h-3.5 w-3.5" />
-                  Build First Workflow
-                </Button>
-              </Link>
             </div>
           ) : (
             <div className="space-y-3">
@@ -347,13 +327,11 @@ export default function AdminWorkflowHeatmapPage() {
           <CardContent>
             <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-8 gap-2">
               {graphs.map((g: any) => (
-                <Link key={g.id} href={`/admin/workflow-builder?graphId=${g.id}`}>
-                  <div className={`rounded-lg border p-2.5 cursor-pointer hover:shadow-md transition-all ${RISK_BG[g.riskLevel] ?? RISK_BG.low}`} data-testid={`grid-cell-${g.id}`}>
-                    <p className="text-xs font-bold truncate">{((g.graphDefinition as any)?.nodes ?? []).length}</p>
-                    <p className="text-[10px] mt-0.5 truncate opacity-80">{g.name}</p>
-                    {g.published && <CheckCircle className="h-2.5 w-2.5 mt-1 opacity-70" />}
-                  </div>
-                </Link>
+                <div key={g.id} className={`rounded-lg border p-2.5 transition-all ${RISK_BG[g.riskLevel] ?? RISK_BG.low}`} data-testid={`grid-cell-${g.id}`}>
+                  <p className="text-xs font-bold truncate">{((g.graphDefinition as any)?.nodes ?? []).length}</p>
+                  <p className="text-[10px] mt-0.5 truncate opacity-80">{g.name}</p>
+                  {g.published && <CheckCircle className="h-2.5 w-2.5 mt-1 opacity-70" />}
+                </div>
               ))}
             </div>
             <div className="flex items-center gap-3 mt-3 text-[10px] text-muted-foreground">

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
-  Code2, ArrowLeft, Plus, CheckCircle2, XCircle, Clock, Send,
+  Code2, Plus, CheckCircle2, XCircle, Clock, Send,
   DollarSign, BarChart3, Star, Shield, Package, RefreshCw, Book,
   TrendingUp, Zap, AlertTriangle, ChevronRight, Award, Users,
 } from "lucide-react";
@@ -111,11 +111,6 @@ export default function DeveloperPortal() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link href="/admin/agent-marketplace">
-            <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-              <ArrowLeft className="h-4 w-4 mr-1" /> Marketplace
-            </Button>
-          </Link>
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Code2 className="h-6 w-6 text-emerald-400" />

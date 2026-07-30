@@ -660,7 +660,6 @@ export default function AdminAgentCommunicationsPage() {
       <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground overflow-x-auto pb-1">
         {[
           { label: "Command Center",       href: "/admin/command-center" },
-          { label: "Platform Brain",       href: "/admin/platform-brain" },
           { label: "Platform Engineering", href: "/admin/platform-engineering" },
           { label: "Agent Communications", href: null },
         ].map((step, i) => (

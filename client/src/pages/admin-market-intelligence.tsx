@@ -965,7 +965,6 @@ export default function AdminMarketIntelligencePage() {
         {[
           { label: "AI Workforce",            href: "/admin/ai-workforce" },
           { label: "Workforce Mgmt",          href: "/admin/ai-workforce/settings" },
-          { label: "Operations",              href: "/admin/ai-operations" },
           { label: "Executive Intel",         href: "/admin/executive-intelligence" },
           { label: "Autonomous Mgmt",         href: "/admin/autonomous-management" },
           { label: "Trust & Attribution",     href: "/admin/trust-attribution" },

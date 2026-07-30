@@ -25,7 +25,10 @@ import { getAgent, isTaskTypeAllowed } from "./services/kevin-agent-registry";
 import { getKevinAgentConfig, validateKevinAgentConfig } from "./services/kevin-agent-config";
 import { dispatchKevinTask, KevinDispatchError } from "./services/kevin-gateway-client";
 import { buildRetentionContext } from "./services/retention-context-service";
+import { buildOrgAgentContext } from "./services/kevin-org-context-service";
 import { auditAgentJob } from "./services/kevin-agent-audit";
+import { getAllAgents } from "./services/kevin-agent-registry";
+import { reconcileInFlightHermesJobs } from "./services/kevin-hermes-dispatch";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -188,6 +191,9 @@ function requireAdmin(req: any, res: any, next: any): void {
 // ─── Route registration ───────────────────────────────────────────────────────
 
 export function registerKevinAgentRoutes(app: Express): void {
+  // Resume polling for any Hermes-dispatched jobs left in flight by a restart.
+  void reconcileInFlightHermesJobs();
+
   // ── POST /api/clients/:clientId/retention-analysis ──────────────────────────
   // Triggers a retention risk analysis for a client via Kevin.
   app.post(
@@ -524,6 +530,173 @@ export function registerKevinAgentRoutes(app: Express): void {
       });
     },
   );
+
+  // ── GET /api/agents ─────────────────────────────────────────────────────────
+  // Registry listing (id, name, enabled, execution level, task types).
+  app.get("/api/agents", isAuthenticated, async (_req: any, res: any) => {
+    return res.json({
+      agents: getAllAgents().map((a) => ({
+        id: a.id,
+        name: a.name,
+        version: a.version,
+        enabled: a.enabled,
+        executionLevel: a.executionLevel,
+        capabilities: a.capabilities,
+        allowedTaskTypes: a.allowedTaskTypes,
+        description: a.description,
+      })),
+    });
+  });
+
+  // ── POST /api/agents/:agentId/tasks ────────────────────────────────────────
+  // Generic org-scoped task dispatch for all non-retention Kevin agents.
+  // (Retention keeps its dedicated per-client endpoint above.)
+  app.post(
+    "/api/agents/:agentId/tasks",
+    isAuthenticated,
+    requireAdmin,
+    taskCreationLimiter,
+    async (req: any, res: any) => {
+      const { agentId } = req.params as { agentId: string };
+      const taskType = String(req.body?.taskType ?? "");
+      const userId = getUserId(req);
+      const userRole = getUserRole(req);
+
+      let orgId: string;
+      try {
+        orgId = await resolveOrgIdOrThrow(req);
+      } catch {
+        return res.status(403).json({ error: "ORG_RESOLUTION_FAILED", message: "Organization could not be resolved." });
+      }
+
+      const agent = getAgent(agentId);
+      if (!agent) {
+        return res.status(404).json({ error: "AGENT_NOT_FOUND", message: "Unknown agent." });
+      }
+      if (!taskType || !isTaskTypeAllowed(agentId, taskType)) {
+        return res.status(422).json({
+          error: "TASK_TYPE_NOT_ALLOWED",
+          message: `Task type is not enabled for ${agent.name}.`,
+          allowedTaskTypes: agent.allowedTaskTypes,
+        });
+      }
+      if (agentId === "retention-agent") {
+        return res.status(422).json({
+          error: "USE_RETENTION_ENDPOINT",
+          message: "Use POST /api/clients/:clientId/retention-analysis for the Retention Agent.",
+        });
+      }
+
+      // Idempotency — one active job per org+agent+taskType
+      const idempotencyKey = `${orgId}:${agentId}:${taskType}`;
+      const existing = await db.execute(sql`
+        SELECT id, status, agent_id, task_type, subject_id, created_at
+        FROM agent_jobs
+        WHERE idempotency_key LIKE ${idempotencyKey + "%"}
+        ORDER BY created_at DESC
+        LIMIT 1
+      `);
+      const existingRows = Array.isArray(existing) ? existing : (existing as any).rows ?? [];
+      if (existingRows.length > 0 && !TERMINAL_STATUSES.has(String(existingRows[0].status))) {
+        return res.json({ success: true, idempotent: true, job: formatJobResponse(existingRows[0]) });
+      }
+
+      const context = await buildOrgAgentContext(orgId);
+      if (!context) {
+        return res.status(404).json({ error: "ORG_CONTEXT_UNAVAILABLE", message: "Could not build organization context." });
+      }
+
+      const jobId = crypto.randomUUID();
+      const correlationId = crypto.randomUUID();
+      const uniqueKey = `${idempotencyKey}:${jobId}`;
+      const requestPayload = { agentId, taskType, organizationId: orgId, requestedByUserId: userId };
+
+      await db.execute(sql`
+        INSERT INTO agent_jobs (
+          id, organization_id, agent_id, task_type, status,
+          requested_by_user_id, subject_type, subject_id,
+          request_payload, idempotency_key, correlation_id,
+          attempt_count, requested_at, created_at, updated_at
+        ) VALUES (
+          ${jobId}, ${orgId}, ${agentId}, ${taskType}, 'requested',
+          ${userId}, 'organization', ${orgId},
+          ${JSON.stringify(requestPayload)}, ${uniqueKey}, ${correlationId},
+          1, NOW(), NOW(), NOW()
+        )
+      `);
+
+      auditAgentJob("agent.job.requested", {
+        jobId, agentId, taskType, organizationId: orgId, userId, correlationId,
+      });
+
+      const cfg = getKevinAgentConfig();
+      if (!cfg.enabled) {
+        await db.execute(sql`
+          UPDATE agent_jobs
+          SET status = 'failed', error_code = 'kevin_disabled',
+              error_message = 'Kevin integration is disabled.',
+              failed_at = NOW(), updated_at = NOW()
+          WHERE id = ${jobId}
+        `);
+        return res.status(503).json({
+          error: "INTEGRATION_DISABLED",
+          message: "Kevin agent integration is not enabled. Contact your administrator.",
+        });
+      }
+
+      dispatchKevinTask(
+        jobId, agentId, taskType, orgId, userId, userRole,
+        "organization", orgId, context, uniqueKey, correlationId,
+      ).catch((err: KevinDispatchError | Error) => {
+        console.log(JSON.stringify({
+          event: "KEVIN_DISPATCH_ERROR_BACKGROUND",
+          jobId,
+          code: (err as KevinDispatchError).code ?? "unknown",
+          timestamp: new Date().toISOString(),
+        }));
+      });
+
+      return res.status(202).json({
+        success: true,
+        job: { id: jobId, status: "queued", agentId, taskType, createdAt: new Date().toISOString() },
+      });
+    },
+  );
+
+  // ── GET /api/agents/:agentId/jobs ──────────────────────────────────────────
+  // Recent jobs (with results) for an agent, org-isolated.
+  app.get("/api/agents/:agentId/jobs", isAuthenticated, async (req: any, res: any) => {
+    const { agentId } = req.params as { agentId: string };
+
+    let orgId: string;
+    try {
+      orgId = await resolveOrgIdOrThrow(req);
+    } catch {
+      return res.status(403).json({ error: "ORG_RESOLUTION_FAILED" });
+    }
+    if (!getAgent(agentId)) {
+      return res.status(404).json({ error: "AGENT_NOT_FOUND" });
+    }
+
+    const rows = await db.execute(sql`
+      SELECT id, organization_id, agent_id, task_type, status,
+             subject_type, subject_id, error_code, error_message,
+             remote_task_id, correlation_id, result_payload,
+             requested_at, accepted_at, started_at, completed_at,
+             failed_at, cancelled_at, created_at, updated_at
+      FROM agent_jobs
+      WHERE agent_id = ${agentId} AND organization_id = ${orgId}
+      ORDER BY created_at DESC
+      LIMIT 20
+    `);
+    const data = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+    return res.json({
+      jobs: data.map((j: any) => ({
+        ...formatJobResponse(j),
+        result: j.result_payload ?? null,
+      })),
+    });
+  });
 
   // NOTE: Callback endpoints (POST /api/kevin/webhooks/hermes and
   // POST /api/agent-callbacks/kevin) are registered by registerKevinWebhookRoutes()

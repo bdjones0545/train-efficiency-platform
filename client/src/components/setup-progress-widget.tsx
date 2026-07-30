@@ -52,8 +52,6 @@ function computeMilestones(data: any): SetupMilestone[] {
       desc: "Build your first automation in the Workflow Builder",
       completed: hasPublishedWorkflow,
       icon: GitBranch,
-      actionLabel: "Open Workflow Builder",
-      actionUrl: "/admin/workflow-builder",
     },
     {
       id: "governance",
@@ -61,8 +59,6 @@ function computeMilestones(data: any): SetupMilestone[] {
       desc: "Set your AI team's autonomy level and approval policies",
       completed: hasGovernanceSet,
       icon: Shield,
-      actionLabel: "Open Governance",
-      actionUrl: "/admin/ai-governance",
     },
     {
       id: "ai_workforce",
@@ -79,8 +75,6 @@ function computeMilestones(data: any): SetupMilestone[] {
       desc: "Build a full automation pipeline for your organization",
       completed: hasMultipleWorkflows,
       icon: Zap,
-      actionLabel: "Browse templates",
-      actionUrl: "/admin/workflow-builder",
     },
   ];
 }

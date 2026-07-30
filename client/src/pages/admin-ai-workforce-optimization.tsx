@@ -595,9 +595,6 @@ export default function AdminAiWorkforceOptimization() {
                   <BarChart3 className="h-10 w-10 mx-auto mb-3 opacity-30" />
                   <p className="text-sm">No workflow execution data yet.</p>
                   <p className="text-xs mt-1">Publish workflows to start tracking their effectiveness.</p>
-                  <Link href="/admin/workflow-builder">
-                    <Button size="sm" variant="outline" className="mt-3 border-gray-600 text-gray-300">Build Workflows</Button>
-                  </Link>
                 </div>
               ) : (
                 <div className="space-y-2">

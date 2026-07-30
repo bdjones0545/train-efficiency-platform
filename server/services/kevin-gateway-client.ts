@@ -20,6 +20,7 @@ import { sql } from "drizzle-orm";
 import { getKevinAgentConfig } from "./kevin-agent-config";
 import { buildSignedHeaders, canonicalJson } from "../lib/kevin-hmac";
 import { auditAgentJob } from "./kevin-agent-audit";
+import { dispatchViaHermesRun, isHermesDispatchAvailable } from "./kevin-hermes-dispatch";
 import type { RetentionContext } from "./retention-context-service";
 
 // ─── Error codes ──────────────────────────────────────────────────────────────
@@ -230,6 +231,29 @@ export async function dispatchKevinTask(
       "kevin_rate_limited",
       "Kevin gateway rate limit exceeded.",
     );
+  }
+
+  if (response.status === 404 && isHermesDispatchAvailable()) {
+    // Kevin's live gateway is a Hermes agent server without the /tasks
+    // contract — bridge the job onto a Hermes run instead.
+    console.log(JSON.stringify({
+      event: "KEVIN_DISPATCH_FALLBACK_HERMES",
+      jobId,
+      timestamp: new Date().toISOString(),
+    }));
+    try {
+      return await dispatchViaHermesRun(
+        jobId, agentId, taskType, organizationId,
+        subjectType, subjectId, context, correlationId,
+      );
+    } catch (err: any) {
+      await markJobFailed(jobId, "kevin_request_rejected", "Kevin could not accept the task.");
+      throw new KevinDispatchError(
+        "kevin_request_rejected",
+        "Kevin could not accept the task.",
+        String(err?.message ?? ""),
+      );
+    }
   }
 
   if (response.status >= 400 && response.status < 500) {

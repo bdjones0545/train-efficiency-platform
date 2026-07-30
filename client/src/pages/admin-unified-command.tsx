@@ -10,7 +10,7 @@ import { useToast } from "@/hooks/use-toast";
 import {
   Zap, Users, Settings, Brain, Layout, Search, Bell, CheckCircle,
   AlertTriangle, TrendingUp, DollarSign, Activity, Target, Shield,
-  ArrowLeft, ChevronRight, X, Star, BarChart3,
+  ChevronRight, X, Star, BarChart3,
   RefreshCw, ArrowUpRight, Eye, Clock, Circle,
   Layers, Command, ChevronUp, Bot, WifiOff,
   ThumbsUp, ThumbsDown, Inbox, Info,
@@ -173,21 +173,13 @@ function AgentDot({ isActive }: { isActive: boolean }) {
 const ZONES = [
   {
     id: "workforce", label: "Workforce Zone", icon: Users, color: "text-violet-600 dark:text-violet-400", bg: "bg-violet-500/10", border: "border-violet-200 dark:border-violet-800",
-    links: [
-      { label: "Workforce OS", href: "/admin/workforce-os" },
-      { label: "Performance Reviews", href: "/admin/workforce-os" },
-      { label: "Goals & OKRs", href: "/admin/workforce-os" },
-      { label: "HR Department", href: "/admin/workforce-os" },
-    ],
+    links: [] as { label: string; href: string }[],
   },
   {
     id: "operations", label: "Operations Zone", icon: Settings, color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-500/10", border: "border-blue-200 dark:border-blue-800",
     links: [
-      { label: "Execution Center", href: "/admin/execution-center" },
-      { label: "Integrations", href: "/admin/integrations" },
       { label: "AI Approvals", href: "/admin/ai-approvals" },
       { label: "Scheduling Command", href: "/admin/scheduling-command-center" },
-      { label: "Autonomy Controls", href: "/admin/autonomy-controls" },
     ],
   },
   {
@@ -202,9 +194,6 @@ const ZONES = [
   {
     id: "platform", label: "Platform Zone", icon: Layout, color: "text-amber-600 dark:text-amber-400", bg: "bg-amber-500/10", border: "border-amber-200 dark:border-amber-800",
     links: [
-      { label: "Ecosystem", href: "/admin/ecosystem" },
-      { label: "Agent Marketplace", href: "/admin/agent-marketplace" },
-      { label: "Ecosystem Health", href: "/admin/ecosystem-health" },
       { label: "Developer Platform", href: "/developer" },
     ],
   },
@@ -234,11 +223,7 @@ function CommandPalette({ onClose }: { onClose: () => void }) {
   const ZONE_COLORS: Record<string, string> = { Workforce: "text-violet-500", Operations: "text-blue-500", Intelligence: "text-emerald-500", Platform: "text-amber-500" };
 
   const quickLinks = [
-    { label: "Workforce OS", href: "/admin/workforce-os", icon: Users, zone: "Workforce" },
-    { label: "Execution Center", href: "/admin/execution-center", icon: Zap, zone: "Operations" },
     { label: "CEO Heartbeat", href: "/admin/ceo-heartbeat", icon: Brain, zone: "Intelligence" },
-    { label: "Ecosystem", href: "/admin/ecosystem", icon: Layout, zone: "Platform" },
-    { label: "Integrations", href: "/admin/integrations", icon: Settings, zone: "Operations" },
     { label: "AI Approvals", href: "/admin/ai-approvals", icon: CheckCircle, zone: "Operations" },
   ];
 
@@ -319,7 +304,7 @@ function AttentionBanner({ summary, approvals, queue }: {
     criticalRisks > 0 && { icon: AlertTriangle, color: "text-rose-500", bg: "bg-rose-500/10 border-rose-200 dark:border-rose-800", label: `${criticalRisks} critical risk${criticalRisks !== 1 ? "s" : ""}`, sub: "Immediate attention required", href: "/admin/ceo-heartbeat" },
     pendingApprovals > 0 && { icon: Inbox, color: "text-amber-500", bg: "bg-amber-500/10 border-amber-200 dark:border-amber-800", label: `${pendingApprovals} pending approval${pendingApprovals !== 1 ? "s" : ""}`, sub: "Agents waiting for your review", href: "/admin/ai-approvals" },
     highUrgencyActions > 0 && { icon: Zap, color: "text-primary", bg: "bg-primary/10 border-primary/30", label: `${highUrgencyActions} urgent action${highUrgencyActions !== 1 ? "s" : ""}`, sub: "High-priority queue items", href: null },
-    failedWorkflows > 0 && { icon: AlertTriangle, color: "text-orange-500", bg: "bg-orange-500/10 border-orange-200 dark:border-orange-800", label: `${failedWorkflows} failed workflow${failedWorkflows !== 1 ? "s" : ""}`, sub: "Last 24 hours", href: "/admin/execution-center" },
+    failedWorkflows > 0 && { icon: AlertTriangle, color: "text-orange-500", bg: "bg-orange-500/10 border-orange-200 dark:border-orange-800", label: `${failedWorkflows} failed workflow${failedWorkflows !== 1 ? "s" : ""}`, sub: "Last 24 hours", href: null },
   ].filter(Boolean) as { icon: any; color: string; bg: string; label: string; sub: string; href: string | null }[];
 
   if (items.length === 0) {
@@ -1534,13 +1519,6 @@ export default function AdminUnifiedCommandPage() {
         {/* Header */}
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
-            <div className="flex items-center gap-1.5 mb-1.5">
-              <Link href="/admin/workforce-os">
-                <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground h-7 px-2 -ml-2">
-                  <ArrowLeft className="h-3.5 w-3.5" />Workforce OS
-                </Button>
-              </Link>
-            </div>
             <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
               <Command className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
               Command Center

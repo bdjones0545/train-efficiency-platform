@@ -810,7 +810,6 @@ export default function AdminBillingIntelligencePage() {
         {[
           { label: "AI Workforce",          href: "/admin/ai-workforce" },
           { label: "Workforce",             href: "/admin/ai-workforce/settings" },
-          { label: "Operations",            href: "/admin/ai-operations" },
           { label: "Executive Intel",       href: "/admin/executive-intelligence" },
           { label: "Autonomous",            href: "/admin/autonomous-management" },
           { label: "Trust",                 href: "/admin/trust-attribution" },

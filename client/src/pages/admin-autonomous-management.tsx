@@ -1062,7 +1062,6 @@ export default function AdminAutonomousManagementPage() {
         {[
           { label: "AI Workforce",          href: "/admin/ai-workforce" },
           { label: "Workforce Mgmt",        href: "/admin/ai-workforce/settings" },
-          { label: "Operations",            href: "/admin/ai-operations" },
           { label: "Executive Intelligence",href: "/admin/executive-intelligence" },
           { label: "Autonomous Mgmt",       href: null, active: true },
         ].map((step, i) => (

@@ -29,7 +29,7 @@ import {
   AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import {
-  GitBranch, Plus, Search, Eye, MoreVertical, Copy, Trash2,
+  GitBranch, Search, Eye, MoreVertical, Copy, Trash2,
   CheckCircle, AlertTriangle, ShieldAlert, Play, Layers,
   Clock, Activity, Flame,
 } from "lucide-react";
@@ -129,11 +129,6 @@ function WorkflowCard({ graph, onDelete, onDuplicate }: {
                 {graph.updatedAt ? formatDistanceToNow(new Date(graph.updatedAt), { addSuffix: true }) : "never"}
               </span>
               <div className="flex items-center gap-1">
-                <Link href={`/admin/workflow-builder?graphId=${graph.id}`}>
-                  <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 gap-0.5" data-testid={`button-edit-${graph.id}`}>
-                    Edit
-                  </Button>
-                </Link>
                 <Link href={`/admin/workflows/${graph.id}/live`}>
                   <Button variant="ghost" size="sm" className="h-6 text-[10px] px-2 gap-0.5" data-testid={`button-live-${graph.id}`}>
                     <Activity className="h-2.5 w-2.5" />
@@ -230,12 +225,6 @@ export default function AdminWorkflowsLibraryPage() {
               Heatmap
             </Button>
           </Link>
-          <Link href="/admin/workflow-builder">
-            <Button size="sm" className="h-8 text-xs gap-1.5" data-testid="button-new-workflow">
-              <Plus className="h-3.5 w-3.5" />
-              New Workflow
-            </Button>
-          </Link>
         </div>
       </div>
 
@@ -283,12 +272,6 @@ export default function AdminWorkflowsLibraryPage() {
             <>
               <p className="text-sm font-medium text-muted-foreground">No workflows yet</p>
               <p className="text-xs text-muted-foreground/60 mt-1">Build your first AI workflow</p>
-              <Link href="/admin/workflow-builder">
-                <Button size="sm" className="mt-4 gap-1.5 text-xs">
-                  <Plus className="h-3.5 w-3.5" />
-                  Open Workflow Builder
-                </Button>
-              </Link>
             </>
           ) : (
             <p className="text-sm text-muted-foreground">No workflows match your filters</p>

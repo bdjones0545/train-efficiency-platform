@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft, Cpu, BarChart3, List, FileText, Calendar,
+  Cpu, BarChart3, List, FileText, Calendar,
   Zap, GitBranch, CheckSquare, Rocket, TrendingUp, Search,
   MessageSquare, Send, ChevronRight, ArrowUpRight, RefreshCw,
   AlertTriangle, CheckCircle, Clock, Shield, Layers, Brain,
@@ -897,13 +897,6 @@ export default function AdminPlatformEngineeringPage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <Link href="/admin/platform-brain">
-              <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground h-7 px-2 -ml-2">
-                <ArrowLeft className="h-3.5 w-3.5" />Platform Brain
-              </Button>
-            </Link>
-          </div>
           <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
             <Cpu className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             Platform Engineering Center
@@ -934,7 +927,6 @@ export default function AdminPlatformEngineeringPage() {
         {[
           { label: "Command Center",    href: "/admin/command-center" },
           { label: "Customer Success",  href: "/admin/customer-success-os" },
-          { label: "Platform Brain",    href: "/admin/platform-brain" },
           { label: "Platform Engineering", href: null },
         ].map((step, i) => (
           <div key={step.label} className="flex items-center gap-1.5 shrink-0">

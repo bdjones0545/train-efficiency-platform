@@ -392,9 +392,6 @@ export default function AdminAiEmployeeProfilePage({ params }: { params?: { agen
                           <Badge variant="outline" className="text-[10px] h-4">Draft</Badge>
                         )}
                       </div>
-                      <Link href={`/admin/workflow-builder?graphId=${wf.id}`}>
-                        <Button variant="ghost" size="sm" className="h-6 text-xs">View</Button>
-                      </Link>
                     </div>
                   ))}
                 </div>
@@ -452,12 +449,6 @@ export default function AdminAiEmployeeProfilePage({ params }: { params?: { agen
                   </div>
                 ))}
               </div>
-              <Link href="/admin/ai-governance">
-                <Button variant="outline" size="sm" className="w-full text-xs h-8 gap-1.5">
-                  <Shield className="h-3.5 w-3.5" />
-                  Configure Governance
-                </Button>
-              </Link>
             </CardContent>
           </Card>
 

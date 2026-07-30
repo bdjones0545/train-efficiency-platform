@@ -277,7 +277,7 @@ export default function AdminCommunity() {
         <TabsContent value="case-studies" className="space-y-3 mt-4">
           <h2 className="text-sm font-semibold text-foreground">Verified Success Stories</h2>
           {reviews.filter((cs: any) => cs.verification_status === 'verified').length === 0
-            ? <Card className="bg-card border-border"><CardContent className="p-6 text-center text-sm text-muted-foreground">No verified case studies yet. Use /admin/ecosystem-health to add them.</CardContent></Card>
+            ? <Card className="bg-card border-border"><CardContent className="p-6 text-center text-sm text-muted-foreground">No verified case studies yet.</CardContent></Card>
             : reviews.filter((cs: any) => cs.verification_status === 'verified').map((cs: any) => (
               <Card key={cs.id} className="bg-card border-border" data-testid={`case-study-${cs.id}`}>
                 <CardContent className="p-4">

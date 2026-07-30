@@ -252,9 +252,7 @@ export default function AdminRecommendationsPage() {
             </CardHeader>
             <CardContent className="space-y-2">
               {[
-                { label: "Open Workflow Builder", url: "/admin/workflow-builder", icon: GitBranch },
                 { label: "View AI Workforce", url: "/admin/ai-workforce", icon: Cpu },
-                { label: "Configure Governance", url: "/admin/ai-governance", icon: Shield },
                 { label: "Workforce Preferences", url: "/onboarding/ai-workforce", icon: Zap },
               ].map(a => (
                 <Link key={a.url} href={a.url}>

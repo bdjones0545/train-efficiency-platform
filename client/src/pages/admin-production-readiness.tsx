@@ -5,9 +5,9 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  ArrowLeft, Shield, CheckCircle2, XCircle, AlertTriangle, Play,
+  Shield, CheckCircle2, XCircle, AlertTriangle, Play,
   Clock, RefreshCw, Target, Lock, Activity, DollarSign,
-  BarChart3, Eye, Zap, Database, Users, Code2, Globe,
+  BarChart3, Eye, Zap, Database, Users,
   ChevronRight, FileText, TrendingUp,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
@@ -97,11 +97,6 @@ export default function AdminProductionReadiness() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link href="/admin/ecosystem">
-            <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-              <ArrowLeft className="h-4 w-4 mr-1" />Ecosystem
-            </Button>
-          </Link>
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Shield className="h-6 w-6 text-indigo-400" />
@@ -291,16 +286,6 @@ export default function AdminProductionReadiness() {
       </Card>
 
       <div className="flex flex-wrap gap-3">
-        <Link href="/admin/ecosystem">
-          <Button variant="outline" size="sm" className="border-purple-700 text-purple-400">
-            <Globe className="h-4 w-4 mr-1.5" />Ecosystem Dashboard
-          </Button>
-        </Link>
-        <Link href="/admin/agent-marketplace">
-          <Button variant="outline" size="sm" className="border-indigo-700 text-indigo-400">
-            <Code2 className="h-4 w-4 mr-1.5" />Marketplace
-          </Button>
-        </Link>
         <Link href="/developer">
           <Button variant="outline" size="sm" className="border-emerald-700 text-emerald-400">
             <Users className="h-4 w-4 mr-1.5" />Developer Portal

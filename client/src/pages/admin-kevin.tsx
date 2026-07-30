@@ -214,7 +214,6 @@ function ActionBlockRenderer({ block }: { block: ActionBlock }) {
         "scheduling.calendar":    "/admin/scheduling-command-center",
         "leads.athlete_pipeline": "/admin/athlete-pipeline",
         "leads.team_pipeline":    "/admin/team-training-leads",
-        "integrations":           "/admin/integrations",
       };
       window.location.href = pathMap[action.routeKey] ?? "/admin/kevin";
     } else if (action.action === "open_url" && action.url) {

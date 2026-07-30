@@ -1294,13 +1294,6 @@ function DraftCard({ draft, onApprove, onSend, onEdit, onDelete }: {
             <SendHorizonal className="h-3 w-3 mr-1" /> Send Now
           </Button>
         )}
-        {draft.sentAt && draft.prospectId && (
-          <Link href={`/admin/trigger-audit?prospect_id=${draft.prospectId}`}>
-            <Button size="sm" variant="outline" className="h-7 text-xs" data-testid={`button-view-trigger-${draft.id}`}>
-              <Activity className="h-3 w-3 mr-1" /> View Trigger
-            </Button>
-          </Link>
-        )}
         {/* Delete — confirm on first tap, execute on second */}
         {confirmDelete ? (
           <div className="flex gap-1 ml-auto">

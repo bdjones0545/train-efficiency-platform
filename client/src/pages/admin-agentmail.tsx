@@ -819,11 +819,6 @@ export default function AdminAgentMailPage() {
                   <Mail className="h-4 w-4" /> Gmail Conversations
                   {gmailConversations.length > 0 && <Badge variant="outline" className="text-xs ml-1">{gmailConversations.length}</Badge>}
                 </CardTitle>
-                <Link href="/admin/gmail-conversations">
-                  <Button size="sm" variant="ghost" className="text-xs gap-1" data-testid="link-gmail-conversations">
-                    Full view <ExternalLink className="h-3 w-3" />
-                  </Button>
-                </Link>
               </div>
               <CardDescription>Synced Gmail threads for this organization</CardDescription>
             </CardHeader>
@@ -869,7 +864,7 @@ export default function AdminAgentMailPage() {
                     </TableBody>
                   </Table>
                   {gmailConversations.length > 50 && (
-                    <p className="text-xs text-muted-foreground text-center py-2">Showing 50 of {gmailConversations.length} — <Link href="/admin/gmail-conversations"><span className="underline cursor-pointer">view all</span></Link></p>
+                    <p className="text-xs text-muted-foreground text-center py-2">Showing 50 of {gmailConversations.length}</p>
                   )}
                 </div>
               )}
@@ -1328,13 +1323,6 @@ export default function AdminAgentMailPage() {
                     </Button>
                   </>
                 )}
-                <div className="pt-2">
-                  <Link href="/admin/gmail-conversations">
-                    <Button size="sm" variant="ghost" className="w-full text-xs gap-1" data-testid="link-sync-conversations">
-                      <ExternalLink className="h-3 w-3" /> View Gmail Conversations
-                    </Button>
-                  </Link>
-                </div>
                 {/* Advanced: OAuth debug */}
                 <details className="text-xs text-muted-foreground">
                   <summary className="cursor-pointer hover:text-foreground select-none">Advanced: OAuth & debug</summary>
@@ -1450,11 +1438,8 @@ export default function AdminAgentMailPage() {
             </CardHeader>
             <CardContent className="flex flex-wrap gap-2">
               {[
-                { label: "Gmail Conversations", href: "/admin/gmail-conversations" },
                 { label: "Draft Review", href: "/admin/gmail-draft-review" },
                 { label: "Outreach Opportunities", href: "/admin/ai-outreach-opportunities" },
-                { label: "Email Audit", href: "/admin/email-audit" },
-                { label: "Communication Intelligence", href: "/admin/communication-intelligence" },
               ].map(({ label, href }) => (
                 <Link key={href} href={href}>
                   <Button size="sm" variant="outline" className="text-xs gap-1" data-testid={`link-quick-${label.toLowerCase().replace(/\s+/g, "-")}`}>
@@ -1475,11 +1460,6 @@ export default function AdminAgentMailPage() {
                   <Activity className="h-4 w-4" /> Outbound Activity Log
                   {messages.length > 0 && <Badge variant="outline" className="text-xs ml-1">{messages.length}</Badge>}
                 </CardTitle>
-                <Link href="/admin/email-audit">
-                  <Button size="sm" variant="ghost" className="text-xs gap-1" data-testid="link-email-audit">
-                    Full audit <ExternalLink className="h-3 w-3" />
-                  </Button>
-                </Link>
               </div>
               <CardDescription>All outbound emails dispatched through AgentMail</CardDescription>
             </CardHeader>

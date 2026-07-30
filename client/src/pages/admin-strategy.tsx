@@ -832,7 +832,6 @@ export default function AdminStrategyPage() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground overflow-x-auto pb-1">
         {[
-          { label: "Governance",   href: "/admin/governance"   },
           { label: "Organization", href: "/admin/organization" },
           { label: "Strategy",     href: null                  },
         ].map((step, i) => (

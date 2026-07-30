@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Store, ArrowLeft, Star, Package, DollarSign, Shield, Award,
+  Store, Star, Package, DollarSign, Shield, Award,
   Users, TrendingUp, Search, ChevronDown, ChevronUp, RefreshCw,
   CheckCircle2, BarChart3, MessageSquare, Plus,
 } from "lucide-react";
@@ -241,11 +241,6 @@ export default function MarketplaceStore() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <Link href="/admin/agent-marketplace">
-            <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white">
-              <ArrowLeft className="h-4 w-4 mr-1" /> Marketplace
-            </Button>
-          </Link>
           <div>
             <h1 className="text-2xl font-bold flex items-center gap-2">
               <Store className="h-6 w-6 text-indigo-400" />

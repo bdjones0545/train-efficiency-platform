@@ -1565,8 +1565,8 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
                 <Button
                   size="sm"
                   variant="outline"
-                  className="flex-1 sm:flex-none border-orange-400 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/20"
-                  onClick={() => setLocation("/admin/agent-tools")}
+                  className="flex-1 sm:flex-none border-orange-400 text-orange-600 dark:text-orange-400 cursor-default"
+                  disabled
                   data-testid="button-execute-top-unified"
                 >
                   <Clock className="h-3.5 w-3.5 mr-1.5" /> Needs Approval
@@ -1752,9 +1752,9 @@ function UnifiedActionInbox({ onRunBrain, openAgentWith }: { onRunBrain: () => v
                       <Button
                         size="icon"
                         variant="ghost"
-                        className="h-7 w-7 text-orange-500"
-                        onClick={() => setLocation("/admin/agent-tools")}
-                        title="Needs approval — click to review"
+                        className="h-7 w-7 text-orange-500 cursor-default"
+                        disabled
+                        title="Needs approval"
                         data-testid={`button-execute-action-${i}`}
                       >
                         <Clock className="h-3.5 w-3.5" />
@@ -3688,9 +3688,6 @@ export default function BusinessCommandCenterPage() {
               Uptime {reliabilitySummary.uptime}% · {reliabilitySummary.criticalAlerts} critical alert{reliabilitySummary.criticalAlerts !== 1 ? "s" : ""} · {reliabilitySummary.clientErrorsLastHour} errors/hr
             </p>
           </div>
-          <a href="/admin/reliability" className="text-[10px] text-muted-foreground hover:text-foreground underline shrink-0" data-testid="link-bcc-reliability">
-            Dashboard →
-          </a>
         </div>
       )}
 

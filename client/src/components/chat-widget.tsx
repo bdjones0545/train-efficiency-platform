@@ -857,8 +857,6 @@ function SettingsTab({ onClose }: { onClose: () => void }) {
             { label: "Full AI Approvals Inbox", href: "/admin/ai-approvals" },
             { label: "CEO Heartbeat Dashboard", href: "/admin/ceo-heartbeat" },
             { label: "AI Workforce Operations", href: "/admin/ai-workforce-optimization" },
-            { label: "Autonomy Controls", href: "/admin/autonomy-controls" },
-            { label: "Email Audit & Debug", href: "/admin/email-audit" },
           ].map(link => (
             <button
               key={link.href}

@@ -29,9 +29,6 @@ import {
   Target,
   KanbanSquare,
   Brain,
-  GitBranch,
-  Shield,
-  ShieldAlert,
   Home,
   TrendingUp,
   Building2,
@@ -39,20 +36,11 @@ import {
   Inbox,
   BarChart2,
   ClipboardList,
-  Layers,
   Zap,
-  Wrench,
-  Globe,
   CheckSquare,
   Bell,
   MessageSquare,
   BookOpen,
-  Mail,
-  Plug,
-  Briefcase,
-  Factory,
-  BadgeDollarSign,
-  Handshake,
   LayoutDashboard,
   Heart,
 } from "lucide-react";
@@ -857,218 +845,6 @@ export function AppSidebar() {
     ],
   };
 
-  // ── ADVANCED — admin only, collapsed by default, orange accent ────────────────
-  // Contains all advanced/system tools demoted from primary nav.
-  // Routes remain valid — this section is an expert access layer, not a removal.
-  const advancedSection: NavSection = {
-    id: "advanced",
-    label: "Advanced",
-    icon: Wrench,
-    items: [
-      // Agent Operations & Monitoring
-      {
-        title: "System Health",
-        url: "/admin/agent-ops",
-        icon: ShieldAlert,
-        testId: "nav-system-health",
-      },
-      {
-        title: "Reliability",
-        url: "/admin/reliability",
-        icon: Shield,
-        testId: "nav-reliability",
-      },
-      {
-        title: "Agent Quality",
-        url: "/admin/agent-quality",
-        icon: BarChart2,
-        testId: "nav-agent-quality",
-      },
-      {
-        title: "Communication Intel",
-        url: "/admin/communication-intelligence",
-        icon: MessageSquare,
-        testId: "nav-communication-intelligence",
-      },
-      // Workflow & Execution
-      {
-        title: "Workflow Builder",
-        url: "/admin/workflow-builder",
-        icon: Zap,
-        testId: "nav-workflow-builder",
-      },
-      {
-        title: "Automations",
-        url: "/admin/workflow-orchestrator",
-        icon: GitBranch,
-        testId: "nav-automations",
-      },
-      {
-        title: "Execution Center",
-        url: "/admin/execution-center",
-        icon: Layers,
-        testId: "nav-execution-center",
-      },
-      {
-        title: "Action Center",
-        url: "/admin/action-center",
-        icon: Target,
-        testId: "nav-action-center",
-      },
-      // Governance
-      {
-        title: "Governance",
-        url: "/admin/governance",
-        icon: Shield,
-        testId: "nav-governance",
-      },
-      {
-        title: "Autonomy Controls",
-        url: "/admin/autonomy-controls",
-        icon: Settings,
-        testId: "nav-automation-settings",
-      },
-      {
-        title: "AI Governance",
-        url: "/admin/ai-governance",
-        icon: Shield,
-        testId: "nav-ai-governance",
-      },
-      {
-        title: "Autonomy Trust",
-        url: "/admin/autonomy",
-        icon: Shield,
-        testId: "nav-ai-permissions",
-      },
-      // AI Intelligence Systems
-      {
-        title: "Hermes",
-        url: "/admin/hermes",
-        icon: Brain,
-        testId: "nav-hermes",
-      },
-      {
-        title: "Workforce OS",
-        url: "/admin/workforce-os",
-        icon: Bot,
-        testId: "nav-workforce-os",
-      },
-      {
-        title: "AI Infrastructure",
-        url: "/admin/ai-infrastructure",
-        icon: Layers,
-        testId: "nav-ai-infrastructure",
-      },
-      {
-        title: "AI Operations",
-        url: "/admin/ai-operations",
-        icon: Bot,
-        testId: "nav-ai-operations",
-      },
-      // Email & Messaging Audit
-      {
-        title: "Email Audit",
-        url: "/admin/email-audit",
-        icon: Mail,
-        testId: "nav-email-logs",
-      },
-      {
-        title: "Trigger Audit",
-        url: "/admin/trigger-audit",
-        icon: Shield,
-        testId: "nav-trigger-audit",
-      },
-      {
-        title: "Gmail Conversations",
-        url: "/admin/gmail-conversations",
-        icon: Mail,
-        testId: "nav-gmail-conversations",
-      },
-      // Integrations & Tools
-      {
-        title: "Integrations",
-        url: "/admin/integrations",
-        icon: Globe,
-        testId: "nav-integrations",
-      },
-      {
-        title: "Agent Tools",
-        url: "/admin/agent-tools",
-        icon: Plug,
-        testId: "nav-agent-tools",
-      },
-      {
-        title: "Integration Status",
-        url: "/admin/ecosystem-health",
-        icon: Globe,
-        testId: "nav-integration-status",
-      },
-      // Software & Platform
-      {
-        title: "Software Improvement",
-        url: "/admin/software-improvement",
-        icon: Wrench,
-        testId: "nav-software-improvement",
-      },
-      {
-        title: "Platform Brain",
-        url: "/admin/platform-brain",
-        icon: Brain,
-        testId: "nav-platform-brain",
-      },
-      // Growth / Departments (internal)
-      {
-        title: "Hiring Department",
-        url: "/admin/hiring",
-        icon: Briefcase,
-        testId: "nav-hiring-department",
-      },
-      {
-        title: "Partnerships",
-        url: "/admin/partnerships",
-        icon: Handshake,
-        testId: "nav-partnerships-department",
-      },
-      {
-        title: "Departments",
-        url: "/admin/departments",
-        icon: Building2,
-        testId: "nav-departments",
-      },
-      {
-        title: "Sponsorships",
-        url: "/admin/sponsorships",
-        icon: BadgeDollarSign,
-        testId: "nav-sponsorships-department",
-      },
-      {
-        title: "Department Factory",
-        url: "/admin/department-factory",
-        icon: Factory,
-        testId: "nav-department-factory",
-      },
-      {
-        title: "Department OS v2",
-        url: "/admin/department-os-v2",
-        icon: Layers,
-        testId: "nav-department-os-v2",
-      },
-      // Ecosystem / Marketplace
-      {
-        title: "Agent Marketplace",
-        url: "/admin/agent-marketplace",
-        icon: Globe,
-        testId: "nav-agent-marketplace",
-      },
-      {
-        title: "Ecosystem",
-        url: "/admin/ecosystem",
-        icon: Globe,
-        testId: "nav-ecosystem",
-      },
-    ],
-  };
-
   // ── STAFF — simplified scheduling-only view ───────────────────────────────────
   const staffSection: NavSection = {
     id: "operations",
@@ -1185,7 +961,6 @@ export function AppSidebar() {
       aiWorkforceSection,
       intelligenceSection,
       settingsSection,
-      advancedSection,
     ];
     const active = allSections.find((s) => sectionIsActive(location, s.items));
     if (active && !openSections.has(active.id)) {
@@ -1379,21 +1154,6 @@ export function AppSidebar() {
                 onNavClick={handleNavClick}
               />
 
-              {/* ADVANCED — admin only, collapsed by default, orange accent */}
-              {isAdmin && (
-                <>
-                  <div className="my-2 border-t border-border/40" />
-                  <AccordionSection
-                    section={advancedSection}
-                    isOpen={openSections.has("advanced")}
-                    onToggle={toggleSection}
-                    location={location}
-                    onNavClick={handleNavClick}
-                    variant="advanced"
-                    maxHeight="2400px"
-                  />
-                </>
-              )}
             </div>
 
             {/* AI Workforce CTA — admin only */}

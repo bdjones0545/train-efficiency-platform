@@ -16,9 +16,9 @@ import {
 import {
   Users, UsersRound, Calendar, CalendarClock, LayoutDashboard,
   DollarSign, UserCog, Trophy, Wallet, Briefcase, FileText, Settings, Paintbrush, CreditCard, Sparkles, Bot,
-  CalendarDays, ImagePlay, Target, Flame, KanbanSquare, Activity,
-  Brain, Plug, GitBranch, ShieldAlert, Home, TrendingUp, Cpu,
-  Building2, Radio, Clock, Zap, Send, CalendarPlus, CheckSquare,
+  CalendarDays, ImagePlay, Target, Flame, KanbanSquare,
+  Brain, GitBranch, Home, TrendingUp, Cpu,
+  Building2, Radio, Clock, Zap, Send, CalendarPlus,
   AlertCircle, Play, Search, Star, ArrowRight, Laptop, Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -114,16 +114,12 @@ function interpretIntent(query: string, role: string): IntentHint | null {
     return { label: "Team Training Leads", url: "/admin/team-training-leads", icon: Target };
   if (/deal|pipeline|crm/.test(q) && isAdmin)
     return { label: "Deal Pipeline", url: "/admin/team-training-deals", icon: KanbanSquare };
-  if (/approval|pending|confirm/.test(q) && isAdmin)
-    return { label: "Pending Approvals", url: "/admin/agent-tools", icon: CheckSquare };
   if (/quote|team.?quote|proposal/.test(q) && isCoachPlus)
     return { label: "Create Team Quote", url: "/coach/team-quotes", icon: FileText };
   if (/command|hub|center|overview/.test(q) && isCoachPlus)
     return { label: "Command Center", url: "/command-center", icon: Flame };
   if (/availab/.test(q) && isCoachPlus)
     return { label: "Manage Availability", url: "/coach/availability", icon: CalendarClock };
-  if (/health|system|ops|monitor/.test(q) && isAdmin)
-    return { label: "Agent Ops Monitor", url: "/admin/agent-ops", icon: ShieldAlert };
   return null;
 }
 
@@ -153,7 +149,6 @@ function getContextualActions(location: string, role: string): RouteContext[] {
   if (location.startsWith("/command-center")) {
     return isAdmin
       ? [
-          { label: "Review Pending Approvals", subtitle: "Agent Tools", icon: CheckSquare, url: "/admin/agent-tools" },
           { label: "Start a Workflow", subtitle: "Workflow engine", icon: Play, url: "/admin/workflows" },
           { label: "Open Business Brain", subtitle: "AI intelligence", icon: Brain, url: "/admin/business-brain" },
         ]
@@ -172,12 +167,6 @@ function getContextualActions(location: string, role: string): RouteContext[] {
           { label: "View Stalled Deals", subtitle: "Re-engage", icon: KanbanSquare, url: "/admin/team-training-deals" },
         ]
       : [];
-  }
-  if (location.startsWith("/admin/agent-ops") || location.startsWith("/admin/workflows")) {
-    return [
-      { label: "Trigger Audit Log", subtitle: "Email agent decisions", icon: Activity, url: "/admin/trigger-audit" },
-      { label: "Agent Tools", subtitle: "Pending actions", icon: Plug, url: "/admin/agent-tools" },
-    ];
   }
   if (location.startsWith("/coach/users")) {
     return [
@@ -219,11 +208,8 @@ const ALL_PAGES: PageDef[] = [
   { id: "team-training-leads", label: "Team Training Leads", url: "/admin/team-training-leads", icon: Target, section: "Growth", keywords: "leads prospects research", minRole: "ADMIN" },
   { id: "deal-pipeline", label: "Deal Pipeline", url: "/admin/team-training-deals", icon: KanbanSquare, section: "Growth", keywords: "deals CRM pipeline sales", minRole: "ADMIN" },
   { id: "business-brain", label: "Business Brain", url: "/admin/business-brain", icon: Brain, section: "AI", keywords: "intelligence analytics AI insights", minRole: "ADMIN" },
-  { id: "agent-ops", label: "Agent Ops Monitor", url: "/admin/agent-ops", icon: ShieldAlert, section: "AI", keywords: "health system monitor ops", minRole: "ADMIN", advancedOnly: true },
   { id: "kevin-console", label: "Kevin Console", url: "/admin/kevin", icon: Bot, section: "AI", keywords: "kevin hermes orchestrator ops health capabilities", minRole: "ADMIN", advancedOnly: true },
   { id: "workflows", label: "Workflows", url: "/admin/workflows", icon: GitBranch, section: "AI", keywords: "automation trigger sequences", minRole: "ADMIN", advancedOnly: true },
-  { id: "trigger-audit", label: "Trigger Audit", url: "/admin/trigger-audit", icon: Activity, section: "AI", keywords: "log decisions email agent", minRole: "ADMIN", advancedOnly: true },
-  { id: "agent-tools", label: "Agent Tools", url: "/admin/agent-tools", icon: Plug, section: "AI", keywords: "tools approvals pending AI actions", minRole: "ADMIN", advancedOnly: true },
   { id: "branding", label: "Branding", url: "/admin/branding", icon: Paintbrush, section: "Organization", keywords: "logo colors design", minRole: "ADMIN" },
   { id: "media-library", label: "Media Library", url: "/admin/media", icon: ImagePlay, section: "Organization", keywords: "images videos files", minRole: "ADMIN" },
   { id: "stripe", label: "Stripe Setup", url: "/admin/stripe", icon: CreditCard, section: "Organization", keywords: "payments billing gateway", minRole: "ADMIN" },
@@ -265,9 +251,7 @@ const ALL_ACTIONS: ActionDef[] = [
   { id: "view-stalled", label: "View Stalled Deals", subtitle: "Deal Pipeline", icon: AlertCircle, url: "/admin/team-training-deals", keywords: "stalled stuck deals pipeline", minRole: "ADMIN" },
   { id: "open-brain", label: "Open Business Brain", subtitle: "AI intelligence layer", icon: Brain, url: "/admin/business-brain", keywords: "brain intelligence AI insights", minRole: "ADMIN" },
   { id: "view-leads", label: "View Team Training Leads", subtitle: "Lead research", icon: Target, url: "/admin/team-training-leads", keywords: "leads prospects outreach research", minRole: "ADMIN" },
-  { id: "pending-approvals", label: "Review Pending Approvals", subtitle: "Agent Tools", icon: CheckSquare, url: "/admin/agent-tools", keywords: "approvals pending review confirm", minRole: "ADMIN" },
   { id: "start-workflow", label: "Start a Workflow", subtitle: "Workflow engine", icon: Play, url: "/admin/workflows", keywords: "start workflow automation trigger", minRole: "ADMIN", advancedOnly: true },
-  { id: "trigger-audit-action", label: "Check Trigger Audit", subtitle: "Email agent log", icon: Activity, url: "/admin/trigger-audit", keywords: "trigger audit log check email agent", minRole: "ADMIN", advancedOnly: true },
   { id: "command-center-action", label: "Open Command Center", subtitle: "Business hub", icon: Flame, url: "/command-center", keywords: "command hub operations center", minRole: "COACH" },
 ];
 

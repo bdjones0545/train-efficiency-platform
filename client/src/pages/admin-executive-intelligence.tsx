@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import {
-  ArrowLeft, RefreshCw, Brain, TrendingUp, AlertTriangle, CheckCircle,
+  RefreshCw, Brain, TrendingUp, AlertTriangle, CheckCircle,
   XCircle, Clock, Target, Zap, BarChart3, Shield, Users, Settings,
   ChevronRight, ChevronDown, ArrowUp, ArrowDown, Minus, Trophy,
   DollarSign, Activity, Lightbulb, MessageSquare, FileText, Download,
@@ -903,13 +903,6 @@ export default function AdminExecutiveIntelligencePage() {
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
-          <div className="flex items-center gap-1.5 mb-1.5">
-            <Link href="/admin/ai-operations">
-              <Button variant="ghost" size="sm" className="gap-1 text-muted-foreground h-7 px-2 -ml-2">
-                <ArrowLeft className="h-3.5 w-3.5" />AI Operations
-              </Button>
-            </Link>
-          </div>
           <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
             <Brain className="h-5 w-5 sm:h-6 sm:w-6 text-primary" />
             Executive Intelligence
@@ -945,7 +938,6 @@ export default function AdminExecutiveIntelligencePage() {
         {[
           { label: "AI Workforce",        href: "/admin/ai-workforce" },
           { label: "Workforce Mgmt",     href: "/admin/ai-workforce/settings" },
-          { label: "Operations",         href: "/admin/ai-operations" },
           { label: "Executive Intel",    href: null, active: true },
           { label: "Autonomous Mgmt",    href: "/admin/autonomous-management" },
         ].map((step, i) => (
