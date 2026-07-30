@@ -84,8 +84,8 @@ KEVIN_INBOUND_HMAC_SECRET = "79f3930a8761a5c18bc8788a3558947642f4d6d8a14b9d40d18
 
   [userenv.production]
   PUBLIC_APP_URL = "https://trainefficiency.com"
-KEVIN_AGENT_INTEGRATION_ENABLED = "false"
-KEVIN_CALLBACK_BASE_URL = "https://app.trainefficiency.com"
+KEVIN_AGENT_INTEGRATION_ENABLED = "true"
+KEVIN_CALLBACK_BASE_URL = "https://trainefficiency.com"
 
 [userenv.development]
 KEVIN_AGENT_INTEGRATION_ENABLED = "true"
