@@ -474,6 +474,7 @@ export const athleticBookings = pgTable("athletic_bookings", {
   bookedBy: varchar("booked_by"),
   orgUserId: varchar("org_user_id"),
   bookerEmail: varchar("booker_email"),
+  recurrenceId: varchar("recurrence_id"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

@@ -7360,6 +7360,21 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
+  app.get("/api/athletic/bookings/range", async (req, res) => {
+    try {
+      const start = req.query.start as string;
+      const end = req.query.end as string;
+      const programId = req.query.programId as string;
+      if (!start || !end) return res.status(400).json({ message: "start and end query params required" });
+      if (!programId) return res.status(400).json({ message: "programId query param required" });
+      const list = await storage.getAthleticBookingsInRange(start, end, programId);
+      res.json(list);
+    } catch (error) {
+      console.error("Error fetching athletic bookings range:", error);
+      res.status(500).json({ message: "Failed to fetch athletic bookings" });
+    }
+  });
+
   async function getAthleticHoursForDate(date: string, programId: string): Promise<{ startHour: number; endHour: number }> {
     const schedules = await storage.getAthleticHourSchedules(programId);
     for (const s of schedules) {
@@ -7473,9 +7488,10 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
   app.post("/api/athletic/bookings", async (req: any, res) => {
     try {
-      const { date, timeSlot, teamName, trainingType, bookedBy, programId } = req.body;
+      const { date, timeSlot, teamName, trainingType, bookedBy, programId, repeatWeeks } = req.body;
       if (!programId) return res.status(400).json({ message: "programId is required" });
       if (!date || !timeSlot || !teamName) return res.status(400).json({ message: "date, timeSlot, teamName are required" });
+      const weeksToRepeat = Math.min(Math.max(parseInt(repeatWeeks, 10) || 0, 0), 26);
       if (!/^(0[0-9]|1[0-9]|2[0-3]):[0-5][0-9]$/.test(timeSlot)) return res.status(400).json({ message: "Invalid timeSlot format. Use HH:mm (e.g. 09:00)." });
 
       const program = await storage.getAthleticProgramById(programId);
@@ -7527,26 +7543,119 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         return res.status(401).json({ message: "Login required to book sessions for this program" });
       }
 
-      const booking = await storage.createAthleticBooking({ organizationId: program.organizationId, programId, date, timeSlot, teamName, trainingType: finalType, bookedBy: bookedBy || null });
+      // Recurring booking — materialize weekly occurrences sharing one recurrenceId
+      const recurrenceId = weeksToRepeat > 0 ? crypto.randomUUID() : null;
 
-      // Attach org user identity to the booking if authenticated
-      if (resolvedOrgUserId) {
-        await db.update(athleticBookings)
-          .set({ orgUserId: resolvedOrgUserId, bookerEmail: resolvedBookerEmail })
-          .where(eq(athleticBookings.id, booking.id));
+      // Atomic insert: an advisory transaction lock on (program|date|slot)
+      // serializes concurrent capacity checks so a slot can never be overbooked.
+      // Returns the inserted row, or null when the slot is full.
+      const tryCreateBooking = async (bDate: string) => {
+        return await db.transaction(async (tx) => {
+          await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`athletic:${programId}|${bDate}|${timeSlot}`}))`);
+          const countRes: any = await tx.execute(sql`
+            SELECT count(*)::int AS cnt FROM athletic_bookings
+            WHERE date = ${bDate} AND time_slot = ${timeSlot} AND program_id = ${programId}
+          `);
+          const countRows = Array.isArray(countRes) ? countRes : countRes?.rows ?? [];
+          const cnt = Number(countRows[0]?.cnt ?? 0);
+          if (cnt >= program.maxTeamsPerSlot) return null;
+          const [row] = await tx.insert(athleticBookings).values({
+            organizationId: program.organizationId,
+            programId,
+            date: bDate,
+            timeSlot,
+            teamName,
+            trainingType: finalType,
+            bookedBy: bookedBy || null,
+            orgUserId: resolvedOrgUserId,
+            bookerEmail: resolvedBookerEmail,
+            recurrenceId,
+          }).returning();
+          return row;
+        });
+      };
+
+      const booking = await tryCreateBooking(date);
+      if (!booking) {
+        return res.status(409).json({ message: `This time slot is full (max ${program.maxTeamsPerSlot} teams per hour)` });
       }
 
-      res.json({ ...booking, orgUserId: resolvedOrgUserId, bookerEmail: resolvedBookerEmail });
+      // Timezone-safe local date formatting (never route through toISOString/UTC)
+      const fmtLocalDate = (d: Date) =>
+        `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+      // Create future weekly occurrences (skip full slots and out-of-hours dates)
+      const created: string[] = [];
+      const skipped: string[] = [];
+      if (weeksToRepeat > 0) {
+        const [by, bm, bd] = date.split("-").map((n: string) => parseInt(n, 10));
+        for (let w = 1; w <= weeksToRepeat; w++) {
+          const next = new Date(by, bm - 1, bd + w * 7);
+          const nextDate = fmtLocalDate(next);
+          try {
+            const hours = await getAthleticHoursForDate(nextDate, programId);
+            const slotHour = parseInt(timeSlot.slice(0, 2), 10);
+            if (slotHour < hours.startHour || slotHour >= hours.endHour) {
+              skipped.push(nextDate);
+              continue;
+            }
+            const occ = await tryCreateBooking(nextDate);
+            if (occ) created.push(nextDate);
+            else skipped.push(nextDate);
+          } catch (e) {
+            skipped.push(nextDate);
+          }
+        }
+      }
+
+      res.json({ ...booking, recurrenceId, recurrenceCreated: created, recurrenceSkipped: skipped });
     } catch (error) {
       console.error("Error creating athletic booking:", error);
       res.status(500).json({ message: "Failed to create athletic booking" });
     }
   });
 
-  app.delete("/api/athletic/bookings/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  // Deletion follows the same access model as booking creation: anyone with
+  // access to the program page can remove sessions, and — mirroring POST — if the
+  // org requires login to book, login (org token) is also required to delete.
+  // scope=series removes every occurrence sharing the booking's recurrenceId
+  // from this date forward.
+  app.delete("/api/athletic/bookings/:id", async (req, res) => {
     try {
-      await storage.deleteAthleticBooking(req.params.id);
-      res.json({ success: true });
+      const [existing] = await db.select().from(athleticBookings)
+        .where(eq(athleticBookings.id, req.params.id)).limit(1);
+      if (!existing) return res.status(404).json({ message: "Booking not found" });
+
+      // Login parity with booking creation
+      const bookingOrg = await storage.getOrganizationById(existing.organizationId);
+      if (bookingOrg?.requireLoginToBook) {
+        let authed = false;
+        const orgAuthToken = req.headers["x-org-auth-token"] as string | undefined;
+        if (orgAuthToken) {
+          try {
+            const tokenHash = crypto.createHash("sha256").update(orgAuthToken).digest("hex");
+            const sessions = await db.select().from(orgSessions)
+              .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, new Date())))
+              .limit(1);
+            authed = sessions.length > 0;
+          } catch {}
+        }
+        if (!authed) {
+          return res.status(401).json({ message: "Login required to manage sessions for this program" });
+        }
+      }
+
+      const scope = (req.query.scope as string) || "single";
+      if (scope === "series" && existing.recurrenceId) {
+        await db.delete(athleticBookings).where(and(
+          eq(athleticBookings.recurrenceId, existing.recurrenceId),
+          gte(athleticBookings.date, existing.date),
+        ));
+        res.json({ success: true, scope: "series" });
+      } else {
+        await storage.deleteAthleticBooking(req.params.id);
+        res.json({ success: true, scope: "single" });
+      }
     } catch (error) {
       console.error("Error deleting athletic booking:", error);
       res.status(500).json({ message: "Failed to delete athletic booking" });

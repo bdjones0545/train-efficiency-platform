@@ -32,7 +32,12 @@ import {
   LayoutDashboard,
 } from "lucide-react";
 import { Calendar as CalendarIcon } from "lucide-react";
-import { format, addDays, subDays } from "date-fns";
+import {
+  format, addDays, subDays, addWeeks, subWeeks, addMonths, subMonths,
+  startOfWeek, endOfWeek, startOfMonth, endOfMonth, eachDayOfInterval,
+  isSameDay, isSameMonth, isToday,
+} from "date-fns";
+import { Repeat } from "lucide-react";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
@@ -147,11 +152,15 @@ export default function AthleticSchedulingPage() {
   const trainingTypes = resolvedProgram?.trainingTypes || ["Strength", "Speed"];
 
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [view, setView] = useState<"day" | "week" | "month">("day");
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [scheduleDialogOpen, setScheduleDialogOpen] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState<{ id: string; label: string; hour: number } | null>(null);
+  const [bookingDate, setBookingDate] = useState<Date>(new Date());
   const [teamName, setTeamName] = useState("");
   const [trainingType, setTrainingType] = useState(trainingTypes[0] || "Strength");
+  const [repeatWeeks, setRepeatWeeks] = useState(0);
+  const [deleteTarget, setDeleteTarget] = useState<AthleticBooking | null>(null);
   const { toast } = useToast();
 
   // ── Org Auth State ────────────────────────────────────────────────────────
@@ -218,11 +227,36 @@ export default function AthleticSchedulingPage() {
       if (!res.ok) throw new Error("Failed to load schedule");
       return res.json();
     },
-    enabled: !!programId,
+    enabled: !!programId && view === "day",
   });
 
+  // Range bookings for week/month views
+  const rangeStart = view === "week"
+    ? startOfWeek(selectedDate, { weekStartsOn: 0 })
+    : startOfWeek(startOfMonth(selectedDate), { weekStartsOn: 0 });
+  const rangeEnd = view === "week"
+    ? endOfWeek(selectedDate, { weekStartsOn: 0 })
+    : endOfWeek(endOfMonth(selectedDate), { weekStartsOn: 0 });
+  const rangeStartStr = format(rangeStart, "yyyy-MM-dd");
+  const rangeEndStr = format(rangeEnd, "yyyy-MM-dd");
+
+  const { data: rangeBookings } = useQuery<AthleticBooking[]>({
+    queryKey: ["/api/athletic/bookings/range", programId, rangeStartStr, rangeEndStr],
+    queryFn: async () => {
+      const res = await fetch(`/api/athletic/bookings/range?start=${rangeStartStr}&end=${rangeEndStr}&programId=${programId}`);
+      if (!res.ok) throw new Error("Failed to load schedule");
+      return res.json();
+    },
+    enabled: !!programId && view !== "day",
+  });
+
+  const invalidateBookings = () => {
+    queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings/range"] });
+  };
+
   const bookMutation = useMutation({
-    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string; programId: string }) => {
+    mutationFn: async (data: { date: string; timeSlot: string; teamName: string; trainingType: string; programId: string; repeatWeeks?: number }) => {
       const headers: Record<string, string> = { "Content-Type": "application/json" };
       if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
       const res = await fetch("/api/athletic/bookings", {
@@ -236,18 +270,22 @@ export default function AthleticSchedulingPage() {
       }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", programId, dateStr] });
+    onSuccess: (data: any) => {
+      invalidateBookings();
       setScheduleDialogOpen(false);
       setTeamName("");
       setTrainingType(trainingTypes[0] || "Strength");
       setSelectedSlot(null);
+      setRepeatWeeks(0);
       const scheduleUrl = `/org/${slug}/my-schedule`;
+      const recurringNote = data?.recurrenceCreated?.length
+        ? ` Recurring weekly — ${data.recurrenceCreated.length + 1} sessions scheduled${data.recurrenceSkipped?.length ? ` (${data.recurrenceSkipped.length} skipped — slot full)` : ""}.`
+        : "";
       toast({
         title: "Booked!",
-        description: orgToken
+        description: (orgToken
           ? "Your session is confirmed and saved to your account."
-          : "Your team has been booked for this time slot.",
+          : "Your team has been booked for this time slot.") + recurringNote,
         action: orgToken ? (
           <a href={scheduleUrl} className="underline text-sm font-medium">View My Schedule</a>
         ) : undefined,
@@ -265,13 +303,23 @@ export default function AthleticSchedulingPage() {
   });
 
   const deleteMutation = useMutation({
-    mutationFn: async (bookingId: string) => {
-      const res = await fetch(`/api/athletic/bookings/${bookingId}`, { method: "DELETE" });
+    mutationFn: async ({ bookingId, scope }: { bookingId: string; scope: "single" | "series" }) => {
+      const res = await fetch(`/api/athletic/bookings/${bookingId}?scope=${scope}`, { method: "DELETE" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Failed to delete");
+      }
       return res.json();
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/athletic/bookings", programId, dateStr] });
-      toast({ title: "Session removed", description: "The scheduled session has been deleted." });
+    onSuccess: (data: any) => {
+      invalidateBookings();
+      setDeleteTarget(null);
+      toast({
+        title: data?.scope === "series" ? "Series removed" : "Session removed",
+        description: data?.scope === "series"
+          ? "This session and all future occurrences have been deleted."
+          : "The scheduled session has been deleted.",
+      });
     },
     onError: (error: any) => {
       toast({ title: "Could not delete", description: error.message || "Failed to remove session.", variant: "destructive" });
@@ -282,20 +330,27 @@ export default function AthleticSchedulingPage() {
     return bookings?.filter(b => b.timeSlot === slotId) || [];
   };
 
-  const handleSlotClick = (slot: { id: string; label: string; hour: number }) => {
-    const slotBookings = getSlotBookings(slot.id);
-    if (slotBookings.length >= maxTeamsPerSlot) return;
+  const handleSlotClick = (slot: { id: string; label: string; hour: number }, date?: Date) => {
+    const bookDate = date ?? selectedDate;
+    const dStr = format(bookDate, "yyyy-MM-dd");
+    const existing = (view === "day" ? bookings : rangeBookings)?.filter(
+      (b) => b.timeSlot === slot.id && b.date === dStr,
+    ) || [];
+    if (existing.length >= maxTeamsPerSlot) return;
 
     // If login is required and user is not logged in, prompt auth first
     if (bookingSettings?.requireLoginToBook && !orgToken) {
       setPendingSlot(slot);
+      setBookingDate(bookDate);
       setShowOrgAuth(true);
       return;
     }
 
     setSelectedSlot(slot);
+    setBookingDate(bookDate);
     setTeamName(orgUser?.name || "");
     setTrainingType(trainingTypes[0] || "Strength");
+    setRepeatWeeks(0);
     setScheduleDialogOpen(true);
   };
 
@@ -303,11 +358,12 @@ export default function AthleticSchedulingPage() {
     e.preventDefault();
     if (!selectedSlot || !teamName.trim() || !programId) return;
     bookMutation.mutate({
-      date: dateStr,
+      date: format(bookingDate, "yyyy-MM-dd"),
       timeSlot: selectedSlot.id,
       teamName: teamName.trim(),
       trainingType,
       programId,
+      ...(repeatWeeks > 0 ? { repeatWeeks } : {}),
     });
   };
 
@@ -322,6 +378,7 @@ export default function AthleticSchedulingPage() {
       setSelectedSlot(pendingSlot);
       setTeamName(user.name || "");
       setTrainingType(trainingTypes[0] || "Strength");
+      setRepeatWeeks(0);
       setScheduleDialogOpen(true);
       setPendingSlot(null);
     }
@@ -493,7 +550,25 @@ export default function AthleticSchedulingPage() {
               <h1 className="text-2xl font-bold" data-testid="text-athletic-title">
                 {programName}
               </h1>
-              <p className="text-muted-foreground mt-1">Daily calendar view — {formatHour(startHour)} to {formatHour(endHour)}</p>
+              <p className="text-muted-foreground mt-1">
+                {view === "day" && <>Daily calendar view — {formatHour(startHour)} to {formatHour(endHour)}</>}
+                {view === "week" && <>Week of {format(rangeStart, "MMM d")} – {format(endOfWeek(selectedDate, { weekStartsOn: 0 }), "MMM d, yyyy")}</>}
+                {view === "month" && <>{format(selectedDate, "MMMM yyyy")}</>}
+              </p>
+            </div>
+            <div className="flex items-center rounded-md border overflow-hidden" data-testid="view-toggle">
+              {(["day", "week", "month"] as const).map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setView(v)}
+                  className={`px-3 py-1.5 text-sm font-medium capitalize transition-colors ${
+                    view === v ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted"
+                  }`}
+                  data-testid={`button-view-${v}`}
+                >
+                  {v}
+                </button>
+              ))}
             </div>
           </div>
 
@@ -579,7 +654,7 @@ export default function AthleticSchedulingPage() {
               <Button
                 size="icon"
                 variant="outline"
-                onClick={() => setSelectedDate(d => subDays(d, 1))}
+                onClick={() => setSelectedDate(d => view === "day" ? subDays(d, 1) : view === "week" ? subWeeks(d, 1) : subMonths(d, 1))}
                 data-testid="button-prev-day"
               >
                 <ChevronLeft className="h-4 w-4" />
@@ -611,7 +686,7 @@ export default function AthleticSchedulingPage() {
               <Button
                 size="icon"
                 variant="outline"
-                onClick={() => setSelectedDate(d => addDays(d, 1))}
+                onClick={() => setSelectedDate(d => view === "day" ? addDays(d, 1) : view === "week" ? addWeeks(d, 1) : addMonths(d, 1))}
                 data-testid="button-next-day"
               >
                 <ChevronRight className="h-4 w-4" />
@@ -628,6 +703,7 @@ export default function AthleticSchedulingPage() {
             </Button>
           </div>
 
+          {view === "day" && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Card className="p-4 space-y-1">
               <p className="text-sm text-muted-foreground">Total Slots</p>
@@ -646,7 +722,112 @@ export default function AthleticSchedulingPage() {
               <p className="text-2xl font-bold" data-testid="text-max-per-slot">{maxTeamsPerSlot}</p>
             </Card>
           </div>
+          )}
 
+          {/* ── Week View ─────────────────────────────────────────────── */}
+          {view === "week" && (
+            <Card className="p-0 overflow-x-auto" data-testid="week-view">
+              <div className="min-w-[760px]">
+                <div className="grid" style={{ gridTemplateColumns: "56px repeat(7, 1fr)" }}>
+                  <div className="border-b border-r border-border/50 p-2" />
+                  {eachDayOfInterval({ start: rangeStart, end: endOfWeek(selectedDate, { weekStartsOn: 0 }) }).map((day) => (
+                    <div
+                      key={day.toISOString()}
+                      className={`border-b border-r border-border/50 p-2 text-center ${isToday(day) ? "bg-primary/5" : ""}`}
+                    >
+                      <p className="text-xs text-muted-foreground">{format(day, "EEE")}</p>
+                      <p className={`text-sm font-semibold ${isToday(day) ? "text-primary" : ""}`}>{format(day, "MMM d")}</p>
+                    </div>
+                  ))}
+                  {timeSlots.map((slot) => (
+                    <div key={`row-${slot.id}`} className="contents">
+                      <div className="border-b border-r border-border/50 p-2 text-xs text-muted-foreground text-right">
+                        {slot.label}
+                      </div>
+                      {eachDayOfInterval({ start: rangeStart, end: endOfWeek(selectedDate, { weekStartsOn: 0 }) }).map((day) => {
+                        const dStr = format(day, "yyyy-MM-dd");
+                        const cellBookings = rangeBookings?.filter((b) => b.date === dStr && b.timeSlot === slot.id) || [];
+                        const cellFull = cellBookings.length >= maxTeamsPerSlot;
+                        return (
+                          <div
+                            key={`${slot.id}-${dStr}`}
+                            className={`border-b border-r border-border/50 p-1 min-h-[64px] space-y-1 ${
+                              cellFull ? "" : "cursor-pointer hover:bg-primary/5"
+                            }`}
+                            onClick={() => !cellFull && handleSlotClick(slot, day)}
+                            data-testid={`week-cell-${dStr}-${slot.id}`}
+                          >
+                            {cellBookings.map((b) => (
+                              <div
+                                key={b.id}
+                                className={`group relative rounded px-1.5 py-1 text-xs flex items-center gap-1 ${
+                                  cellFull ? "bg-destructive/10 border border-destructive/20" : "bg-primary/10 border border-primary/20"
+                                }`}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {(b as any).recurrenceId && <Repeat className="h-3 w-3 text-primary/70 flex-shrink-0" />}
+                                <span className="truncate font-medium flex-1">{b.teamName}</span>
+                                <button
+                                  className="opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-destructive flex-shrink-0"
+                                  onClick={() => setDeleteTarget(b)}
+                                  data-testid={`button-delete-booking-${b.id}`}
+                                >
+                                  <X className="h-3 w-3" />
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {/* ── Month View ────────────────────────────────────────────── */}
+          {view === "month" && (
+            <Card className="p-0" data-testid="month-view">
+              <div className="grid grid-cols-7">
+                {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((d) => (
+                  <div key={d} className="border-b border-r border-border/50 p-2 text-center text-xs font-medium text-muted-foreground">
+                    {d}
+                  </div>
+                ))}
+                {eachDayOfInterval({ start: rangeStart, end: rangeEnd }).map((day) => {
+                  const dStr = format(day, "yyyy-MM-dd");
+                  const dayBookings = rangeBookings?.filter((b) => b.date === dStr) || [];
+                  const inMonth = isSameMonth(day, selectedDate);
+                  return (
+                    <div
+                      key={dStr}
+                      className={`border-b border-r border-border/50 p-1.5 min-h-[88px] cursor-pointer hover:bg-primary/5 transition-colors ${
+                        !inMonth ? "bg-muted/30 opacity-50" : ""
+                      } ${isToday(day) ? "bg-primary/5" : ""}`}
+                      onClick={() => { setSelectedDate(day); setView("day"); }}
+                      data-testid={`month-cell-${dStr}`}
+                    >
+                      <p className={`text-xs font-semibold mb-1 ${isToday(day) ? "text-primary" : ""}`}>{format(day, "d")}</p>
+                      <div className="space-y-0.5">
+                        {dayBookings.slice(0, 3).map((b) => (
+                          <div key={b.id} className="rounded bg-primary/10 border border-primary/20 px-1 py-0.5 text-[10px] truncate flex items-center gap-0.5">
+                            {(b as any).recurrenceId && <Repeat className="h-2.5 w-2.5 text-primary/70 flex-shrink-0" />}
+                            <span className="truncate">{b.timeSlot} {b.teamName}</span>
+                          </div>
+                        ))}
+                        {dayBookings.length > 3 && (
+                          <p className="text-[10px] text-muted-foreground">+{dayBookings.length - 3} more</p>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+          )}
+
+          {view === "day" && (
           <Card className="p-0 overflow-x-hidden overflow-y-auto" style={{ maxHeight: "70vh" }}>
             <div
               className="relative"
@@ -696,13 +877,14 @@ export default function AthleticSchedulingPage() {
                           {(booking as any).orgUserId && (
                             <User className="h-3.5 w-3.5 text-primary/60 flex-shrink-0" aria-label="Booked by a logged-in member" />
                           )}
+                          {(booking as any).recurrenceId && (
+                            <Repeat className="h-3.5 w-3.5 text-primary/60 flex-shrink-0" aria-label="Recurring weekly session" />
+                          )}
                           <button
                             className="ml-auto flex-shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (confirm(`Remove ${booking.teamName} from this time slot?`)) {
-                                deleteMutation.mutate(booking.id);
-                              }
+                              setDeleteTarget(booking);
                             }}
                             disabled={deleteMutation.isPending}
                             data-testid={`button-delete-booking-${booking.id}`}
@@ -747,6 +929,7 @@ export default function AthleticSchedulingPage() {
               </div>
             </div>
           </Card>
+          )}
 
           <div className="flex items-center gap-4 text-sm text-muted-foreground justify-center">
             <span className="flex items-center gap-1.5">
@@ -772,6 +955,7 @@ export default function AthleticSchedulingPage() {
           setTeamName("");
           setTrainingType(trainingTypes[0] || "Strength");
           setSelectedSlot(null);
+          setRepeatWeeks(0);
         }
       }}>
         <DialogContent className="sm:max-w-md" data-testid="modal-schedule-team">
@@ -783,7 +967,7 @@ export default function AthleticSchedulingPage() {
             <DialogDescription>
               {selectedSlot && (
                 <>
-                  Booking for {format(selectedDate, "EEEE, MMM d")} — {formatHour(selectedSlot.hour)} to {formatHour(selectedSlot.hour + 1)}
+                  Booking for {format(bookingDate, "EEEE, MMM d")} — {formatHour(selectedSlot.hour)} to {formatHour(selectedSlot.hour + 1)}
                 </>
               )}
             </DialogDescription>
@@ -834,6 +1018,37 @@ export default function AthleticSchedulingPage() {
                 ))}
               </div>
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-1.5">
+                <Repeat className="h-3.5 w-3.5 text-primary" />
+                Repeat weekly
+              </label>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { value: 0, label: "Off" },
+                  { value: 3, label: "4 weeks" },
+                  { value: 7, label: "8 weeks" },
+                  { value: 11, label: "12 weeks" },
+                ].map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setRepeatWeeks(opt.value)}
+                    className={`rounded-md border-2 px-2 py-2 text-xs font-medium transition-colors ${
+                      repeatWeeks === opt.value ? "border-primary bg-primary/10 text-primary" : "border-muted text-muted-foreground hover-elevate"
+                    }`}
+                    data-testid={`button-repeat-${opt.label.replace(" ", "-").toLowerCase()}`}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {repeatWeeks > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Books this slot every {format(bookingDate, "EEEE")} at the same time for {repeatWeeks + 1} weeks total. Full slots are skipped.
+                </p>
+              )}
+            </div>
             <Button
               type="submit"
               className="w-full"
@@ -845,6 +1060,52 @@ export default function AthleticSchedulingPage() {
               {bookMutation.isPending ? "Scheduling..." : "Confirm Booking"}
             </Button>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!deleteTarget} onOpenChange={(open) => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent className="sm:max-w-md" data-testid="modal-delete-booking">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-destructive" />
+              Remove Scheduled Session
+            </DialogTitle>
+            <DialogDescription>
+              {deleteTarget && (
+                <>
+                  {deleteTarget.teamName} — {format(new Date(`${deleteTarget.date}T00:00:00`), "EEEE, MMM d")} at {deleteTarget.timeSlot}
+                  {(deleteTarget as any).recurrenceId && " (part of a weekly recurring series)"}
+                </>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2 pt-2">
+            <Button
+              variant="destructive"
+              className="w-full"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteTarget && deleteMutation.mutate({ bookingId: deleteTarget.id, scope: "single" })}
+              data-testid="button-delete-single"
+            >
+              Delete this session only
+            </Button>
+            {(deleteTarget as any)?.recurrenceId && (
+              <Button
+                variant="outline"
+                className="w-full border-destructive/40 text-destructive hover:bg-destructive/10"
+                disabled={deleteMutation.isPending}
+                onClick={() => deleteTarget && deleteMutation.mutate({ bookingId: deleteTarget.id, scope: "series" })}
+                data-testid="button-delete-series"
+              >
+                <Repeat className="h-4 w-4 mr-1.5" />
+                Delete this + all future occurrences
+              </Button>
+            )}
+            <Button variant="ghost" className="w-full" onClick={() => setDeleteTarget(null)} data-testid="button-delete-cancel">
+              Cancel
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
 
