@@ -17,8 +17,9 @@ This document is the operator runbook for deploying the Kevin integration (Phase
 Secrets set, the integration stays fully OFF and the platform behaves exactly as it
 did before this release.
 
-> **Default-off guarantee.** `KEVIN_INTEGRATION_ENABLED` defaults to `false`. Until
-> it is set to `true` *and* the two Hermes Secrets are present, every `/api/kevin/*`
+> **Default-off guarantee.** `KEVIN_AGENT_INTEGRATION_ENABLED` (preferred) and
+> legacy `KEVIN_INTEGRATION_ENABLED` default to `false`. Either truthy enables.
+> Until enabled *and* the two Hermes Secrets are present, every `/api/kevin/*`
 > route returns an `unconfigured`/`503` fail-safe response and no calls are made to
 > Hermes.
 
@@ -30,9 +31,17 @@ did before this release.
 
 | Name | Purpose | Required? | Consuming service / file | Expected format | Must stay server-side? |
 |------|---------|-----------|--------------------------|-----------------|------------------------|
-| `KEVIN_INTEGRATION_ENABLED` | Master feature flag. Turns the Kevin BFF on. When not truthy, all `/api/kevin/*` endpoints return `unconfigured` and never contact Hermes. | Optional (defaults `false`) | `server/services/kevin-hermes-client.ts` → `getKevinConfig()`; read indirectly by all `server/kevin-routes.ts` handlers | Boolean-ish string: one of `true` / `1` / `yes` / `on` (case-insensitive) to enable; anything else = disabled | Yes (server env only) |
+| `KEVIN_AGENT_INTEGRATION_ENABLED` | **Preferred** master feature flag. Turns the Kevin BFF / agent integration on. | Optional (defaults `false`) | `server/services/kevin-hermes-client.ts` → `resolveKevinIntegrationEnabled()` / `getKevinConfig()` | Boolean-ish: `true` / `1` / `yes` / `on` | Yes (server env only) |
+| `KEVIN_INTEGRATION_ENABLED` | Legacy alias for the master flag (OR with preferred). | Optional (defaults `false`) | same | Same truthy set. Either flag enables. | Yes (server env only) |
 | `KEVIN_HERMES_BASE_URL` | Base URL of the Hermes API Server (profile `kevin`). The BFF prefixes this to `/health`, `/v1/capabilities`, `/v1/runs`, etc. | **Required when enabled** | `server/services/kevin-hermes-client.ts` (`kevinFetch`, `hermesOpenRunEvents`) | Absolute URL, no trailing slash needed. Loopback/private preferred, e.g. `http://127.0.0.1:8642` or `https://kevin-ops.internal`. Only scheme+host is ever surfaced to the client (redacted). | Yes (server env only) |
 | `KEVIN_HERMES_API_KEY` | Bearer token for the Hermes API Server. Sent as `Authorization: Bearer …`. **Must equal the `API_SERVER_KEY` configured on the kevin Hermes profile.** | **Required when enabled** | `server/services/kevin-hermes-client.ts` (all outbound Hermes calls) | Opaque high-entropy string (current ops value is 64 chars). No fixed prefix. | **Yes — never exposed to the browser, never logged, never returned by any route** |
+| `KEVIN_REQUEST_TIMEOUT_MS` | Default TE→Hermes HTTP timeout (ms) for KevinHermesClient. | Optional (default `8000`) | `server/services/kevin-hermes-client.ts` → `getKevinRequestTimeoutMs()` | Integer ms; clamped 1000–120000. Run-create uses `max(30000, this)`. | Yes (server env only) |
+| `KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS` | Max clock skew for Kevin→TE callback HMAC timestamp check (`x-kevin-timestamp`). | Optional (default `300`) | `shared/kevin/outbound-hmac.ts` → `getKevinCallbackAllowedSkewSeconds()`; used by `verifyKevinCallbackHeaders` | Integer seconds; clamped 30–3600 | Yes (server env only) |
+| `KEVIN_CALLBACK_BASE_URL` | TE public origin Kevin uses when POSTing async callbacks/webhooks to TE (no trailing slash). | Optional (default `https://app.trainefficiency.com`; also falls back to `TE_APP_BASE_URL` / `APP_BASE_URL`) | `shared/kevin/callback-base-url.ts` → `getKevinCallbackBaseUrl()` / `buildKevinCallbackUrl()`; re-exported from `kevin-outbound-auth.ts` | Absolute `https://…` URL, no path required. **Not** `KEVIN_HERMES_BASE_URL`. | No (public origin) |
+| `KEVIN_CALLBACK_HMAC_SECRET` | Shared HMAC for **Kevin → TE** callbacks/webhooks (`x-kevin-timestamp` + `x-kevin-signature` v1). **Preferred Replit name.** | Required when Kevin→TE webhook/callback routes are enabled; optional for Phases 0–2 Console-only | `shared/kevin/outbound-hmac.ts`, `server/services/kevin-outbound-auth.ts` | Opaque high-entropy string (64 hex chars ops default). Same value as `KEVIN_OUTBOUND_HMAC_SECRET` and legacy `TRAINEFFICIENCY_KEVIN_SIGNING_SECRET`. | **Yes — server only** |
+| `KEVIN_OUTBOUND_HMAC_SECRET` | Alternate alias for callback HMAC (identical value). | Optional if `KEVIN_CALLBACK_HMAC_SECRET` set | same as above (fallback) | Must match callback secret when both present | **Yes — server only** |
+| `TRAINEFFICIENCY_KEVIN_SIGNING_SECRET` | Legacy alias for callback HMAC (identical value). | Optional if preferred name set | same as above (fallback) | Must match when present | **Yes — server only** |
+| `TE_INTERNAL_SERVICE_TOKEN` | Separate bearer for Kevin→TE internal service auth (not the HMAC secret). | Optional until callback routes require it | `server/services/kevin-outbound-auth.ts` | Opaque high-entropy string | **Yes — server only** |
 
 ### 1.2 Existing platform variables Kevin depends on (already configured — verify only)
 

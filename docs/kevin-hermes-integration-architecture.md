@@ -203,7 +203,13 @@ Fail closed if capability unset.
 |--------|----------|---------|
 | `API_SERVER_KEY` | kevin `.env` | Hermes API Server bearer |
 | `KEVIN_HERMES_API_KEY` | TE Replit Secrets | Same value as `API_SERVER_KEY` (or rotated dual-key later) |
-| `KEVIN_HERMES_BASE_URL` | TE Secrets | e.g. `https://kevin-ops.internal:8642` |
+| `KEVIN_AGENT_INTEGRATION_ENABLED` | TE Secrets (preferred) | Master enable for Kevin agent/BFF integration (default false). OR with legacy `KEVIN_INTEGRATION_ENABLED`. |
+| `KEVIN_HERMES_BASE_URL` | TE Secrets | e.g. `https://kevin-api.trainefficiency.com` or private base |
+| `KEVIN_REQUEST_TIMEOUT_MS` | TE Secrets (optional) | Default TE→Hermes HTTP timeout ms (default `8000`, clamp 1000–120000). Run-create uses `max(30000, value)`. |
+| `KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS` | TE Secrets (optional) | Max \|now − x-kevin-timestamp\| for callback HMAC verify (default `300`, clamp 30–3600). |
+| `KEVIN_CALLBACK_BASE_URL` | TE Secrets + kevin `.env` (optional) | TE public origin for Kevin→TE callback POSTs (default `https://app.trainefficiency.com`). Not Hermes base. |
+| `KEVIN_CALLBACK_HMAC_SECRET` | kevin `.env` + TE Secrets (preferred) | HMAC for Kevin→TE callbacks (`x-kevin-timestamp` / `x-kevin-signature` v1). Aliases (same value): `KEVIN_OUTBOUND_HMAC_SECRET`, `TRAINEFFICIENCY_KEVIN_SIGNING_SECRET`. |
+| `TE_INTERNAL_SERVICE_TOKEN` | kevin `.env` + TE Secrets | Optional separate bearer plane for Kevin→TE internal routes |
 | Model keys (`XAI_API_KEY`, `OPENAI_API_KEY`, …) | kevin `.env` only | Never in TE |
 
 **Network:** Prefer private network / Tailscale / Cloudflare Tunnel / reverse proxy with IP allowlist. Do **not** expose `:8642` to the public internet without WAF + key + mTLS.
