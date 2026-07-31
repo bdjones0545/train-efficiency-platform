@@ -431,7 +431,7 @@ export async function ensureOrgAiInfrastructure(
   try {
     const { ensureKevinOrgLabel } = await import("../kevin-inbox-routes");
     // Fetch org name for a friendlier label
-    const orgRows = await db.execute(sql`SELECT name FROM organizations WHERE id = ${orgId} LIMIT 1`).catch(() => []);
+    const orgRows = await db.execute(drizzleSql`SELECT name FROM organizations WHERE id = ${orgId} LIMIT 1`).catch(() => []);
     const orgName: string | undefined = (Array.isArray(orgRows) ? orgRows[0] : (orgRows as any)?.rows?.[0])?.name;
     await ensureKevinOrgLabel(orgId, orgName);
   } catch (e: any) {

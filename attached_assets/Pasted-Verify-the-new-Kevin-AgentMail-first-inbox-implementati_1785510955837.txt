@@ -1,0 +1,296 @@
+Verify the new Kevin AgentMail-first inbox implementation end to end. Do not add unrelated features or redesign the UI. Focus on proving that the database label registration, VM synchronization, inbox display, tenant isolation, and approval workflow behave as claimed.
+
+## Goal
+
+Confirm that:
+
+1. Kevin’s live AgentMail inbox is the primary inbox source.
+2. Every organization receives a deterministic Kevin inbox label registration.
+3. A database label record does not falsely imply that the corresponding AgentMail label was successfully created.
+4. VM-side label creation is retryable, observable, and safe under duplicate execution.
+5. Pending outbound drafts continue using the existing approval queue and cannot send without approval.
+6. No organization can view another organization’s inbox threads, labels, drafts, or approval actions.
+
+## 1. Map the Current Implementation
+
+Identify and document:
+
+* The frontend components powering the Kevin Inbox tab.
+* The endpoint used to retrieve Kevin’s AgentMail threads.
+* The endpoint used to retrieve pending approval drafts.
+* The table and service responsible for `kevin_org_inbox_labels`.
+* The organization-creation path that registers the label.
+* The VM callback, worker, job, or synchronization path that tells Kevin to create the corresponding AgentMail label.
+* The code path that sends an approved email.
+* All relevant feature flags and environment variables.
+
+Include exact file names and line references in the final report.
+
+## 2. Verify the Data Model
+
+Inspect `kevin_org_inbox_labels`.
+
+The label record must distinguish between:
+
+* A requested or registered label name in the application database.
+* A label that was actually created successfully in AgentMail.
+
+A database row containing only a label name must not be interpreted as proof that VM-side or AgentMail-side provisioning succeeded.
+
+Verify whether the table currently tracks equivalent fields for:
+
+* `org_id`
+* requested label name
+* synchronization status
+* external AgentMail label ID, when available
+* last synchronization attempt
+* successful synchronization timestamp
+* last error
+* retry count or attempt count
+* creation and update timestamps
+
+A suitable status model would be equivalent to:
+
+* `pending`
+* `syncing`
+* `created`
+* `failed`
+
+Do not rename existing states unnecessarily if equivalent states already exist.
+
+If this distinction is missing, implement the smallest durable migration and service changes needed to support it.
+
+## 3. Verify Organization Registration
+
+Create or simulate the creation of multiple organizations.
+
+Confirm that:
+
+* Each organization receives exactly one canonical Kevin inbox label registration.
+* The operation is idempotent.
+* Retrying organization setup does not create duplicate rows.
+* Concurrent setup attempts do not create duplicate rows.
+* Label names are deterministic and normalized.
+* Invalid, empty, excessively long, or conflicting organization names are handled safely.
+* Renaming an organization does not silently create an uncontrolled duplicate label.
+* Existing organizations without a label can be backfilled safely.
+
+Add or verify a database uniqueness constraint that enforces the intended ownership boundary, such as one active canonical label registration per organization.
+
+## 4. Verify VM and AgentMail Synchronization
+
+Trace the full synchronization flow:
+
+`organization setup → label registration → durable sync request → Kevin VM receives request → AgentMail label creation attempt → result recorded`
+
+Confirm that the synchronization process is:
+
+* Durable
+* Retryable
+* Idempotent
+* Safe if the VM is offline
+* Safe if AgentMail is temporarily unavailable
+* Safe if the same request is delivered more than once
+* Safe under concurrent workers
+* Observable through structured logs or audit records
+
+Test these cases:
+
+1. VM online and AgentMail accepts creation.
+2. VM offline during registration.
+3. AgentMail returns a transient error.
+4. AgentMail returns a permanent validation error.
+5. The worker crashes after creating the label but before updating the database.
+6. The same synchronization event is delivered twice.
+7. Two workers attempt the same label creation concurrently.
+8. The external label already exists.
+9. The application database contains a pending row from an earlier deployment.
+
+The final state must reconcile correctly without duplicate external labels or false success records.
+
+If AgentMail v0 does not currently support programmatic label creation, make that limitation explicit. In that case:
+
+* Do not mark the label as `created`.
+* Preserve a truthful pending or unsupported state.
+* Record the capability limitation.
+* Ensure the UI does not claim external provisioning succeeded.
+* Do not build a fake success path.
+
+## 5. Verify AgentMail Inbox Retrieval
+
+Confirm that Kevin’s inbox UI retrieves live AgentMail threads and displays:
+
+* Sender identity
+* Subject or thread title
+* Snippet preview
+* Received timestamp
+* Unread state
+* A clear empty state
+
+Verify:
+
+* Loading state
+* Empty state
+* AgentMail unavailable state
+* Authentication failure
+* Rate-limit response
+* Malformed upstream response
+* Slow response
+* Duplicate threads
+* Pagination or result limits
+* Thread ordering
+* Read/unread consistency
+
+The endpoint must fail safely and must not expose credentials, internal stack traces, or raw upstream secrets.
+
+Do not silently substitute `gmail_agent_actions` data when AgentMail fails. The UI should accurately distinguish between:
+
+* Live inbound AgentMail threads
+* Pending outbound approval drafts
+
+## 6. Verify Tenant Isolation
+
+Perform a code-grounded and test-backed tenant-isolation audit.
+
+Confirm that the server derives the active organization from authenticated server-side context. It must not trust a client-provided `org_id` without authorization.
+
+Test at least two organizations and verify that Org A cannot access:
+
+* Org B’s label registration
+* Org B’s AgentMail threads
+* Org B’s pending drafts
+* Org B’s draft details
+* Org B’s approval or rejection actions
+* Org B’s send history
+* Org B’s synchronization status or errors
+
+Attempt direct ID substitution and query-parameter manipulation.
+
+Return `403` or `404` according to the existing application convention without revealing whether another organization’s record exists.
+
+## 7. Verify Approval Safety
+
+Confirm that `gmail_agent_actions` remains the outbound draft and approval system.
+
+Prove that:
+
+* AgentMail inbound messages cannot trigger an unapproved send.
+* Draft creation does not send.
+* Viewing a draft does not send.
+* Refreshing the page does not send.
+* Approving once sends at most once.
+* Repeated approval requests are idempotent.
+* Rejecting a draft prevents sending.
+* A rejected draft cannot later send through a stale worker.
+* An unauthorized user cannot approve or reject.
+* Cross-org approval is impossible.
+* A worker retry after successful sending does not send a duplicate.
+* Send failures are recorded truthfully.
+* Approval and sending produce audit records.
+
+Trace the exact send path and identify the final idempotency boundary.
+
+## 8. Verify UI Ordering and Semantics
+
+Confirm the Kevin Inbox tab displays these sections in this order:
+
+1. Kevin’s live AgentMail inbox
+2. The organization’s assigned inbox label
+3. Pending approval drafts
+
+Verify that:
+
+* The label badge does not imply external creation unless synchronization succeeded.
+* Pending or failed label synchronization is represented truthfully.
+* Internal implementation names such as `gmail_agent_actions` are not exposed as the user’s primary inbox.
+* The approval controls still use the existing authorized endpoints.
+* Empty inbound email does not hide pending drafts.
+* Failure in one section does not unnecessarily prevent the other sections from loading.
+
+## 9. Automated Tests
+
+Add or update tests covering:
+
+* Label registration on organization creation
+* Idempotent registration
+* Concurrent registration
+* Backfill behavior
+* Sync success
+* Sync transient failure
+* Sync permanent failure
+* Duplicate delivery
+* Crash-after-external-create reconciliation
+* Existing external label
+* AgentMail inbox response mapping
+* Inbox empty state
+* Inbox upstream failure
+* Tenant isolation
+* Draft approval
+* Draft rejection
+* Duplicate approval
+* Unauthorized approval
+* Cross-org access
+* At-most-once send behavior
+
+Use the repository’s existing testing conventions. Do not weaken existing tests or replace meaningful assertions with snapshots.
+
+Run:
+
+* Typecheck
+* Lint, if configured
+* Relevant unit tests
+* Relevant integration tests
+* Full test suite if practical
+
+## 10. Production Readiness Report
+
+Return a final report containing:
+
+### Files inspected
+
+List the relevant files and their responsibilities.
+
+### Files changed
+
+For each changed file, explain exactly why it changed.
+
+### Current architecture
+
+Show the verified flow for:
+
+* Inbound AgentMail email
+* Organization label registration and synchronization
+* Outbound draft approval and sending
+
+### Verification results
+
+Provide a PASS, FAIL, or PARTIAL result for:
+
+* AgentMail-first inbox
+* Label registration
+* Label provisioning truthfulness
+* Retry safety
+* Idempotency
+* Tenant isolation
+* Approval enforcement
+* At-most-once sending
+* Error handling
+* UI ordering
+* Automated tests
+
+### Test results
+
+Include exact commands and result counts.
+
+### Remaining risks
+
+Clearly distinguish:
+
+* Confirmed defects
+* Fixed defects
+* External AgentMail limitations
+* Missing production credentials
+* Untested assumptions
+* Future enhancements
+
+Do not claim that label synchronization, idempotency, tenant isolation, or at-most-once sending is guaranteed unless the code and tests prove it.

@@ -1,19 +1,24 @@
 /**
- * Kevin Inbox Routes — Kevin's AgentMail-based org communication center.
+ * Kevin Inbox Routes — Kevin's AgentMail-first org communication center.
  *
  * Kevin's single inbox is kevin@trainefficiency.com (AgentMail).
- * He handles ALL org communications through that one inbox and organises
- * each org under its own label on his VM.
+ * He handles ALL org communications through that inbox, organized per-org
+ * by inbox labels that he creates manually on his VM.
  *
- * This endpoint returns:
+ * ⚠️ AgentMail v0 has NO programmatic label-creation API.
+ *    This means label records in kevin_org_inbox_labels have sync_status='pending_vm'
+ *    until Kevin manually creates the label on his VM and marks it 'created'.
+ *    We NEVER falsely claim labels are created — the table tracks what is known.
+ *
+ * GET /api/kevin/inbox returns:
  *   - Kevin's live AgentMail threads (from kevin@trainefficiency.com)
+ *   - This org's label record (with truthful sync_status)
  *   - Pending approval drafts Kevin has queued (gmail_agent_actions)
  *   - Scheduled / pending-review follow-ups (agent_mail_followups)
  *   - Recent sent / failed activity
  *   - Automation state (emergency pause, follow-up sequences)
- *   - Org label registry (what label Kevin uses for this org)
  *
- * Read-only — mutations go through existing gated endpoints.
+ * Read-only — all mutations go through existing safety-gated endpoints.
  * Org resolution is ALWAYS server-side via resolveOrgIdOrThrow (fail closed).
  */
 
@@ -25,7 +30,21 @@ import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 
 // ─── Kevin's dedicated AgentMail inbox ───────────────────────────────────────
 
-const KEVIN_INBOX = "kevin@trainefficiency.com";
+export const KEVIN_INBOX_EMAIL = "kevin@trainefficiency.com";
+
+/**
+ * Sync status for Kevin's per-org inbox label.
+ *
+ * pending_vm   — label row registered in DB; Kevin still needs to create it on his VM.
+ *                AgentMail v0 has no label-creation API, so we cannot do this
+ *                programmatically. This is the ONLY valid initial state.
+ * created      — Kevin confirmed label exists in AgentMail (set by Kevin's VM callback).
+ * failed       — Kevin's VM attempted creation but hit a permanent error.
+ * unsupported  — External system does not support this label type.
+ */
+export type LabelSyncStatus = "pending_vm" | "created" | "failed" | "unsupported";
+
+// ─── AgentMail fetch helper ───────────────────────────────────────────────────
 
 function getAgentMailConfig() {
   return {
@@ -37,29 +56,53 @@ function getAgentMailConfig() {
 async function fetchKevinThreads(limit = 30): Promise<{
   ok: boolean;
   threads: any[];
-  error?: string;
+  errorKind?: "not_configured" | "auth_failure" | "rate_limit" | "upstream_error" | "timeout" | "malformed";
+  errorMessage?: string;
 }> {
   const { apiKey, baseUrl } = getAgentMailConfig();
-  if (!apiKey) return { ok: false, threads: [], error: "AgentMail not configured" };
+  if (!apiKey) return { ok: false, threads: [], errorKind: "not_configured", errorMessage: "AGENTMAIL_API_KEY not set" };
 
   try {
-    const res = await fetch(`${baseUrl}/inboxes/${KEVIN_INBOX}/threads?limit=${limit}`, {
+    const res = await fetch(`${baseUrl}/inboxes/${KEVIN_INBOX_EMAIL}/threads?limit=${limit}`, {
       method: "GET",
       signal: AbortSignal.timeout(10_000),
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
     });
     const text = await res.text();
     let data: any;
-    try { data = JSON.parse(text); } catch { data = {}; }
-    if (!res.ok) return { ok: false, threads: [], error: data?.message ?? `HTTP ${res.status}` };
+    try { data = JSON.parse(text); } catch {
+      return { ok: false, threads: [], errorKind: "malformed", errorMessage: "Upstream returned non-JSON" };
+    }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, threads: [], errorKind: "auth_failure", errorMessage: "AgentMail authentication failed" };
+    }
+    if (res.status === 429) {
+      return { ok: false, threads: [], errorKind: "rate_limit", errorMessage: "AgentMail rate limited" };
+    }
+    if (!res.ok) {
+      // Do NOT expose raw API error (may contain internal details)
+      return { ok: false, threads: [], errorKind: "upstream_error", errorMessage: `AgentMail returned ${res.status}` };
+    }
     const threads: any[] = Array.isArray(data)
       ? data
       : Array.isArray(data?.threads) ? data.threads
       : Array.isArray(data?.messages) ? data.messages
       : [];
-    return { ok: true, threads };
+    // Dedup by id
+    const seen = new Set<string>();
+    const deduped = threads.filter(t => {
+      const key = t?.id ?? t?.thread_id ?? null;
+      if (!key || seen.has(key)) return false;
+      seen.add(key); return true;
+    });
+    return { ok: true, threads: deduped };
   } catch (err: any) {
-    return { ok: false, threads: [], error: err?.message ?? "Network error" };
+    const isTimeout = err?.name === "TimeoutError" || err?.message?.includes("timeout");
+    return {
+      ok: false, threads: [],
+      errorKind: isTimeout ? "timeout" : "upstream_error",
+      errorMessage: isTimeout ? "AgentMail request timed out" : "Network error reaching AgentMail",
+    };
   }
 }
 
@@ -73,43 +116,145 @@ function rows(r: unknown): any[] {
 
 const PENDING_STATUSES = ["proposed", "pending_approval", "awaiting_approval", "blocked"];
 
-// ─── Ensure org-label table exists ───────────────────────────────────────────
+// ─── kevin_org_inbox_labels table ────────────────────────────────────────────
+// Tracks per-org label requests for Kevin's inbox.
+// sync_status reflects what is KNOWN, not what is claimed.
 
-let labelTableReady = false;
+let _labelTableReady = false;
+
 async function ensureLabelTable() {
-  if (labelTableReady) return;
+  if (_labelTableReady) return;
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS kevin_org_inbox_labels (
-      id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id        TEXT NOT NULL UNIQUE,
-      label_name    TEXT NOT NULL,
-      label_color   TEXT,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      notified_at   TIMESTAMPTZ,
-      notes         TEXT
+      id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+      org_id            TEXT NOT NULL,
+      label_name        TEXT NOT NULL,
+      label_color       TEXT,
+      sync_status       TEXT NOT NULL DEFAULT 'pending_vm',
+      agentmail_label_id TEXT,
+      last_sync_attempt TIMESTAMPTZ,
+      synced_at         TIMESTAMPTZ,
+      last_error        TEXT,
+      retry_count       INTEGER NOT NULL DEFAULT 0,
+      notes             TEXT,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT kevin_org_inbox_labels_org_id_unique UNIQUE (org_id)
     )
   `);
-  labelTableReady = true;
+  // Idempotent migrations for pre-existing tables that lack the new columns
+  const migrations = [
+    `ALTER TABLE kevin_org_inbox_labels ADD COLUMN IF NOT EXISTS sync_status TEXT NOT NULL DEFAULT 'pending_vm'`,
+    `ALTER TABLE kevin_org_inbox_labels ADD COLUMN IF NOT EXISTS agentmail_label_id TEXT`,
+    `ALTER TABLE kevin_org_inbox_labels ADD COLUMN IF NOT EXISTS last_sync_attempt TIMESTAMPTZ`,
+    `ALTER TABLE kevin_org_inbox_labels ADD COLUMN IF NOT EXISTS synced_at TIMESTAMPTZ`,
+    `ALTER TABLE kevin_org_inbox_labels ADD COLUMN IF NOT EXISTS last_error TEXT`,
+    `ALTER TABLE kevin_org_inbox_labels ADD COLUMN IF NOT EXISTS retry_count INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE kevin_org_inbox_labels ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()`,
+  ];
+  for (const m of migrations) {
+    await db.execute(sql.raw(m)).catch(() => {});
+  }
+  _labelTableReady = true;
 }
 
 /**
- * Called from ensureOrgAiInfrastructure when a new org is provisioned.
- * Inserts a label record so Kevin knows to create the matching label
- * on his VM inbox.
+ * Normalize an org name to a safe, deterministic label name.
+ * Rules: strip non-alphanumeric chars except spaces/dashes/underscores,
+ * collapse whitespace, truncate to 60 chars, fall back to org_id prefix.
+ */
+function normalizeLabelName(raw: string | null | undefined, orgId: string): string {
+  if (!raw?.trim()) return `org-${orgId.slice(0, 8)}`;
+  return raw
+    .replace(/[^a-zA-Z0-9\s\-_]/g, "")
+    .trim()
+    .replace(/\s+/g, " ")
+    .slice(0, 60)
+    || `org-${orgId.slice(0, 8)}`;
+}
+
+/**
+ * Register (or idempotently confirm) a Kevin inbox label for an org.
+ * Sets sync_status='pending_vm' — the truthful state when AgentMail v0
+ * does not support programmatic label creation.
+ *
+ * Safe under concurrent calls: ON CONFLICT DO NOTHING.
+ * Renaming an org does NOT update an existing label (prevents silent duplicates).
  */
 export async function ensureKevinOrgLabel(orgId: string, orgName?: string): Promise<void> {
   try {
     await ensureLabelTable();
-    const label = (orgName ?? orgId).replace(/[^a-zA-Z0-9\s\-_]/g, "").trim().slice(0, 60) || orgId;
+    const labelName = normalizeLabelName(orgName, orgId);
     await db.execute(sql`
-      INSERT INTO kevin_org_inbox_labels (org_id, label_name)
-      VALUES (${orgId}, ${label})
+      INSERT INTO kevin_org_inbox_labels (org_id, label_name, sync_status, updated_at)
+      VALUES (${orgId}, ${labelName}, 'pending_vm', NOW())
       ON CONFLICT (org_id) DO NOTHING
     `);
-    console.log(`[KevinInbox] Label registered for org=${orgId} label="${label}"`);
+    console.log(`[KevinInbox] Label registered org=${orgId} label="${labelName}" status=pending_vm`);
   } catch (err: any) {
     console.error(`[KevinInbox] ensureKevinOrgLabel error: ${err?.message}`);
   }
+}
+
+/**
+ * Mark a label as successfully created by Kevin's VM.
+ * This is the ONLY path that sets sync_status='created'.
+ * Called from Kevin's VM callback endpoint (not yet built — placeholder).
+ */
+export async function markKevinLabelCreated(orgId: string, agentmailLabelId?: string): Promise<void> {
+  await ensureLabelTable();
+  await db.execute(sql`
+    UPDATE kevin_org_inbox_labels
+    SET sync_status = 'created',
+        agentmail_label_id = ${agentmailLabelId ?? null},
+        synced_at = NOW(),
+        last_error = NULL,
+        updated_at = NOW()
+    WHERE org_id = ${orgId}
+  `);
+}
+
+/**
+ * Record a label sync failure from Kevin's VM.
+ */
+export async function recordKevinLabelSyncFailure(orgId: string, error: string, permanent = false): Promise<void> {
+  await ensureLabelTable();
+  await db.execute(sql`
+    UPDATE kevin_org_inbox_labels
+    SET sync_status = ${permanent ? "failed" : "pending_vm"},
+        last_sync_attempt = NOW(),
+        last_error = ${error.slice(0, 500)},
+        retry_count = retry_count + 1,
+        updated_at = NOW()
+    WHERE org_id = ${orgId}
+  `);
+}
+
+/**
+ * Backfill all orgs that do not yet have a label record.
+ * Safe to run multiple times — idempotent.
+ */
+export async function backfillKevinOrgLabels(): Promise<{ registered: number; errors: number }> {
+  await ensureLabelTable();
+  let registered = 0; let errors = 0;
+  try {
+    const orgsRaw = await db.execute(sql`
+      SELECT o.id, o.name
+      FROM organizations o
+      WHERE NOT EXISTS (
+        SELECT 1 FROM kevin_org_inbox_labels k WHERE k.org_id = o.id
+      )
+    `);
+    const orgs = rows(orgsRaw);
+    for (const org of orgs) {
+      try { await ensureKevinOrgLabel(org.id, org.name); registered++; }
+      catch { errors++; }
+    }
+  } catch (err: any) {
+    console.error(`[KevinInbox] backfillKevinOrgLabels error: ${err?.message}`);
+    errors++;
+  }
+  return { registered, errors };
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -129,10 +274,8 @@ export function registerKevinInboxRoutes(app: Express, isAuthenticated: any, req
         governanceRows,
         labelRows,
       ] = await Promise.all([
-        // Kevin's live AgentMail inbox threads
         fetchKevinThreads(30),
 
-        // Pending approval drafts Kevin has queued for this org
         db.select().from(gmailAgentActions).where(and(
           eq(gmailAgentActions.orgId, orgId),
           eq(gmailAgentActions.approvalRequired, true),
@@ -140,41 +283,37 @@ export function registerKevinInboxRoutes(app: Express, isAuthenticated: any, req
           inArray(gmailAgentActions.status, PENDING_STATUSES),
         )).orderBy(desc(gmailAgentActions.createdAt)).limit(25),
 
-        // Recent executed / failed / rejected activity for this org
         db.select().from(gmailAgentActions).where(and(
           eq(gmailAgentActions.orgId, orgId),
           inArray(gmailAgentActions.status, ["executed", "auto_executed", "failed", "rejected", "dismissed"]),
         )).orderBy(desc(gmailAgentActions.createdAt)).limit(25),
 
-        // Upcoming / pending-review follow-up steps
         db.execute(sql`
           SELECT id, recipient_email, recipient_name, subject, sequence_name, sequence_step,
                  scheduled_for, status, approval_status, sent_at, error_message, created_at
           FROM agent_mail_followups
           WHERE organization_id = ${orgId}
             AND status IN ('scheduled', 'processing', 'pending_review')
-          ORDER BY scheduled_for ASC
-          LIMIT 25
+          ORDER BY scheduled_for ASC LIMIT 25
         `).catch(() => []),
 
-        // Recently sent/failed follow-ups
         db.execute(sql`
           SELECT id, recipient_email, subject, sequence_name, sequence_step,
                  status, sent_at, error_message
           FROM agent_mail_followups
           WHERE organization_id = ${orgId}
             AND status IN ('sent', 'failed', 'cancelled', 'skipped')
-          ORDER BY COALESCE(sent_at, updated_at) DESC
-          LIMIT 15
+          ORDER BY COALESCE(sent_at, updated_at) DESC LIMIT 15
         `).catch(() => []),
 
         db.select().from(orgAiGovernanceSettings)
           .where(eq(orgAiGovernanceSettings.orgId, orgId)).limit(1)
           .catch(() => [] as any[]),
 
-        // This org's Kevin inbox label
+        // This org's Kevin inbox label — server-resolved org only, no client input
         db.execute(sql`
-          SELECT label_name, label_color, created_at, notified_at
+          SELECT label_name, label_color, sync_status, agentmail_label_id,
+                 last_sync_attempt, synced_at, last_error, retry_count, created_at, updated_at
           FROM kevin_org_inbox_labels
           WHERE org_id = ${orgId}
           LIMIT 1
@@ -185,9 +324,8 @@ export function registerKevinInboxRoutes(app: Express, isAuthenticated: any, req
       const sentFollowups = rows(sentFollowupsRaw);
       const governance: any = Array.isArray(governanceRows) ? governanceRows[0] : null;
       const emergencyPaused = governance?.emergencyPauseEnabled === true;
-      const orgLabel: any = rows(labelRows)[0] ?? null;
+      const labelRow: any = rows(labelRows)[0] ?? null;
 
-      // Active automation sequences summary
       const sequenceMap = new Map<string, { sequenceName: string; scheduledSteps: number; nextScheduledFor: string | null }>();
       for (const f of followups) {
         const key = f.sequence_name ?? "default";
@@ -198,7 +336,7 @@ export function registerKevinInboxRoutes(app: Express, isAuthenticated: any, req
         sequenceMap.set(key, entry);
       }
 
-      // Normalise AgentMail thread shape — API may return slightly different fields
+      // Normalize AgentMail thread shape — ordered newest-first as returned by API
       const kevinThreads = kevinThreadsResult.threads.map((t: any) => ({
         id: t.id ?? t.thread_id ?? t.threadId,
         subject: t.subject ?? "(no subject)",
@@ -214,19 +352,27 @@ export function registerKevinInboxRoutes(app: Express, isAuthenticated: any, req
 
       res.json({
         kevinInbox: {
-          email: KEVIN_INBOX,
+          email: KEVIN_INBOX_EMAIL,
           configured: kevinThreadsResult.ok,
           threadCount: kevinThreads.length,
           threads: kevinThreads,
-          error: kevinThreadsResult.error ?? null,
+          // errorKind is surfaced for diagnostics but NEVER contains credentials
+          errorKind: kevinThreadsResult.errorKind ?? null,
+          errorMessage: kevinThreadsResult.errorMessage ?? null,
         },
-        orgLabel: orgLabel
-          ? {
-              labelName: orgLabel.label_name,
-              labelColor: orgLabel.label_color,
-              createdAt: orgLabel.created_at,
-            }
-          : null,
+        // Truthful label status — pending_vm means Kevin still needs to create it on his VM
+        orgLabel: labelRow ? {
+          labelName: labelRow.label_name,
+          labelColor: labelRow.label_color,
+          syncStatus: labelRow.sync_status as LabelSyncStatus,
+          agentmailLabelId: labelRow.agentmail_label_id ?? null,
+          lastSyncAttempt: labelRow.last_sync_attempt ?? null,
+          syncedAt: labelRow.synced_at ?? null,
+          lastError: labelRow.last_error ?? null,
+          retryCount: labelRow.retry_count ?? 0,
+          createdAt: labelRow.created_at,
+        } : null,
+        // Pending outbound drafts Kevin created — distinct from inbound threads
         approvals: pendingApprovals.map((a) => ({
           id: a.id,
           actionType: a.actionType,
@@ -252,28 +398,18 @@ export function registerKevinInboxRoutes(app: Express, isAuthenticated: any, req
         })),
         recentActivity: [
           ...recentActions.map((a) => ({
-            id: a.id,
-            kind: "email_action" as const,
-            subject: a.subject,
-            recipientEmail: a.recipientEmail,
-            status: a.status,
-            errorMessage: a.errorMessage,
+            id: a.id, kind: "email_action" as const,
+            subject: a.subject, recipientEmail: a.recipientEmail,
+            status: a.status, errorMessage: a.errorMessage,
             at: a.executedAt ?? a.createdAt,
           })),
           ...sentFollowups.map((f) => ({
-            id: f.id,
-            kind: "followup" as const,
-            subject: f.subject,
-            recipientEmail: f.recipient_email,
-            status: f.status,
-            errorMessage: f.error_message,
-            at: f.sent_at,
+            id: f.id, kind: "followup" as const,
+            subject: f.subject, recipientEmail: f.recipient_email,
+            status: f.status, errorMessage: f.error_message, at: f.sent_at,
           })),
         ].sort((a, b) => new Date(b.at ?? 0).getTime() - new Date(a.at ?? 0).getTime()).slice(0, 25),
-        automations: {
-          emergencyPaused,
-          sequences: Array.from(sequenceMap.values()),
-        },
+        automations: { emergencyPaused, sequences: Array.from(sequenceMap.values()) },
         counts: {
           pendingApprovals: pendingApprovals.length,
           kevinThreads: kevinThreads.length,

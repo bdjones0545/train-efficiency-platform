@@ -15,6 +15,10 @@ description: How the Kevin FAB/drawer, /api/kevin/inbox, chat blocks-SSE, and na
 - **Kevin's email inbox is `kevin@trainefficiency.com` (AgentMail, NOT Gmail)**. The Kevin Inbox UI shows threads from that inbox as the primary section, plus pending approval drafts Kevin created (stored in gmail_agent_actions). AgentMail creds: `AGENTMAIL_API_KEY` + `AGENTMAIL_ORG_DOMAIN=trainefficiency.com` — both set in env.
 - **Org label pattern**: when a new org is provisioned via `ensureOrgAiInfrastructure`, a row is upserted in `kevin_org_inbox_labels` (org_id, label_name) so Kevin knows to create a matching label in his VM inbox. `ensureKevinOrgLabel(orgId, orgName?)` is exported from kevin-inbox-routes.ts.
 - AgentMail v0 API is inbound-only — outbound via `/inboxes/{email}/emails` returns 404. All confirmed outbound uses gmail_agent_actions approval queue.
+- **kevin_org_inbox_labels** has full sync-status schema: sync_status (pending_vm/created/failed/unsupported), agentmail_label_id, last_sync_attempt, synced_at, last_error, retry_count, updated_at, UNIQUE(org_id). Default is pending_vm — only markKevinLabelCreated() sets it to 'created'. Label never auto-promotes itself.
+- **Single-approve TOCTOU race fixed**: approve handler now does atomic UPDATE...WHERE executedAt IS NULL...RETURNING to claim the row BEFORE calling gmailSendEmail. If 0 rows returned → 409. Send guard block reverts the claim (sets executedAt=NULL, status back to original). Matches the existing bulk-approve pattern.
+- **org-ai-infrastructure sql alias bug**: file imports `sql as drizzleSql` — never use bare `sql` in that file; always use `drizzleSql`.
+- **Test suite**: 34 tests in server/tests/kevin-inbox-label.test.ts covering L(label), I(inbox), T(tenant isolation), A(approval safety) series. Run: `npx tsx server/tests/kevin-inbox-label.test.ts`
 
 # Org isolation lessons
 

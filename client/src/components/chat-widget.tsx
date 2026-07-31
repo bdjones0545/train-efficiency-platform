@@ -442,11 +442,20 @@ function InboxTab({ onOpenRoute }: { onOpenRoute: (route: string) => void }) {
           <span className="text-[9px] text-zinc-600 font-mono">kevin@trainefficiency.com</span>
         </div>
 
-        {/* Org label badge */}
+        {/* Org label badge — truthful status only */}
         {orgLabel && (
-          <div className="flex items-center gap-1.5 mb-2 bg-zinc-800/60 border border-zinc-700/60 rounded-lg px-2.5 py-1.5">
-            <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">Your label:</span>
-            <span className="text-[11px] font-mono font-semibold text-green-300">{orgLabel.labelName}</span>
+          <div className="flex items-center justify-between gap-2 mb-2 bg-zinc-800/60 border border-zinc-700/60 rounded-lg px-2.5 py-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider shrink-0">Your label:</span>
+              <span className="text-[11px] font-mono font-semibold text-green-300 truncate">{orgLabel.labelName}</span>
+            </div>
+            {orgLabel.syncStatus === "created" ? (
+              <span className="text-[9px] font-semibold text-green-400 bg-green-500/15 px-1.5 py-0.5 rounded-full shrink-0">Created</span>
+            ) : orgLabel.syncStatus === "failed" ? (
+              <span className="text-[9px] font-semibold text-red-400 bg-red-500/15 px-1.5 py-0.5 rounded-full shrink-0">Failed</span>
+            ) : (
+              <span className="text-[9px] font-semibold text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded-full shrink-0">Pending VM</span>
+            )}
           </div>
         )}
 

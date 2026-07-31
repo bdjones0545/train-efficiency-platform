@@ -25867,11 +25867,20 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
       const { subject: overrideSubject, body: overrideBody, coachingFeedbackText, feedbackTags } = req.body ?? {};
       const [proposal] = await db.select().from(gmailAgentActions).where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId))).limit(1);
       if (!proposal) return res.status(404).json({ message: "Proposal not found" });
-      if (proposal.executedAt) return res.status(409).json({ message: "Already executed" });
       if (!proposal.recipientEmail) return res.status(400).json({ message: "No recipient email" });
+      if ((proposal.status as string) === "blocked") return res.status(422).json({ message: "Cannot approve a blocked action — blocked by governance policy" });
+      // Atomic race-free claim: only the first concurrent request wins.
+      // Sets executedAt immediately so no second request can pass the null check.
+      const [claimed] = await db.update(gmailAgentActions)
+        .set({ status: "executing" as any, executedAt: new Date() })
+        .where(and(eq(gmailAgentActions.id, id), eq(gmailAgentActions.orgId, orgId), isNull(gmailAgentActions.executedAt)))
+        .returning({ id: gmailAgentActions.id });
+      if (!claimed) return res.status(409).json({ message: "Already executed — concurrent request claimed this approval first" });
       const { checkHumanApprovedSendGuards } = await import("./services/send-guard-service");
       const sendGuard = await checkHumanApprovedSendGuards(orgId, proposal.recipientEmail);
       if (sendGuard.blocked) {
+        // Revert claim so the draft can be retried after the block is resolved
+        await db.update(gmailAgentActions).set({ status: proposal.status as any, executedAt: null as any }).where(eq(gmailAgentActions.id, id));
         return res.status(sendGuard.blockType === "emergency_pause" ? 503 : 422).json({ message: sendGuard.reason, blockType: sendGuard.blockType });
       }
       const { gmailSendEmail: sendEmail } = await import("./services/gmail-agent-service");
@@ -25881,7 +25890,7 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
       const isEdited = !!(overrideBody || overrideSubject);
       const [feedbackRow] = await Promise.all([
         db.insert(agentMessageFeedback).values({ orgId, proposalId: id, leadId: proposal.leadId ?? null, agentName: proposal.createdByAgent ?? null, messageType: proposal.actionType.replace("propose_draft:", ""), originalSubject: proposal.subject ?? null, originalBody: proposal.bodyPreview ?? null, editedSubject: isEdited ? subject : null, editedBody: isEdited ? body : null, decision: isEdited ? "edited_and_approved" : "approved", reviewedBy: userId, outcome: "sent", coachingFeedbackText: coachingFeedbackText ?? null, feedbackTags: feedbackTags ?? null, communicationDomain: proposal.communicationDomain ?? "athlete_lead" } as any).returning(),
-        db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, executedAt: new Date(), result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, id)),
+        db.update(gmailAgentActions).set({ status: "executed", approvedBy: userId, result: { messageId, threadId } as any }).where(eq(gmailAgentActions.id, id)),
       ]);
       if (feedbackRow[0]?.id && (coachingFeedbackText || (feedbackTags?.length))) {
         const { extractMessageLearningFromFeedback } = await import("./services/message-learning-service");
