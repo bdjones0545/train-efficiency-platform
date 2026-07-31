@@ -1,0 +1,811 @@
+# TrainEfficiency Full Functional Reliability Audit
+
+The Kevin finalization sprint is complete, but TrainEfficiency is not ready for deployment until every existing user-facing workflow has been tested and repaired.
+
+We already know at least one existing failure:
+
+* Attendance Tracker configuration appears to save, but the save operation fails or does not persist correctly.
+
+This task is a full functional audit of the existing application.
+
+Do not add major new features.
+
+Do not redesign the architecture.
+
+Do not stop after identifying problems.
+
+Systematically test every user-facing feature, trace each failure to its root cause, fix it, add regression coverage, and continue until the application has no known broken production workflows.
+
+---
+
+# Primary Objective
+
+Verify that every visible feature:
+
+* Loads correctly.
+* Reads real data.
+* Saves correctly.
+* Persists after refresh.
+* Updates the UI truthfully.
+* Respects organization boundaries.
+* Handles permissions correctly.
+* Produces clear errors when it cannot complete.
+* Has no dead buttons or silent failures.
+* Works in the production build.
+
+A feature is not considered working merely because the page renders.
+
+Every create, update, delete, approve, reject, pause, resume, configure, assign, schedule, upload, filter, search, and navigation action must be exercised.
+
+---
+
+# 1. Start With the Known Attendance Tracker Failure
+
+Reproduce and fix the Attendance Tracker configuration save failure first.
+
+Audit the entire configuration path:
+
+* Frontend form state.
+* Save button behavior.
+* Request payload.
+* API endpoint.
+* Request validation.
+* Organization resolution.
+* Permission checks.
+* Database schema.
+* Insert or update query.
+* Upsert behavior.
+* Returned response.
+* Frontend success handling.
+* Cache invalidation.
+* Data refetch.
+* Persistence after browser refresh.
+* Persistence after server restart.
+* Error presentation.
+* Audit logging if applicable.
+
+Confirm whether the current failure is caused by:
+
+* Incorrect endpoint.
+* Payload field mismatch.
+* Missing organization context.
+* Wrong database column names.
+* Validation rejecting hidden or undefined fields.
+* Frontend expecting the wrong response shape.
+* A swallowed server exception.
+* Missing migration.
+* Failed upsert conflict target.
+* Stale query cache.
+* Optimistic UI showing a false success.
+* Permission mismatch.
+* Feature flag mismatch.
+
+Fix the root cause rather than patching only the visible symptom.
+
+Add a regression test proving:
+
+1. An authorized organization user opens Attendance Tracker settings.
+2. Changes configuration.
+3. Saves.
+4. Receives confirmed success.
+5. Refreshes the page.
+6. Sees the saved configuration.
+7. Another organization cannot read or modify it.
+
+---
+
+# 2. Build a Complete Feature Inventory
+
+Inspect:
+
+* Route definitions.
+* Sidebar and navigation menus.
+* Dashboard cards.
+* Buttons and dropdown actions.
+* Forms.
+* Dialogs.
+* Tabs.
+* API routes.
+* Database tables.
+* Feature flags.
+* Existing tests.
+* Admin-only interfaces.
+* Organization interfaces.
+* Coach interfaces.
+* Athlete and client interfaces.
+* Mobile-only interactions.
+* Kevin capabilities that invoke existing workflows.
+
+Create a feature inventory grouped by functional area.
+
+For every feature, record:
+
+* Route.
+* User role.
+* Primary action.
+* API endpoint.
+* Database or external dependency.
+* Current test coverage.
+* Current status:
+
+  * Working
+  * Broken
+  * Partially working
+  * Disconnected
+  * Hidden
+  * Deprecated
+  * Not testable without credentials
+
+Do not rely only on route names. Inspect what each screen actually allows the user to do.
+
+---
+
+# 3. Audit Every Functional Area
+
+At minimum, test all currently present areas below.
+
+## Authentication and Organization Access
+
+* Login.
+* Logout.
+* Session persistence.
+* Password or authentication recovery where supported.
+* Organization selection.
+* Organization membership.
+* Role enforcement.
+* Unauthorized route handling.
+* Cross-organization isolation.
+* Expired-session behavior.
+
+## Dashboard
+
+* Metrics load.
+* Counts match source records.
+* Cards navigate correctly.
+* Alerts are actionable.
+* No stale or placeholder data.
+* Empty states work.
+* Errors are visible.
+
+## Attendance Tracker
+
+* Configuration save.
+* Configuration edit.
+* QR generation.
+* QR check-in.
+* Manual check-in.
+* Attendance history.
+* Filters.
+* Reward tiers.
+* Coach summaries.
+* Team attendance.
+* Athlete attendance.
+* Duplicate check-in prevention.
+* Organization scoping.
+
+## Scheduling and Calendar
+
+* Day, week, and month views.
+* Create session.
+* Edit session.
+* Reschedule session.
+* Delete one session.
+* Create recurring session.
+* Edit recurring session.
+* Delete one occurrence.
+* Delete full recurring series.
+* Coach assignment.
+* Athlete assignment.
+* Team assignment.
+* Capacity limits.
+* Availability.
+* Time zones.
+* Conflict detection.
+* Past-session behavior.
+* Refresh persistence.
+* Kevin-created scheduling actions.
+
+## Athletes and Clients
+
+* Create athlete.
+* Edit athlete.
+* Archive or delete where supported.
+* Profile details.
+* Notes.
+* Attendance.
+* Programs.
+* Progress.
+* PR tracking.
+* Team assignment.
+* Search.
+* Filters.
+* Pagination.
+* File or image upload where supported.
+
+## Teams and Groups
+
+* Create team.
+* Edit team.
+* Add and remove members.
+* Team scheduling.
+* Team attendance.
+* Group sessions.
+* Capacity.
+* Team-level permissions.
+* Empty teams.
+* Archived teams.
+
+## Leads and CRM
+
+* Lead creation.
+* Lead editing.
+* Lead status changes.
+* Lead assignment.
+* Lead notes.
+* Search and filtering.
+* Lead capture forms.
+* Team training leads.
+* Athlete leads.
+* Follow-up tasks.
+* Opportunity inbox.
+* Duplicate lead handling.
+* Lead conversion.
+* Kevin lead visibility.
+
+## Kevin Chat
+
+* Chat loads.
+* Messages persist where intended.
+* Navigation actions.
+* Read-only requests.
+* Scheduling actions.
+* Lead actions.
+* Clarification requests.
+* Approval requests.
+* Agent delegation.
+* Job progress.
+* Failure handling.
+* Refresh during an active job.
+* Organization isolation.
+
+## Kevin Inbox and Email Approvals
+
+* Inbox aggregation.
+* Draft visibility.
+* Approval.
+* Rejection.
+* Follow-up approval.
+* Follow-up cancellation.
+* Pause automation.
+* Resume automation.
+* Send history.
+* Failure history.
+* Disabled-email behavior.
+* Duplicate prevention.
+* Cross-organization isolation.
+* Refresh persistence.
+
+## Workout Builder and Programs
+
+* Create workout.
+* Edit workout.
+* Save draft.
+* Publish or assign.
+* Exercise selection.
+* Sets, reps, load, duration, and notes.
+* Program templates.
+* Athlete assignment.
+* Team assignment.
+* Copy or duplicate.
+* Delete.
+* Version persistence.
+* Refresh behavior.
+* Validation errors.
+
+## PR Tracker and Performance Data
+
+* Add record.
+* Edit record.
+* Delete or invalidate record where supported.
+* Exercise selection.
+* Unit handling.
+* Athlete history.
+* Team history.
+* Charts.
+* Filters.
+* Duplicate records.
+* Invalid values.
+* Organization scoping.
+
+## Nutrition
+
+* Create and edit nutrition records.
+* Assign plans.
+* Save configuration.
+* Athlete visibility.
+* Coach visibility.
+* Progress tracking.
+* Empty states.
+* Permissions.
+* Persistence.
+
+## Notifications
+
+* Notification creation.
+* Read and unread states.
+* Mark as read.
+* Deep links.
+* Organization filtering.
+* Notification preferences.
+* Failure behavior.
+* Duplicate notifications.
+
+## Command Center, Attention Inbox, and Jobs
+
+* Queue loading.
+* Correct status counts.
+* Open job.
+* Retry job.
+* Cancel job where supported.
+* Approval workflows.
+* Attention resolution.
+* Durable status after refresh.
+* Failed-job details.
+* No fake completion states.
+
+## Agent and Automation Settings
+
+* Save configuration.
+* Feature enable and disable.
+* Capability settings.
+* Organization-specific overrides.
+* Pause controls.
+* Emergency stop.
+* Server-side organization resolution.
+* Persistence after refresh.
+* Correct default values.
+* No client-trusted organization IDs.
+
+## Account, Organization, and General Settings
+
+* Organization profile.
+* Branding.
+* User profile.
+* Permissions.
+* Staff invitations.
+* Role changes.
+* Remove user.
+* Billing settings where present.
+* Notification settings.
+* Save and persistence.
+* Validation.
+* Cancel behavior.
+
+## Onboarding
+
+* All active onboarding routes.
+* `/client/onboarding` 404.
+* Redirects.
+* Completion state.
+* Resume behavior.
+* Organization setup.
+* Initial configuration.
+* Dead or outdated onboarding links.
+
+Determine whether `/client/onboarding` should:
+
+* Be restored.
+* Redirect to the canonical onboarding route.
+* Be removed from all navigation and links.
+
+Do not leave a known broken route without an explicit decision.
+
+---
+
+# 4. Detect Silent Failures
+
+Search the codebase for patterns that can create false success:
+
+* Empty `catch` blocks.
+* `catch` blocks that only log.
+* Mutations that do not check `response.ok`.
+* API calls that assume success.
+* Toast success before server confirmation.
+* Optimistic updates without rollback.
+* Unhandled promise rejections.
+* Database errors converted into empty arrays.
+* Generic `200` responses after failed operations.
+* SPA HTML returned from API calls.
+* `console.error` without user-facing failure.
+* TODO or placeholder handlers.
+* Disabled buttons without explanation.
+* Buttons with no `onClick`.
+* Forms without connected submit handlers.
+* Stub endpoints.
+* Mock data in production code.
+* Hardcoded organization IDs.
+* Client-provided organization IDs.
+* Incorrect cache keys.
+* Missing query invalidation.
+* Incorrect route paths.
+* Request and response schema mismatches.
+
+Produce a list of every silent-failure risk found and resolve each production-relevant one.
+
+---
+
+# 5. API Contract Audit
+
+For every frontend mutation:
+
+* Confirm the endpoint exists.
+* Confirm method matches.
+* Confirm payload names match.
+* Confirm validation schema matches.
+* Confirm authentication is enforced.
+* Confirm organization is resolved server-side.
+* Confirm response shape matches frontend expectations.
+* Confirm errors use meaningful status codes.
+* Confirm success is only returned after persistence.
+* Confirm mutation is idempotent where appropriate.
+* Confirm frontend invalidates and refetches the correct data.
+
+Create shared schemas where useful, but do not introduce unnecessary abstraction.
+
+---
+
+# 6. Database Persistence Audit
+
+For every save operation:
+
+* Confirm the expected table exists.
+* Confirm migrations are present.
+* Confirm defaults are correct.
+* Confirm nullable fields match UI behavior.
+* Confirm unique constraints support intended upserts.
+* Confirm foreign keys are correct.
+* Confirm organization ownership is enforced.
+* Confirm transactions are used for multi-step changes.
+* Confirm deleted or archived records behave correctly.
+* Confirm data survives server restart.
+* Confirm failures roll back cleanly.
+
+Audit recent schema changes for migrations that exist locally but may not be included in production deployment.
+
+---
+
+# 7. Role and Permission Matrix
+
+Test at least these roles where they exist:
+
+* Platform admin.
+* Organization owner.
+* Organization admin.
+* Coach or staff.
+* Athlete or client.
+* Unauthenticated user.
+
+For each important feature, verify:
+
+* Visible when authorized.
+* Hidden or disabled when unauthorized.
+* Server rejects unauthorized direct API access.
+* Organization ownership is enforced.
+* Kevin cannot bypass role restrictions.
+
+Do not treat hiding a button as authorization.
+
+---
+
+# 8. Browser-Based Workflow Testing
+
+Use browser testing to exercise the application as a user.
+
+Do not rely only on direct API tests.
+
+For each primary area:
+
+1. Navigate through the actual UI.
+2. Perform the action.
+3. Observe the success or error state.
+4. Refresh.
+5. Confirm persistence.
+6. Inspect the database where useful.
+7. Verify another organization cannot access the change.
+8. Clean up test data.
+
+Capture failures as reproducible cases before fixing them.
+
+After fixing, rerun the same workflow.
+
+---
+
+# 9. Automated Regression Coverage
+
+Add regression tests for every repaired production failure.
+
+Prioritize:
+
+* Configuration saves.
+* Create and edit forms.
+* Delete actions.
+* Approval actions.
+* Scheduling.
+* Recurring scheduling.
+* Attendance configuration.
+* Lead status and follow-up.
+* Kevin navigation and commands.
+* Email approval lifecycle.
+* Organization settings.
+* Permission enforcement.
+* Cross-organization isolation.
+* API route correctness.
+* Persistence after refresh.
+
+Do not create shallow tests that only confirm a component renders.
+
+Tests should verify real outcomes.
+
+---
+
+# 10. UI Reliability and Truthfulness
+
+Every mutation must have:
+
+* Disabled state while submitting.
+* Loading indicator where appropriate.
+* Confirmed success state.
+* Useful failure message.
+* No duplicate submission.
+* No stale values after success.
+* No false success toast.
+* Cancel behavior that does not save.
+* Unsaved-change protection where important.
+
+Every page must have:
+
+* Loading state.
+* Empty state.
+* Error state.
+* Permission-denied state where applicable.
+
+---
+
+# 11. External Integration Audit
+
+For each external dependency:
+
+* Kevin or Hermes.
+* AgentMail.
+* Gmail or email provider.
+* Cloudflare tunnel.
+* Slack.
+* Calendar integrations.
+* Composio.
+* Storage.
+* Payment provider.
+* Any webhook integration.
+
+Verify:
+
+* Credentials are validated.
+* Disabled integrations show truthful states.
+* Failures do not claim success.
+* Retries are safe.
+* Webhooks are authenticated.
+* Duplicate events are idempotent.
+* Timeouts are handled.
+* Local and production paths match.
+* Missing credentials do not crash unrelated features.
+
+Do not mark an integration working unless it has been tested or is explicitly labeled disabled.
+
+---
+
+# 12. Production Build Verification
+
+After repairs:
+
+* Run the complete test suite.
+* Run TypeScript checks.
+* Run linting if configured.
+* Run the production build.
+* Restart the production-style server.
+* Test important API routes against the built bundle.
+* Confirm `/api/*` failures return JSON rather than SPA HTML.
+* Verify migrations from a clean database where feasible.
+* Verify no required generated file is uncommitted.
+* Verify environment variable documentation.
+* Verify no development-only code is active.
+
+---
+
+# 13. Severity Classification
+
+Classify every discovered issue:
+
+## Critical
+
+* Data loss.
+* Cross-organization access.
+* Unauthorized mutation.
+* Payments incorrectly handled.
+* Emails sent without approval.
+* Production startup failure.
+
+## High
+
+* Core feature cannot save.
+* Scheduling failure.
+* Attendance failure.
+* Lead workflow failure.
+* False success state.
+* Job completion lost.
+* Configuration does not persist.
+
+## Medium
+
+* Broken filter.
+* Incorrect count.
+* Stale data.
+* Invalid route.
+* Confusing permission behavior.
+
+## Low
+
+* Cosmetic issue.
+* Minor copy problem.
+* Non-blocking layout issue.
+
+Fix all Critical and High issues.
+
+Fix Medium issues that affect normal workflows.
+
+Document any intentionally deferred Low issues.
+
+---
+
+# 14. Execution Rules
+
+* Do not stop after producing an audit.
+* Continue directly into implementation.
+* Fix issues in small, logically grouped changes.
+* Re-test each workflow after repair.
+* Do not rewrite working systems.
+* Do not introduce parallel services.
+* Use existing domain services and schemas.
+* Preserve organization isolation.
+* Do not claim success based only on mocked tests.
+* Do not describe a disabled integration as working.
+* Do not leave silent failures.
+* Do not create success toasts before persistence is confirmed.
+* Continue until all Critical and High failures are resolved or a genuine external blocker prevents completion.
+
+When encountering an external blocker, continue fixing unrelated issues rather than stopping the entire audit.
+
+---
+
+# 15. Recommended Audit Order
+
+1. Attendance Tracker configuration failure.
+2. Authentication and organization access.
+3. Global settings and configuration saves.
+4. Scheduling and recurring sessions.
+5. Leads and CRM.
+6. Kevin Chat and Kevin Inbox.
+7. Athlete and team management.
+8. Workout Builder.
+9. PR Tracker.
+10. Attendance check-in flows.
+11. Notifications.
+12. Jobs and approvals.
+13. Remaining settings.
+14. Onboarding and broken routes.
+15. External integrations.
+16. Full production build.
+17. Complete browser regression pass.
+
+---
+
+# 16. Completion Criteria
+
+This task is complete only when:
+
+* Attendance Tracker configuration saves and persists correctly.
+* Every visible save button has been tested.
+* Every visible create, edit, delete, approve, reject, pause, resume, and cancel action has been tested.
+* No Critical issue remains.
+* No High issue remains.
+* No known false-success behavior remains.
+* Cross-organization isolation passes.
+* Role permissions pass.
+* Core workflows persist after refresh.
+* The production build passes.
+* The complete test suite passes.
+* Important workflows pass browser-based validation.
+* The `/client/onboarding` route has been fixed, redirected, or intentionally removed.
+* Every remaining issue is documented with severity and reason for deferral.
+
+---
+
+# 17. Required Final Report
+
+Return a detailed report with:
+
+## Executive Summary
+
+* Overall readiness.
+* Number of features audited.
+* Number of workflows tested.
+* Number of issues discovered.
+* Number fixed.
+* Number remaining.
+
+## Attendance Tracker
+
+* Root cause of the configuration save failure.
+* Files changed.
+* Fix implemented.
+* Tests performed.
+* Persistence verification.
+
+## Issues Found
+
+For every issue:
+
+* Severity.
+* Feature.
+* Symptom.
+* Root cause.
+* Fix.
+* Regression test.
+* Final status.
+
+## Feature Matrix
+
+For each functional area:
+
+* Working.
+* Partially working.
+* Disabled.
+* Blocked.
+* Not applicable.
+
+## Security
+
+* Organization isolation findings.
+* Permission findings.
+* Authorization fixes.
+
+## API and Persistence
+
+* Contract mismatches fixed.
+* Database issues fixed.
+* Cache invalidation fixes.
+* Silent failures removed.
+
+## Testing
+
+* Unit tests.
+* Integration tests.
+* Browser tests.
+* End-to-end tests.
+* Commands run.
+* Final results.
+
+## Production Readiness
+
+* TypeScript result.
+* Build result.
+* Migration result.
+* Startup result.
+* Environment requirements.
+* External integration status.
+
+## Remaining Risks
+
+List every unresolved issue truthfully.
+
+The goal is not to prove that pages render.
+
+The goal is to prove that TrainEfficiency’s existing features actually work from the user interface through the server and database, survive refreshes, respect permissions, and behave reliably in deployment.

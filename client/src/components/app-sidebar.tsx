@@ -443,6 +443,7 @@ export function AppSidebar() {
     queryKey: ["/api/athletic/programs", orgId],
     queryFn: async () => {
       const res = await fetch(`/api/athletic/programs?orgId=${orgId}`);
+      if (!res.ok) return [];
       return res.json();
     },
     enabled: !!orgId && athleticEnabled,

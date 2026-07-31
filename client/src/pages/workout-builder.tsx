@@ -191,7 +191,7 @@ function ProgramDetail({ programId, orgId, isCoach, onBack, orgSlug, defaultAthl
 
   const refineMutation = useMutation({
     mutationFn: () => apiRequest("POST", `/api/org/workout-builder/programs/${programId}/edit`, { instruction: refineInstruction }),
-    onSuccess: () => { toast({ title: "Program refined" }); setShowRefineDialog(false); setRefineInstruction(""); refetch(); },
+    onSuccess: () => { toast({ title: "Program refined" }); setShowRefineDialog(false); setRefineInstruction(""); queryClient.invalidateQueries({ queryKey: ["/api/org/workout-builder/bootstrap"] }); refetch(); },
     onError: () => toast({ title: "Refinement failed", variant: "destructive" }),
   });
 
@@ -212,7 +212,7 @@ function ProgramDetail({ programId, orgId, isCoach, onBack, orgSlug, defaultAthl
 
   const saveTitleMutation = useMutation({
     mutationFn: () => apiRequest("PATCH", `/api/org/workout-builder/programs/${programId}`, { title: titleValue }),
-    onSuccess: () => { setEditingTitle(false); refetch(); },
+    onSuccess: () => { setEditingTitle(false); queryClient.invalidateQueries({ queryKey: ["/api/org/workout-builder/bootstrap"] }); refetch(); },
   });
 
   if (isLoading) return <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin" /></div>;

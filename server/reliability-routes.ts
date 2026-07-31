@@ -253,7 +253,7 @@ const CHECKS: { name: string; run: () => Promise<{ details?: string }>; failWhen
   },
   {
     name: "http_open_sessions",
-    run: async () => httpProbe("http_open_sessions", "/api/open-sessions", { acceptStatuses: [200, 401, 403] }),
+    run: async () => httpProbe("http_open_sessions", "/api/sessions/open", { acceptStatuses: [200, 401, 403] }),
   },
 ];
 

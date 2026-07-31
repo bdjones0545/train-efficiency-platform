@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/use-auth";
+import { authenticatedFetch } from "@/lib/authenticatedFetch";
 import {
   ArrowLeft, QrCode, Settings, Trophy, Users, Save, Plus, Trash2,
   ExternalLink, Copy, Check, Loader2, Mail, UserPlus, Clock, Bell,
@@ -83,11 +84,7 @@ export default function AttendanceProgramEditorPage() {
 
   const { data, isLoading } = useQuery<any>({
     queryKey: ["/api/attendance-programs", programId, "config"],
-    queryFn: async () => {
-      const r = await fetch(`/api/attendance-programs/${programId}/config`);
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
+    queryFn: () => authenticatedFetch(`/api/attendance-programs/${programId}/config`),
     enabled: !!programId,
   });
 
@@ -95,32 +92,20 @@ export default function AttendanceProgramEditorPage() {
 
   const { data: coachesData } = useQuery<any[]>({
     queryKey: ["/api/coaches", orgId],
-    queryFn: async () => {
-      const r = await fetch(`/api/coaches?organizationId=${orgId}`);
-      if (!r.ok) return [];
-      return r.json();
-    },
+    queryFn: () => authenticatedFetch<any[]>(`/api/coaches?organizationId=${orgId}`).catch(() => []),
     enabled: !!orgId,
   });
   const coaches: any[] = coachesData || [];
 
   const { data: recipientsData } = useQuery<any>({
     queryKey: ["/api/attendance-programs", programId, "report-recipients"],
-    queryFn: async () => {
-      const r = await fetch(`/api/attendance-programs/${programId}/report-recipients`);
-      if (!r.ok) return { recipients: [] };
-      return r.json();
-    },
+    queryFn: () => authenticatedFetch(`/api/attendance-programs/${programId}/report-recipients`).catch(() => ({ recipients: [] })),
     enabled: !!programId,
   });
 
   const { data: sgStatus } = useQuery<{ configured: boolean; fromEmail?: string }>({
     queryKey: ["/api/attendance-programs", programId, "reports/sendgrid-status"],
-    queryFn: async () => {
-      const r = await fetch(`/api/attendance-programs/${programId}/reports/sendgrid-status`);
-      if (!r.ok) return { configured: false };
-      return r.json();
-    },
+    queryFn: () => authenticatedFetch<{ configured: boolean; fromEmail?: string }>(`/api/attendance-programs/${programId}/reports/sendgrid-status`).catch(() => ({ configured: false })),
     enabled: !!programId,
   });
 
@@ -186,15 +171,11 @@ export default function AttendanceProgramEditorPage() {
   // ── Save mutations ──────────────────────────────────────────────────────────
 
   const saveConfigMutation = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`/api/attendance-programs/${programId}/config`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...config, organizationId: orgId }),
-      });
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
+    mutationFn: () => authenticatedFetch(`/api/attendance-programs/${programId}/config`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...config, organizationId: orgId }),
+    }),
     onSuccess: () => {
       toast({ title: "Settings saved" });
       qc.invalidateQueries({ queryKey: ["/api/attendance-programs", programId, "config"] });
@@ -204,15 +185,11 @@ export default function AttendanceProgramEditorPage() {
   });
 
   const saveFieldsMutation = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`/api/attendance-programs/${programId}/fields`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fields: fields.map((f, i) => ({ ...f, displayOrder: i })), organizationId: orgId }),
-      });
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
+    mutationFn: () => authenticatedFetch(`/api/attendance-programs/${programId}/fields`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fields: fields.map((f, i) => ({ ...f, displayOrder: i })), organizationId: orgId }),
+    }),
     onSuccess: (res) => {
       toast({ title: "Fields saved" });
       if (res.fields) {
@@ -228,15 +205,11 @@ export default function AttendanceProgramEditorPage() {
   });
 
   const saveRewardsMutation = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`/api/attendance-programs/${programId}/rewards`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tiers: rewards.map(r => ({ id: r.id, visitCount: r.visitCount, rewardName: r.rewardName, rewardDescription: r.rewardDescription, active: r.active })), organizationId: orgId }),
-      });
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
+    mutationFn: () => authenticatedFetch(`/api/attendance-programs/${programId}/rewards`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tiers: rewards.map(t => ({ id: t.id, visitCount: t.visitCount, rewardName: t.rewardName, rewardDescription: t.rewardDescription, active: t.active })), organizationId: orgId }),
+    }),
     onSuccess: (res) => {
       toast({ title: "Rewards saved" });
       if (res.tiers) {
@@ -252,15 +225,11 @@ export default function AttendanceProgramEditorPage() {
   });
 
   const saveRecipientsMutation = useMutation({
-    mutationFn: async () => {
-      const r = await fetch(`/api/attendance-programs/${programId}/report-recipients`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ recipients, orgId }),
-      });
-      if (!r.ok) throw new Error("Failed");
-      return r.json();
-    },
+    mutationFn: () => authenticatedFetch(`/api/attendance-programs/${programId}/report-recipients`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ recipients, orgId }),
+    }),
     onSuccess: (res) => {
       toast({ title: "Recipients saved" });
       if (res.recipients) {
@@ -312,12 +281,11 @@ export default function AttendanceProgramEditorPage() {
     const key = `${recipientEmail}:${reportType}`;
     setTestSending(key);
     try {
-      const r = await fetch(`/api/attendance-programs/${programId}/report-recipients/send-test`, {
+      const result = await authenticatedFetch(`/api/attendance-programs/${programId}/report-recipients/send-test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ recipientEmail, reportType }),
       });
-      const result = await r.json();
       if (result.ok) {
         const mid = result.sendgridMessageId ? ` (ID: ${result.sendgridMessageId})` : "";
         toast({ title: "Test email sent", description: `${reportType === "daily" ? "Daily" : "Weekly"} report sent to ${recipientEmail}${mid}` });
@@ -335,11 +303,10 @@ export default function AttendanceProgramEditorPage() {
     setBulkTestSending(reportType);
     setLastBulkResult(null);
     try {
-      const r = await fetch(`/api/attendance-programs/${programId}/reports/send-test-${reportType}`, {
+      const result = await authenticatedFetch(`/api/attendance-programs/${programId}/reports/send-test-${reportType}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
       });
-      const result = await r.json();
       if (!result.sendgridConfigured) {
         const errDetail = result.error || "SendGrid is not configured in this environment.";
         setLastBulkResult({ reportType, recipients: [], error: errDetail });

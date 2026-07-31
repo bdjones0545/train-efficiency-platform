@@ -12,6 +12,7 @@
  */
 
 import type { Express, Request, Response } from "express";
+import { isAuthenticated } from "./replit_integrations/auth";
 import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
@@ -44,7 +45,7 @@ function requireAdmin(req: Request, res: Response): boolean {
 export function registerHermesRoutes(app: Express): void {
 
   // ─── GET /api/hermes/stats ───────────────────────────────────────────────
-  app.get("/api/hermes/stats", async (req: any, res) => {
+  app.get("/api/hermes/stats", isAuthenticated, async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
@@ -57,7 +58,7 @@ export function registerHermesRoutes(app: Express): void {
   });
 
   // ─── GET /api/hermes/health ──────────────────────────────────────────────
-  app.get("/api/hermes/health", async (req: any, res) => {
+  app.get("/api/hermes/health", isAuthenticated, async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
@@ -70,7 +71,7 @@ export function registerHermesRoutes(app: Express): void {
   });
 
   // ─── GET /api/hermes/recommendations ────────────────────────────────────
-  app.get("/api/hermes/recommendations", async (req: any, res) => {
+  app.get("/api/hermes/recommendations", isAuthenticated, async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
@@ -120,7 +121,7 @@ export function registerHermesRoutes(app: Express): void {
   });
 
   // ─── GET /api/hermes/recommendations/:id ────────────────────────────────
-  app.get("/api/hermes/recommendations/:id", async (req: any, res) => {
+  app.get("/api/hermes/recommendations/:id", isAuthenticated, async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
@@ -148,7 +149,7 @@ export function registerHermesRoutes(app: Express): void {
 
   // ─── POST /api/hermes/recommendations/:id/feedback ───────────────────────
   // Deliverable 8 — Recommendation Feedback Loop
-  app.post("/api/hermes/recommendations/:id/feedback", async (req: any, res) => {
+  app.post("/api/hermes/recommendations/:id/feedback", isAuthenticated, async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
@@ -209,7 +210,7 @@ export function registerHermesRoutes(app: Express): void {
 
   // ─── POST /api/hermes/run ────────────────────────────────────────────────
   // Manual trigger for a Hermes intelligence cycle
-  app.post("/api/hermes/run", async (req: any, res) => {
+  app.post("/api/hermes/run", isAuthenticated, async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
@@ -224,7 +225,7 @@ export function registerHermesRoutes(app: Express): void {
 
   // ─── GET /api/hermes/queue ───────────────────────────────────────────────
   // Deliverable 4 — Unified Action Queue read layer
-  app.get("/api/hermes/queue", async (req: any, res) => {
+  app.get("/api/hermes/queue", isAuthenticated, async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
@@ -252,7 +253,7 @@ export function registerHermesRoutes(app: Express): void {
 
   // ─── GET /api/actions/:id/context ───────────────────────────────────────
   // Deliverable 5 — Action Review Context Package
-  app.get("/api/actions/:id/context", async (req: any, res) => {
+  app.get("/api/actions/:id/context", isAuthenticated, async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
@@ -268,7 +269,7 @@ export function registerHermesRoutes(app: Express): void {
 
   // ─── GET /api/hermes/feedback ────────────────────────────────────────────
   // Feedback history for confidence calibration visibility
-  app.get("/api/hermes/feedback", async (req: any, res) => {
+  app.get("/api/hermes/feedback", isAuthenticated, async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);

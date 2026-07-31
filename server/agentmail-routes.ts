@@ -4,6 +4,7 @@
  */
 
 import type { Express } from "express";
+import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import {
@@ -105,8 +106,12 @@ async function ensureAgentMailTables(): Promise<void> {
   }
 }
 
-function getOrgId(req: any): string | null {
-  return req.user?.orgId ?? null;
+async function getOrgId(req: any): Promise<string | null> {
+  try {
+    return await resolveOrgIdOrThrow(req);
+  } catch {
+    return null;
+  }
 }
 
 export async function registerAgentMailRoutes(
@@ -119,7 +124,7 @@ export async function registerAgentMailRoutes(
   // ─── GET /api/agentmail/status ─────────────────────────────────────────────
   app.get("/api/agentmail/status", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const configured = isAgentMailConfigured();
@@ -182,7 +187,7 @@ export async function registerAgentMailRoutes(
   // ─── GET /api/agentmail/inboxes ────────────────────────────────────────────
   app.get("/api/agentmail/inboxes", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       if (!isAgentMailConfigured()) {
@@ -199,7 +204,7 @@ export async function registerAgentMailRoutes(
   // ─── POST /api/agentmail/inboxes/verify ───────────────────────────────────
   app.post("/api/agentmail/inboxes/verify", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       if (!isAgentMailConfigured()) return res.status(503).json({ message: "AgentMail not configured." });
 
@@ -217,7 +222,7 @@ export async function registerAgentMailRoutes(
   // Bulk verify / create all configured agent inboxes in a single call.
   app.post("/api/agentmail/inboxes/verify-all", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       if (!isAgentMailConfigured()) return res.status(503).json({ message: "AgentMail not configured." });
 
@@ -238,7 +243,7 @@ export async function registerAgentMailRoutes(
   // ─── POST /api/agentmail/send ──────────────────────────────────────────────
   app.post("/api/agentmail/send", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       if (!isAgentMailConfigured()) return res.status(503).json({ message: "AgentMail not configured." });
 
@@ -267,7 +272,7 @@ export async function registerAgentMailRoutes(
   // ─── GET /api/agentmail/messages ──────────────────────────────────────────
   app.get("/api/agentmail/messages", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { status, inbox, limit = "50", offset = "0" } = req.query as Record<string, string>;
@@ -302,7 +307,7 @@ export async function registerAgentMailRoutes(
   // ─── GET /api/agentmail/inbound ───────────────────────────────────────────
   app.get("/api/agentmail/inbound", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const {
@@ -349,7 +354,7 @@ export async function registerAgentMailRoutes(
   // ─── GET /api/agentmail/inbound/:id ──────────────────────────────────────
   app.get("/api/agentmail/inbound/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { id } = req.params;
@@ -369,7 +374,7 @@ export async function registerAgentMailRoutes(
   // ─── GET /api/agentmail/inbox-messages ────────────────────────────────────
   app.get("/api/agentmail/inbox-messages", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       if (!isAgentMailConfigured()) return res.json({ configured: false, messages: [] });
 
@@ -386,7 +391,7 @@ export async function registerAgentMailRoutes(
   // ─── POST /api/agentmail/reply ────────────────────────────────────────────
   app.post("/api/agentmail/reply", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       if (!isAgentMailConfigured()) return res.status(503).json({ message: "AgentMail not configured." });
 
@@ -486,7 +491,7 @@ export async function registerAgentMailRoutes(
   // Test/debug endpoint for simulating inbound email payloads
   app.post("/api/agentmail/simulate-inbound", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
       const { testCaseIndex, custom } = req.body;
@@ -520,7 +525,7 @@ export async function registerAgentMailRoutes(
   // ─── POST /api/agentmail/test ─────────────────────────────────────────────
   app.post("/api/agentmail/test", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const orgId = getOrgId(req);
+      const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       if (!isAgentMailConfigured()) {
         return res.status(503).json({ message: "AgentMail not configured. Add AGENTMAIL_API_KEY to Replit Secrets." });
