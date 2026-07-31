@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/authToken";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -322,7 +323,7 @@ export default function AdminGuardiansPage() {
       if (statusFilter !== "all") params.set("status", statusFilter);
       if (inviteFilter !== "all") params.set("inviteStatus", inviteFilter);
       if (searchQuery.trim()) params.set("search", searchQuery.trim());
-      const res = await fetch(`/api/admin/guardians?${params}`);
+      const res = await fetch(`/api/admin/guardians?${params}`, { credentials: "include", headers: { ...getAuthHeaders() } });
       if (!res.ok) throw new Error("Failed to fetch guardians");
       return res.json();
     },

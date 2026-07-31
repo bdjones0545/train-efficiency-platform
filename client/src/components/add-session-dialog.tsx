@@ -265,7 +265,10 @@ export function AddSessionDialog({ initialDate, initialTime, triggerButton, coac
           locations: [...orgLocations, customLocation.trim()],
         });
         queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", addSessionOrgId] });
-      } catch (e) {}
+      } catch (e) {
+        console.warn("[AddSession] Custom location save failed — session will still be created:", e);
+        toast({ title: "Note", description: "New location saved for this session but couldn't be added to your saved locations.", variant: "default" });
+      }
     }
     const body: any = { startAt: startAt.toISOString(), notes, location: finalLocation };
     if (serviceId) {

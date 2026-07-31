@@ -310,7 +310,10 @@ export function EditSessionDialog({ booking, open, onOpenChange }: EditSessionDi
           locations: [...orgLocations, customLocation.trim()],
         });
         queryClient.invalidateQueries({ queryKey: ["/api/organizations/by-id", editSessionOrgId] });
-      } catch (e) {}
+      } catch (e) {
+        console.warn("[EditSession] Custom location save failed — session update will still proceed:", e);
+        toast({ title: "Note", description: "New location saved for this session but couldn't be added to your saved locations.", variant: "default" });
+      }
     }
     const body: any = {
       serviceId,

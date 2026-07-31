@@ -151,6 +151,46 @@ export async function queueObsidianSync(item: ObsidianSyncItem): Promise<void> {
   await enqueue(item);
 }
 
+// ─── Circuit breaker — prevents retry floods when Obsidian is offline ─────────
+
+interface CircuitBreaker {
+  consecutiveFailures: number;
+  openUntil: number | null; // epoch ms; null means closed
+  readonly THRESHOLD: number;   // failures before opening
+  readonly BACKOFF_MS: number;  // how long to stay open
+}
+
+const _circuit: CircuitBreaker = {
+  consecutiveFailures: 0,
+  openUntil: null,
+  THRESHOLD: 3,
+  BACKOFF_MS: 15 * 60 * 1000, // 15 minutes
+};
+
+function circuitIsOpen(): boolean {
+  if (_circuit.openUntil === null) return false;
+  if (Date.now() < _circuit.openUntil) return true;
+  // Half-open: allow one probe through
+  _circuit.openUntil = null;
+  return false;
+}
+
+function recordSuccess(): void {
+  _circuit.consecutiveFailures = 0;
+  _circuit.openUntil = null;
+}
+
+function recordFailure(): void {
+  _circuit.consecutiveFailures++;
+  if (_circuit.consecutiveFailures >= _circuit.THRESHOLD && _circuit.openUntil === null) {
+    _circuit.openUntil = Date.now() + _circuit.BACKOFF_MS;
+    console.warn(
+      `[ObsidianSync] Circuit OPEN after ${_circuit.consecutiveFailures} consecutive failures — ` +
+      `skipping retries for 15 min. Obsidian appears offline.`
+    );
+  }
+}
+
 // ─── Retry queue processor (called by cron) ───────────────────────────────────
 
 const MAX_BATCH = 20;
@@ -169,6 +209,14 @@ export async function processObsidianSyncQueue(): Promise<{
   try {
     const { isObsidianConfigured } = await import("./obsidian-service");
     if (!isObsidianConfigured()) {
+      return { processed: 0, succeeded: 0, failed: 0 };
+    }
+
+    // Circuit breaker: if Obsidian has been consistently offline, skip the
+    // whole batch and emit a single summary log instead of one line per item.
+    if (circuitIsOpen()) {
+      const minutesLeft = Math.ceil((_circuit.openUntil! - Date.now()) / 60_000);
+      console.log(`[ObsidianSync] Circuit open — skipping retry batch (Obsidian offline, ~${minutesLeft}min remaining)`);
       return { processed: 0, succeeded: 0, failed: 0 };
     }
 
@@ -204,6 +252,7 @@ export async function processObsidianSyncQueue(): Promise<{
 
       if (ok) {
         succeeded++;
+        recordSuccess();
         console.log(`✅ [ObsidianSync] Obsidian retry success — ${key}`);
         await db.execute(sql`
           UPDATE obsidian_sync_queue
@@ -213,12 +262,16 @@ export async function processObsidianSyncQueue(): Promise<{
         `).catch(() => {});
       } else {
         failed++;
+        recordFailure();
         const maxAttempts = Number(row.max_attempts);
         const newStatus = attempts >= maxAttempts ? "failed" : "pending";
-        console.log(
-          `❌ [ObsidianSync] Obsidian retry failed (attempt ${attempts}/${maxAttempts}) — ${key}` +
-          (newStatus === "failed" ? " [EXHAUSTED — giving up]" : ""),
-        );
+        // Only log per-item failures if the circuit is still closed (not flooding)
+        if (!circuitIsOpen()) {
+          console.log(
+            `❌ [ObsidianSync] Obsidian retry failed (attempt ${attempts}/${maxAttempts}) — ${key}` +
+            (newStatus === "failed" ? " [EXHAUSTED — giving up]" : ""),
+          );
+        }
         await db.execute(sql`
           UPDATE obsidian_sync_queue
           SET status = ${newStatus}, attempts = ${attempts},
@@ -226,6 +279,8 @@ export async function processObsidianSyncQueue(): Promise<{
               updated_at = NOW()
           WHERE idempotency_key = ${key}
         `).catch(() => {});
+        // If circuit just opened, abort the rest of the batch
+        if (circuitIsOpen()) break;
       }
     }
   } catch (e: any) {

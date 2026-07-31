@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/authToken";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -935,7 +936,7 @@ export default function AdminAthleteOnboardingPage() {
     queryKey: ["/api/admin/athlete-onboarding", statusFilter, needsFilter, searchQuery, alertFilter],
     queryFn: async () => {
       const q = buildQuery();
-      const res = await fetch(`/api/admin/athlete-onboarding${q ? `?${q}` : ""}`);
+      const res = await fetch(`/api/admin/athlete-onboarding${q ? `?${q}` : ""}`, { credentials: "include", headers: { ...getAuthHeaders() } });
       if (!res.ok) throw new Error("Failed to fetch onboarding records");
       return res.json();
     },

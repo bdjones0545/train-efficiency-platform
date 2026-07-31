@@ -257,19 +257,27 @@ function ExerciseMediaModal({ exercise, orgId, onClose, onSaved }: {
     try {
       const vid = embedUrl(youtubeUrl);
       const h = { "Content-Type": "application/json", ...getHeaders(orgId) };
-      await fetch(`/api/org/exercises/${exercise.id}/media`, {
+      const r1 = await fetch(`/api/org/exercises/${exercise.id}/media`, {
         method: "POST", headers: h, credentials: "include",
         body: JSON.stringify({ youtubeUrl: youtubeUrl || null, embeddedVideoUrl: vid || null, gifUrl: gifUrl || null, thumbnailUrl: thumbnailUrl || null, demoType: youtubeUrl ? "youtube" : gifUrl ? "gif" : undefined }),
       });
+      if (!r1.ok) {
+        const msg = await r1.text().catch(() => String(r1.status));
+        throw new Error(msg);
+      }
       const r2 = await fetch(`/api/org/exercises/${exercise.id}`, {
         method: "PATCH", headers: h, credentials: "include",
         body: JSON.stringify({ coachingCues: cues, commonMistakes: mistakes, progressions, regressions }),
       });
+      if (!r2.ok) {
+        const msg = await r2.text().catch(() => String(r2.status));
+        throw new Error(msg);
+      }
       const d2 = await r2.json();
       toast({ title: "Exercise saved" });
       onSaved(d2.exercise ?? exercise);
-    } catch {
-      toast({ title: "Error saving", variant: "destructive" });
+    } catch (err: any) {
+      toast({ title: "Error saving exercise", description: err?.message ?? "Please try again.", variant: "destructive" });
     } finally { setSaving(false); }
   }
 

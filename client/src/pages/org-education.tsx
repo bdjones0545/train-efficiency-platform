@@ -162,6 +162,10 @@ export default function OrgEducationPage() {
   const startModuleMut = useMutation({
     mutationFn: ({ moduleId, pathwayId }: any) =>
       apiRequest("POST", `/api/org/education/modules/${moduleId}/start`, { pathwayId },  headers),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org/education/pathways/modules", effectiveSlug] });
+      queryClient.invalidateQueries({ queryKey: ["/api/org/education/pathways", slug] });
+    },
   });
 
   const submitQuizMut = useMutation({

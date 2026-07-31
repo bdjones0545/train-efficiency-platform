@@ -1,0 +1,434 @@
+# Continue TrainEfficiency Functional Reliability Audit
+
+The first reliability pass found and fixed several important failures:
+
+1. Attendance Tracker saves returned 401 because ten API calls used raw `fetch()` rather than `authenticatedFetch`.
+2. Nine Hermes routes checked `req.user` without first running `isAuthenticated`.
+3. Twelve AgentMail call sites attempted to read `req.user.orgId`, which Replit authentication does not provide, instead of using `resolveOrgIdOrThrow`.
+4. The reliability monitor probed an obsolete API route.
+5. Workout Builder mutations failed to invalidate the program-library bootstrap query.
+6. The athletic-program sidebar query did not check `response.ok`.
+
+These findings demonstrate recurring systemic patterns.
+
+Do not treat the audit as complete.
+
+Continue through the entire repository and eliminate every remaining instance of these failure classes before moving to cosmetic work.
+
+## Immediate instruction
+
+Implement the proposed follow-up tasks numbered 13–15 rather than merely documenting them, unless one requires an external credential or a product decision that cannot be inferred safely.
+
+Then continue with the systematic audit below.
+
+---
+
+# 1. Raw Fetch Authentication Audit
+
+Search all production frontend code for:
+
+```ts
+fetch(
+window.fetch(
+globalThis.fetch(
+```
+
+Classify every occurrence.
+
+For calls to authenticated TrainEfficiency API routes:
+
+* Replace raw `fetch()` with the project’s canonical `authenticatedFetch`.
+* Preserve request headers and body behavior.
+* Ensure JSON content headers are set where required.
+* Check `response.ok`.
+* Parse and surface the server error safely.
+* Do not show success until the server confirms persistence.
+* Prevent duplicate submissions.
+
+Raw `fetch()` may remain only when justified, such as:
+
+* Public unauthenticated endpoints.
+* Signed external URLs.
+* File or blob retrieval requiring different behavior.
+* Third-party services intentionally called from the browser.
+
+Document every retained raw `fetch()` and why it is safe.
+
+Pay particular attention to:
+
+* Settings pages.
+* Configuration editors.
+* Dialog-based mutations.
+* Sidebar queries.
+* Dashboard widgets.
+* Test-send buttons.
+* Approval actions.
+* Admin screens.
+* Legacy components.
+* Mobile-specific components.
+
+---
+
+# 2. Authentication Middleware Audit
+
+Search all server routes for handlers that use:
+
+```ts
+req.user
+req.isAuthenticated()
+req.user?.claims
+req.user?.id
+```
+
+Verify that each protected route executes the canonical `isAuthenticated` middleware before reading authenticated identity.
+
+Find routes with custom guards such as:
+
+* `requireAdmin`
+* `requireOwner`
+* `requireCoach`
+* `requireStaff`
+* `requireOrg`
+* inline role checks
+
+Confirm those guards run only after authentication has populated the request.
+
+Fix middleware ordering rather than duplicating token parsing.
+
+Test:
+
+* No token.
+* Valid token.
+* Expired or invalid token.
+* Authenticated but unauthorized role.
+* Correct authorized role.
+
+Responses must distinguish appropriately between:
+
+* `401 Unauthorized`
+* `403 Forbidden`
+
+---
+
+# 3. Canonical Organization Resolution Audit
+
+Search for all code that trusts organization context from:
+
+```ts
+req.body.orgId
+req.body.organizationId
+req.query.orgId
+req.query.organizationId
+req.params.orgId
+req.params.organizationId
+req.user?.orgId
+req.user?.organizationId
+```
+
+For normal organization-user routes:
+
+* Resolve organization membership using the canonical server-side resolver.
+* Use `resolveOrgIdOrThrow` or the established equivalent.
+* Do not trust organization identity supplied by the browser.
+* Validate entity ownership after resolving the organization.
+* Reject cross-organization access.
+
+Explicit organization IDs may remain only for legitimate platform-admin or signed internal-service endpoints with a documented trust boundary.
+
+Produce a list of those exceptions.
+
+Test two organizations against every repaired route.
+
+---
+
+# 4. Response Handling Audit
+
+Search frontend code for API operations that:
+
+* Call `.json()` without checking `response.ok`.
+* Ignore non-2xx responses.
+* Use empty `catch` blocks.
+* Only call `console.error`.
+* Return an empty array after an API failure.
+* Display a success toast before awaiting the mutation.
+* Optimistically mutate without rollback.
+* Swallow JSON parse errors.
+* Assume every error response contains JSON.
+
+Create or reuse a shared safe response helper where appropriate.
+
+Every user-facing failure should produce a useful message without crashing the page.
+
+Do not conceal authorization, validation, or persistence failures as empty states.
+
+---
+
+# 5. Route Consistency Audit
+
+Compare:
+
+* Frontend API paths.
+* Server route registrations.
+* Health-check probe paths.
+* Kevin navigation registry routes.
+* Sidebar links.
+* Dashboard links.
+* Redirect targets.
+* Onboarding links.
+* Built production API routes.
+
+Find:
+
+* Renamed routes still referenced by old clients.
+* Singular/plural mismatches.
+* Obsolete endpoints.
+* Wrong HTTP methods.
+* APIs falling through to the SPA.
+* Registered routes excluded from the production bundle.
+
+Fix all production-relevant mismatches.
+
+Add regression tests for corrected paths.
+
+---
+
+# 6. Query Cache and Persistence Audit
+
+Search mutations for missing or incorrect:
+
+```ts
+invalidateQueries
+setQueryData
+refetch
+```
+
+After every create, update, rename, approve, reject, pause, resume, delete, archive, or assignment action, verify that all affected UI surfaces update without a hard refresh.
+
+Test especially:
+
+* Attendance configuration.
+* Workout programs.
+* Athletes.
+* Teams.
+* Sessions.
+* Recurring sessions.
+* Leads.
+* Lead status.
+* Email approvals.
+* Kevin Inbox.
+* Jobs.
+* Notifications.
+* Organization settings.
+* Agent capability settings.
+
+Persistence must also be verified after browser refresh.
+
+Do not use broad invalidation everywhere as a substitute for understanding the canonical cache keys.
+
+---
+
+# 7. Complete the Save-Button Audit
+
+Inventory every visible save or submit action in the application.
+
+For each action, verify:
+
+1. The control is connected to a handler.
+2. The handler calls the correct API.
+3. Authentication is included.
+4. The request schema matches the server.
+5. The server resolves organization context safely.
+6. The database mutation succeeds.
+7. The API returns the expected response.
+8. The UI shows confirmed success.
+9. Queries are invalidated.
+10. The saved value survives refresh.
+11. Errors are visible.
+12. Repeated clicks do not create duplicates.
+
+Include:
+
+* Save
+* Update
+* Apply
+* Submit
+* Publish
+* Assign
+* Confirm
+* Approve
+* Reject
+* Pause
+* Resume
+* Cancel
+* Delete
+* Test send
+
+A page rendering successfully is not enough.
+
+---
+
+# 8. Browser Regression Pass
+
+Continue browser testing through the actual UI.
+
+At minimum, validate:
+
+## Attendance
+
+* Save configuration.
+* Edit fields.
+* Test-send functions.
+* Refresh persistence.
+* Cross-organization isolation.
+
+## Dashboard
+
+* Hermes health, stats, and recommendations.
+* AgentMail status.
+* Reliability checks.
+* Sidebar program loading.
+* No console errors.
+
+## Workout Builder
+
+* Rename program.
+* Refine program.
+* Confirm library immediately updates.
+* Refresh persistence.
+
+## Scheduling
+
+* Create.
+* Edit.
+* Reschedule.
+* Recurring creation.
+* Delete occurrence.
+* Delete series.
+
+## Leads and Email
+
+* Create lead.
+* Change status.
+* Draft follow-up.
+* Approve or reject.
+* Confirm Kevin Inbox refreshes.
+* Verify automation state.
+
+## Settings
+
+* Save every configuration panel.
+* Refresh.
+* Confirm values persist.
+
+For every repair:
+
+* Reproduce before fixing when feasible.
+* Fix root cause.
+* Retest.
+* Add regression coverage.
+
+---
+
+# 9. Proposed Follow-Up Tasks 13–15
+
+Implement all three proposed follow-up tasks now.
+
+For each, report:
+
+* Original problem.
+* Severity.
+* Root cause.
+* Files changed.
+* Fix implemented.
+* Browser validation.
+* Automated regression test.
+* Final status.
+
+Do not defer them simply because they were categorized as smaller.
+
+If a task is intentionally deferred, explain the exact blocker and why it cannot safely be completed now.
+
+---
+
+# 10. Completion Standard
+
+Do not declare this audit complete until:
+
+* All authenticated internal frontend calls use the correct authentication path.
+* All protected routes have authentication middleware in the correct order.
+* No normal organization route trusts client-provided organization identity.
+* All visible save and mutation controls have been tested.
+* No known false-success behavior remains.
+* No known route mismatch remains.
+* Core UI state updates without hard refresh.
+* Saved data persists after refresh.
+* Critical and High issues are resolved.
+* Proposed tasks 13–15 are completed or externally blocked.
+* Production build passes.
+* TypeScript passes.
+* Browser regression passes.
+* Cross-organization tests pass.
+
+---
+
+# Required Final Report
+
+Return:
+
+## Audit Coverage
+
+* Number of frontend API calls reviewed.
+* Number of raw `fetch()` calls found.
+* Number converted.
+* Number intentionally retained and justification.
+* Number of protected server routes reviewed.
+* Number with incorrect middleware ordering.
+* Number of organization-resolution issues found.
+* Number of save or mutation controls browser-tested.
+
+## Issues Fixed
+
+For each issue:
+
+* Severity.
+* User-visible symptom.
+* Root cause.
+* Fix.
+* Regression coverage.
+* Final status.
+
+## Follow-Up Tasks 13–15
+
+Provide individual completion results.
+
+## Remaining Exceptions
+
+List every retained:
+
+* Raw fetch.
+* Client-supplied organization identifier.
+* Custom authentication guard.
+* Untested integration.
+* Disabled capability.
+
+Explain why each is safe or blocked.
+
+## Testing
+
+* TypeScript result.
+* Unit tests.
+* Integration tests.
+* Browser tests.
+* Production build.
+* Server restart.
+* Cross-organization checks.
+
+## Readiness Verdict
+
+Use exactly one:
+
+* `READY FOR RELEASE CANDIDATE`
+* `READY WITH DOCUMENTED EXTERNAL BLOCKERS`
+* `NOT READY`
+
+Do not mark the application ready merely because the known Attendance Tracker issue is fixed.

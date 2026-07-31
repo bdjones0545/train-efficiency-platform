@@ -148,7 +148,10 @@ export default function CoachEducationBuilderPage() {
 
   const saveQuizMut = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/org/education/quiz-questions", data, buildHeaders()),
-    onSuccess: () => toast({ title: "Quiz saved" }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/org/education/modules/questions", selectedModule?.id] });
+      toast({ title: "Quiz saved" });
+    },
   });
 
   const assignPathwayMut = useMutation({

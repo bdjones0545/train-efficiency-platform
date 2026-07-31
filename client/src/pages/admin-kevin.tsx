@@ -1464,7 +1464,7 @@ function OrgSettingsTab() {
   });
 
   const obsQ = useQuery<{ snapshot: any }>({
-    queryKey: ["/api/admin/kevin/observability/snapshot"],
+    queryKey: ["/api/admin/kevin/observability"],
   });
 
   const settings = settingsQ.data?.settings ?? [];

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link, useParams, useLocation } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/authToken";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -611,7 +612,7 @@ export default function AdminGuardianDetailPage() {
   const { data, isLoading, isError, refetch } = useQuery<GuardianDetailData>({
     queryKey: ["/api/admin/guardian", guardianUserId],
     queryFn: async () => {
-      const res = await fetch(`/api/admin/guardians/${guardianUserId}`);
+      const res = await fetch(`/api/admin/guardians/${guardianUserId}`, { credentials: "include", headers: { ...getAuthHeaders() } });
       if (!res.ok) throw new Error("Failed to load guardian");
       return res.json();
     },
