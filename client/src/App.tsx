@@ -193,7 +193,6 @@ import AttendanceCheckinPage from "@/pages/attendance-checkin";
 import AttendanceProgramEditorPage from "@/pages/attendance-program-editor";
 import AdminAttendanceTrackerPage from "@/pages/admin-attendance-tracker";
 import AdminNotificationSettingsPage from "@/pages/admin-notification-settings";
-import AdminObsidianPage from "@/pages/admin-obsidian";
 import AdminAgentOutcomePage from "@/pages/admin-agent-outcome";
 import AdminForecastPage from "@/pages/admin-forecast";
 import HomePage from "@/pages/home";
@@ -525,7 +524,6 @@ function AuthenticatedLayout() {
                   <Route path="/attendance-programs/:programId" component={AttendanceProgramEditorPage} />
                   <Route path="/admin/attendance-tracker" component={AdminAttendanceTrackerPage} />
                   <Route path="/admin/notification-settings" component={AdminNotificationSettingsPage} />
-                  <Route path="/admin/obsidian" component={AdminObsidianPage} />
                   <Route path="/admin/agent-outcome" component={AdminAgentOutcomePage} />
                   <Route path="/admin/forecast" component={AdminForecastPage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />

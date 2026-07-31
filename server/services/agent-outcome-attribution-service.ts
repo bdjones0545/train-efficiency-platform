@@ -248,17 +248,7 @@ export async function searchSimilarDecisions(opts: {
 
   const results = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
 
-  // Pull Obsidian vault results as supplemental context
-  let obsidianContext: string[] = [];
-  try {
-    const { searchNotes } = await import("./obsidian-service");
-    const obsResults = await searchNotes(query, { limit: 3 });
-    obsidianContext = obsResults.map((r) =>
-      `[${r.filename}] ${r.matches?.[0]?.context ?? ""}`.slice(0, 200),
-    );
-  } catch { /* non-blocking */ }
-
-  return { results, obsidianContext };
+  return { results, obsidianContext: [] };
 }
 
 // ─── Generate CEO daily review (AI) ──────────────────────────────────────────
@@ -363,11 +353,6 @@ export async function saveCEOReview(orgId: string, review: {
       updated_at        = NOW()
   `);
 
-  // Write to Obsidian
-  try {
-    const { writeCEOReview } = await import("./obsidian-service");
-    await writeCEOReview({ ...review, orgId });
-  } catch { /* non-blocking */ }
 }
 
 // ─── Get past CEO reviews ─────────────────────────────────────────────────────
@@ -433,12 +418,6 @@ export async function promoteToPlaybook(orgId: string, opts: {
   const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
   const id = rows[0]?.id;
 
-  // Write to Obsidian
-  try {
-    const { writePlaybook } = await import("./obsidian-service");
-    await writePlaybook({ orgId, ...opts });
-  } catch { /* non-blocking */ }
-
   return id;
 }
 
@@ -493,13 +472,7 @@ export async function getBusinessFlywheel(orgId: string) {
   const p  = toArr(playbookRows)[0] ?? {};
   const rv = toArr(reviewRows)[0] ?? {};
 
-  // Obsidian vault stats
-  let vaultTotal = 0;
-  try {
-    const { getVaultStats } = await import("./obsidian-service");
-    const stats = await getVaultStats();
-    vaultTotal = stats.totalNotes;
-  } catch { /* non-blocking */ }
+  const vaultTotal = 0;
 
   const totalDecisions       = parseInt(o.total_decisions ?? "0");
   const decisionsWithOutcomes= parseInt(o.decisions_with_outcomes ?? "0");

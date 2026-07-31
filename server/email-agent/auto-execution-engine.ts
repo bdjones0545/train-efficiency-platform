@@ -440,16 +440,6 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
     revenueAttributed: 0,
   };
 
-  // Fire-and-forget: retrieve institutional memory context before executing
-  import("../services/obsidian-service").then(({ retrieveAgentContext }) => {
-    retrieveAgentContext(`${eligibleAction.actionType} ${eligibleAction.title}`, { orgId, limit: 5 })
-      .then(ctx => {
-        if (ctx.retrieved > 0) {
-          console.log(`[AutoExec] Obsidian context: ${ctx.retrieved} items for ${eligibleAction.actionType}`);
-        }
-      }).catch(() => {});
-  }).catch(() => {});
-
   try {
     if (eligibleAction.actionType === "send_follow_up") {
       const followUpId = await executeFollowUp(orgId, eligibleAction.prospectId!);
@@ -523,18 +513,6 @@ export async function runAutoExecution(orgId: string): Promise<AutoExecuteResult
     followUpId: execution.followUpId,
     reasoning: `Successfully auto-executed: ${execution.title}`,
   });
-
-  // Fire-and-forget: write agent decision to Obsidian organizational memory
-  import("../services/obsidian-service").then(({ writeAgentDecision }) => {
-    writeAgentDecision({
-      orgId,
-      actionType: eligibleAction.actionType,
-      title: execution.title || eligibleAction.actionType,
-      reasoning: `Auto-executed with confidence ${eligibleAction.confidenceScore ?? "—"}%. Action: ${eligibleAction.subject || eligibleAction.actionType}`,
-      confidence: eligibleAction.confidenceScore ?? undefined,
-      executedAt: new Date(),
-    }).catch(() => {});
-  }).catch(() => {});
 
   // Log to revenue outcome engine for attribution tracking
   try {

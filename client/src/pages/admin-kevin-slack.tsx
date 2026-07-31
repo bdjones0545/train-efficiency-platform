@@ -673,13 +673,6 @@ export default function AdminKevinSlack() {
                   flags: ["KEVIN_SLACK_APPROVALS_ENABLED=true"],
                   key: "stage6_approvals",
                 },
-                {
-                  stage: "Stage 7",
-                  label: "Obsidian Memory",
-                  description: "Store sanitized Kevin memory events in Obsidian. Obsidian failure never blocks actions.",
-                  flags: ["KEVIN_SLACK_OBSIDIAN_MEMORY_ENABLED=true"],
-                  key: "stage7_obsidian",
-                },
               ].map(({ stage, label, description, flags, key }) => {
                 const active = config?.stages[key] ?? false;
                 return (

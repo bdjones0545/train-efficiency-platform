@@ -775,12 +775,6 @@ export function AppSidebar() {
         icon: BookOpen,
         testId: "nav-org-memory",
       },
-      {
-        title: "Learning",
-        url: "/admin/obsidian",
-        icon: BookOpen,
-        testId: "nav-learning",
-      },
     ],
   };
 

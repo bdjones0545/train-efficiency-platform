@@ -500,7 +500,7 @@ export async function getAutonomyDashboard(orgId: string) {
 // ─── Trust flywheel metrics ───────────────────────────────────────────────────
 
 export async function getTrustFlywheel(orgId: string) {
-  const [reg, queue, outcomes, obsidian] = await Promise.all([
+  const [reg, queue, outcomes] = await Promise.all([
     db.execute(sql`
       SELECT
         COUNT(*) AS total_types,
@@ -522,7 +522,6 @@ export async function getTrustFlywheel(orgId: string) {
         COUNT(*) FILTER (WHERE success_score >= 80) AS high_score
       FROM agent_decision_outcomes WHERE org_id = ${orgId}
     `).catch(() => ([{ total: 0, high_score: 0 }])),
-    import("./obsidian-service").then((m) => m.getVaultStats()).catch(() => ({ totalNotes: 0 })),
   ]);
 
   const toArr = (r: any) => Array.isArray(r) ? r : (r as any).rows ?? [];
@@ -531,7 +530,7 @@ export async function getTrustFlywheel(orgId: string) {
   const ou = toArr(outcomes)[0] ?? {};
 
   return {
-    memoryCreated:    obsidian.totalNotes ?? 0,
+    memoryCreated:    0,
     betterDecisions:  Math.round(parseFloat(re.avg_score ?? "0")),
     betterOutcomes:   parseInt(ou.high_score ?? "0"),
     higherTrust:      Math.round(parseFloat(re.avg_score ?? "0")),

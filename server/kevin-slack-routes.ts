@@ -70,7 +70,6 @@ import {
 } from "./kevin-slack/digest-service";
 import { classifyNotification, shouldSendImmediately } from "./kevin-slack/notification-engine";
 import { buildCriticalAlert, buildImportantAlert } from "./kevin-slack/block-kit";
-import { storeSlackMemoryEvent } from "./kevin-slack/obsidian-bridge";
 
 import { getSlackBotToken } from "./kevin-slack/config";
 import { startTokenCleanupCron } from "./kevin-slack/action-token-service";

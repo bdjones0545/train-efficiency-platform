@@ -689,9 +689,6 @@ app.use((req, res, next) => {
   const { startGmailSyncCron } = await import("./services/gmail-sync-state");
   startGmailSyncCron();
 
-  const { startObsidianSyncCron } = await import("./services/obsidian-sync-service");
-  startObsidianSyncCron();
-
   app.use(orgErrorMiddleware);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

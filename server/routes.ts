@@ -15251,7 +15251,6 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       const [
         heartbeatCount,
         agentmailCount,
-        obsidianCount,
         executionCount,
         workflowCount,
         registryCount,
@@ -15260,7 +15259,6 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       ] = await Promise.all([
         safeCount(`SELECT COUNT(*) AS count FROM ceo_heartbeat_runs WHERE org_id = '${orgId}' AND created_at > NOW() - INTERVAL '48 hours'`),
         safeCount(`SELECT COUNT(*) AS count FROM gmail_agent_actions WHERE org_id = '${orgId}' AND created_at > NOW() - INTERVAL '7 days'`),
-        safeCount(`SELECT COUNT(*) AS count FROM organizational_memories WHERE org_id = '${orgId}'`),
         safeCount(`SELECT COUNT(*) AS count FROM execution_events WHERE org_id = '${orgId}' AND created_at > NOW() - INTERVAL '7 days'`),
         safeCount(`SELECT COUNT(*) AS count FROM workflow_runs WHERE org_id = '${orgId}' AND created_at > NOW() - INTERVAL '48 hours'`),
         safeCount(`SELECT COUNT(*) AS count FROM org_installed_agents WHERE org_id = '${orgId}'`),
@@ -15299,19 +15297,6 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
           lastChecked: now,
           source: "gmail_agent_actions",
           fix: agentmailCount < 0 ? "Ensure gmail_agent_actions table is migrated" : null,
-        },
-        {
-          id: "obsidian",
-          label: "Obsidian / Org Memory",
-          status: obsidianCount >= 0 ? "operational" : "degraded",
-          reason: obsidianCount > 0
-            ? `${obsidianCount} memories stored`
-            : obsidianCount === 0
-            ? "Provisioned — no memories yet"
-            : "Table unavailable",
-          lastChecked: now,
-          source: "organizational_memories",
-          fix: obsidianCount < 0 ? "Ensure organizational_memories table is migrated" : null,
         },
         {
           id: "ceo_heartbeat",
@@ -33279,9 +33264,6 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // ─── Software Improvement Agent ────────────────────────────────────────────
   const { registerSoftwareImprovementRoutes } = await import("./software-improvement-routes");
   await registerSoftwareImprovementRoutes(app, isAuthenticated, requireRole);
-
-  const { registerObsidianRoutes } = await import("./obsidian-routes");
-  registerObsidianRoutes(app, isAuthenticated, requireRole);
 
   const { registerAgentMailRoutes } = await import("./agentmail-routes");
   await registerAgentMailRoutes(app, isAuthenticated, requireRole);

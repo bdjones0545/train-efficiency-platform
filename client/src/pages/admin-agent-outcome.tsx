@@ -505,18 +505,6 @@ function SelfImproveTab() {
                 )}
               </div>
 
-              {/* Obsidian context */}
-              {results.obsidianContext.length > 0 && (
-                <div>
-                  <div className="text-xs font-semibold text-muted-foreground mb-2 uppercase tracking-wide flex items-center gap-1"><Brain className="w-3 h-3" /> Obsidian Memory Context</div>
-                  <div className="space-y-1">
-                    {results.obsidianContext.map((ctx: string, i: number) => (
-                      <div key={i} className="bg-muted/50 rounded p-2 text-xs text-muted-foreground font-mono">{ctx}</div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Recommendation weight */}
               {results.results.length > 0 && (
                 <Card className="border-primary/30 bg-primary/5">
@@ -557,7 +545,7 @@ function CEOReviewTab() {
       const data = await res.json();
       setActiveReview(data);
       qc.invalidateQueries({ queryKey: ["/api/agent-outcomes/ceo-review"] });
-      toast({ title: "CEO Review generated and saved to Obsidian" });
+      toast({ title: "CEO Review generated" });
     },
     onError: () => toast({ title: "Failed to generate review", variant: "destructive" }),
   });
@@ -609,7 +597,7 @@ function CEOReviewTab() {
           <CardContent className="text-center py-12 text-muted-foreground">
             <Award className="w-10 h-10 mx-auto mb-3 opacity-40" />
             <p className="mb-3">No reviews yet. Generate your first CEO daily review above.</p>
-            <p className="text-xs">The review will be saved to both the database and your Obsidian vault.</p>
+            <p className="text-xs">Generate your first CEO daily review above to see insights here.</p>
           </CardContent>
         </Card>
       ) : null}
@@ -644,7 +632,7 @@ function PlaybooksTab() {
 
   const promote = useMutation({
     mutationFn: (data: any) => apiRequest("POST", "/api/agent-outcomes/playbooks/promote", data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/agent-outcomes/playbooks"] }); qc.invalidateQueries({ queryKey: ["/api/agent-outcomes/playbooks/candidates"] }); setPromoting(null); toast({ title: "Promoted to official playbook and saved to Obsidian" }); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/agent-outcomes/playbooks"] }); qc.invalidateQueries({ queryKey: ["/api/agent-outcomes/playbooks/candidates"] }); setPromoting(null); toast({ title: "Promoted to official playbook" }); },
     onError: () => toast({ title: "Promotion failed", variant: "destructive" }),
   });
 

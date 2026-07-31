@@ -1229,25 +1229,7 @@ export async function runHeartbeatCycle(opts: {
   let actionsPendingApproval = 0;
   let prioritiesGenerated = 0;
 
-  // Fire-and-forget: retrieve institutional memory before coordinating agents
-  import("./obsidian-service").then(({ retrieveAgentContext, OBSIDIAN_FOLDERS }) => {
-    retrieveAgentContext(`CEO Heartbeat priorities business performance org ${orgId}`, { orgId, limit: 10 })
-      .then(async ctx => {
-        if (ctx.retrieved > 0) {
-          console.log(`[CEO Heartbeat] Retrieved ${ctx.retrieved} Obsidian memory items for context`);
-          const dateStr = new Date().toISOString().split("T")[0];
-          const { trySyncNow } = await import("./obsidian-sync-service");
-          await trySyncNow({
-            idempotencyKey: `heartbeat-ctx-${orgId.slice(0, 8)}-${dateStr}`,
-            noteAction: "append",
-            folder: OBSIDIAN_FOLDERS.dailyReports,
-            title: dateStr,
-            content: `\n## Memory Context Retrieved — CEO Heartbeat\n\n_${ctx.retrieved} items retrieved from vault_\n\n${ctx.contextString.slice(0, 600)}\n`,
-            contextLabel: `CEO Heartbeat memory context ${dateStr}`,
-          });
-        }
-      }).catch(() => {});
-  }).catch(() => {});
+  // Obsidian removed — Kevin owns vault writes from his VM via Hermes runtime
 
   // Kevin context enrichment (Phase 3) — non-blocking, fail-open
   void (async () => {
@@ -1351,18 +1333,7 @@ export async function runHeartbeatCycle(opts: {
     await releaseJobLock(lockKey);
   }
 
-  // Fire-and-forget: write heartbeat report to Obsidian organizational memory
-  import("./obsidian-service").then(({ writeHeartbeatReport }) => {
-    writeHeartbeatReport({
-      orgId,
-      runId: heartbeatId,
-      priorities,
-      agentsCoordinated,
-      prioritiesGenerated,
-      errors: allErrors,
-      durationMs: Date.now() - startTime,
-    }).catch(() => {});
-  }).catch(() => {});
+  // Obsidian write removed — Kevin owns vault from VM
 
   // Fire-and-forget: capture structured learning for Organizational Memory
   import("./hermes-learning-service").then(({ recordHeartbeatLearning }) => {

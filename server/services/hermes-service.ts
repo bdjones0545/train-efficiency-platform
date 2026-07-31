@@ -17,11 +17,6 @@
  *   - Returns structured success/failure metadata for audit logging
  */
 
-import {
-  recordOutcomeLearning,
-  writeHermesLearning,
-  isObsidianConfigured,
-} from "./obsidian-service";
 import { writeTimeline } from "./ceo-heartbeat-service";
 
 // ─── Source types ──────────────────────────────────────────────────────────────
@@ -56,7 +51,6 @@ export interface HermesOutcomePayload {
 export interface HermesResult {
   success: boolean;
   source: HermesSource;
-  obsidianConfigured: boolean;
   timelineId?: string;
   skipped?: boolean;
   error?: string;
@@ -84,7 +78,6 @@ async function writeHermesTimeline(opts: {
       errorMessage: opts.error,
       metadata: {
         source: opts.source,
-        obsidianConfigured: isObsidianConfigured(),
         ...opts.metadata,
       },
     });
@@ -101,24 +94,7 @@ export async function processOutcomeEvent(
   source: HermesSource,
   payload: HermesOutcomePayload,
 ): Promise<HermesResult> {
-  const base: Omit<HermesResult, "success"> = {
-    source,
-    obsidianConfigured: isObsidianConfigured(),
-  };
-
-  if (!isObsidianConfigured()) {
-    const summary = `[Hermes] Obsidian not configured — learning stored in timeline only (source=${source})`;
-    console.log(summary);
-
-    const timelineId = await writeHermesTimeline({
-      orgId: payload.orgId,
-      source,
-      summary,
-      metadata: { domain: payload.domain, skipped: true },
-    });
-
-    return { ...base, success: true, skipped: true, timelineId };
-  }
+  const base: Omit<HermesResult, "success"> = { source };
 
   try {
     let result: HermesResult;
@@ -183,17 +159,8 @@ async function handleSoftwareImprovementTask(
     `Engineering team should investigate and resolve the reported issue.`,
   ].join(" ");
 
-  await recordOutcomeLearning({
-    outcome,
-    observation,
-    learning,
-    domain: payload.domain,
-    orgId,
-    tags: ["software_improvement", severity, ...(tags ?? [])],
-  });
-
   console.log(
-    `[Hermes] ✓ Learning written — source=software_improvement_task_created taskId=${taskId ?? "unknown"} severity=${severity}`,
+    `[Hermes] ✓ Learning recorded — source=software_improvement_task_created taskId=${taskId ?? "unknown"} severity=${severity}`,
   );
   return { ...base, success: true };
 }
@@ -231,21 +198,8 @@ async function handleCommunicationOutcome(
     .filter(Boolean)
     .join("  \n");
 
-  await writeHermesLearning({
-    topic,
-    content,
-    source: "agent_communication_outcomes",
-    orgId,
-    tags: [
-      "communication_outcome",
-      domain,
-      agentType ?? "unknown",
-      ...(tags ?? []),
-    ],
-  });
-
   console.log(
-    `[Hermes] ✓ Learning written — source=communication_outcome_recorded decisionId=${decisionId ?? "unknown"} domain=${domain}`,
+    `[Hermes] ✓ Outcome recorded — source=communication_outcome_recorded decisionId=${decisionId ?? "unknown"} domain=${domain}`,
   );
   return { ...base, success: true };
 }

@@ -226,19 +226,7 @@ export async function recordHermesLearning(input: HermesLearningInput): Promise<
           });
         } catch {}
 
-        try {
-          const { recordOutcomeLearning } = await import("./obsidian-service");
-          await recordOutcomeLearning({
-            outcome,
-            observation,
-            learning,
-            domain,
-            metric,
-            metricValue: delta ?? undefined,
-            orgId,
-            tags: [source, domain, memoryType],
-          });
-        } catch {}
+        // Obsidian removed — Kevin owns vault writes from VM
       });
     }
 

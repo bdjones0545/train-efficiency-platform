@@ -639,7 +639,6 @@ function StrategicPlansTab() {
                     <div className="flex items-center gap-2">
                       <Badge className="text-xs bg-primary text-white border-0">{plan.horizon_days}d</Badge>
                       <CardTitle className="text-sm">{plan.title}</CardTitle>
-                      {plan.obsidian_path && <Badge variant="outline" className="text-xs">📓 Obsidian</Badge>}
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-xs text-muted-foreground">{new Date(plan.generated_at).toLocaleDateString()}</span>

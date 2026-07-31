@@ -756,13 +756,7 @@ export async function generateStrategicPlan(orgId: string, horizonDays: number) 
 
   const planId = `plan-${orgId.slice(0, 8)}-${horizonDays}d-${Date.now()}`;
 
-  let obsidianPath = null;
-  try {
-    const { writeNote } = await import("./obsidian-service");
-    obsidianPath = `Strategic Plans/${horizonLabel} Plan ${new Date().toISOString().split("T")[0]}.md`;
-    const content = `# ${horizonLabel} Strategic Plan\n\n**Generated:** ${new Date().toLocaleDateString()}\n**Horizon:** ${horizonDays} days\n\n## Objectives\n${objectives.map((o) => `- ${o}`).join("\n")}\n\n## Risks\n${planRisks.map((r) => `- ${r}`).join("\n") || "- No significant risks detected"}\n\n## Opportunities\n${opps.slice(0, 3).map((o: any) => `- ${o.title}: ${o.recommended_action}`).join("\n")}\n\n## Recommended Actions\n${actions.map((a) => `- ${a}`).join("\n")}\n\n## Expected Outcomes\n${expectedOutcomes.map((o) => `- ${o}`).join("\n")}\n`;
-    await writeNote(obsidianPath, content, { type: "strategic_plan", horizon: `${horizonDays}d`, generated: new Date().toISOString() });
-  } catch (_) {}
+  const obsidianPath = null; // Obsidian removed — Kevin owns vault from VM
 
   await db.execute(sql`
     INSERT INTO strategic_plans
@@ -833,13 +827,7 @@ export async function getBusinessOSScore(orgId: string): Promise<{
   ]);
 
   let obsidianNotes = 0;
-  try {
-    const { getVaultStats } = await import("./obsidian-service");
-    const stats = await getVaultStats();
-    obsidianNotes = stats.totalNotes ?? 0;
-  } catch (_) {}
-
-  // DB fallback: if Obsidian is offline, use hermes learnings + decisions count as memory proxy
+  // Obsidian removed — use hermes learnings + decisions count as memory proxy
   if (obsidianNotes === 0) {
     try {
       const memRes = await db.execute(sql`
