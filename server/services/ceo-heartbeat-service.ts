@@ -1,3 +1,4 @@
+import crypto from "crypto";
 import { db } from "../db";
 import {
   eq, and, desc, lt, gte, sql, or, isNull
@@ -1333,7 +1334,65 @@ export async function runHeartbeatCycle(opts: {
     await releaseJobLock(lockKey);
   }
 
-  // Obsidian write removed — Kevin owns vault from VM
+  // Fire-and-forget: dispatch heartbeat summary to Kevin so he can write to his Obsidian vault
+  import("./kevin-gateway-client").then(async ({ dispatchKevinTask, KevinDispatchError }) => {
+    try {
+      const jobId = crypto.randomUUID();
+      const idempotencyKey = `heartbeat-memory-${heartbeatId}`;
+      const correlationId = heartbeatId;
+      const topPriorities = (priorities ?? []).slice(0, 5).map((p: any) => ({
+        title: p.title ?? p.action ?? "Untitled",
+        score: p.score ?? p.priority ?? null,
+        category: p.category ?? null,
+      }));
+
+      // Insert a traceable agent_jobs row (no-op if Kevin is disabled)
+      await db.execute(sql`
+        INSERT INTO agent_jobs
+          (id, organization_id, agent_id, task_type, status,
+           requested_by_user_id, subject_type, subject_id,
+           request_payload, idempotency_key, correlation_id,
+           capability, attempt_count, requested_at, created_at, updated_at)
+        VALUES
+          (${jobId}, ${orgId}, 'ceo_heartbeat_agent', 'heartbeat_memory_sync', 'requested',
+           'system', 'heartbeat_run', ${heartbeatId},
+           ${JSON.stringify({ runId: heartbeatId, priorities: topPriorities })}::jsonb,
+           ${idempotencyKey}, ${correlationId},
+           'heartbeat_memory_sync', 1, NOW(), NOW(), NOW())
+        ON CONFLICT (id) DO NOTHING
+      `);
+
+      await dispatchKevinTask(
+        jobId,
+        "ceo_heartbeat_agent",
+        "heartbeat_memory_sync",
+        orgId,
+        "system",
+        "SYSTEM",
+        "heartbeat_run",
+        heartbeatId,
+        {
+          runId: heartbeatId,
+          orgId,
+          priorities: topPriorities,
+          agentsCoordinated,
+          prioritiesGenerated,
+          errorCount: allErrors.length,
+          durationMs: Date.now() - startTime,
+          triggeredAt: new Date().toISOString(),
+          taskDescription: "Write CEO Heartbeat run summary and top priorities to Obsidian vault.",
+        },
+        idempotencyKey,
+        correlationId,
+      );
+
+      console.log(`[CEO Heartbeat] ✓ Dispatched heartbeat_memory_sync to Kevin — jobId=${jobId} runId=${heartbeatId}`);
+    } catch (err: any) {
+      // Kevin unavailable is non-fatal — heartbeat already stored in DB
+      const code = err?.code ?? "unknown";
+      console.warn(`[CEO Heartbeat] Kevin dispatch skipped (${code}): ${err?.message ?? err}`);
+    }
+  }).catch(() => {});
 
   // Fire-and-forget: capture structured learning for Organizational Memory
   import("./hermes-learning-service").then(({ recordHeartbeatLearning }) => {
