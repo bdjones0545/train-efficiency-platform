@@ -10224,8 +10224,17 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
           messages,
           userName,
         });
+        const { BLOCKS_SENTINEL } = await import("./ceo-agent-orchestrator");
         for await (const chunk of orchestratorStream) {
           chunkCount++;
+          if (chunk.startsWith(BLOCKS_SENTINEL)) {
+            // Structured blocks (e.g. server-approved navigation suggestions)
+            try {
+              const blocks = JSON.parse(chunk.slice(BLOCKS_SENTINEL.length));
+              res.write(`data: ${JSON.stringify({ blocks })}\n\n`);
+            } catch {}
+            continue;
+          }
           res.write(`data: ${JSON.stringify({ content: chunk })}\n\n`);
         }
         console.log(`${label} orchestrator stream complete chunks=${chunkCount}`);
@@ -33727,6 +33736,10 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // ─── Kevin (Hermes orchestrator BFF) — Phases 0–3 ───────────────────────────
   const { registerKevinRoutes } = await import("./kevin-routes");
   await registerKevinRoutes(app);
+
+  // ─── Kevin Inbox — org AI communication center aggregation ─────────────────
+  const { registerKevinInboxRoutes } = await import("./kevin-inbox-routes");
+  registerKevinInboxRoutes(app, isAuthenticated, requireRole);
 
   // ─── Kevin signal intake — Phase 3 ──────────────────────────────────────────
   const { registerKevinSignalRoutes } = await import("./kevin-signal-routes");

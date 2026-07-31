@@ -1,13 +1,10 @@
-import { useState, useRef, useEffect, useCallback, Component } from "react";
+import { useState, useRef, useEffect, Component } from "react";
 import { createPortal } from "react-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useLocation } from "wouter";
 import {
-  X, Send, Bot, User, Brain, Activity, CheckCircle2, AlertTriangle,
-  Clock, Zap, Users, ListTodo, Bell, Settings, MessageSquare,
-  TrendingUp, Flame, RefreshCw, ChevronRight, Shield, ToggleLeft,
-  ToggleRight, XCircle, Loader2, Home, BarChart3, Target,
-  Mail, CalendarCheck, Briefcase, BookOpen, FileText, Search,
+  X, Send, User, Brain, AlertTriangle, CheckCircle2, XCircle,
+  Loader2, MessageSquare, Inbox, Mail, Clock, RefreshCw,
+  PauseCircle, ChevronRight, ExternalLink, History, Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { apiRequest } from "@/lib/queryClient";
@@ -17,12 +14,25 @@ import { useToast } from "@/hooks/use-toast";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = "ceo" | "chat" | "agents" | "tasks" | "approvals" | "settings";
+type Tab = "chat" | "inbox";
+
+interface NavSuggestion {
+  type: "navigation_suggestion";
+  intent: string;
+  label: string;
+  route: string;
+  reason: string;
+}
+
+interface MessageBlocks {
+  navigation?: NavSuggestion[];
+}
 
 interface Message {
   role: "user" | "assistant";
   content: string;
   isStreaming?: boolean;
+  blocks?: MessageBlocks;
 }
 
 // ─── Streaming bubble (preserved) ─────────────────────────────────────────────
@@ -87,316 +97,30 @@ class BrainPortalErrorBoundary extends Component<
   }
 }
 
-// ─── Product Memory Card (DB-backed, always available) ───────────────────────
+// ─── Navigation suggestion buttons (server-approved routes only) ──────────────
 
-function ProductMemoryCard() {
-  const { data } = useQuery<any>({
-    queryKey: ["/api/organizational-memory/auto-capture-stats"],
-    queryFn: () => fetchJson("/api/organizational-memory/auto-capture-stats"),
-    staleTime: 60_000,
-    retry: false,
-  });
-
-  const sources: any[] = Array.isArray(data?.sources) ? data.sources : [];
-  const totalEntries = sources.reduce((sum: number, s: any) => sum + (s.count ?? 0), 0);
-  const activeSourceCount = sources.filter((s: any) => (s.count ?? 0) > 0).length;
-
+function NavSuggestionButtons({ suggestions }: { suggestions: NavSuggestion[] }) {
+  if (!suggestions?.length) return null;
   return (
-    <div className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3">
-      <p className="text-[10px] font-semibold text-emerald-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-        <BookOpen className="h-3 w-3" /> Product Memory
-      </p>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-        {[
-          { label: "Status",        value: "Operational",                               color: "text-green-400" },
-          { label: "Total Entries",  value: totalEntries,                                color: "text-emerald-400" },
-          { label: "Active Sources", value: `${activeSourceCount} / ${sources.length}`, color: "text-zinc-300" },
-          { label: "Type",           value: "DB-backed",                                color: "text-zinc-400" },
-        ].map(row => (
-          <div key={row.label} className="flex items-baseline gap-1.5 text-xs min-w-0">
-            <span className="text-zinc-500 shrink-0">{row.label}:</span>
-            <span className={`${row.color} truncate font-medium`}>{row.value}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ─── External Obsidian Sync Card (optional, only shown when configured) ───────
-
-function ObsidianStatusCard() {
-  const { data } = useQuery<any>({
-    queryKey: ["/api/obsidian/status"],
-    queryFn: () => fetchJson("/api/obsidian/status"),
-    staleTime: 30_000,
-    retry: false,
-  });
-
-  if (!data?.configured) return null;
-
-  const connected: boolean = data?.connected ?? false;
-  const lastSync = data?.lastSyncAt
-    ? new Date(data.lastSyncAt).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
-    : "—";
-  const connectionError: string | undefined = data?.connectionError;
-
-  return (
-    <div className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3">
-      <p className="text-[10px] font-semibold text-purple-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-        <BookOpen className="h-3 w-3" /> External Obsidian Sync
-      </p>
-      <div className="grid grid-cols-2 gap-x-3 gap-y-1">
-        {[
-          { label: "Sync",      value: connected ? "Connected" : "Unreachable", color: connected ? "text-green-400" : "text-amber-400" },
-          { label: "Last Sync", value: connected ? lastSync : "—",               color: "text-zinc-300" },
-          { label: "Notes",     value: connected ? (data?.notesCreatedToday ?? 0) : "—", color: "text-purple-400" },
-          { label: "Searches",  value: connected ? (data?.searchesPerformed ?? 0) : "—", color: "text-blue-400" },
-        ].map(row => (
-          <div key={row.label} className="flex items-baseline gap-1.5 text-xs min-w-0">
-            <span className="text-zinc-500 shrink-0">{row.label}:</span>
-            <span className={`${row.color} truncate font-medium`}>{row.value}</span>
-          </div>
-        ))}
-      </div>
-      {!connected && connectionError && (
-        <p className="mt-2 text-[10px] text-amber-400/80 leading-snug">{connectionError}</p>
-      )}
-    </div>
-  );
-}
-
-// ─── CEO Home Tab ─────────────────────────────────────────────────────────────
-
-function CeoHomeTab({ onSwitchTab }: { onSwitchTab: (t: Tab) => void }) {
-  const { data: heartbeat } = useQuery<any>({
-    queryKey: ["/api/admin/ceo-heartbeat/status"],
-    queryFn: () => fetchJson("/api/admin/ceo-heartbeat/status"),
-    refetchInterval: 30000,
-  });
-  const { data: prioritiesData } = useQuery<any>({
-    queryKey: ["/api/admin/ceo-heartbeat/priorities"],
-    queryFn: () => fetchJson("/api/admin/ceo-heartbeat/priorities"),
-  });
-  // Use /api/workforce/health for reliable agent counts (computes active/disabled directly)
-  const { data: workforceHealth } = useQuery<any>({
-    queryKey: ["/api/workforce/health"],
-    queryFn: () => fetchJson("/api/workforce/health"),
-    staleTime: 30_000,
-    retry: false,
-  });
-  const { data: approvalMetrics } = useQuery<any>({
-    queryKey: ["/api/ai-approvals/metrics"],
-    queryFn: () => fetchJson("/api/ai-approvals/metrics"),
-  });
-
-  // Agent counts from workforce health (computes activeAgents/disabledAgents server-side)
-  const activeAgents: number = workforceHealth?.activeAgents ?? 0;
-  const totalAgents: number = (workforceHealth?.activeAgents ?? 0) + (workforceHealth?.disabledAgents ?? 0);
-  const pendingApprovals = approvalMetrics?.pending ?? workforceHealth?.approvalsPending ?? 0;
-
-  // Heartbeat: lastRun is a full DB row — use startedAt for the timestamp.
-  // nextHeartbeatAt is the correct field name (not nextRun).
-  // successRate must be computed from recentRuns since it is not stored directly.
-  const lastRunTimestamp: string | null =
-    heartbeat?.lastRun?.startedAt ?? heartbeat?.lastHeartbeatAt ?? null;
-  const nextRunTimestamp: string | null = heartbeat?.nextHeartbeatAt ?? null;
-  const recentRuns: any[] = Array.isArray(heartbeat?.recentRuns) ? heartbeat.recentRuns : [];
-  const successRate: number | null = recentRuns.length > 0
-    ? Math.round((recentRuns.filter((r: any) => r.status === "completed").length / recentRuns.length) * 100)
-    : null;
-
-  const rawPriorities: any[] = Array.isArray(prioritiesData?.priorities)
-    ? prioritiesData.priorities
-    : Array.isArray(prioritiesData)
-      ? prioritiesData
-      : [];
-  const topPriorities = rawPriorities.slice(0, 3);
-
-  const summaryItems = [
-    pendingApprovals > 0 && `${pendingApprovals} approval${pendingApprovals !== 1 ? "s" : ""} waiting for review.`,
-    activeAgents > 0 && `${activeAgents} of ${totalAgents} agents active.`,
-    successRate != null && `Heartbeat success rate: ${successRate}%.`,
-  ].filter(Boolean) as string[];
-
-  // Compute the single best action for today
-  const bestAction: { title: string; description: string; cta: string; tab?: Tab } = (() => {
-    if (pendingApprovals > 0) {
-      return {
-        title: `Review ${pendingApprovals} pending approval${pendingApprovals !== 1 ? "s" : ""}`,
-        description: "AI agents are waiting for your sign-off before sending outreach or taking action.",
-        cta: "Open Approvals",
-        tab: "approvals",
-      };
-    }
-    const top = topPriorities[0];
-    if (top) {
-      return {
-        title: top.title || top.action || "Review top priority",
-        description: top.description || top.reason || "Your highest-priority item needs attention.",
-        cta: "View Details",
-      };
-    }
-    if (totalAgents > 0 && activeAgents === 0) {
-      return {
-        title: "Activate your AI workforce",
-        description: "No agents are currently running. Enable agents to start automating outreach and follow-ups.",
-        cta: "View Agents",
-        tab: "agents",
-      };
-    }
-    if (activeAgents < totalAgents) {
-      return {
-        title: `${totalAgents - activeAgents} agent${totalAgents - activeAgents !== 1 ? "s" : ""} available but idle`,
-        description: "Review and enable additional agents to expand your automation coverage.",
-        cta: "View Agents",
-        tab: "agents",
-      };
-    }
-    return {
-      title: "Operations look good",
-      description: `${activeAgents} agent${activeAgents !== 1 ? "s" : ""} running, no pending approvals. Check heartbeat for any background risks.`,
-      cta: "Ask CEO Agent",
-      tab: "chat",
-    };
-  })();
-
-  return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      {/* Best Action Today */}
-      <div className="rounded-xl bg-gradient-to-br from-green-950/60 to-green-900/30 border border-green-700/50 p-4">
-        <p className="text-[10px] font-bold text-green-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-          <Zap className="h-3 w-3" /> Best Action Today
-        </p>
-        <p className="text-sm font-semibold text-white leading-snug">{bestAction.title}</p>
-        <p className="text-[11px] text-zinc-400 mt-1 leading-relaxed">{bestAction.description}</p>
+    <div className="flex flex-col gap-1.5 mt-1 ml-9 max-w-[78%]">
+      {suggestions.map(s => (
         <button
-          onClick={() => bestAction.tab && onSwitchTab(bestAction.tab)}
-          className="mt-3 w-full py-2 rounded-lg bg-green-600 hover:bg-green-500 active:bg-green-700 text-white text-xs font-semibold transition-colors"
-          data-testid="button-best-action-today"
+          key={s.intent + s.route}
+          type="button"
+          onClick={() => {
+            // Full navigation is portal-safe (no setLocation inside the portal).
+            window.location.assign(s.route);
+          }}
+          className="flex items-center justify-between gap-2 rounded-lg bg-green-950/40 border border-green-800/50 hover:border-green-600/70 px-3 py-2 text-left transition-all"
+          data-testid={`button-kevin-nav-${s.intent}`}
         >
-          {bestAction.cta}
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-green-300 truncate">{s.label}</p>
+            {s.reason && <p className="text-[10px] text-zinc-500 truncate">{s.reason}</p>}
+          </div>
+          <ExternalLink className="h-3.5 w-3.5 text-green-500 shrink-0" />
         </button>
-      </div>
-
-      {/* Workforce status */}
-      <div>
-        <p className="text-[10px] font-semibold text-green-400 uppercase tracking-widest mb-2">AI Workforce Status</p>
-        <div className="grid grid-cols-2 gap-2">
-          {[
-            { label: "Active Agents", value: activeAgents, icon: Users, color: "text-green-400" },
-            { label: "Total Agents", value: totalAgents, icon: Bot, color: "text-zinc-400" },
-            { label: "Pending Approvals", value: pendingApprovals, icon: Bell, color: pendingApprovals > 0 ? "text-amber-400" : "text-zinc-500",
-              action: pendingApprovals > 0 ? () => onSwitchTab("approvals") : undefined },
-            { label: "Heartbeat", value: successRate != null ? `${successRate}%` : "—", icon: Activity, color: "text-cyan-400" },
-          ].map(s => {
-            const Icon = s.icon;
-            return (
-              <button
-                key={s.label}
-                onClick={s.action}
-                className={`rounded-lg bg-zinc-800/70 border border-zinc-700/60 p-3 text-left transition-all ${s.action ? "hover:border-zinc-500/80 cursor-pointer" : "cursor-default"}`}
-              >
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Icon className={`h-3 w-3 ${s.color}`} />
-                  <span className="text-[10px] text-zinc-500">{s.label}</span>
-                </div>
-                <p className={`text-lg font-bold ${s.color}`}>{s.value}</p>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Heartbeat status */}
-      <div className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3 space-y-1.5">
-        <p className="text-[10px] font-semibold text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-          <Activity className="h-3 w-3" /> Heartbeat
-        </p>
-        {[
-          { label: "Last run", value: lastRunTimestamp ? new Date(lastRunTimestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—" },
-          { label: "Next run", value: nextRunTimestamp ? new Date(nextRunTimestamp).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "Automatic" },
-          { label: "Success rate", value: successRate != null ? `${successRate}%` : "—" },
-        ].map(row => (
-          <div key={row.label} className="flex items-baseline gap-1.5 text-xs min-w-0">
-            <span className="text-zinc-500 shrink-0">{row.label}:</span>
-            <span className="text-zinc-300 truncate">{row.value}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* Product Memory (DB-backed, always available) */}
-      <ProductMemoryCard />
-
-      {/* External Obsidian Sync (optional, only shown when configured) */}
-      <ObsidianStatusCard />
-
-      {/* Executive summary */}
-      {summaryItems.length > 0 && (
-        <div className="rounded-lg bg-green-950/30 border border-green-800/40 p-3">
-          <p className="text-[10px] font-semibold text-green-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-            <Brain className="h-3 w-3" /> CEO Summary
-          </p>
-          <ul className="space-y-1">
-            {summaryItems.map((item, i) => (
-              <li key={i} className="text-xs text-zinc-300 flex items-start gap-1.5">
-                <ChevronRight className="h-3 w-3 text-green-500 mt-0.5 shrink-0" />
-                {item}
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {/* Top priorities */}
-      {topPriorities.length > 0 && (
-        <div>
-          <p className="text-[10px] font-semibold text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-            <Flame className="h-3 w-3" /> Top Priorities
-          </p>
-          <div className="space-y-2">
-            {topPriorities.map((p: any, i: number) => (
-              <div key={i} className="rounded-lg bg-zinc-800/60 border border-zinc-700/50 p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <p className="text-xs font-medium text-zinc-200 leading-snug">{p.title || p.action || "Priority item"}</p>
-                  {p.priority && (
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
-                      p.priority === "critical" ? "bg-red-500/20 text-red-400" :
-                      p.priority === "high" ? "bg-amber-500/20 text-amber-400" :
-                      "bg-zinc-700 text-zinc-400"
-                    }`}>{p.priority}</span>
-                  )}
-                </div>
-                {(p.description || p.reason) && (
-                  <p className="text-[11px] text-zinc-500 mt-1 leading-snug">{p.description || p.reason}</p>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* Quick nav buttons */}
-      <div className="grid grid-cols-2 gap-2 pb-1">
-        {([
-          { label: "View Agents", tab: "agents" as Tab, icon: Users },
-          { label: "Review Approvals", tab: "approvals" as Tab, icon: CheckCircle2 },
-          { label: "Workforce Tasks", tab: "tasks" as Tab, icon: ListTodo },
-          { label: "Ask CEO Agent", tab: "chat" as Tab, icon: MessageSquare },
-        ]).map(btn => {
-          const Icon = btn.icon;
-          return (
-            <button
-              key={btn.label}
-              onClick={() => onSwitchTab(btn.tab)}
-              className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 hover:border-green-700/50 hover:bg-zinc-800 p-3 flex items-center gap-2 text-left transition-all"
-            >
-              <Icon className="h-4 w-4 text-green-400 shrink-0" />
-              <span className="text-xs text-zinc-300">{btn.label}</span>
-            </button>
-          );
-        })}
-      </div>
+      ))}
     </div>
   );
 }
@@ -447,6 +171,7 @@ function ChatTab() {
       if (!reader) throw new Error("No stream");
       const decoder = new TextDecoder();
       let accumulated = ""; let buffer = ""; let hasStarted = false;
+      let blocks: MessageBlocks | undefined;
 
       while (true) {
         const { done, value } = await reader.read();
@@ -461,6 +186,10 @@ function ChatTab() {
           if (data === "[DONE]") continue;
           try {
             const parsed = JSON.parse(data);
+            if (parsed.blocks) {
+              blocks = { ...(blocks ?? {}), ...parsed.blocks };
+              setMessages(prev => { const u = [...prev]; u[idx] = { ...u[idx], blocks }; return u; });
+            }
             if (parsed.content) {
               if (!hasStarted) {
                 hasStarted = true;
@@ -468,12 +197,12 @@ function ChatTab() {
                 setShowThinking(false);
               }
               accumulated += parsed.content;
-              setMessages(prev => { const u = [...prev]; u[idx] = { role: "assistant", content: accumulated, isStreaming: true }; return u; });
+              setMessages(prev => { const u = [...prev]; u[idx] = { role: "assistant", content: accumulated, isStreaming: true, blocks }; return u; });
             }
           } catch {}
         }
       }
-      setMessages(prev => { const u = [...prev]; u[idx] = { role: "assistant", content: accumulated || "I couldn't process that. Please try again.", isStreaming: false }; return u; });
+      setMessages(prev => { const u = [...prev]; u[idx] = { role: "assistant", content: accumulated || "I couldn't process that. Please try again.", isStreaming: false, blocks }; return u; });
     } catch (err: any) {
       if (thinkingTimerRef.current) { clearTimeout(thinkingTimerRef.current); thinkingTimerRef.current = null; }
       setMessages(prev => { const u = [...prev]; u[idx] = { role: "assistant", content: `Something went wrong: ${err.message}`, isStreaming: false }; return u; });
@@ -484,7 +213,12 @@ function ChatTab() {
     }
   };
 
-  const PROMPTS = ["What should I focus on today?", "Which leads are most likely to convert?", "Any revenue risks?", "What did the heartbeat discover?"];
+  const PROMPTS = [
+    "What should I focus on today?",
+    "Which leads are most likely to convert?",
+    "Any open coaching slots this week?",
+    "Draft a follow-up for my newest lead",
+  ];
 
   return (
     <div className="flex flex-col flex-1 overflow-hidden">
@@ -495,8 +229,8 @@ function ChatTab() {
               <Brain className="h-6 w-6 text-green-400" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-zinc-200 mb-1">CEO Agent</p>
-              <p className="text-xs text-zinc-500">Ask me about your business — revenue risks, lead conversion, coach capacity, retention, or anything else.</p>
+              <p className="text-sm font-semibold text-zinc-200 mb-1">Kevin</p>
+              <p className="text-xs text-zinc-500">Ask about your business, leads, scheduling, or retention — or ask Kevin to draft outreach for your review.</p>
             </div>
             <div className="grid grid-cols-1 gap-1.5 w-full mt-1">
               {PROMPTS.map(p => (
@@ -511,24 +245,29 @@ function ChatTab() {
         {messages.map((msg, i) => {
           const isActive = msg.isStreaming && streamingIndex === i;
           return (
-            <div key={i} className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-              data-testid={`chat-message-${msg.role}-${i}`}>
-              {msg.role === "assistant" && (
-                <div className="shrink-0 w-7 h-7 rounded-full bg-green-600 flex items-center justify-center mt-0.5">
-                  <Brain className="h-4 w-4 text-white" />
+            <div key={i}>
+              <div className={`flex gap-2 ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+                data-testid={`chat-message-${msg.role}-${i}`}>
+                {msg.role === "assistant" && (
+                  <div className="shrink-0 w-7 h-7 rounded-full bg-green-600 flex items-center justify-center mt-0.5">
+                    <Brain className="h-4 w-4 text-white" />
+                  </div>
+                )}
+                <div className={`max-w-[78%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed ${
+                  msg.role === "user" ? "bg-green-600 text-white" : isActive ? "bg-zinc-800 text-zinc-100 chat-bubble-streaming" : "bg-zinc-800 text-zinc-100"
+                }`}>
+                  {msg.role === "assistant" ? (
+                    isActive ? <StreamingBubble content={msg.content} isStreaming showThinking={showThinking} /> : (msg.content || <span className="text-zinc-500 italic text-xs">—</span>)
+                  ) : msg.content}
                 </div>
-              )}
-              <div className={`max-w-[78%] rounded-xl px-3 py-2 text-sm whitespace-pre-wrap leading-relaxed ${
-                msg.role === "user" ? "bg-green-600 text-white" : isActive ? "bg-zinc-800 text-zinc-100 chat-bubble-streaming" : "bg-zinc-800 text-zinc-100"
-              }`}>
-                {msg.role === "assistant" ? (
-                  isActive ? <StreamingBubble content={msg.content} isStreaming showThinking={showThinking} /> : (msg.content || <span className="text-zinc-500 italic text-xs">—</span>)
-                ) : msg.content}
+                {msg.role === "user" && (
+                  <div className="shrink-0 w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center mt-0.5">
+                    <User className="h-4 w-4 text-zinc-400" />
+                  </div>
+                )}
               </div>
-              {msg.role === "user" && (
-                <div className="shrink-0 w-7 h-7 rounded-full bg-zinc-700 flex items-center justify-center mt-0.5">
-                  <User className="h-4 w-4 text-zinc-400" />
-                </div>
+              {msg.role === "assistant" && !isActive && msg.blocks?.navigation && (
+                <NavSuggestionButtons suggestions={msg.blocks.navigation} />
               )}
             </div>
           );
@@ -543,7 +282,7 @@ function ChatTab() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-            placeholder="Ask the CEO Agent…"
+            placeholder="Ask Kevin…"
             className="flex-1 resize-none rounded-lg border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-green-500/50 min-h-[38px] max-h-[100px]"
             rows={1}
             disabled={isLoading}
@@ -554,334 +293,268 @@ function ChatTab() {
             <Send className="h-4 w-4" />
           </Button>
         </div>
-        {isLoading && <p className="text-[10px] text-zinc-600 mt-1.5 tracking-wide">CEO Agent thinking…</p>}
+        {isLoading && <p className="text-[10px] text-zinc-600 mt-1.5 tracking-wide">Kevin is thinking…</p>}
       </div>
     </div>
   );
 }
 
-// ─── Agents Tab ───────────────────────────────────────────────────────────────
+// ─── Inbox Tab — org AI communication center ──────────────────────────────────
 
-const AGENT_ICON_MAP: Record<string, any> = {
-  revenue: TrendingUp, growth: BarChart3, scheduling: CalendarCheck, retention: Users,
-  client_success: Briefcase, outreach: Mail, team_training: Target, hiring: Users,
-  operations: Settings, software_improvement: Zap,
+const STATUS_COLORS: Record<string, string> = {
+  executed: "text-green-400 bg-green-500/15",
+  auto_executed: "text-green-400 bg-green-500/15",
+  sent: "text-green-400 bg-green-500/15",
+  failed: "text-red-400 bg-red-500/15",
+  rejected: "text-zinc-400 bg-zinc-700/60",
+  dismissed: "text-zinc-400 bg-zinc-700/60",
+  cancelled: "text-zinc-400 bg-zinc-700/60",
+  skipped: "text-zinc-400 bg-zinc-700/60",
 };
 
-function AgentsTab() {
-  const { data: agentsRaw, isLoading } = useQuery<any>({
-    queryKey: ["/api/workforce/agents"],
-    queryFn: () => fetchJson("/api/workforce/agents"),
-  });
-
-  const agents: any[] = Array.isArray(agentsRaw) ? agentsRaw : [];
-
-  if (isLoading) return (
-    <div className="flex-1 p-4 space-y-2">
-      {[1,2,3,4].map(i => <div key={i} className="h-16 bg-zinc-800/60 rounded-lg animate-pulse" />)}
-    </div>
-  );
-
-  return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-2">
-      <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-3">
-        {agents.filter(a => a.enabled).length} of {agents.length} agents active
-      </p>
-      {agents.map(agent => {
-        const Icon = AGENT_ICON_MAP[agent.agentType] || Bot;
-        const sr = agent.successRate;
-        return (
-          <div key={agent.agentType} data-testid={`agent-card-${agent.agentType}`}
-            className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3">
-            <div className="flex items-start justify-between gap-2 mb-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center shrink-0 ${agent.enabled ? "bg-green-500/20" : "bg-zinc-700/60"}`}>
-                  <Icon className={`h-3.5 w-3.5 ${agent.enabled ? "text-green-400" : "text-zinc-500"}`} />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-zinc-200 truncate">{agent.displayName || agent.agentType}</p>
-                  <p className="text-[10px] text-zinc-500 truncate">{agent.description || agent.role || ""}</p>
-                </div>
-              </div>
-              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
-                agent.enabled ? "bg-green-500/20 text-green-400" : "bg-zinc-700 text-zinc-500"
-              }`}>{agent.enabled ? "Active" : "Off"}</span>
-            </div>
-            <div className="flex items-center gap-3 text-[10px] text-zinc-500">
-              <span className="flex items-center gap-1"><Activity className="h-2.5 w-2.5" />{agent.recentActions ?? 0} actions</span>
-              {sr != null && (
-                <span className={`flex items-center gap-1 ${sr >= 80 ? "text-green-400" : sr >= 60 ? "text-amber-400" : "text-red-400"}`}>
-                  <TrendingUp className="h-2.5 w-2.5" />{sr}% success
-                </span>
-              )}
-              {agent.blockedActions > 0 && (
-                <span className="flex items-center gap-1 text-amber-400">
-                  <Shield className="h-2.5 w-2.5" />{agent.blockedActions} blocked
-                </span>
-              )}
-            </div>
-            {agent.disabledReason && (
-              <p className="text-[10px] text-zinc-600 mt-1 italic">{agent.disabledReason}</p>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+function timeAgo(dt: string | null | undefined): string {
+  if (!dt) return "—";
+  const diff = Date.now() - new Date(dt).getTime();
+  const m = Math.floor(Math.abs(diff) / 60000);
+  const suffix = diff >= 0 ? "ago" : "from now";
+  if (m < 60) return `${m}m ${suffix}`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${suffix}`;
+  return `${Math.floor(h / 24)}d ${suffix}`;
 }
 
-// ─── Tasks Tab ────────────────────────────────────────────────────────────────
+function InboxTab({ onOpenRoute }: { onOpenRoute: (route: string) => void }) {
+  const { toast } = useToast();
+  const qc = useQueryClient();
 
-function TasksTab() {
-  const { data: runsRaw, isLoading } = useQuery<any>({
-    queryKey: ["/api/admin/ceo-heartbeat/runs"],
-    queryFn: () => fetchJson("/api/admin/ceo-heartbeat/runs"),
+  const { data, isLoading, isError, refetch } = useQuery<any>({
+    queryKey: ["/api/kevin/inbox"],
+    queryFn: () => fetchJson("/api/kevin/inbox"),
+    refetchInterval: 20000,
+    retry: 1,
   });
-  const runs: any[] = Array.isArray(runsRaw?.runs)
-    ? runsRaw.runs
-    : Array.isArray(runsRaw)
-      ? runsRaw
-      : [];
 
-  function timeAgo(dt: string) {
-    const diff = Date.now() - new Date(dt).getTime();
-    const m = Math.floor(diff / 60000);
-    if (m < 60) return `${m}m ago`;
-    const h = Math.floor(m / 60);
-    if (h < 24) return `${h}h ago`;
-    return `${Math.floor(h / 24)}d ago`;
-  }
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ["/api/kevin/inbox"] });
+    qc.invalidateQueries({ queryKey: ["/api/ai-approvals"] });
+    qc.invalidateQueries({ queryKey: ["/api/ai-approvals/metrics"] });
+  };
+
+  const approveMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/ai-approvals/${id}/approve`, {}),
+    onSuccess: () => { toast({ title: "Approved — email will be sent" }); invalidate(); },
+    onError: (e: any) => toast({ title: "Error approving", description: e?.message, variant: "destructive" }),
+  });
+  const rejectMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/ai-approvals/${id}/reject`, { reason: "Rejected via Kevin Inbox" }),
+    onSuccess: () => { toast({ title: "Rejected" }); invalidate(); },
+    onError: (e: any) => toast({ title: "Error rejecting", description: e?.message, variant: "destructive" }),
+  });
+  const approveFollowupMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/agentmail/followups/${id}/approve`, {}),
+    onSuccess: () => { toast({ title: "Follow-up approved" }); invalidate(); },
+    onError: (e: any) => toast({ title: "Error approving follow-up", description: e?.message, variant: "destructive" }),
+  });
+  const cancelFollowupMutation = useMutation({
+    mutationFn: (id: string) => apiRequest("POST", `/api/agentmail/followups/${id}/cancel`, {}),
+    onSuccess: () => { toast({ title: "Follow-up cancelled" }); invalidate(); },
+    onError: (e: any) => toast({ title: "Error cancelling", description: e?.message, variant: "destructive" }),
+  });
 
   if (isLoading) return (
     <div className="flex-1 p-4 space-y-2">
-      {[1,2,3].map(i => <div key={i} className="h-14 bg-zinc-800/60 rounded-lg animate-pulse" />)}
+      {[1, 2, 3].map(i => <div key={i} className="h-20 bg-zinc-800/60 rounded-lg animate-pulse" />)}
     </div>
   );
 
-  const grouped = {
-    running: (runs ?? []).filter(r => r.status === "running"),
-    completed: (runs ?? []).filter(r => r.status === "completed"),
-    failed: (runs ?? []).filter(r => r.status === "failed"),
-  };
+  if (isError) return (
+    <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-3">
+      <AlertTriangle className="h-8 w-8 text-amber-400" />
+      <p className="text-sm text-zinc-300">Couldn't load your inbox</p>
+      <Button size="sm" onClick={() => refetch()} className="bg-green-600 hover:bg-green-700 text-white">
+        <RefreshCw className="h-3 w-3 mr-1" /> Retry
+      </Button>
+    </div>
+  );
 
-  const statusCfg: Record<string, { color: string; icon: any; bg: string }> = {
-    running:   { color: "text-cyan-400",    icon: Loader2, bg: "bg-cyan-500/15" },
-    completed: { color: "text-green-400",   icon: CheckCircle2, bg: "bg-green-500/15" },
-    failed:    { color: "text-red-400",     icon: XCircle, bg: "bg-red-500/15" },
-  };
-
-  const allRuns = [...grouped.running, ...grouped.completed, ...grouped.failed].slice(0, 20);
+  const approvals: any[] = Array.isArray(data?.approvals) ? data.approvals : [];
+  const followups: any[] = Array.isArray(data?.followups) ? data.followups : [];
+  const recent: any[] = Array.isArray(data?.recentActivity) ? data.recentActivity : [];
+  const automations = data?.automations ?? {};
+  const sequences: any[] = Array.isArray(automations.sequences) ? automations.sequences : [];
 
   return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-      <div className="grid grid-cols-3 gap-2 mb-3">
-        {[
-          { label: "Running", count: grouped.running.length, color: "text-cyan-400" },
-          { label: "Done", count: grouped.completed.length, color: "text-green-400" },
-          { label: "Failed", count: grouped.failed.length, color: "text-red-400" },
-        ].map(s => (
-          <div key={s.label} className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-2 text-center">
-            <p className={`text-base font-bold ${s.color}`}>{s.count}</p>
-            <p className="text-[10px] text-zinc-500">{s.label}</p>
+    <div className="flex-1 overflow-y-auto p-4 space-y-5">
+      {/* Emergency pause banner */}
+      {automations.emergencyPaused && (
+        <div className="rounded-lg bg-amber-950/40 border border-amber-700/50 p-3 flex items-start gap-2">
+          <PauseCircle className="h-4 w-4 text-amber-400 mt-0.5 shrink-0" />
+          <div>
+            <p className="text-xs font-semibold text-amber-300">All AI communication is paused</p>
+            <p className="text-[10px] text-zinc-400 mt-0.5">Nothing will send until automation is resumed in AI Workforce Settings.</p>
+          </div>
+        </div>
+      )}
+
+      {/* Pending approvals */}
+      <div>
+        <p className="text-[10px] font-semibold text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+          <Mail className="h-3 w-3" /> Emails awaiting your approval ({approvals.length})
+        </p>
+        {approvals.length === 0 ? (
+          <div className="rounded-lg bg-zinc-800/40 border border-zinc-700/40 p-3 text-center">
+            <p className="text-xs text-zinc-500">No emails waiting for review</p>
+          </div>
+        ) : approvals.slice(0, 8).map(item => (
+          <div key={item.id} className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3 space-y-2 mb-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-zinc-200 truncate">{item.subject || item.actionType || "Draft email"}</p>
+                <p className="text-[10px] text-zinc-500 mt-0.5 truncate">
+                  To: {item.recipientEmail || "—"}{item.riskLevel && ` · ${item.riskLevel} risk`}
+                </p>
+              </div>
+              <span className="text-[10px] font-semibold text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded-full shrink-0">Pending</span>
+            </div>
+            {item.bodyPreview && (
+              <p className="text-[11px] text-zinc-400 line-clamp-2 leading-relaxed">{item.bodyPreview}</p>
+            )}
+            <div className="flex gap-2 pt-1">
+              <Button size="sm" className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white flex-1"
+                disabled={approveMutation.isPending}
+                onClick={() => approveMutation.mutate(item.id)}
+                data-testid={`button-kevin-approve-${item.id}`}>
+                {approveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
+                Approve
+              </Button>
+              <Button size="sm" variant="outline" className="h-7 text-xs border-red-800/50 text-red-400 hover:bg-red-950/30 flex-1"
+                disabled={rejectMutation.isPending}
+                onClick={() => rejectMutation.mutate(item.id)}
+                data-testid={`button-kevin-reject-${item.id}`}>
+                <XCircle className="h-3 w-3 mr-1" /> Reject
+              </Button>
+            </div>
+          </div>
+        ))}
+        {approvals.length > 8 && (
+          <button type="button" onClick={() => onOpenRoute("/admin/ai-approvals")}
+            className="w-full text-center text-[11px] text-green-400 hover:text-green-300 py-1.5">
+            View all {approvals.length} in AI Approvals →
+          </button>
+        )}
+      </div>
+
+      {/* Scheduled follow-ups */}
+      <div>
+        <p className="text-[10px] font-semibold text-cyan-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+          <Clock className="h-3 w-3" /> Scheduled follow-ups ({followups.length})
+        </p>
+        {followups.length === 0 ? (
+          <div className="rounded-lg bg-zinc-800/40 border border-zinc-700/40 p-3 text-center">
+            <p className="text-xs text-zinc-500">No follow-ups scheduled</p>
+          </div>
+        ) : followups.slice(0, 6).map(f => (
+          <div key={f.id} className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3 mb-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-zinc-200 truncate">{f.subject}</p>
+                <p className="text-[10px] text-zinc-500 mt-0.5 truncate">
+                  To: {f.recipientName || f.recipientEmail} · Step {f.sequenceStep} · {timeAgo(f.scheduledFor)}
+                </p>
+              </div>
+              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+                f.approvalStatus === "approved" ? "text-green-400 bg-green-500/15" : "text-amber-400 bg-amber-500/15"
+              }`}>{f.approvalStatus === "approved" ? "Approved" : "Needs review"}</span>
+            </div>
+            <div className="flex gap-2 pt-2">
+              {f.approvalStatus !== "approved" && (
+                <Button size="sm" className="h-6 text-[11px] bg-green-600 hover:bg-green-700 text-white flex-1"
+                  disabled={approveFollowupMutation.isPending}
+                  onClick={() => approveFollowupMutation.mutate(f.id)}
+                  data-testid={`button-kevin-followup-approve-${f.id}`}>
+                  Approve
+                </Button>
+              )}
+              <Button size="sm" variant="outline" className="h-6 text-[11px] border-zinc-700 text-zinc-400 hover:text-zinc-200 flex-1"
+                disabled={cancelFollowupMutation.isPending}
+                onClick={() => cancelFollowupMutation.mutate(f.id)}
+                data-testid={`button-kevin-followup-cancel-${f.id}`}>
+                Cancel
+              </Button>
+            </div>
           </div>
         ))}
       </div>
 
-      {allRuns.length === 0 ? (
-        <div className="text-center py-8 text-zinc-500">
-          <Clock className="h-8 w-8 mx-auto mb-2 opacity-40" />
-          <p className="text-sm">No heartbeat runs yet</p>
-        </div>
-      ) : allRuns.map(run => {
-        const cfg = statusCfg[run.status] ?? statusCfg.completed;
-        const Icon = cfg.icon;
-        return (
-          <div key={run.id} className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3">
-            <div className="flex items-start gap-2">
-              <div className={`w-6 h-6 rounded-full ${cfg.bg} flex items-center justify-center shrink-0 mt-0.5`}>
-                <Icon className={`h-3 w-3 ${cfg.color} ${run.status === "running" ? "animate-spin" : ""}`} />
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-zinc-200 truncate">{run.runType || "Heartbeat cycle"}</p>
-                <p className="text-[10px] text-zinc-500 mt-0.5">
-                  {run.startedAt ? timeAgo(run.startedAt) : "—"}
-                  {run.durationMs ? ` · ${run.durationMs}ms` : ""}
-                </p>
-                {run.summary && <p className="text-[11px] text-zinc-400 mt-1 line-clamp-2">{run.summary}</p>}
-              </div>
-              <span className={`text-[10px] font-semibold shrink-0 ${cfg.color}`}>{run.status}</span>
-            </div>
+      {/* Active automations */}
+      <div>
+        <p className="text-[10px] font-semibold text-green-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+          <Zap className="h-3 w-3" /> Active automations
+        </p>
+        {sequences.length === 0 ? (
+          <div className="rounded-lg bg-zinc-800/40 border border-zinc-700/40 p-3 text-center">
+            <p className="text-xs text-zinc-500">No active email sequences</p>
           </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Approvals Tab ────────────────────────────────────────────────────────────
-
-function ApprovalsTab() {
-  const { toast } = useToast();
-  const qc = useQueryClient();
-
-  const { data: approvals, isLoading } = useQuery<any[]>({
-    queryKey: ["/api/ai-approvals"],
-    queryFn: () => fetchJson("/api/ai-approvals?status=proposed&limit=20"),
-    refetchInterval: 15000,
-  });
-
-  const approveMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/ai-approvals/${id}/approve`, {}),
-    onSuccess: () => { toast({ title: "Approved" }); qc.invalidateQueries({ queryKey: ["/api/ai-approvals"] }); },
-    onError: () => toast({ title: "Error approving", variant: "destructive" }),
-  });
-
-  const rejectMutation = useMutation({
-    mutationFn: (id: string) => apiRequest("POST", `/api/ai-approvals/${id}/reject`, { reason: "Rejected via CEO Agent" }),
-    onSuccess: () => { toast({ title: "Rejected" }); qc.invalidateQueries({ queryKey: ["/api/ai-approvals"] }); },
-    onError: () => toast({ title: "Error rejecting", variant: "destructive" }),
-  });
-
-  // Normalize: API may return an object like { message: "Unauthorized" } on
-  // 401, or { items: [...] } — neither is an array, so ?? [] would not help.
-  // Always extract to a guaranteed array first.
-  const approvalsList: any[] = Array.isArray(approvals)
-    ? approvals
-    : Array.isArray((approvals as any)?.items)
-      ? (approvals as any).items
-      : [];
-  const pending = approvalsList.filter(a => a.status === "proposed" || a.approvalRequired);
-
-  if (isLoading) return (
-    <div className="flex-1 p-4 space-y-2">
-      {[1,2].map(i => <div key={i} className="h-24 bg-zinc-800/60 rounded-lg animate-pulse" />)}
-    </div>
-  );
-
-  return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-3">
-      <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest">
-        {pending.length} pending approval{pending.length !== 1 ? "s" : ""}
-      </p>
-
-      {pending.length === 0 ? (
-        <div className="text-center py-8 text-zinc-500">
-          <CheckCircle2 className="h-8 w-8 mx-auto mb-2 opacity-40 text-green-500" />
-          <p className="text-sm">All caught up — no approvals needed</p>
-        </div>
-      ) : pending.map(item => (
-        <div key={item.id} className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3 space-y-2">
-          <div className="flex items-start justify-between gap-2">
+        ) : sequences.map((s: any) => (
+          <div key={s.sequenceName} className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3 mb-2 flex items-center justify-between gap-2">
             <div className="min-w-0">
-              <p className="text-xs font-semibold text-zinc-200 truncate">{item.subject || item.actionType || "Action"}</p>
-              <p className="text-[10px] text-zinc-500 mt-0.5 truncate">
-                {item.recipientEmail || item.agentType || "—"}
-                {item.riskLevel && ` · ${item.riskLevel} risk`}
+              <p className="text-xs font-medium text-zinc-200 truncate">{s.sequenceName}</p>
+              <p className="text-[10px] text-zinc-500 mt-0.5">
+                {s.scheduledSteps} step{s.scheduledSteps !== 1 ? "s" : ""} queued
+                {s.nextScheduledFor ? ` · next ${timeAgo(s.nextScheduledFor)}` : ""}
               </p>
             </div>
-            <span className="text-[10px] font-semibold text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded-full shrink-0">Pending</span>
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${
+              automations.emergencyPaused ? "text-amber-400 bg-amber-500/15" : "text-green-400 bg-green-500/15"
+            }`}>{automations.emergencyPaused ? "Paused" : "Active"}</span>
           </div>
-          {item.bodyPreview && (
-            <p className="text-[11px] text-zinc-400 line-clamp-2 leading-relaxed">{item.bodyPreview}</p>
-          )}
-          <div className="flex gap-2 pt-1">
-            <Button
-              size="sm"
-              className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white flex-1"
-              disabled={approveMutation.isPending}
-              onClick={() => approveMutation.mutate(item.id)}
-              data-testid={`button-ceo-approve-${item.id}`}
-            >
-              {approveMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3 mr-1" />}
-              Approve
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-7 text-xs border-red-800/50 text-red-400 hover:bg-red-950/30 flex-1"
-              disabled={rejectMutation.isPending}
-              onClick={() => rejectMutation.mutate(item.id)}
-              data-testid={`button-ceo-reject-${item.id}`}
-            >
-              <XCircle className="h-3 w-3 mr-1" /> Reject
-            </Button>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
+        ))}
+      </div>
 
-// ─── Settings Tab ─────────────────────────────────────────────────────────────
-
-function SettingsTab({ onClose }: { onClose: () => void }) {
-  const { data: settings, isLoading } = useQuery<any>({
-    queryKey: ["/api/workforce/settings"],
-    queryFn: () => fetchJson("/api/workforce/settings"),
-  });
-
-  const AUTOMATION_MODES = [
-    { value: "co_pilot", label: "Co-Pilot", desc: "AI suggests, you decide everything" },
-    { value: "assisted", label: "Assisted", desc: "AI acts on low-risk items automatically" },
-    { value: "autonomous", label: "Autonomous", desc: "AI acts unless you intervene" },
-  ];
-
-  const currentMode = settings?.automationMode ?? "co_pilot";
-
-  return (
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      {/* Recent activity */}
       <div>
-        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-3">Automation Mode</p>
-        <div className="space-y-2">
-          {AUTOMATION_MODES.map(mode => (
-            <div key={mode.value}
-              className={`rounded-lg border p-3 transition-all ${currentMode === mode.value ? "border-green-600/60 bg-green-950/20" : "border-zinc-700/60 bg-zinc-800/60"}`}>
-              <div className="flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="text-xs font-semibold text-zinc-200">{mode.label}</p>
-                  <p className="text-[10px] text-zinc-500 mt-0.5">{mode.desc}</p>
-                </div>
-                {currentMode === mode.value
-                  ? <ToggleRight className="h-5 w-5 text-green-400 shrink-0" />
-                  : <ToggleLeft className="h-5 w-5 text-zinc-600 shrink-0" />}
-              </div>
+        <p className="text-[10px] font-semibold text-zinc-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+          <History className="h-3 w-3" /> Recent activity
+        </p>
+        {recent.length === 0 ? (
+          <div className="rounded-lg bg-zinc-800/40 border border-zinc-700/40 p-3 text-center">
+            <p className="text-xs text-zinc-500">No recent email activity</p>
+          </div>
+        ) : recent.slice(0, 10).map((r: any) => (
+          <div key={`${r.kind}-${r.id}`} className="flex items-center justify-between gap-2 py-1.5 border-b border-zinc-800/80 last:border-0">
+            <div className="min-w-0">
+              <p className="text-[11px] text-zinc-300 truncate">{r.subject || "(no subject)"}</p>
+              <p className="text-[10px] text-zinc-600 truncate">
+                {r.recipientEmail || "—"} · {timeAgo(r.at)}
+                {r.errorMessage ? ` · ${r.errorMessage}` : ""}
+              </p>
             </div>
-          ))}
-        </div>
+            <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full shrink-0 ${STATUS_COLORS[r.status] ?? "text-zinc-400 bg-zinc-700/60"}`}>
+              {r.status}
+            </span>
+          </div>
+        ))}
       </div>
 
-      <div>
-        <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-3">Quick Links</p>
-        <div className="space-y-1.5">
-          {[
-            { label: "Full AI Approvals Inbox", href: "/admin/ai-approvals" },
-            { label: "CEO Heartbeat Dashboard", href: "/admin/ceo-heartbeat" },
-            { label: "AI Workforce Operations", href: "/admin/ai-workforce-optimization" },
-          ].map(link => (
-            <button
-              key={link.href}
-              type="button"
-              onClick={() => onClose()}
-              className="w-full flex items-center justify-between gap-2 rounded-lg bg-zinc-800/60 border border-zinc-700/60 hover:border-zinc-500/80 px-3 py-2.5 transition-all text-left"
-            >
-              <span className="text-xs text-zinc-300">{link.label}</span>
-              <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
-            </button>
-          ))}
-        </div>
+      {/* Deep links */}
+      <div className="space-y-1.5 pb-1">
+        {[
+          { label: "Full AI Approvals Inbox", route: "/admin/ai-approvals" },
+          { label: "AgentMail Follow-Ups", route: "/admin/agentmail" },
+          { label: "Lead Pipeline", route: "/admin/lead-pipeline" },
+        ].map(link => (
+          <button key={link.route} type="button" onClick={() => onOpenRoute(link.route)}
+            className="w-full flex items-center justify-between gap-2 rounded-lg bg-zinc-800/60 border border-zinc-700/60 hover:border-zinc-500/80 px-3 py-2.5 transition-all text-left">
+            <span className="text-xs text-zinc-300">{link.label}</span>
+            <ChevronRight className="h-3.5 w-3.5 text-zinc-600 shrink-0" />
+          </button>
+        ))}
       </div>
-
-      {settings?.heartbeatFrequencyMinutes && (
-        <div className="rounded-lg bg-zinc-800/60 border border-zinc-700/60 p-3">
-          <p className="text-[10px] font-semibold text-zinc-500 uppercase tracking-widest mb-1">Heartbeat Frequency</p>
-          <p className="text-sm font-semibold text-cyan-400">Every {settings.heartbeatFrequencyMinutes} min</p>
-        </div>
-      )}
     </div>
   );
 }
 
-// ─── Local error boundary for the Brain panel ────────────────────────────────
+// ─── Local error boundary for the Kevin panel ─────────────────────────────────
 
 interface ChatWidgetBoundaryState { hasError: boolean }
 
@@ -905,23 +578,16 @@ class ChatWidgetErrorBoundary extends Component<
         <div className="flex-1 flex flex-col items-center justify-center p-6 text-center gap-4">
           <AlertTriangle className="h-8 w-8 text-amber-400" />
           <div>
-            <p className="text-sm font-semibold text-zinc-200">Assistant failed to load</p>
+            <p className="text-sm font-semibold text-zinc-200">Kevin failed to load</p>
             <p className="text-xs text-zinc-500 mt-1">A rendering error occurred. Try retrying or closing the panel.</p>
           </div>
           <div className="flex gap-2">
-            <Button
-              size="sm"
-              className="bg-green-600 hover:bg-green-700 text-white"
-              onClick={() => this.setState({ hasError: false })}
-            >
+            <Button size="sm" className="bg-green-600 hover:bg-green-700 text-white"
+              onClick={() => this.setState({ hasError: false })}>
               <RefreshCw className="h-3 w-3 mr-1" /> Retry
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="border-zinc-700 text-zinc-400 hover:text-zinc-200"
-              onClick={() => this.props.onClose()}
-            >
+            <Button size="sm" variant="outline" className="border-zinc-700 text-zinc-400 hover:text-zinc-200"
+              onClick={() => this.props.onClose()}>
               <X className="h-3 w-3 mr-1" /> Close
             </Button>
           </div>
@@ -935,15 +601,11 @@ class ChatWidgetErrorBoundary extends Component<
 // ─── Tab navigation config ────────────────────────────────────────────────────
 
 const TABS: { id: Tab; label: string; icon: any }[] = [
-  { id: "ceo",       label: "CEO",       icon: Home },
-  { id: "chat",      label: "Chat",      icon: MessageSquare },
-  { id: "agents",    label: "Agents",    icon: Users },
-  { id: "tasks",     label: "Tasks",     icon: ListTodo },
-  { id: "approvals", label: "Approve",   icon: CheckCircle2 },
-  { id: "settings",  label: "Settings",  icon: Settings },
+  { id: "chat",  label: "Kevin Chat",  icon: MessageSquare },
+  { id: "inbox", label: "Kevin Inbox", icon: Inbox },
 ];
 
-// ─── Main Widget ──────────────────────────────────────────────────────────────
+// ─── Main Widget — Kevin launcher (Chat + Inbox only) ─────────────────────────
 
 export function ChatWidget() {
   const [isMounted, setIsMounted] = useState(false);
@@ -952,12 +614,9 @@ export function ChatWidget() {
   // While true, ALL tab content (and their queries) is replaced with an empty
   // spacer so nothing can throw during the 300ms slide-out animation.
   const [isClosing, setIsClosing] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("ceo");
-  // READ-ONLY — never call setLocation inside the Brain sidebar.
-  // Navigation from within the portal causes page-level side-effects.
-  const [pathname] = useLocation();
+  const [activeTab, setActiveTab] = useState<Tab>("chat");
 
-  // Role gate — CEO/Brain agent is only for ADMIN and COACH roles.
+  // Role gate — Kevin is only for ADMIN and COACH roles.
   const { data: profile, isLoading: profileLoading } = useQuery<{ role?: string }>({
     queryKey: ["/api/profile"],
     staleTime: 5 * 60_000,
@@ -975,29 +634,28 @@ export function ChatWidget() {
   const pendingCount = approvalMetrics?.pending ?? 0;
 
   const handleOpen = () => {
-    console.log("[BrainFAB:open] pathname =", pathname);
     setIsClosing(false);
     setIsMounted(true);
     requestAnimationFrame(() => setIsOpen(true));
   };
 
   const handleClose = () => {
-    console.log("[BrainFAB:close] pathname =", pathname);
     // Drop tab content immediately — prevents ANY query-powered tab component
     // from rendering (and potentially crashing) during the slide-out animation.
     setIsClosing(true);
     setIsOpen(false);
   };
 
+  // Portal-safe deep navigation: full page navigation, never setLocation.
+  const handleOpenRoute = (route: string) => {
+    window.location.assign(route);
+  };
+
   // Only unmount once the panel's OWN transform transition ends.
-  // Guards: (1) only the panel div itself, not child elements
-  //         (2) only on the transform property, not opacity or others
-  //         (3) only when already closed (isOpen false)
   const handlePanelTransitionEnd = (e: React.TransitionEvent<HTMLDivElement>) => {
     if (e.currentTarget !== (e.target as Element)) return;
     if (e.propertyName !== "transform") return;
     if (isOpen) return;
-    console.log("[BrainFAB:unmounted] pathname =", pathname);
     setIsMounted(false);
     setIsClosing(false);
   };
@@ -1012,11 +670,7 @@ export function ChatWidget() {
       {isMounted && (
         <div
           aria-hidden="true"
-          onClick={(e) => {
-            e.stopPropagation();
-            console.log("[BrainFAB:backdrop-click] pathname =", pathname);
-            handleClose();
-          }}
+          onClick={(e) => { e.stopPropagation(); handleClose(); }}
           className="fixed inset-0 z-[9990] bg-black/50 transition-opacity duration-300"
           style={{ opacity: isOpen ? 1 : 0, pointerEvents: isOpen ? "auto" : "none" }}
         />
@@ -1045,19 +699,14 @@ export function ChatWidget() {
                 <Brain className="text-white" style={{ width: 18, height: 18 }} />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-bold text-white leading-none">CEO Agent</p>
-                <p className="text-[10px] text-zinc-500 mt-0.5">AI Workforce Command Center</p>
+                <p className="text-sm font-bold text-white leading-none">Kevin</p>
+                <p className="text-[10px] text-zinc-500 mt-0.5">Your AI operations assistant</p>
               </div>
             </div>
             <Button
               size="icon" variant="ghost"
               className="h-7 w-7 text-zinc-500 hover:text-zinc-300 no-default-hover-elevate shrink-0"
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                console.log("[BrainFAB:close] [header-X] pathname =", pathname);
-                handleClose();
-              }}
+              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleClose(); }}
               data-testid="button-close-chat"
             >
               <X className="h-4 w-4" />
@@ -1071,12 +720,8 @@ export function ChatWidget() {
           ) : (
             <div className="flex-1 overflow-hidden flex flex-col min-h-0">
               <ChatWidgetErrorBoundary key={String(isMounted)} onClose={handleClose}>
-                {activeTab === "ceo"       && <CeoHomeTab onSwitchTab={setActiveTab} />}
-                {activeTab === "chat"      && <ChatTab />}
-                {activeTab === "agents"    && <AgentsTab />}
-                {activeTab === "tasks"     && <TasksTab />}
-                {activeTab === "approvals" && <ApprovalsTab />}
-                {activeTab === "settings"  && <SettingsTab onClose={handleClose} />}
+                {activeTab === "chat"  && <ChatTab />}
+                {activeTab === "inbox" && <InboxTab onOpenRoute={handleOpenRoute} />}
               </ChatWidgetErrorBoundary>
             </div>
           )}
@@ -1089,12 +734,12 @@ export function ChatWidget() {
             {TABS.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
-              const showBadge = tab.id === "approvals" && pendingCount > 0;
+              const showBadge = tab.id === "inbox" && pendingCount > 0;
               return (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  data-testid={`tab-ceo-${tab.id}`}
+                  data-testid={`tab-kevin-${tab.id}`}
                   className={`flex-1 flex flex-col items-center justify-center py-2.5 gap-0.5 transition-colors relative ${
                     isActive ? "text-green-400" : "text-zinc-600 hover:text-zinc-400"
                   }`}
@@ -1107,7 +752,7 @@ export function ChatWidget() {
                       </span>
                     )}
                   </div>
-                  <span className="text-[9px] font-medium leading-none">{tab.label}</span>
+                  <span className="text-[10px] font-medium leading-none">{tab.label}</span>
                   {isActive && <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-5 h-0.5 bg-green-400 rounded-full" />}
                 </button>
               );
@@ -1122,12 +767,8 @@ export function ChatWidget() {
           type="button"
           className="fixed right-5 z-[9999] flex items-center justify-center h-14 w-14 sm:h-16 sm:w-16 rounded-full bg-green-600 text-white shadow-[0_4px_24px_rgba(34,197,94,0.4)] hover:scale-105 active:scale-95 transition-transform"
           style={{ bottom: "calc(1.25rem + env(safe-area-inset-bottom, 0px))" }}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            console.log("[BrainFAB:click] isOpen=", isOpen, "pathname =", pathname);
-            handleOpen();
-          }}
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleOpen(); }}
+          aria-label="Open Kevin"
           data-testid="button-toggle-chat"
         >
           <Brain className="h-6 w-6 sm:h-7 sm:w-7" />

@@ -193,9 +193,13 @@ export async function registerKevinRoutes(app: Express): Promise<void> {
         await ensureKevinAuditTable();
         const limit = Math.min(parseInt(String(req.query.limit ?? "50"), 10) || 50, 100);
         const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+        // Org isolation: only this admin's org events (plus org-less system events).
+        const orgId = await resolveOrgId(req);
+        if (!orgId) return res.status(403).json({ message: "No organization" });
         const rows = await db.execute(sql`
           SELECT id, org_id, user_id, run_id, event_type, payload, created_at
           FROM kevin_audit_events
+          WHERE org_id = ${orgId} OR org_id IS NULL
           ORDER BY created_at DESC
           LIMIT ${limit} OFFSET ${offset}
         `);

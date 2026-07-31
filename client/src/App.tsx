@@ -130,7 +130,6 @@ import AdminFinancialBrainPage from "@/pages/admin-financial-brain";
 import AdminOperatorActionsPage from "@/pages/admin-operator-actions";
 import AdminRetentionWorkflowsPage from "@/pages/admin-retention-workflows";
 import AdminOutreachQueuePage from "@/pages/admin-outreach-queue";
-import { CoachAgentLauncher } from "@/components/coach-agent-launcher";
 import { ClientAgentLauncher } from "@/components/client-agent-launcher";
 import { CommandPalette } from "@/components/command-palette";
 import { ChatWidget } from "@/components/chat-widget";
@@ -660,7 +659,6 @@ function AuthenticatedLayout() {
           </main>
         </div>
       </div>
-      <CoachAgentLauncher />
       <ClientAgentLauncher />
       <CommandPalette />
       <ChatWidgetSafetyBoundary>

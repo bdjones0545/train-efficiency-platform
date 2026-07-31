@@ -25,6 +25,14 @@ import { runOrchestrator } from "./agents/executive-agent";
 import { getRisks, getOpportunities, getForecasts } from "./services/forecast-engine";
 import { buildLearningContextString } from "./services/hermes-learning-service";
 import { recordDecision } from "./services/decision-journal-service";
+import { resolveNavSuggestion, type NavSuggestion } from "./services/kevin-navigation-registry";
+
+/**
+ * Sentinel prefix for structured (non-text) chunks yielded by the orchestrator.
+ * The /api/chat route detects this prefix and emits the payload as a
+ * `data: {"blocks": ...}` SSE event instead of chat text.
+ */
+export const BLOCKS_SENTINEL = "\u0000KEVIN_BLOCKS\u0000";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -308,6 +316,46 @@ ${digest.narrative ? `  Narrative: ${digest.narrative}` : ""}`
   return ctx;
 }
 
+// ─── Navigation suggestions (server-approved registry only) ──────────────────
+
+const INTENT_NAV_MAP: Partial<Record<CeoIntent, string[]>> = {
+  scheduling_analysis: ["configure_scheduling"],
+  growth_analysis: ["view_lead_pipeline"],
+  retention_analysis: ["manage_athletes"],
+  client_success_analysis: ["manage_athletes"],
+  revenue_analysis: ["review_billing"],
+  forecast_analysis: ["view_ceo_heartbeat"],
+  full_business_diagnosis: ["view_command_center"],
+};
+
+function navSuggestionsFor(
+  intent: CeoIntent,
+  role: string,
+  lastUserMessage: string
+): NavSuggestion[] {
+  const intents = new Set<string>(INTENT_NAV_MAP[intent] ?? []);
+  const text = lastUserMessage.toLowerCase();
+
+  // Keyword-based additions for action requests and direct questions.
+  if (/\b(email|draft|outreach|follow[- ]?up|approve|approval)\b/.test(text)) {
+    intents.add("review_ai_approvals");
+  }
+  if (/\b(schedule|book|session|slot|calendar|availab)\w*/.test(text)) {
+    intents.add("configure_scheduling");
+  }
+  if (/\b(lead|prospect|pipeline|deal)\w*/.test(text)) {
+    intents.add("view_lead_pipeline");
+  }
+
+  const out: NavSuggestion[] = [];
+  for (const i of intents) {
+    const s = resolveNavSuggestion({ intent: i, userRole: role });
+    if (s) out.push(s);
+    if (out.length >= 3) break;
+  }
+  return out;
+}
+
 // ─── Main orchestration entry point ───────────────────────────────────────────
 
 const CEO_SYSTEM_PROMPT = `You are the CEO Agent for a strength and conditioning coaching platform.
@@ -451,6 +499,17 @@ async function* _orchestrate(opts: {
   }
 
   if (decisionWriteNote) yield decisionWriteNote;
+
+  // ── Step 7: Structured navigation suggestions (server-approved routes only) ─
+  try {
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    const navSuggestions = navSuggestionsFor(intent, opts.role, lastUser?.content ?? "");
+    if (navSuggestions.length > 0) {
+      yield BLOCKS_SENTINEL + JSON.stringify({ navigation: navSuggestions });
+    }
+  } catch (e: any) {
+    console.warn(`${label} nav suggestion build failed: ${e?.message}`);
+  }
 
   console.log(
     `${label} synthesis complete chunks=${chunkCount} ` +

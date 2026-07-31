@@ -377,17 +377,14 @@ export function registerKevinEmergencyRoutes(app: Express): void {
    */
   app.get("/api/admin/kevin/org-capability-settings", isAuthenticated, requireKevinAccess, async (req: Request, res: Response) => {
     try {
-      const orgId = req.query.org_id ? String(req.query.org_id) : null;
-      const rows = orgId
-        ? extractRows(await db.execute(sql`
-            SELECT * FROM kevin_org_capability_settings
-            WHERE org_id = ${orgId}
-            ORDER BY capability_key
-          `))
-        : extractRows(await db.execute(sql`
-            SELECT * FROM kevin_org_capability_settings
-            ORDER BY org_id, capability_key
-          `));
+      // Org isolation: always the authenticated admin's org — never trust query params.
+      const orgId = await resolveOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "No organization" });
+      const rows = extractRows(await db.execute(sql`
+        SELECT * FROM kevin_org_capability_settings
+        WHERE org_id = ${orgId}
+        ORDER BY capability_key
+      `));
       return res.json({ settings: rows, total: rows.length });
     } catch (err: any) {
       return res.status(500).json({ message: "Failed to fetch org settings", error: err.message });
@@ -401,8 +398,9 @@ export function registerKevinEmergencyRoutes(app: Express): void {
   app.put("/api/admin/kevin/org-capability-settings/:capabilityKey", isAuthenticated, requireKevinAccess, async (req: Request, res: Response) => {
     const capabilityKey = req.params.capabilityKey;
     const body = req.body ?? {};
-    const orgId = String(body.org_id ?? "");
-    if (!orgId) return res.status(400).json({ message: "org_id required" });
+    // Org isolation: server-resolved org only — never trust org_id from the body.
+    const orgId = await resolveOrgId(req);
+    if (!orgId) return res.status(403).json({ message: "No organization" });
 
     const executionMode = String(body.execution_mode ?? "require_approval");
     const enabled = body.enabled !== false;
@@ -438,8 +436,9 @@ export function registerKevinEmergencyRoutes(app: Express): void {
    * Seed default capability settings for an org using Phase 3 safe defaults.
    */
   app.post("/api/admin/kevin/org-capability-settings/seed-defaults", isAuthenticated, requireKevinAccess, async (req: Request, res: Response) => {
-    const orgId = String(req.body?.org_id ?? "");
-    if (!orgId) return res.status(400).json({ message: "org_id required" });
+    // Org isolation: server-resolved org only — never trust org_id from the body.
+    const orgId = await resolveOrgId(req);
+    if (!orgId) return res.status(403).json({ message: "No organization" });
 
     const defaults: Array<{ key: string; mode: string }> = [
       { key: "platform.retrieve_context",  mode: "observe" },

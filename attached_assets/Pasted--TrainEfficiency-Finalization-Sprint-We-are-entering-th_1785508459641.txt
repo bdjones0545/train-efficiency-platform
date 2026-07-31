@@ -1,0 +1,287 @@
+# TrainEfficiency Finalization Sprint
+
+We are entering the final stabilization phase of TrainEfficiency.
+
+Do **not** redesign the application or create new infrastructure.
+
+The infrastructure already exists.
+
+The goal is to simplify everything, connect the remaining pieces together, remove duplicate experiences, and make the application production ready.
+
+---
+
+# Core Product Direction
+
+Kevin is the AI operating system for every organization.
+
+Users should not need to understand internal agents.
+
+Everything should flow through Kevin.
+
+Kevin becomes the single operational interface while existing services continue doing the work behind the scenes.
+
+---
+
+# 1. Kevin Launcher
+
+The brain icon in the bottom-right becomes the Kevin launcher.
+
+It should only contain:
+
+* Kevin Chat
+* Kevin Inbox
+
+Remove any duplicate agent launchers, experimental menus, or confusing options.
+
+---
+
+# 2. Kevin Chat
+
+Kevin Chat becomes the primary way users interact with TrainEfficiency.
+
+Examples:
+
+* Schedule an athlete
+* Move sessions
+* Create recurring sessions
+* Find available times
+* View attendance
+* Review leads
+* Create follow-up tasks
+* Navigate the application
+* Ask operational questions
+* Delegate work to internal agents
+
+Kevin should route requests into existing backend services.
+
+Do NOT duplicate scheduling logic.
+
+Do NOT duplicate lead logic.
+
+Do NOT duplicate job systems.
+
+Kevin is an orchestration layer.
+
+---
+
+# 3. Kevin Navigation
+
+Kevin should safely navigate users around the application.
+
+Examples:
+
+* Open Calendar
+* Open Scheduling
+* Open Leads
+* Open Athlete
+* Open Team
+* Open Attention Inbox
+* Open Jobs
+
+Navigation must come from a server-approved registry.
+
+No arbitrary routes.
+
+---
+
+# 4. Kevin Inbox
+
+Kevin Inbox should only contain organization-specific communication.
+
+Focus on:
+
+* Lead emails
+* Draft emails
+* Pending approvals
+* Scheduled follow-ups
+* Automation history
+* Sent emails
+* Failed emails
+* Active automations
+* Paused automations
+
+This is not a general email client.
+
+It is the organization's AI communication center.
+
+---
+
+# 5. Email Automation
+
+Every automated email workflow must follow:
+
+Draft
+
+↓
+
+Pending Approval
+
+↓
+
+Approved
+
+↓
+
+Active
+
+↓
+
+Paused / Completed / Cancelled
+
+Nothing should automatically send without approval.
+
+Organizations should be able to:
+
+* Review drafts
+* Edit drafts
+* Approve
+* Reject
+* Pause
+* Resume
+* Cancel
+
+---
+
+# 6. Organization Isolation
+
+Audit every Kevin endpoint.
+
+Everything must be organization scoped.
+
+No cross-organization data leakage.
+
+All authorization belongs on the server.
+
+---
+
+# 7. Simplify the Product
+
+Remove duplicate interfaces.
+
+Hide unfinished tools.
+
+Hide developer-only functionality.
+
+Hide infrastructure pages.
+
+Reduce navigation complexity.
+
+One obvious workflow for each task.
+
+No dead buttons.
+
+No placeholder pages.
+
+No disconnected UI.
+
+---
+
+# 8. Preserve Existing Infrastructure
+
+Reuse:
+
+* Scheduling
+* Calendar
+* Lead management
+* Attendance
+* Jobs
+* Agent orchestration
+* Capability registry
+* Kevin integration
+* Hermes integration
+* Email services
+
+Never rebuild existing working systems.
+
+---
+
+# 9. Reliability
+
+Audit every important flow.
+
+Fix:
+
+* Loading states
+* Error handling
+* Retry behavior
+* Async jobs
+* Empty states
+* Authorization
+* Validation
+* Feature flags
+* Logging
+* Audit history
+
+No fake success messages.
+
+No silent failures.
+
+---
+
+# 10. Deployment Audit
+
+Verify:
+
+✓ Production build
+
+✓ Typescript
+
+✓ Database migrations
+
+✓ API routes
+
+✓ Kevin routes
+
+✓ Cloudflare callbacks
+
+✓ Environment variables
+
+✓ Feature flags
+
+✓ Health endpoints
+
+✓ Production startup
+
+✓ API 404 protection
+
+✓ No mock providers
+
+✓ No development secrets
+
+---
+
+# 11. End-to-End Validation
+
+Complete one full workflow:
+
+* Organization logs in.
+* Opens Kevin.
+* Uses Kevin Chat.
+* Kevin schedules an athlete.
+* Kevin navigates correctly.
+* Kevin drafts a lead follow-up.
+* User reviews draft.
+* User approves automation.
+* Email lifecycle updates correctly.
+* Audit trail records everything.
+* Organization isolation verified.
+
+---
+
+# 12. Final Cleanup
+
+When complete, produce a detailed report containing:
+
+* Architecture summary
+* Files modified
+* Simplifications made
+* Kevin integrations completed
+* Email automation status
+* Remaining deployment blockers
+* Remaining risks
+* Test results
+* Production readiness assessment
+
+The objective is not adding features.
+
+The objective is making TrainEfficiency feel like one polished product where Kevin is the central intelligence layer over infrastructure that already exists.

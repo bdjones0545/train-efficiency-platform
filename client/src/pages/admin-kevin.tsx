@@ -1454,8 +1454,8 @@ function OrgSettingsTab() {
   });
 
   const updateMut = useMutation({
-    mutationFn: (payload: { capabilityKey: string; enabledOverride?: boolean | null; approvalModeOverride?: string | null; notes?: string }) =>
-      apiRequest("PUT", "/api/admin/kevin/org-capability-settings", payload),
+    mutationFn: ({ capabilityKey, ...payload }: { capabilityKey: string; enabled?: boolean; execution_mode?: string; max_volume_per_hour?: number; approval_policy?: string; allowed_scope?: string }) =>
+      apiRequest("PUT", `/api/admin/kevin/org-capability-settings/${encodeURIComponent(capabilityKey)}`, payload),
     onSuccess: () => {
       toast({ title: "Setting updated" });
       qc.invalidateQueries({ queryKey: ["/api/admin/kevin/org-capability-settings"] });
@@ -1494,47 +1494,54 @@ function OrgSettingsTab() {
       )}
 
       <div className="grid grid-cols-1 gap-3">
-        {settings.map((s) => (
-          <Card key={s.capabilityKey} data-testid={`card-orgsetting-${s.capabilityKey}`}>
-            <CardContent className="pt-4 pb-3">
-              <div className="flex flex-wrap items-start gap-3 justify-between">
-                <div className="min-w-0">
-                  <p className="font-mono text-xs font-semibold">{s.capabilityKey}</p>
-                  {s.notes && <p className="text-xs text-muted-foreground mt-0.5">{s.notes}</p>}
-                  {s.updatedAt && <p className="text-xs text-muted-foreground">Updated: {new Date(s.updatedAt).toLocaleDateString()}</p>}
-                </div>
-                <div className="flex items-center gap-3 flex-wrap">
-                  {/* Enable override */}
-                  <div className="flex items-center gap-1.5">
-                    {s.enabledOverride === null
-                      ? <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                      : s.enabledOverride
+        {settings.map((s: any) => {
+          const key = s.capability_key ?? s.capabilityKey;
+          const enabled = (s.enabled ?? true) !== false;
+          const mode = s.execution_mode ?? "require_approval";
+          const base = {
+            capabilityKey: key,
+            enabled,
+            execution_mode: mode,
+            max_volume_per_hour: Number(s.max_volume_per_hour ?? 10),
+            approval_policy: String(s.approval_policy ?? "always"),
+            allowed_scope: String(s.allowed_scope ?? "org"),
+          };
+          return (
+            <Card key={key} data-testid={`card-orgsetting-${key}`}>
+              <CardContent className="pt-4 pb-3">
+                <div className="flex flex-wrap items-start gap-3 justify-between">
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs font-semibold">{key}</p>
+                    {s.updated_at && <p className="text-xs text-muted-foreground">Updated: {new Date(s.updated_at).toLocaleDateString()}</p>}
+                  </div>
+                  <div className="flex items-center gap-3 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      {enabled
                         ? <Unlock className="h-3.5 w-3.5 text-green-600" />
                         : <Lock className="h-3.5 w-3.5 text-red-500" />}
-                    <Switch
-                      checked={s.enabledOverride ?? true}
-                      onCheckedChange={(v) => updateMut.mutate({ capabilityKey: s.capabilityKey, enabledOverride: v })}
-                      data-testid={`switch-enabled-${s.capabilityKey}`}
-                    />
+                      <Switch
+                        checked={enabled}
+                        onCheckedChange={(v) => updateMut.mutate({ ...base, enabled: v })}
+                        data-testid={`switch-enabled-${key}`}
+                      />
+                    </div>
+                    <Select
+                      value={mode}
+                      onValueChange={(v) => updateMut.mutate({ ...base, execution_mode: v })}
+                    >
+                      <SelectTrigger className="h-7 text-xs w-36" data-testid={`select-mode-${key}`}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
-                  {/* Approval mode override */}
-                  <Select
-                    value={s.approvalModeOverride ?? "__global__"}
-                    onValueChange={(v) => updateMut.mutate({ capabilityKey: s.capabilityKey, approvalModeOverride: v === "__global__" ? null : v })}
-                  >
-                    <SelectTrigger className="h-7 text-xs w-36" data-testid={`select-mode-${s.capabilityKey}`}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__global__">Global default</SelectItem>
-                      {MODES.map(m => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+              </CardContent>
+            </Card>
+          );
+        })}
       </div>
 
       {/* Observability Snapshot */}
