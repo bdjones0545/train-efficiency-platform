@@ -323,6 +323,40 @@ function timeAgo(dt: string | null | undefined): string {
   return `${Math.floor(h / 24)}d ${suffix}`;
 }
 
+// ─── Thread item for Kevin's AgentMail inbox ──────────────────────────────────
+
+function ThreadItem({ thread }: { thread: any }) {
+  const isUnread = thread.isRead === false;
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 mb-1.5 ${isUnread ? "bg-zinc-800 border-zinc-600" : "bg-zinc-800/40 border-zinc-700/50"}`}>
+      <div className="flex items-start justify-between gap-2 min-w-0">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            {isUnread && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-green-400" />}
+            <p className={`text-xs truncate leading-tight ${isUnread ? "font-semibold text-zinc-100" : "text-zinc-300"}`}>
+              {thread.subject}
+            </p>
+          </div>
+          {thread.from && (
+            <p className="text-[10px] text-zinc-500 mt-0.5 truncate">
+              From: {thread.fromName ? `${thread.fromName} <${thread.from}>` : thread.from}
+            </p>
+          )}
+          {thread.snippet && (
+            <p className="text-[11px] text-zinc-500 mt-0.5 line-clamp-2 leading-relaxed">{thread.snippet}</p>
+          )}
+        </div>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          {thread.date && <p className="text-[9px] text-zinc-600">{timeAgo(thread.date)}</p>}
+          {thread.messageCount > 1 && (
+            <span className="text-[9px] bg-zinc-700 text-zinc-400 px-1 py-0.5 rounded">{thread.messageCount}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function InboxTab({ onOpenRoute }: { onOpenRoute: (route: string) => void }) {
   const { toast } = useToast();
   const qc = useQueryClient();
@@ -377,6 +411,9 @@ function InboxTab({ onOpenRoute }: { onOpenRoute: (route: string) => void }) {
     </div>
   );
 
+  const kevinInbox = data?.kevinInbox ?? {};
+  const orgLabel = data?.orgLabel ?? null;
+  const kevinThreads: any[] = Array.isArray(kevinInbox.threads) ? kevinInbox.threads : [];
   const approvals: any[] = Array.isArray(data?.approvals) ? data.approvals : [];
   const followups: any[] = Array.isArray(data?.followups) ? data.followups : [];
   const recent: any[] = Array.isArray(data?.recentActivity) ? data.recentActivity : [];
@@ -396,7 +433,49 @@ function InboxTab({ onOpenRoute }: { onOpenRoute: (route: string) => void }) {
         </div>
       )}
 
-      {/* Pending approvals */}
+      {/* Kevin's AgentMail inbox */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <p className="text-[10px] font-semibold text-green-400 uppercase tracking-widest flex items-center gap-1.5">
+            <Mail className="h-3 w-3" /> Kevin's Inbox
+          </p>
+          <span className="text-[9px] text-zinc-600 font-mono">kevin@trainefficiency.com</span>
+        </div>
+
+        {/* Org label badge */}
+        {orgLabel && (
+          <div className="flex items-center gap-1.5 mb-2 bg-zinc-800/60 border border-zinc-700/60 rounded-lg px-2.5 py-1.5">
+            <span className="text-[9px] font-semibold text-zinc-500 uppercase tracking-wider">Your label:</span>
+            <span className="text-[11px] font-mono font-semibold text-green-300">{orgLabel.labelName}</span>
+          </div>
+        )}
+
+        {!kevinInbox.configured ? (
+          <div className="rounded-lg bg-amber-950/30 border border-amber-800/40 p-3 text-center">
+            <p className="text-xs text-amber-400 font-medium">AgentMail not configured</p>
+            <p className="text-[10px] text-zinc-500 mt-0.5">Add AGENTMAIL_API_KEY to connect Kevin's inbox</p>
+          </div>
+        ) : kevinThreads.length === 0 ? (
+          <div className="rounded-lg bg-zinc-800/40 border border-zinc-700/40 p-3 text-center">
+            <p className="text-xs text-zinc-500">Kevin's inbox is empty</p>
+            <p className="text-[10px] text-zinc-600 mt-0.5">Inbound emails to kevin@trainefficiency.com will appear here</p>
+          </div>
+        ) : (
+          <>
+            {kevinThreads.slice(0, 8).map((t: any) => (
+              <ThreadItem key={t.id} thread={t} />
+            ))}
+            {kevinThreads.length > 8 && (
+              <button type="button" onClick={() => onOpenRoute("/admin/agentmail")}
+                className="w-full text-center text-[11px] text-green-400 hover:text-green-300 py-1.5">
+                View all {kevinInbox.threadCount} threads →
+              </button>
+            )}
+          </>
+        )}
+      </div>
+
+      {/* Pending approval drafts */}
       <div>
         <p className="text-[10px] font-semibold text-amber-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
           <Mail className="h-3 w-3" /> Emails awaiting your approval ({approvals.length})

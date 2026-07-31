@@ -427,6 +427,18 @@ export async function ensureOrgAiInfrastructure(
     console.error(`${tag} error ${msg}`);
   }
 
+  // ── Kevin org label — register this org so Kevin knows to create its inbox label
+  try {
+    const { ensureKevinOrgLabel } = await import("../kevin-inbox-routes");
+    // Fetch org name for a friendlier label
+    const orgRows = await db.execute(sql`SELECT name FROM organizations WHERE id = ${orgId} LIMIT 1`).catch(() => []);
+    const orgName: string | undefined = (Array.isArray(orgRows) ? orgRows[0] : (orgRows as any)?.rows?.[0])?.name;
+    await ensureKevinOrgLabel(orgId, orgName);
+  } catch (e: any) {
+    // Non-fatal — label can be created later
+    console.warn(`${tag} kevin_org_label skipped: ${e.message}`);
+  }
+
   report.durationMs = Date.now() - t0;
 
   if (report.created.length > 0) {

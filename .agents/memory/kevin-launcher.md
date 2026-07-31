@@ -12,6 +12,9 @@ description: How the Kevin FAB/drawer, /api/kevin/inbox, chat blocks-SSE, and na
   `for r in $(grep -oP 'route: "\K[^"]+' server/services/kevin-navigation-registry.ts | sort -u); do grep -q "path=\"$r\"" client/src/App.tsx || echo MISSING: $r; done`
   **Why:** 8 registry routes were dead (e.g. /admin/integrations → real page is /admin/configuration; /admin/attention-inbox → /admin/attention; /command-center is a redirect — use /admin/command-center).
 - `/api/kevin/inbox` (server/kevin-inbox-routes.ts) is read-only aggregation, org-scoped via resolveOrgIdOrThrow; mutations stay on existing gated endpoints (/api/ai-approvals/:id/approve|reject, /api/agentmail/followups/:id/*).
+- **Kevin's email inbox is `kevin@trainefficiency.com` (AgentMail, NOT Gmail)**. The Kevin Inbox UI shows threads from that inbox as the primary section, plus pending approval drafts Kevin created (stored in gmail_agent_actions). AgentMail creds: `AGENTMAIL_API_KEY` + `AGENTMAIL_ORG_DOMAIN=trainefficiency.com` — both set in env.
+- **Org label pattern**: when a new org is provisioned via `ensureOrgAiInfrastructure`, a row is upserted in `kevin_org_inbox_labels` (org_id, label_name) so Kevin knows to create a matching label in his VM inbox. `ensureKevinOrgLabel(orgId, orgName?)` is exported from kevin-inbox-routes.ts.
+- AgentMail v0 API is inbound-only — outbound via `/inboxes/{email}/emails` returns 404. All confirmed outbound uses gmail_agent_actions approval queue.
 
 # Org isolation lessons
 
