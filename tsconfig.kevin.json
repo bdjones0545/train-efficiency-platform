@@ -1,17 +1,11 @@
 {
   "extends": "./tsconfig.json",
   "include": [
-    "server/services/kevin-*.ts",
-    "server/middleware/require-kevin-access.ts",
-    "server/kevin-routes.ts",
-    "shared/kevin/**/*",
-    "client/src/pages/admin-kevin.tsx",
-    "client/src/lib/api-helpers.ts",
-    "client/src/lib/authenticatedFetch.ts",
-    "client/src/components/ui/**/*",
-    "server/db.ts",
-    "server/replit_integrations/auth/**/*",
-    "shared/**/*"
+    "server/kevin-webhook-routes.ts",
+    "server/services/kevin-outbound-auth.ts",
+    "shared/kevin/outbound-hmac.ts",
+    "shared/kevin/callback-base-url.ts",
+    "server/db.ts"
   ],
   "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
   "compilerOptions": {

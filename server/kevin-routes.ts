@@ -90,6 +90,14 @@ export async function registerKevinRoutes(app: Express): Promise<void> {
   ensureKevinAuditTable().catch(() => {});
   ensureKevinRunTables().catch(() => {});
 
+  // Unauthenticated Kevin→TE webhook (HMAC). Separate module so raw-body verify stays isolated.
+  try {
+    const { registerKevinWebhookRoutes } = await import("./kevin-webhook-routes");
+    await registerKevinWebhookRoutes(app);
+  } catch (e: any) {
+    console.error("[kevin-routes] webhook registration failed:", e?.message || e);
+  }
+
   app.get(
     "/api/kevin/health",
     isAuthenticated,

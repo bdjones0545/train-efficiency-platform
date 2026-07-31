@@ -6,7 +6,11 @@
  *   POST /api/agent-callbacks/kevin   ← legacy alias (backward compat)
  *
  * Security:
- *  - HMAC-SHA256 verification using the exact path Kevin signed over
+ *  - HMAC-SHA256 verification using verifyKevinCallbackHeaders (golden-vector parity)
+ *    Secret resolves from: KEVIN_CALLBACK_HMAC_SECRET → KEVIN_OUTBOUND_HMAC_SECRET
+ *                          → TRAINEFFICIENCY_KEVIN_SIGNING_SECRET
+ *  - Returns 503 (retryable) when HMAC is not yet configured — never bypasses silently
+ *  - Returns 401 for invalid / stale signatures
  *  - Callback-ID nonce deduplication (kevin_callback_nonces table)
  *  - Explicit state-transition enforcement (prevents backward moves)
  *  - Completed-path persisted atomically via db.transaction()
@@ -28,8 +32,12 @@ import crypto from "node:crypto";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { publicRateLimiter } from "./middleware/public-rate-limiter";
-import { getKevinAgentConfig } from "./services/kevin-agent-config";
-import { verifyCallbackSignature, extractCallbackNonce } from "./lib/kevin-hmac";
+import {
+  isKevinCallbackHmacConfigured,
+  getKevinCallbackHmacSource,
+  verifyKevinCallbackHeaders,
+} from "./services/kevin-outbound-auth";
+import { extractCallbackNonce } from "./lib/kevin-hmac";
 import { auditAgentJob } from "./services/kevin-agent-audit";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -68,9 +76,24 @@ const VALID_TRANSITIONS: Record<string, Set<string>> = {
   requires_approval: new Set(["completed", "failed", "cancelled"]),
 };
 
-/** Statuses that are retryable by Kevin (TE-side transient errors). */
-function isRetryable(errorCode: string): boolean {
-  return ["DB_ERROR", "INTERNAL_ERROR"].includes(errorCode);
+/**
+ * Map verifier error codes → stable HTTP status + client error tokens.
+ * Keeps the response contract stable even if the underlying verifier changes.
+ */
+function mapHmacError(code: string): { http: number; error: string; retryable: boolean } {
+  switch (code) {
+    case "MISSING_TIMESTAMP":
+    case "MISSING_SIGNATURE":
+    case "BAD_VERSION":
+    case "BAD_SIGNATURE":
+      return { http: 401, error: "SIGNATURE_INVALID", retryable: false };
+    case "STALE_TIMESTAMP":
+      return { http: 401, error: "STALE_TIMESTAMP", retryable: false };
+    case "HMAC_UNCONFIGURED":
+      return { http: 503, error: "HMAC_UNCONFIGURED", retryable: true };
+    default:
+      return { http: 401, error: code || "SIGNATURE_INVALID", retryable: false };
+  }
 }
 
 /**
@@ -159,7 +182,14 @@ function captureRawBody(req: any, _res: any, next: any): void {
 
 /**
  * Processes an inbound Kevin callback for the given request path.
- * `requestPath` must be the exact path Kevin POST-ed to (used in HMAC verification).
+ * `requestPath` is the exact path Kevin POST-ed to (used in audit logs).
+ *
+ * HMAC contract (golden-vector parity):
+ *  - Verified via verifyKevinCallbackHeaders (server/services/kevin-outbound-auth.ts)
+ *  - Secret resolved from env chain: KEVIN_CALLBACK_HMAC_SECRET →
+ *    KEVIN_OUTBOUND_HMAC_SECRET → TRAINEFFICIENCY_KEVIN_SIGNING_SECRET
+ *  - Returns 503 (retryable) when secret is not yet configured
+ *  - Returns 401 for invalid/stale signatures
  *
  * Nonce lifecycle contract:
  *  1. HMAC and body validation happen BEFORE nonce insertion (no nonce consumed on invalid input).
@@ -175,30 +205,49 @@ async function handleKevinCallback(req: any, res: any, requestPath: string): Pro
     req.rawBody ??
     (Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body ?? {})));
 
-  const cfg = getKevinAgentConfig();
+  const rawBodyStr = rawBody.toString("utf8");
 
-  // ── HMAC verification (before nonce — no nonce consumed here) ─────────────
-  if (cfg.callbackHmacSecret) {
-    const verification = verifyCallbackSignature(
-      rawBody,
-      req.headers as Record<string, string | string[] | undefined>,
-      cfg.callbackHmacSecret,
-      cfg.callbackAllowedSkewSeconds,
-      requestPath,
-    );
+  // ── HMAC guard: fail-closed when secret is not yet configured ─────────────
+  if (!isKevinCallbackHmacConfigured()) {
+    console.warn(JSON.stringify({
+      event: "KEVIN_CALLBACK_HMAC_UNCONFIGURED",
+      path: requestPath,
+      hmacEnv: getKevinCallbackHmacSource(),
+      timestamp: new Date().toISOString(),
+    }));
+    return void res.status(503).json({
+      ok: false,
+      retryable: true,
+      error: "HMAC_UNCONFIGURED",
+      hmacEnv: getKevinCallbackHmacSource(),
+    });
+  }
 
-    if (!verification.ok) {
-      auditAgentJob("agent.job.invalid_signature_rejected", { reason: verification.reason });
-      console.log(
-        JSON.stringify({
-          event: "KEVIN_CALLBACK_SIGNATURE_REJECTED",
-          reason: verification.reason,
-          path: requestPath,
-          timestamp: new Date().toISOString(),
-        }),
-      );
-      return void res.status(200).json({ ok: false, retryable: false, error: "SIGNATURE_INVALID" });
-    }
+  // ── HMAC verification (before nonce — no nonce consumed on bad signature) ─
+  const verification = verifyKevinCallbackHeaders({
+    rawBody: rawBodyStr,
+    timestampHeader: (req.headers["x-kevin-timestamp"] as string) ?? null,
+    signatureHeader: (req.headers["x-kevin-signature"] as string) ?? null,
+  });
+
+  if (!verification.ok) {
+    const mapped = mapHmacError(verification.code);
+    auditAgentJob("agent.job.invalid_signature_rejected", {
+      reason: verification.code,
+      message: verification.message,
+    });
+    console.log(JSON.stringify({
+      event: "KEVIN_CALLBACK_SIGNATURE_REJECTED",
+      code: verification.code,
+      path: requestPath,
+      timestamp: new Date().toISOString(),
+    }));
+    return void res.status(mapped.http).json({
+      ok: false,
+      retryable: mapped.retryable,
+      error: mapped.error,
+      code: verification.code,
+    });
   }
 
   // ── Extract nonce (before parsing body) ────────────────────────────────────
@@ -209,7 +258,7 @@ async function handleKevinCallback(req: any, res: any, requestPath: string): Pro
   // ── Parse body (before nonce insert — no nonce consumed on bad JSON) ───────
   let body: any;
   try {
-    body = JSON.parse(rawBody.toString("utf8"));
+    body = JSON.parse(rawBodyStr);
   } catch {
     return void res.status(400).json({ ok: false, retryable: false, error: "INVALID_JSON" });
   }
