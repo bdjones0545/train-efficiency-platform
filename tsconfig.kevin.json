@@ -4,6 +4,7 @@
     "server/services/kevin-*.ts",
     "server/middleware/require-kevin-access.ts",
     "server/kevin-routes.ts",
+    "server/kevin-webhook-routes.ts",
     "shared/kevin/**/*",
     "client/src/pages/admin-kevin.tsx",
     "client/src/lib/api-helpers.ts",

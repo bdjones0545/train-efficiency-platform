@@ -32,8 +32,11 @@
   },
   "include": [
     "server/services/kevin-*.ts",
+    "server/services/kevin-slack/**/*.ts",
     "server/middleware/require-kevin-access.ts",
     "server/kevin-routes.ts",
+    "server/kevin-webhook-routes.ts",
+    "server/kevin-slack-routes.ts",
     "server/scripts/kevin-phase0-smoke.ts",
     "client/src/pages/admin-kevin.tsx",
     "shared/kevin/**/*.ts",
