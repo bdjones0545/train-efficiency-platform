@@ -1,0 +1,308 @@
+Audit and fix the production TE → Kevin task-dispatch integration.
+
+Kevin's host, agent gateway, path proxy, Hermes runtime, and AI workforce have already been independently audited and functionally verified. Do NOT modify Kevin infrastructure.
+
+The remaining issue is on the TE/Replit caller side.
+
+Your objective:
+
+**Inspect → diagnose → fix → test → production-safe E2E verify → report**
+
+Proceed autonomously with safe code/configuration changes. Do not stop merely because you find the likely cause.
+
+## Known-good Kevin information
+
+Kevin expects the production HMAC secret to have:
+
+* Length: `64`
+* SHA-256 prefix: `9205e80778da2b21`
+
+NEVER print, expose, log, commit, or return the actual secret.
+
+The expected Kevin endpoint is:
+
+`https://kevin-api.trainefficiency.com`
+
+Kevin reports that correctly signed requests already pass authentication and route through the workforce successfully.
+
+Therefore, assume Kevin is healthy unless your evidence proves otherwise.
+
+## 1. Inspect the existing TE implementation
+
+Find and inspect:
+
+* `docs/kevin-agent-gateway-auth.md`
+* `postKevinAgentTask`
+* all Kevin/Hermes outbound request helpers
+* HMAC signing utilities
+* environment-variable handling
+* production dispatch paths
+* any alternate `te-client` implementation
+* timestamp/nonce signing implementations
+* tests covering TE → Kevin authentication
+
+Trace the complete production path:
+
+**TE action**
+→ **task dispatch**
+→ **postKevinAgentTask**
+→ **HMAC signing**
+→ **HTTP request**
+→ **Kevin gateway**
+
+Determine what production code is actually executing. Do not assume the documented implementation is the one currently being used.
+
+## 2. Verify the production secret safely
+
+Check the Replit/production TE environment for the Kevin HMAC secret.
+
+Verify ONLY:
+
+`length == 64`
+
+and
+
+`sha256(secret).prefix == 9205e80778da2b21`
+
+Do NOT reveal the secret.
+
+Do NOT print it.
+
+Do NOT include it in test output.
+
+Do NOT commit it.
+
+Do NOT rotate it simply because authentication is failing.
+
+If the secret is missing or the fingerprint does not match, STOP before changing credentials and report exactly which environment variable requires correction.
+
+## 3. Verify environment configuration
+
+Production TE should have the equivalent of:
+
+`KEVIN_HERMES_BASE_URL=https://kevin-api.trainefficiency.com`
+
+`KEVIN_AGENT_INTEGRATION_ENABLED=true`
+
+Determine the exact environment-variable names actually consumed by the application.
+
+Do not create duplicate configuration variables if equivalent canonical variables already exist.
+
+Verify there is no stale URL pointing at:
+
+* localhost
+* an old VM
+* a deleted VM
+* an obsolete Kevin endpoint
+* a development endpoint
+
+## 4. Fix the signing implementation
+
+Production TE should use the existing documented Kevin-compatible implementation:
+
+`postKevinAgentTask`
+
+Follow:
+
+`docs/kevin-agent-gateway-auth.md`
+
+Determine Kevin's exact signing contract from the existing implementation/documentation.
+
+Verify:
+
+* timestamp format
+* timestamp units
+* signature headers
+* canonical body
+* serialization
+* HTTP method/path inclusion if applicable
+* HMAC algorithm
+* signature encoding
+* secret source
+* clock-skew behavior
+
+Do NOT use the alternate millisecond/nonce `te-client` signing variant unless the Kevin contract explicitly supports it.
+
+Do NOT weaken authentication.
+
+Do NOT add an authentication bypass.
+
+Do NOT modify Kevin merely to accommodate an incorrect TE caller.
+
+Prefer fixing TE to comply with the established Kevin contract.
+
+## 5. Find all production dispatch paths
+
+Search the entire TE codebase for Kevin task dispatch.
+
+Ensure every production path that should send work to Kevin uses the canonical helper/contract.
+
+Look for:
+
+* direct `fetch()` calls
+* Axios calls
+* old gateway clients
+* duplicated signing logic
+* legacy endpoints
+* alternate HMAC utilities
+* hard-coded Kevin URLs
+* old VM IPs
+* deprecated environment variables
+
+Do not perform a broad refactor.
+
+Replace only confirmed incorrect production paths.
+
+## 6. Tests
+
+Add or update regression tests covering the actual production contract.
+
+At minimum prove:
+
+* valid signed request construction
+* expected timestamp format
+* expected signature headers
+* canonical payload signing
+* correct base URL
+* integration-disabled behavior
+* missing secret fails safely
+* invalid configuration fails safely
+* secret never appears in logs/errors
+* production dispatch uses `postKevinAgentTask`
+
+If existing tests already prove these behaviors, reuse them rather than duplicating unnecessary tests.
+
+Run the relevant focused tests first.
+
+Then run the appropriate broader regression suite.
+
+Do not claim the suite is green unless it actually passes.
+
+## 7. Production-safe E2E
+
+After the implementation and configuration are verified, perform ONE controlled production-safe TE → Kevin dispatch if the environment permits it.
+
+Prove:
+
+**TE**
+→ **postKevinAgentTask**
+→ **correct HMAC**
+→ **kevin-api.trainefficiency.com**
+→ **Kevin accepts authentication**
+→ **gateway routes request**
+→ **workforce receives request**
+→ **result/acknowledgement returns successfully**
+
+Use a harmless diagnostic/test task.
+
+Avoid unnecessary model/API spend.
+
+Do not mutate customer data.
+
+Capture:
+
+* request timestamp
+* HTTP status
+* request/task ID
+* Kevin acknowledgement
+* final result if applicable
+
+Do NOT capture or display the secret or full HMAC material.
+
+## 8. If E2E fails
+
+Do not immediately change Kevin.
+
+Identify the exact boundary:
+
+`TE configuration`
+vs
+`TE signing`
+vs
+`network`
+vs
+`Cloudflare`
+vs
+`Kevin authentication`
+vs
+`Kevin routing`
+vs
+`worker execution`
+vs
+`callback/result`
+
+Use evidence.
+
+Do not repeatedly fire production requests while guessing.
+
+## 9. Scope discipline
+
+This is an integration repair, not a platform rewrite.
+
+DO NOT:
+
+* redesign the Kevin gateway
+* modify Kevin infrastructure
+* rotate secrets blindly
+* disable HMAC
+* expose secrets
+* create compatibility bypasses
+* change unrelated TE features
+* perform broad refactors
+* touch customer production data unnecessarily
+
+Make the smallest change that restores the documented production contract.
+
+## FINAL REPORT
+
+Return:
+
+**ROOT CAUSE:**
+
+**PRODUCTION DISPATCH PATH:**
+
+**FILES CHANGED:**
+
+**SECRET CHECK:**
+
+* length:
+* SHA-256 prefix:
+* match: YES/NO
+
+Never include the secret.
+
+**BASE URL:**
+
+**INTEGRATION ENABLED:**
+
+**HMAC SCHEME:**
+
+**POSTKEVINAGENTTASK STATUS:**
+
+**LEGACY/INCORRECT PATHS FOUND:**
+
+**FIXES APPLIED:**
+
+**FOCUSED TESTS:**
+
+**REGRESSION SUITE:**
+
+**PRODUCTION E2E:**
+
+**KEVIN HTTP RESPONSE:**
+
+**TASK/REQUEST ID:**
+
+**END-TO-END RESULT:**
+
+**REMAINING RISKS:**
+
+**ACTION REQUIRED FROM BRYAN:**
+
+Do not report success merely because unit tests pass.
+
+The target is a proven production path:
+
+`TE → authenticated Kevin gateway → AI workforce → successful acknowledgement/result`
+
+If the only remaining blocker is an environment secret/configuration value that you cannot safely change, identify the exact variable and expected fingerprint without revealing any secret material.

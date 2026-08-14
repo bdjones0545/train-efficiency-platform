@@ -18,7 +18,11 @@ import crypto from "node:crypto";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { getKevinAgentConfig } from "./kevin-agent-config";
-import { buildSignedHeaders, canonicalJson } from "../lib/kevin-hmac";
+import { canonicalJson } from "../lib/kevin-hmac";
+import {
+  isKevinCallbackHmacConfigured,
+  signKevinOutboundBody,
+} from "./kevin-outbound-auth";
 import { auditAgentJob } from "./kevin-agent-audit";
 import { dispatchViaHermesRun, isHermesDispatchAvailable } from "./kevin-hermes-dispatch";
 import type { RetentionContext } from "./retention-context-service";
@@ -87,6 +91,12 @@ export interface KevinAcceptResponse {
  * Updates the agent_jobs record in the DB on success or failure.
  * Throws KevinDispatchError on any failure.
  */
+/**
+ * postKevinAgentTask — canonical production entry point for TE → Kevin dispatch.
+ * Alias for dispatchKevinTask; prefer this name in new call sites.
+ */
+export { dispatchKevinTask as postKevinAgentTask };
+
 export async function dispatchKevinTask(
   jobId: string,
   agentId: string,
@@ -107,7 +117,10 @@ export async function dispatchKevinTask(
     throw new KevinDispatchError("kevin_disabled", "Kevin agent integration is not enabled.");
   }
 
-  if (!cfg.gatewayBaseUrl || !cfg.outboundHmacSecret) {
+  // Secret check uses the canonical chain (KEVIN_CALLBACK_HMAC_SECRET → KEVIN_OUTBOUND_HMAC_SECRET
+  // → TRAINEFFICIENCY_KEVIN_SIGNING_SECRET) — NOT cfg.outboundHmacSecret which reads only
+  // KEVIN_OUTBOUND_HMAC_SECRET and may differ from the other two.
+  if (!cfg.gatewayBaseUrl || !isKevinCallbackHmacConfigured()) {
     await markJobFailed(jobId, "kevin_configuration_missing", "Kevin gateway is not configured.");
     throw new KevinDispatchError(
       "kevin_configuration_missing",
@@ -149,15 +162,18 @@ export async function dispatchKevinTask(
   const path = "/tasks";
   const url = `${cfg.gatewayBaseUrl.replace(/\/$/, "")}${path}`;
 
-  // ── Sign request ──────────────────────────────────────────────────────────
-  const headers = buildSignedHeaders(
-    "POST",
-    path,
-    bodyStr,
-    cfg.outboundHmacSecret,
-    correlationId,
-    idempotencyKey,
-  );
+  // ── Sign request (Kevin v1: scheme) ──────────────────────────────────────
+  // Uses HMAC-SHA256 with signing base "v1:{timestampSec}:{rawBody}" and headers
+  // x-kevin-timestamp + x-kevin-signature (matches Kevin's golden vector contract).
+  // Secret resolved from chain: KEVIN_CALLBACK_HMAC_SECRET → KEVIN_OUTBOUND_HMAC_SECRET
+  //   → TRAINEFFICIENCY_KEVIN_SIGNING_SECRET (first non-empty wins).
+  const { headers: hmacHeaders } = signKevinOutboundBody(bodyStr);
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    "X-TE-Correlation-ID": correlationId,
+    "X-TE-Idempotency-Key": idempotencyKey,
+    ...hmacHeaders,
+  };
 
   // Update job to "dispatching"
   await updateJobStatus(jobId, "dispatching");
