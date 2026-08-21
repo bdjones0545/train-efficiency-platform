@@ -125,8 +125,10 @@ test("1 — isAgentMailSchemaReady() is true after runAgentMailMigration()", asy
 
 // ─── 2: Verified event shape — message.received ───────────────────────────────
 
-test("2 — handleAgentMailWebhook accepts verified message.received payload", async () => {
-  // Real provider payload shape (verified from AgentMail docs)
+test("2 — handleAgentMailWebhook is deprecated: always returns ok:false (Svix is the correct path)", async () => {
+  // handleAgentMailWebhook used Bearer token auth which is no longer correct.
+  // The webhook route now uses verifyAgentMailWebhook (Svix header verification).
+  // This test documents the intentional deprecation — the function must NOT succeed.
   const body = {
     type: "event",
     event_type: "message.received",
@@ -136,7 +138,7 @@ test("2 — handleAgentMailWebhook accepts verified message.received payload", a
       thread_id: "thd_contract_xyz456",
       message_id: "<contract-test-001@agentmail.to>",
       from: "Alice <alice@example.com>",
-      to: [`revenue-agent@${DOMAIN}`], // ARRAY per docs
+      to: [`revenue-agent@${DOMAIN}`],
       subject: "Contract test inbound",
       text: "Hello from contract test",
       html: "<p>Hello from contract test</p>",
@@ -145,20 +147,19 @@ test("2 — handleAgentMailWebhook accepts verified message.received payload", a
     thread: { inbox_id: "inbox_contract_abc123" },
   };
 
-  // No webhook secret configured → should pass through
-  const saved = process.env.AGENTMAIL_WEBHOOK_SECRET;
-  delete process.env.AGENTMAIL_WEBHOOK_SECRET;
-
   const result = await handleAgentMailWebhook(body, {});
-  assert.ok(result.ok, "Webhook should accept valid message.received payload");
-  assert.equal((result.event as any)?.event_type, "message.received");
-
-  if (saved !== undefined) process.env.AGENTMAIL_WEBHOOK_SECRET = saved;
+  assert.equal(result.ok, false, "Deprecated function must return ok:false — use verifyAgentMailWebhook instead");
+  assert.ok(
+    result.error?.toLowerCase().includes("deprecated"),
+    `error must mention 'deprecated': ${result.error}`,
+  );
 });
 
-// ─── 3: Webhook auth — correct secret passes ──────────────────────────────────
+// ─── 3: Bearer auth removed — handleAgentMailWebhook is deprecated ───────────
 
-test("3 — handleAgentMailWebhook accepts correct Authorization: Bearer header", async () => {
+test("3 — handleAgentMailWebhook (deprecated): Bearer token auth removed — always returns ok:false", async () => {
+  // The old Bearer token path is intentionally removed. Even with the correct
+  // secret, the deprecated function rejects to prevent accidental use.
   const secret = "test-secret-abc123";
   process.env.AGENTMAIL_WEBHOOK_SECRET = secret;
 
@@ -166,22 +167,32 @@ test("3 — handleAgentMailWebhook accepts correct Authorization: Bearer header"
     { event_type: "ping" },
     { authorization: `Bearer ${secret}` },
   );
-  assert.ok(result.ok, "Correct bearer token must be accepted");
+  assert.equal(result.ok, false, "Deprecated function must return ok:false regardless of bearer token");
+  assert.ok(
+    result.error?.toLowerCase().includes("deprecated"),
+    `error must mention 'deprecated': ${result.error}`,
+  );
 
   delete process.env.AGENTMAIL_WEBHOOK_SECRET;
 });
 
-// ─── 4: Webhook auth — wrong secret rejected ──────────────────────────────────
+// ─── 4: verifyAgentMailWebhook rejects wrong signature ────────────────────────
 
-test("4 — handleAgentMailWebhook rejects wrong Authorization header value", async () => {
-  process.env.AGENTMAIL_WEBHOOK_SECRET = "correct-secret";
+test("4 — verifyAgentMailWebhook rejects wrong svix-signature (correct verification path)", async () => {
+  // Replacing the deprecated bearer-token test with a behavioral test of the
+  // actual Svix verification path used by the webhook route.
+  const { verifyAgentMailWebhook } = await import("../services/agentmail-svix");
+  const secret = "whsec_" + Buffer.from("test-secret-abc123456789012345678").toString("base64");
+  process.env.AGENTMAIL_WEBHOOK_SECRET = secret;
 
-  const result = await handleAgentMailWebhook(
-    { event_type: "ping" },
-    { authorization: "Bearer wrong-secret" },
-  );
-  assert.ok(!result.ok, "Wrong bearer token must be rejected");
-  assert.ok(result.error?.includes("invalid") || result.error?.includes("Invalid"), `error: ${result.error}`);
+  const rawBody = Buffer.from(JSON.stringify({ event_type: "ping" }));
+  const result = verifyAgentMailWebhook(rawBody, {
+    "svix-id": "msg_test_wrong_sig",
+    "svix-timestamp": String(Math.floor(Date.now() / 1000)),
+    "svix-signature": "v1,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  });
+  assert.equal(result.ok, false, "Wrong signature must be rejected");
+  assert.equal(result.httpStatus, 401);
 
   delete process.env.AGENTMAIL_WEBHOOK_SECRET;
 });

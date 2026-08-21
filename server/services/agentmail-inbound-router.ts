@@ -74,6 +74,48 @@ function rows(r: unknown): any[] {
   return Array.isArray(x?.rows) ? x.rows : [];
 }
 
+// ─── Effect idempotency log ───────────────────────────────────────────────────
+
+/**
+ * Claim a downstream effect slot and execute fn if not already done.
+ *
+ * Each downstream side-effect of an inbound message has a deterministic identity:
+ *   (inbound_id, effect_type)
+ *
+ * The agentmail_effect_log table records completed effects.  Before running a
+ * write, this function attempts to INSERT the (inbound_id, effect_type) pair.
+ * ON CONFLICT DO NOTHING means a duplicate returns no row → skip.
+ *
+ * This prevents duplicate prospect/applicant/attention rows when a crash after
+ * a downstream write causes a retry that reclaims the stale processing lease.
+ *
+ * @returns true if effect was executed; false if already done or fn failed.
+ */
+async function tryEffect(
+  inboundId: string,
+  effectType: string,
+  fn: () => Promise<void>,
+): Promise<boolean> {
+  try {
+    const claimed = rows(await db.execute(sql`
+      INSERT INTO agentmail_effect_log (id, inbound_id, effect_type)
+      VALUES (gen_random_uuid()::text, ${inboundId}, ${effectType})
+      ON CONFLICT (inbound_id, effect_type) DO NOTHING
+      RETURNING id
+    `));
+    if (!claimed[0]) {
+      // Effect was completed in a prior processing attempt — skip safely.
+      return false;
+    }
+    await fn();
+    return true;
+  } catch (err: any) {
+    console.error(`[AgentMail Effect] ${effectType} failed for inbound=${inboundId}:`, err?.message);
+    // Individual effect failure is non-critical — does not fail overall processing.
+    return false;
+  }
+}
+
 // ─── Intent extraction ───────────────────────────────────────────────────────
 
 export function extractIntentSignals(subject: string, body: string): string[] {
@@ -327,17 +369,25 @@ async function addToAttentionInbox(
 
 // ─── Downstream record creation ───────────────────────────────────────────────
 
+/**
+ * Create downstream records for classified inbound email.
+ * Each write is wrapped in tryEffect() which consults agentmail_effect_log to
+ * prevent duplicate records when a crash after a partial write causes retry.
+ *
+ * Effect identities: "prospect", "applicant", "software_task"
+ * Deterministic key: (inbound_id, effect_type) — unique per-event per-effect
+ */
 async function createDownstreamRecord(
   orgId: string,
   email: InboundEmailPayload,
   result: ClassificationResult & { suggestedReply?: string },
+  inboundId: string,
 ): Promise<void> {
   const { classification, intentSignals } = result;
   const body = email.bodyText ?? "";
 
-  try {
-    if (classification === "new_lead" || classification === "pricing_question" || classification === "coach_partner_inquiry") {
-      // Insert into team_training_prospects as inbound lead
+  if (classification === "new_lead" || classification === "pricing_question" || classification === "coach_partner_inquiry") {
+    await tryEffect(inboundId, "prospect", async () => {
       const nameParts = (email.fromName ?? email.fromEmail.split("@")[0]).split(" ");
       await db.insert(teamTrainingProspects).values({
         orgId,
@@ -351,9 +401,11 @@ async function createDownstreamRecord(
         pipelineType: "b2b",
         leadType: classification === "coach_partner_inquiry" ? "partner_inquiry" : "inbound_lead",
       } as any).onConflictDoNothing();
-    }
+    });
+  }
 
-    if (classification === "employment_candidate") {
+  if (classification === "employment_candidate") {
+    await tryEffect(inboundId, "applicant", async () => {
       const nameParts = (email.fromName ?? "Unknown Applicant").split(" ");
       await db.insert(employmentApplicants).values({
         orgId,
@@ -365,10 +417,12 @@ async function createDownstreamRecord(
         notes: `Inbound application via ${email.inbox}@\nSubject: ${email.subject}\n\n${body.slice(0, 800)}`,
         location: intentSignals.includes("parent_signal") ? "unknown" : undefined,
       } as any).onConflictDoNothing();
-    }
+    });
+  }
 
-    if (classification === "software_bug_report") {
-      // Try to create software improvement task if table exists
+  if (classification === "software_bug_report") {
+    await tryEffect(inboundId, "software_task", async () => {
+      // Table may not exist on all deployments — catch and log rather than throw.
       try {
         await db.execute(sql`
           INSERT INTO software_improvement_tasks (id, organization_id, title, description, severity, status, source_agent, priority, created_at, updated_at)
@@ -385,10 +439,10 @@ async function createDownstreamRecord(
           )
           ON CONFLICT DO NOTHING
         `);
-      } catch { /* table may not exist */ }
-    }
-  } catch (e: any) {
-    console.error("[AgentMail Inbound] Downstream record error:", e?.message);
+      } catch (e: any) {
+        console.warn("[AgentMail Inbound] software_improvement_tasks not available:", e?.message);
+      }
+    });
   }
 }
 
@@ -596,15 +650,18 @@ export async function processInboundAgentMail(
       return { ok: true, inboundId, classification: result.classification, routedAgent: "none", skipped: true, skipReason: "spam_or_noise" };
     }
 
-    // 6. Create downstream records
-    await createDownstreamRecord(orgId, payload, result);
+    // 6. Create downstream records — each write idempotent via agentmail_effect_log
+    await createDownstreamRecord(orgId, payload, result, inboundId);
 
-    // 7. Add to Attention Inbox
-    const attentionItemId = await addToAttentionInbox(orgId, inboundId, payload, result);
+    // 7. Add to Attention Inbox — idempotent via effect log
+    let attentionItemId: string | null = null;
+    await tryEffect(inboundId, "attention_item", async () => {
+      attentionItemId = await addToAttentionInbox(orgId, inboundId, payload, result);
+    });
 
-    // 7b. Auto-create reply queue entry if a suggested reply exists
+    // 7b. Reply queue entry — idempotent via effect log
     if (result.suggestedReply) {
-      try {
+      await tryEffect(inboundId, "reply_queue", async () => {
         const { createReplyQueueEntry } = await import("../agentmail-reply-routes");
         await createReplyQueueEntry({
           organizationId: orgId,
@@ -619,13 +676,13 @@ export async function processInboundAgentMail(
           confidence: result.confidence,
           threadId: payload.providerThreadId,
         });
-      } catch (e: any) {
-        console.error("[AgentMail Inbound] Reply queue entry error:", e?.message);
-      }
+      });
     }
 
-    // 8. CEO Heartbeat timeline
-    await notifyCeoHeartbeat(orgId, payload, result, inboundId);
+    // 8. CEO Heartbeat timeline — idempotent via effect log
+    await tryEffect(inboundId, "ceo_timeline", async () => {
+      await notifyCeoHeartbeat(orgId, payload, result, inboundId);
+    });
 
     // 9. Mark completed — processing_state transition: processing → completed
     await db.execute(sql`

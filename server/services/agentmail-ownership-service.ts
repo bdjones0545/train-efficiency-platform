@@ -237,31 +237,47 @@ export async function resolveOrgFromInbox(toEmail: string): Promise<ResolveResul
   };
 }
 
-// ─── Outbound address lookup ──────────────────────────────────────────────────
+// ─── Outbound identity lookup ─────────────────────────────────────────────────
+
+/**
+ * Return the active ownership row (email + providerInboxId) for an org+role pair.
+ * Returns null if no active record with a provider_inbox_id exists.
+ * Caller must fail closed — no send if this returns null.
+ */
+export async function getActiveOwnershipRow(
+  orgId: string,
+  role: AgentMailRole,
+): Promise<{ emailAddress: string; providerInboxId: string } | null> {
+  try {
+    const result = rows(
+      await db.execute(sql`
+        SELECT email_address, provider_inbox_id
+        FROM org_agentmail_inboxes
+        WHERE organization_id = ${orgId}
+          AND role            = ${role}
+          AND ownership_state = 'active'
+          AND provider_inbox_id IS NOT NULL
+        LIMIT 1
+      `),
+    );
+    const row = result[0];
+    if (!row?.email_address || !row?.provider_inbox_id) return null;
+    return { emailAddress: row.email_address as string, providerInboxId: row.provider_inbox_id as string };
+  } catch {
+    return null;
+  }
+}
 
 /**
  * Return the active from-address for an org+role pair.
- * Returns null if no active record exists — caller must fail closed (no send).
+ * @deprecated Use getActiveOwnershipRow() which also returns provider_inbox_id.
  */
 export async function getActiveOutboundAddress(
   orgId: string,
   role: AgentMailRole,
 ): Promise<string | null> {
-  try {
-    const result = rows(
-      await db.execute(sql`
-        SELECT email_address
-        FROM org_agentmail_inboxes
-        WHERE organization_id = ${orgId}
-          AND role            = ${role}
-          AND ownership_state = 'active'
-        LIMIT 1
-      `),
-    );
-    return result[0]?.email_address ?? null;
-  } catch {
-    return null;
-  }
+  const row = await getActiveOwnershipRow(orgId, role);
+  return row?.emailAddress ?? null;
 }
 
 // ─── Provisioning ─────────────────────────────────────────────────────────────
@@ -482,14 +498,26 @@ export async function activateOrgInboxes(
       continue;
     }
 
-    // Gate 4: address from provider must match DB record
-    if (verification.email && verification.email.toLowerCase() !== emailAddress.toLowerCase()) {
+    // Gate 4: provider must return an email address (all identity evidence required)
+    if (!verification.email) {
+      results.push({ role, emailAddress, status: "skipped_verify_failed", providerInboxId, reason: "Provider returned no email address — all identity fields required for activation" });
+      continue;
+    }
+
+    // Gate 5: returned address must exactly match persisted normalized address
+    if (verification.email.toLowerCase() !== emailAddress.toLowerCase()) {
       results.push({ role, emailAddress, status: "skipped_verify_failed", providerInboxId, reason: `Provider address mismatch: ${verification.email} ≠ ${emailAddress}` });
       continue;
     }
 
-    // Gate 5: provider inbox_id from verification must match what we stored
-    if (verification.inboxId && verification.inboxId !== providerInboxId) {
+    // Gate 6: provider must return an inbox_id (all identity evidence required)
+    if (!verification.inboxId) {
+      results.push({ role, emailAddress, status: "skipped_verify_failed", providerInboxId, reason: "Provider returned no inbox_id — all identity fields required for activation" });
+      continue;
+    }
+
+    // Gate 7: returned inbox_id must exactly equal the persisted provider_inbox_id
+    if (verification.inboxId !== providerInboxId) {
       results.push({ role, emailAddress, status: "skipped_verify_failed", providerInboxId, reason: `Provider inbox ID mismatch: ${verification.inboxId} ≠ ${providerInboxId}` });
       continue;
     }

@@ -15,16 +15,15 @@ import {
   getInboxMessages,
   sendAgentEmail,
   replyFromAgentInbox,
-  handleAgentMailWebhook,
   AGENT_INBOXES,
   type AgentInbox,
 } from "./services/agentmail-service";
+import { verifyAgentMailWebhook } from "./services/agentmail-svix";
 import {
   processInboundAgentMail,
   INBOUND_TEST_CASES,
 } from "./services/agentmail-inbound-router";
 import {
-  resolveOrgFromInbox,
   resolveOrgByProviderInboxId,
   provisionOrgInboxes,
   activateOrgInboxes,
@@ -44,6 +43,63 @@ function rows(r: unknown): any[] {
   if (Array.isArray(r)) return r;
   const x = r as any;
   return Array.isArray(x?.rows) ? x.rows : [];
+}
+
+// ─── Quarantine persistence helper ───────────────────────────────────────────
+
+interface QuarantineParams {
+  inboxRole: string;
+  fromAddr: string;
+  toAddress: string;
+  subject: string;
+  bodyText: string | null;
+  providerMessageId: string | null;
+  providerInboxId: string | null;
+  providerEventId: string | null;
+  reason: string;
+}
+
+/**
+ * Durably persist a quarantine record.
+ * Returns true on success (or idempotent duplicate).
+ * Returns false if the DB insert fails — caller MUST return 503 to trigger provider retry.
+ *
+ * A 200 response on quarantine persistence failure would permanently lose the evidence.
+ */
+async function persistQuarantine(p: QuarantineParams): Promise<boolean> {
+  try {
+    await db.execute(sql`
+      INSERT INTO agent_mail_inbound_messages (
+        id, organization_id, inbox, from_email, from_name, to_email, subject,
+        body_text, provider_message_id, provider_inbox_id, provider_event_id,
+        routed_status, routing_status, routing_reason, routed_at,
+        processing_state, received_at, created_at, updated_at
+      ) VALUES (
+        gen_random_uuid()::text,
+        NULL,
+        ${p.inboxRole},
+        ${p.fromAddr},
+        ${null},
+        ${p.toAddress},
+        ${p.subject},
+        ${p.bodyText},
+        ${p.providerMessageId},
+        ${p.providerInboxId},
+        ${p.providerEventId},
+        ${"quarantine"},
+        ${"quarantine"},
+        ${p.reason},
+        NOW(),
+        ${"completed"},
+        NOW(), NOW(), NOW()
+      )
+      ON CONFLICT (provider_message_id) DO NOTHING
+    `);
+    return true;
+  } catch (e: any) {
+    console.error("[AgentMail] Quarantine DB insert failed:", e?.message);
+    return false;
+  }
 }
 
 // Legacy shim — kept so any callers that already imported it still compile.
@@ -407,37 +463,55 @@ export async function registerAgentMailRoutes(
   });
 
   // ─── POST /api/agentmail/webhook ─────────────────────────────────────────────
-  // Public endpoint — authenticated via Authorization custom delivery header.
-  // Configure AGENTMAIL_WEBHOOK_SECRET in Replit Secrets, then set the same value
-  // as `Authorization: Bearer <secret>` when creating the webhook at AgentMail.
+  // Unauthenticated endpoint — verified via Svix headers against raw request body.
   //
-  // Event parsing follows the verified AgentMail provider contract:
-  //   - Dispatch field: event_type (not type)
-  //   - Payload location: event.message (not event.email / event.data)
-  //   - Recipient: message.to is an ARRAY of RFC 2822 strings
-  //   - Inbox identity: message.inbox_id (not id)
-  //   - Deduplication key: message.message_id (SMTP Message-ID)
+  // AgentMail uses Svix for webhook delivery (ref: agentmail.to/docs/webhook-verification).
+  // Required headers: svix-id, svix-timestamp, svix-signature.
+  // Signature covers the EXACT raw bytes — never reconstruct from JSON.stringify.
+  // req.rawBody is captured by the express.json({ verify }) callback in server/index.ts.
+  //
+  // Routing invariant: inbox_id is MANDATORY.
+  //   Missing inbox_id  → quarantine (malformed/untrusted event)
+  //   Unknown inbox_id  → quarantine (no ownership record)
+  //   Address-only path → REMOVED (destination address cannot establish tenant ownership)
+  //
+  // Quarantine durability invariant:
+  //   If the quarantine record cannot be persisted → return 503 (retryable).
+  //   A 200 response on quarantine persistence failure would permanently lose evidence.
   app.post("/api/agentmail/webhook", async (req: any, res) => {
     try {
       // ── Readiness gate ────────────────────────────────────────────────────
-      // Block webhook traffic until the schema migration has completed.
-      // 503 causes the provider to retry rather than dropping the event.
       if (!isAgentMailSchemaReady()) {
         console.warn("[AgentMail] Webhook received before schema ready — returning 503");
         return res.status(503).json({ error: "Service starting up — retry later" });
       }
 
-      // ── Authentication ────────────────────────────────────────────────────
-      // Pass the already-parsed req.body (NOT JSON.stringify) and raw headers.
-      const authResult = await handleAgentMailWebhook(req.body, req.headers);
-      if (!authResult.ok) {
-        return res.status(401).json({ error: authResult.error });
+      // ── Svix signature verification ───────────────────────────────────────
+      // req.rawBody is the exact network bytes before body parsing.
+      // express.json({ verify: (req, res, buf) => { req.rawBody = buf; } }) in
+      // server/index.ts (line ~147) captures this for every JSON request.
+      const rawBody: Buffer | undefined = (req as any).rawBody;
+      if (!Buffer.isBuffer(rawBody)) {
+        console.error("[AgentMail] Webhook: req.rawBody not a Buffer — server middleware misconfigured");
+        return res.status(503).json({ error: "Raw body unavailable — check server middleware" });
       }
 
-      const event = authResult.event as any;
+      const verifyResult = verifyAgentMailWebhook(rawBody, req.headers);
+      if (!verifyResult.ok) {
+        const status = verifyResult.httpStatus ?? 401;
+        console.warn(`[AgentMail] Webhook rejected (${status}): ${verifyResult.error}`);
+        return res.status(status).json({ error: verifyResult.error });
+      }
 
-      // Dispatch on event_type — verified field name from AgentMail docs
-      const eventType: string = event?.event_type ?? event?.type ?? "unknown";
+      // ── Parse verified event ──────────────────────────────────────────────
+      let event: any;
+      try {
+        event = JSON.parse(rawBody.toString("utf8"));
+      } catch {
+        return res.status(400).json({ error: "Webhook body is not valid JSON" });
+      }
+
+      const eventType: string = event?.event_type ?? "unknown";
       console.log("[AgentMail] Webhook received:", eventType);
 
       // ── Inbound email events ──────────────────────────────────────────────
@@ -452,85 +526,67 @@ export async function registerAgentMailRoutes(
         const msg = event?.message;
         if (!msg) {
           console.warn(`[AgentMail] Webhook ${eventType}: missing 'message' object`);
-          return res.json({ received: true, routed: false, reason: "missing_message_object" });
+          return res.status(400).json({ error: "Malformed webhook: missing message object" });
         }
 
-        // inbox_id is the authoritative provider inbox identity (verified from docs)
+        // ── inbox_id is MANDATORY — no address-only fallback ──────────────
+        // Events without inbox_id are malformed/untrusted.
         const providerInboxId: string | null = msg.inbox_id ?? null;
+        if (!providerInboxId) {
+          console.warn("[AgentMail] Quarantine: missing inbox_id — cannot establish tenant identity");
+          const persisted = await persistQuarantine({
+            inboxRole: "unknown",
+            fromAddr: msg.from ?? "unknown",
+            toAddress: "unknown",
+            subject: msg.subject ?? "(no subject)",
+            bodyText: msg.text ?? null,
+            providerMessageId: msg.message_id ?? null,
+            providerInboxId: null,
+            providerEventId: event.event_id ?? null,
+            reason: "missing_inbox_id",
+          });
+          if (!persisted) {
+            return res.status(503).json({ error: "Quarantine persistence failed — retry later" });
+          }
+          return res.json({ received: true, routed: false, reason: "missing_inbox_id" });
+        }
 
         // to is an ARRAY of RFC 2822 address strings (verified from docs)
-        const toList: string[] = Array.isArray(msg.to)
-          ? msg.to
-          : msg.to ? [msg.to] : [];
+        const toList: string[] = Array.isArray(msg.to) ? msg.to : msg.to ? [msg.to] : [];
         const toAddress: string = toList[0] ?? "";
-
-        // Extract the role prefix from the local-part for inbox routing
         const inboxRole = toAddress.split("@")[0]?.split("-")[0]?.toLowerCase() ?? "unknown";
 
-        // SMTP Message-ID — authoritative deduplication key
         const providerMessageId: string | null = msg.message_id ?? null;
         const providerThreadId:  string | null = msg.thread_id  ?? null;
         const providerEventId:   string | null = event.event_id ?? null;
 
-        // ── Organization resolution ─────────────────────────────────────────
-        // Primary path: resolve by provider inbox_id, corroborate with address.
-        // Fallback: address-only resolution when inbox_id absent.
-        let resolveResult: { orgId: string | null; role: AgentMailRole | null; reason: string };
-
-        if (providerInboxId) {
-          resolveResult = await resolveOrgByProviderInboxId(providerInboxId, toAddress).catch(() => ({
-            orgId: null as string | null,
-            role: null as AgentMailRole | null,
-            reason: "no_ownership_record",
-          }));
-        } else {
-          resolveResult = await resolveOrgFromInbox(toAddress).catch(() => ({
-            orgId: null as string | null,
-            role: null as AgentMailRole | null,
-            reason: "no_ownership_record",
-          }));
-        }
+        // ── Tenant resolution — provider inbox_id is the ONLY routing key ──
+        const resolveResult = await resolveOrgByProviderInboxId(providerInboxId, toAddress).catch(() => ({
+          orgId: null as string | null,
+          role: null as AgentMailRole | null,
+          reason: "no_ownership_record",
+        }));
 
         if (!resolveResult.orgId) {
           const routingReason = resolveResult.reason;
-          console.warn(
-            `[AgentMail] Quarantine (${routingReason}) providerInboxId=${providerInboxId ?? "none"} to=${toAddress}`,
-          );
+          console.warn(`[AgentMail] Quarantine (${routingReason}) inbox=${providerInboxId} to=${toAddress}`);
 
-          // Persist quarantine row — organization_id = NULL (never org-owned state).
-          // Errors are LOGGED, not silently swallowed (Issue 6 fix).
-          const qErr = await db.execute(sql`
-            INSERT INTO agent_mail_inbound_messages (
-              id, organization_id, inbox, from_email, from_name, to_email, subject,
-              body_text, provider_message_id, provider_inbox_id, provider_event_id,
-              routed_status, routing_status, routing_reason, routed_at,
-              processing_state, received_at, created_at, updated_at
-            ) VALUES (
-              gen_random_uuid()::text,
-              NULL,
-              ${inboxRole},
-              ${msg.from ?? "unknown"},
-              ${null},
-              ${toAddress || "unknown"},
-              ${msg.subject ?? "(no subject)"},
-              ${msg.text ?? null},
-              ${providerMessageId},
-              ${providerInboxId},
-              ${providerEventId},
-              ${"quarantine"},
-              ${"quarantine"},
-              ${routingReason},
-              NOW(),
-              ${"completed"},
-              NOW(), NOW(), NOW()
-            )
-            ON CONFLICT (provider_message_id) DO NOTHING
-          `).catch((e: any) => e);
-
-          if (qErr instanceof Error) {
-            console.error("[AgentMail] Quarantine DB insert failed:", qErr.message);
+          // ── Quarantine fail-safe ──────────────────────────────────────────
+          // Must durably persist — return 503 if it fails so provider retries.
+          const persisted = await persistQuarantine({
+            inboxRole,
+            fromAddr: msg.from ?? "unknown",
+            toAddress: toAddress || "unknown",
+            subject: msg.subject ?? "(no subject)",
+            bodyText: msg.text ?? null,
+            providerMessageId,
+            providerInboxId,
+            providerEventId,
+            reason: routingReason,
+          });
+          if (!persisted) {
+            return res.status(503).json({ error: "Quarantine persistence failed — retry later" });
           }
-
           return res.json({ received: true, routed: false, reason: routingReason });
         }
 

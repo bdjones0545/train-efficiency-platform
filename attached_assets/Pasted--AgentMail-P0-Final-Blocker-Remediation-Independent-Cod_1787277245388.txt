@@ -1,0 +1,367 @@
+# AgentMail P0 — Final Blocker Remediation
+
+Independent Codex re-verification reproduced the reported 35/35 serial tests but found the AgentMail P0 remains open.
+
+Do NOT deploy.
+
+This task is limited to closing the independently verified remaining production blockers.
+
+Preserve everything already proven correct.
+
+## Preserve These Verified Properties
+
+Do not regress:
+
+* first/default organization fallback is gone
+* provider inbox IDs are persisted
+* provider inbox IDs are DB-unique
+* ID/address disagreement fails closed
+* webhook-supplied organization IDs are ignored
+* lifecycle mutations require ADMIN
+* role validation exists
+* inactive/retired ownership fails closed
+* attempt cap exists
+* Codex security commits remain untouched
+
+## 1. Implement the Actual AgentMail Webhook Verification Contract
+
+Independent verification against the current official AgentMail documentation found that webhook delivery authentication uses Svix headers:
+
+* `svix-id`
+* `svix-timestamp`
+* `svix-signature`
+
+verified against the **exact raw HTTP request body**.
+
+The current custom:
+
+`Authorization: Bearer <AGENTMAIL_WEBHOOK_SECRET>`
+
+implementation is not sufficient.
+
+Re-check the current official AgentMail webhook verification documentation yourself before changing code.
+
+Implement the documented verification contract.
+
+Requirements:
+
+* capture/preserve exact raw request bytes for the AgentMail webhook route
+* verify required Svix headers
+* verify timestamp/replay tolerance
+* verify cryptographic signature
+* invalid signature → reject
+* malformed signature → reject
+* expired/replayed delivery → reject
+* missing signature → reject
+* missing webhook verification configuration in production → webhook unavailable/fail closed
+
+There must be **no unsigned production mode**.
+
+Do not verify a reconstructed `JSON.stringify(req.body)`.
+
+Add behavioral tests using provider-compatible signed fixtures.
+
+## 2. Make `inbox_id` Mandatory for Tenant Routing
+
+The current provider contract supplies `message.inbox_id`.
+
+Remove address-only tenant fallback.
+
+Inbound routing invariant:
+
+`provider inbox ID + persisted active ownership → candidate tenant`
+
+Then corroborate against normalized destination address.
+
+Required:
+
+### Missing `inbox_id`
+
+Malformed/untrusted event → quarantine.
+
+### Unknown `inbox_id`
+
+Quarantine.
+
+### Provider ID/address mismatch
+
+Quarantine.
+
+### Exactly one active matching ownership
+
+Route.
+
+Destination address alone must never establish tenant ownership.
+
+## 3. Correct Outbound Provider API
+
+Independent verification found the current outbound endpoints do not match AgentMail's documented API.
+
+Verify current official docs and implement the actual endpoints.
+
+Expected current contract from independent verification:
+
+Send:
+
+`POST /v0/inboxes/:inbox_id/messages/send`
+
+Reply:
+
+`POST /v0/inboxes/:inbox_id/messages/:message_id/reply`
+
+Do not blindly copy these paths without checking current provider docs.
+
+Use persisted `provider_inbox_id`, not email address, as the provider resource identity.
+
+For replies, use the actual provider message ID required by the API, not a thread ID unless the current docs explicitly require it.
+
+Add provider-contract tests for both operations.
+
+## 4. Make AgentMail Migration Process-Safe
+
+Independent verification reproduced concurrent fresh-start failure:
+
+PostgreSQL `23505` on `pg_type_typname_nsp_index`.
+
+The current in-process Promise does not coordinate multiple server processes.
+
+Also, migration errors are swallowed, allowing readiness after partial schema installation.
+
+Fix only the AgentMail migration mechanism.
+
+Requirements:
+
+* process-safe coordination, preferably PostgreSQL advisory lock or repository-equivalent
+* deterministic ordering
+* transactional where PostgreSQL supports it
+* no swallowed DDL failures
+* migration failure → AgentMail NOT READY
+* webhook handling unavailable until migration is fully successful
+* serial rerun idempotent
+* concurrent startup idempotent
+
+Add a real concurrent fresh-database migration test.
+
+Do NOT redesign the entire TrainEfficiency migration architecture.
+
+## 5. Strengthen Activation Verification
+
+Activation currently allows missing corroborating provider fields.
+
+Activation must require provider verification to return all mandatory identity evidence.
+
+At minimum:
+
+* provider resource exists
+* provider inbox ID returned
+* returned provider inbox ID exactly equals persisted ID
+* provider email/address returned
+* returned address exactly equals persisted normalized address
+* organization ownership still matches
+* lifecycle state is eligible
+
+Missing required provider identity fields:
+
+→ activation denied
+
+Test each gate independently.
+
+## 6. Make Quarantine Failure Fail Safely
+
+Currently a quarantine persistence failure can still produce a successful webhook receipt.
+
+That risks permanent evidence loss.
+
+Required:
+
+If an event requires quarantine but the quarantine record cannot be durably persisted:
+
+→ do NOT acknowledge successful processing to the provider.
+
+Return the appropriate retryable failure according to the webhook contract.
+
+Do not leak internal DB details in the response.
+
+Test this through the real webhook handler, not by directly inserting a quarantine fixture.
+
+## 7. Downstream Exactly-Once / Retry Safety
+
+The inbound lease/state machine is useful, but independent verification found that a crash after a downstream write and before inbound completion can duplicate side effects after stale reclaim.
+
+Address this boundedly.
+
+Inventory every downstream side effect reachable from AgentMail processing:
+
+* prospect
+* applicant
+* software task
+* attention item
+* reply queue
+* CEO timeline/heartbeat
+* other reachable writes
+
+Give each side effect a deterministic idempotency identity derived from the inbound provider message/event plus effect type where practical.
+
+Preferred pattern:
+
+`provider_message_id + effect_type`
+
+or a persisted processing/effect ledger equivalent.
+
+Requirements:
+
+* retry after partial completion cannot duplicate an already completed effect
+* unfinished effects can resume
+* completed event remains suppressed
+* attempt cap remains enforced
+* individual downstream helper failures cannot be silently converted into overall `completed` unless explicitly non-critical and documented
+
+Do not build a general workflow engine.
+
+Keep this AgentMail-specific.
+
+## 8. Expand Cross-Tenant Behavioral Proof
+
+Independent verification found the current tests do not behaviorally prove every downstream tenant write.
+
+Build a sufficiently complete disposable schema/fixture and prove:
+
+Org A inbound cannot create Org B:
+
+* prospect
+* applicant
+* software task
+* attention item
+* reply queue
+* timeline/heartbeat
+* any other AgentMail-triggered tenant record
+
+Tests must fail if downstream tables are missing.
+
+Do not allow missing-table errors to be logged and treated as successful isolation tests.
+
+## 9. Provisioning Concurrency
+
+Preserve deterministic provider `client_id`.
+
+Add behavioral tests for:
+
+* concurrent provision attempts
+* provider transient failure then retry
+* provider success followed by local persistence failure
+* reconciliation of local row missing provider ID
+
+Prove these scenarios do not create multiple provider inbox identities for one `(organization, role)`.
+
+## 10. Lifecycle Behavioral Tests
+
+Add behavioral authorization tests proving:
+
+* ADMIN allowed
+* COACH denied
+* STAFF denied
+* CLIENT denied
+* Org A ADMIN cannot lifecycle-mutate Org B ownership
+
+Do not rely only on static route inspection.
+
+## 11. Regression
+
+After remediation run:
+
+* complete AgentMail suite
+* concurrent fresh-DB migration test
+* `npm test`
+* `npm run test:security`
+* relevant tenant isolation
+* relevant auth
+* Codex stack regressions
+
+The previous 35/35 serial count is no longer sufficient acceptance evidence.
+
+## 12. Production Boundary
+
+DO NOT:
+
+* deploy
+* run production DDL
+* provision live inboxes
+* change production webhook configuration
+* activate production ownership
+* retire global inboxes
+* repair historical records
+* push without authorization
+
+## Final Report
+
+Return:
+
+# AgentMail P0 — Final Blocker Remediation Report
+
+## Webhook Verification
+
+## Raw Body Handling
+
+## Tenant Identity
+
+## Outbound Provider API
+
+## Migration Concurrency
+
+## Migration Readiness
+
+## Activation
+
+## Quarantine Durability
+
+## Downstream Idempotency
+
+## Cross-Tenant Behavioral Proof
+
+## Provisioning Recovery
+
+## Lifecycle Authorization
+
+## Tests
+
+## Codex Compatibility
+
+## Production Changes
+
+## Git Status
+
+## Limitations
+
+## Verdict
+
+Explicitly answer:
+
+* Svix verification implemented against raw body?
+* Unsigned production webhook possible?
+* Missing `inbox_id` quarantined?
+* Address-only routing possible?
+* Send endpoint matches current provider docs?
+* Reply endpoint matches current provider docs?
+* Provider inbox ID used outbound?
+* Concurrent migration safe?
+* DDL errors swallowed?
+* Partial schema can report ready?
+* Activation requires complete provider corroboration?
+* Quarantine persistence failure acknowledged as success?
+* Partial downstream retry can duplicate effects?
+* Every downstream tenant path behaviorally isolation-tested?
+* Provisioning concurrent retry safe?
+* Non-admin lifecycle mutation behaviorally denied?
+* Codex commits modified?
+* Production modified?
+* Push performed?
+
+End with:
+
+**AGENTMAIL P0 REMEDIATED — READY FOR FINAL CODEX VERIFICATION**
+
+or
+
+**P0 REMAINS OPEN**
+
+Do not deploy even if your verification passes.

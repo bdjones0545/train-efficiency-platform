@@ -242,6 +242,11 @@ export async function getInboxMessages(inboxAddress: string, limit = 20): Promis
 
 /**
  * Send an email from a specific agent inbox.
+ *
+ * Provider API: POST /v0/inboxes/{inbox_id}/messages/send
+ * Uses persisted provider_inbox_id — not the email address — as the resource identity.
+ * "to" is an array per the AgentMail API contract.
+ *
  * humanApproved=true skips the autonomous-send policy check (use when a human
  * has already approved the draft). Emergency pause always blocks regardless.
  */
@@ -264,9 +269,9 @@ export async function sendAgentEmail(params: {
 }> {
   // ── 1. Ownership check — must run before the send guard so a non-provisioned
   //       org fails closed immediately rather than hitting policy evaluation.
-  const { getActiveOutboundAddress } = await import("./agentmail-ownership-service");
-  const fromEmail = await getActiveOutboundAddress(params.organizationId, params.fromInbox);
-  if (!fromEmail) {
+  const { getActiveOwnershipRow } = await import("./agentmail-ownership-service");
+  const ownership = await getActiveOwnershipRow(params.organizationId, params.fromInbox);
+  if (!ownership) {
     const errMsg =
       `AgentMail outbound blocked: no active inbox ownership for ` +
       `org=${params.organizationId} role=${params.fromInbox}. ` +
@@ -283,6 +288,8 @@ export async function sendAgentEmail(params: {
     });
     return { ok: false, error: "AgentMail inbox not provisioned for this organization", blocked: true };
   }
+
+  const { emailAddress: fromEmail, providerInboxId } = ownership;
 
   // ── 2. Send guard policy check
   const guardResult = await checkAgentMailSendPolicy({
@@ -305,25 +312,23 @@ export async function sendAgentEmail(params: {
     return { ok: false, error: guardResult.reason, blocked: true };
   }
 
-  const payload = {
-    from: fromEmail,
-    to: params.to,
-    subject: params.subject,
-    text: params.body,
-    reply_to: params.replyTo,
-  };
+  // ── 3. Call provider: POST /v0/inboxes/{inbox_id}/messages/send ───────────
+  // "to" is an array per the verified AgentMail API contract.
+  const res = await agentMailRequest(
+    "POST",
+    `/inboxes/${providerInboxId}/messages/send`,
+    {
+      to: [params.to],
+      subject: params.subject,
+      text: params.body,
+      from: fromEmail,
+      ...(params.replyTo ? { reply_to: params.replyTo } : {}),
+    },
+  );
 
-  // NOTE: AgentMail v0 REST API is inbound-only. POST /inboxes/{email}/emails returns 404.
-  // All confirmed endpoints: GET /inboxes, GET /inboxes/{email}, GET /inboxes/{email}/threads.
-  // Outbound send requires SMTP credentials or a future API version.
-  const res = await agentMailRequest("POST", `/inboxes/${fromEmail}/emails`, payload);
-
-  if (!res.ok && (res.data as any)?.message === "Route not found") {
-    console.warn(`[AgentMail] sendAgentEmail: outbound send not available in AgentMail v0 REST API. ` +
-      `from=${fromEmail} to=${params.to} — AgentMail is inbound-only; use Gmail agent for outbound.`);
-  }
-
-  const messageId = res.ok ? ((res.data as any)?.id ?? (res.data as any)?.messageId ?? undefined) : undefined;
+  const messageId = res.ok
+    ? ((res.data as any)?.id ?? (res.data as any)?.message_id ?? undefined)
+    : undefined;
 
   await logAgentMailMessage({
     organizationId: params.organizationId,
@@ -335,7 +340,7 @@ export async function sendAgentEmail(params: {
     bodyPreview: params.body.slice(0, 300),
     providerMessageId: messageId,
     status: res.ok ? "sent" : "failed",
-    errorMessage: res.ok ? undefined : (res.error ?? `AgentMail outbound not available (HTTP ${res.status})`),
+    errorMessage: res.ok ? undefined : (res.error ?? `HTTP ${res.status}`),
   });
 
   if (res.ok) {
@@ -365,6 +370,11 @@ export async function sendAgentEmail(params: {
 
 /**
  * Reply from an agent inbox to an existing email thread.
+ *
+ * Provider API: POST /v0/inboxes/{inbox_id}/messages/{message_id}/reply
+ * Uses persisted provider_inbox_id as the inbox resource identity.
+ * replyToMessageId is the provider message_id of the message being replied to.
+ *
  * humanApproved=true skips the autonomous-send policy check (use when a human
  * has already approved the draft). Emergency pause always blocks regardless.
  */
@@ -372,7 +382,10 @@ export async function replyFromAgentInbox(params: {
   organizationId: string;
   agentName: string;
   fromInbox: AgentInbox;
-  threadId: string;
+  /** Provider message_id of the message being replied to — required for new API. */
+  replyToMessageId?: string;
+  /** Legacy thread_id (kept for backward compat; used for audit log). */
+  threadId?: string;
   to: string;
   subject: string;
   body: string;
@@ -385,10 +398,10 @@ export async function replyFromAgentInbox(params: {
   error?: string;
   blocked?: boolean;
 }> {
-  // ── 1. Ownership check — must run before the send guard (same reason as sendAgentEmail).
-  const { getActiveOutboundAddress } = await import("./agentmail-ownership-service");
-  const fromEmail = await getActiveOutboundAddress(params.organizationId, params.fromInbox);
-  if (!fromEmail) {
+  // ── 1. Ownership check
+  const { getActiveOwnershipRow } = await import("./agentmail-ownership-service");
+  const ownership = await getActiveOwnershipRow(params.organizationId, params.fromInbox);
+  if (!ownership) {
     const errMsg =
       `AgentMail reply blocked: no active inbox ownership for ` +
       `org=${params.organizationId} role=${params.fromInbox}. ` +
@@ -406,6 +419,9 @@ export async function replyFromAgentInbox(params: {
     return { ok: false, error: "AgentMail inbox not provisioned for this organization", blocked: true };
   }
 
+  const { emailAddress: fromEmail, providerInboxId } = ownership;
+  const legacyThreadId = params.threadId ?? params.replyToMessageId ?? "";
+
   // ── 2. Send guard policy check
   const guardResult = await checkAgentMailSendPolicy({
     orgId: params.organizationId,
@@ -417,7 +433,7 @@ export async function replyFromAgentInbox(params: {
     humanApproved: params.humanApproved,
     sourceSystem: params.agentName,
     actionQueueId: params.actionQueueId,
-    gmailThreadId: params.gmailThreadId ?? params.threadId,
+    gmailThreadId: params.gmailThreadId ?? legacyThreadId,
   });
 
   if (!guardResult.allowed) {
@@ -427,24 +443,36 @@ export async function replyFromAgentInbox(params: {
     return { ok: false, error: guardResult.reason, blocked: true };
   }
 
-  const payload = {
-    from: fromEmail,
-    to: params.to,
-    subject: params.subject,
-    text: params.body,
-    thread_id: params.threadId,
-  };
+  // ── 3. Call provider ───────────────────────────────────────────────────────
+  // POST /v0/inboxes/{inbox_id}/messages/{message_id}/reply when we have the
+  // provider message_id; otherwise fall back to the send endpoint with thread_id.
+  let res: Awaited<ReturnType<typeof agentMailRequest>>;
 
-  // NOTE: AgentMail v0 REST API is inbound-only. POST /inboxes/{email}/emails returns 404.
-  // Outbound replies require SMTP credentials or a future API version.
-  const res = await agentMailRequest("POST", `/inboxes/${fromEmail}/emails`, payload);
-
-  if (!res.ok && (res.data as any)?.message === "Route not found") {
-    console.warn(`[AgentMail] replyFromAgentInbox: outbound send not available in AgentMail v0 REST API. ` +
-      `from=${fromEmail} to=${params.to} thread=${params.threadId} — use Gmail agent for outbound.`);
+  if (params.replyToMessageId) {
+    // Preferred: reply endpoint — uses provider message_id of message being replied to.
+    res = await agentMailRequest(
+      "POST",
+      `/inboxes/${providerInboxId}/messages/${params.replyToMessageId}/reply`,
+      { text: params.body },
+    );
+  } else {
+    // Fallback: send endpoint — used when only a thread_id is available.
+    res = await agentMailRequest(
+      "POST",
+      `/inboxes/${providerInboxId}/messages/send`,
+      {
+        to: [params.to],
+        subject: params.subject,
+        text: params.body,
+        from: fromEmail,
+        ...(legacyThreadId ? { thread_id: legacyThreadId } : {}),
+      },
+    );
   }
 
-  const messageId = res.ok ? ((res.data as any)?.id ?? (res.data as any)?.messageId ?? undefined) : undefined;
+  const messageId = res.ok
+    ? ((res.data as any)?.id ?? (res.data as any)?.message_id ?? undefined)
+    : undefined;
 
   await logAgentMailMessage({
     organizationId: params.organizationId,
@@ -456,7 +484,7 @@ export async function replyFromAgentInbox(params: {
     bodyPreview: params.body.slice(0, 300),
     providerMessageId: messageId,
     status: res.ok ? "sent" : "failed",
-    errorMessage: res.ok ? undefined : (res.error ?? `AgentMail outbound not available (HTTP ${res.status})`),
+    errorMessage: res.ok ? undefined : (res.error ?? `HTTP ${res.status}`),
   });
 
   if (res.ok) {
@@ -476,7 +504,7 @@ export async function replyFromAgentInbox(params: {
       providerMessageId: messageId,
       sentAt: new Date(),
       actionQueueId: params.actionQueueId,
-      gmailThreadId: params.gmailThreadId ?? params.threadId,
+      gmailThreadId: params.gmailThreadId ?? legacyThreadId,
     }).catch(() => {});
   }
 
@@ -503,48 +531,18 @@ export async function replyFromAgentInbox(params: {
  * documented provider mechanism.  The body is the already-parsed req.body object
  * passed in by the caller (never re-serialized via JSON.stringify).
  *
- * @param body     The parsed request body (req.body, not JSON.stringify(req.body)).
- * @param headers  The raw request headers object for Authorization lookup.
+ * @param _body     Ignored — the webhook route now uses Svix header verification.
+ * @param _headers  Ignored — use verifyAgentMailWebhook from agentmail-svix.ts.
+ * @deprecated Use verifyAgentMailWebhook from agentmail-svix.ts with req.rawBody.
  */
 export async function handleAgentMailWebhook(
-  body: unknown,
-  headers: Record<string, string | string[] | undefined>,
+  _body: unknown,
+  _headers: Record<string, string | string[] | undefined>,
 ): Promise<{ ok: boolean; event?: unknown; error?: string }> {
-  const c = getConfig();
-  const cryptoMod = await import("crypto");
-
-  if (c.webhookSecret) {
-    // Secret configured — enforce header presence and value.
-    const authHeader = (headers["authorization"] as string | undefined) ?? "";
-
-    if (!authHeader) {
-      console.warn("[AgentMail] Webhook rejected: Authorization header missing (AGENTMAIL_WEBHOOK_SECRET is set)");
-      return { ok: false, error: "Webhook Authorization header required" };
-    }
-
-    const expectedBearer = `Bearer ${c.webhookSecret}`;
-
-    // Timing-safe comparison: HMAC both strings with the same random key so the
-    // fixed-length digests can be compared with timingSafeEqual regardless of
-    // whether the input lengths differ (avoids timing oracle attacks).
-    const key = cryptoMod.randomBytes(32);
-    const ha = cryptoMod.createHmac("sha256", key).update(authHeader).digest();
-    const hb = cryptoMod.createHmac("sha256", key).update(expectedBearer).digest();
-
-    if (!cryptoMod.timingSafeEqual(ha, hb)) {
-      console.warn("[AgentMail] Webhook rejected: Authorization header value invalid");
-      return { ok: false, error: "Webhook authorization invalid" };
-    }
-  } else {
-    // No secret configured — warn. This is unsafe in production.
-    console.warn(
-      "[AgentMail] WARNING: AGENTMAIL_WEBHOOK_SECRET is not set. " +
-      "The webhook endpoint is unauthenticated. " +
-      "This is only acceptable during local development. " +
-      "Set AGENTMAIL_WEBHOOK_SECRET in Replit Secrets before production deployment.",
-    );
-  }
-
-  // Body arrives as the already-parsed express req.body.
-  return { ok: true, event: body };
+  console.error(
+    "[AgentMail] handleAgentMailWebhook() is deprecated. " +
+    "The webhook route must call verifyAgentMailWebhook() from agentmail-svix.ts " +
+    "with req.rawBody (Buffer) for Svix signature verification.",
+  );
+  return { ok: false, error: "Deprecated — use Svix verification path in agentmail-routes.ts" };
 }
