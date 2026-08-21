@@ -298,6 +298,12 @@ export interface ProvisionOrgResult {
   allProvisioned: boolean;
 }
 
+export interface AgentMailOwnershipProvider {
+  createOrVerifyInbox: (username: string, clientId: string) => Promise<any>;
+  verifyInboxExists: (emailAddress: string) => Promise<{ exists: boolean; inboxId?: string; email?: string }>;
+  afterProviderProvision?: (context: { orgId: string; role: AgentMailRole; providerInboxId: string }) => Promise<void>;
+}
+
 /**
  * Provision AgentMail role inboxes for one organization.
  *
@@ -317,8 +323,10 @@ export interface ProvisionOrgResult {
 export async function provisionOrgInboxes(
   orgId: string,
   roles?: AgentMailRole[],
+  providerOverride?: Pick<AgentMailOwnershipProvider, "createOrVerifyInbox" | "afterProviderProvision">,
 ): Promise<ProvisionOrgResult> {
-  const { createOrVerifyInbox } = await import("./agentmail-service");
+  const { createOrVerifyInbox: defaultCreateOrVerifyInbox } = await import("./agentmail-service");
+  const createOrVerifyInbox = providerOverride?.createOrVerifyInbox ?? defaultCreateOrVerifyInbox;
   const domain = getAgentMailDomain();
   const targetRoles = (roles && roles.length > 0) ? validateRoles(roles) : AGENT_ROLES;
   const roleResults: ProvisionRoleResult[] = [];
@@ -367,6 +375,8 @@ export async function provisionOrgInboxes(
         roleResults.push({ role, username, emailAddress, status: "failed", providerInboxId: null, error: "Provider returned no inbox_id" });
         continue;
       }
+
+      await providerOverride?.afterProviderProvision?.({ orgId, role, providerInboxId });
 
       if (existingRow) {
         // Row exists but was missing provider_inbox_id — reconcile
@@ -442,8 +452,10 @@ export interface ActivateOrgResult {
 export async function activateOrgInboxes(
   orgId: string,
   roles?: AgentMailRole[],
+  providerOverride?: Pick<AgentMailOwnershipProvider, "verifyInboxExists">,
 ): Promise<ActivateOrgResult> {
-  const { verifyInboxExists } = await import("./agentmail-service");
+  const { verifyInboxExists: defaultVerifyInboxExists } = await import("./agentmail-service");
+  const verifyInboxExists = providerOverride?.verifyInboxExists ?? defaultVerifyInboxExists;
   const domain = getAgentMailDomain();
 
   // Fetch rows that are candidates for activation

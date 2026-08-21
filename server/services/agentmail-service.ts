@@ -382,8 +382,8 @@ export async function replyFromAgentInbox(params: {
   organizationId: string;
   agentName: string;
   fromInbox: AgentInbox;
-  /** Provider message_id of the message being replied to — required for new API. */
-  replyToMessageId?: string;
+  /** Provider message_id of the message being replied to. */
+  replyToMessageId: string;
   /** Legacy thread_id (kept for backward compat; used for audit log). */
   threadId?: string;
   to: string;
@@ -420,7 +420,7 @@ export async function replyFromAgentInbox(params: {
   }
 
   const { emailAddress: fromEmail, providerInboxId } = ownership;
-  const legacyThreadId = params.threadId ?? params.replyToMessageId ?? "";
+  const legacyThreadId = params.threadId ?? params.replyToMessageId;
 
   // ── 2. Send guard policy check
   const guardResult = await checkAgentMailSendPolicy({
@@ -444,31 +444,11 @@ export async function replyFromAgentInbox(params: {
   }
 
   // ── 3. Call provider ───────────────────────────────────────────────────────
-  // POST /v0/inboxes/{inbox_id}/messages/{message_id}/reply when we have the
-  // provider message_id; otherwise fall back to the send endpoint with thread_id.
-  let res: Awaited<ReturnType<typeof agentMailRequest>>;
-
-  if (params.replyToMessageId) {
-    // Preferred: reply endpoint — uses provider message_id of message being replied to.
-    res = await agentMailRequest(
-      "POST",
-      `/inboxes/${providerInboxId}/messages/${params.replyToMessageId}/reply`,
-      { text: params.body },
-    );
-  } else {
-    // Fallback: send endpoint — used when only a thread_id is available.
-    res = await agentMailRequest(
-      "POST",
-      `/inboxes/${providerInboxId}/messages/send`,
-      {
-        to: [params.to],
-        subject: params.subject,
-        text: params.body,
-        from: fromEmail,
-        ...(legacyThreadId ? { thread_id: legacyThreadId } : {}),
-      },
-    );
-  }
+  const res = await agentMailRequest(
+    "POST",
+    `/inboxes/${providerInboxId}/messages/${params.replyToMessageId}/reply`,
+    { text: params.body },
+  );
 
   const messageId = res.ok
     ? ((res.data as any)?.id ?? (res.data as any)?.message_id ?? undefined)

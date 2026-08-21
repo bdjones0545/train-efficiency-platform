@@ -79,9 +79,12 @@ export function verifyAgentMailWebhook(
   }
 
   // ── Timestamp replay protection ────────────────────────────────────────────
-  const tsSeconds = parseInt(msgTimestamp, 10);
-  if (!Number.isFinite(tsSeconds)) {
+  if (!/^(0|[1-9]\d*)$/.test(msgTimestamp)) {
     return { ok: false, error: "svix-timestamp is not a valid integer", httpStatus: 401 };
+  }
+  const tsSeconds = Number(msgTimestamp);
+  if (!Number.isSafeInteger(tsSeconds)) {
+    return { ok: false, error: "svix-timestamp is outside the supported integer range", httpStatus: 401 };
   }
 
   const nowSeconds = Math.floor(Date.now() / 1000);
@@ -123,7 +126,8 @@ export function verifyAgentMailWebhook(
   // Format: "v1,<base64> v1,<base64>" (space-delimited; may contain multiple).
   const candidates = msgSig
     .split(" ")
-    .map((s) => s.split(",")[1])
+    .filter((s) => s.startsWith("v1,") && s.indexOf(",") === 2)
+    .map((s) => s.slice(3))
     .filter(Boolean);
 
   if (candidates.length === 0) {
@@ -132,7 +136,9 @@ export function verifyAgentMailWebhook(
 
   const matched = candidates.some((sig) => {
     try {
+      if (!/^[A-Za-z0-9+/]+={0,2}$/.test(sig) || sig.length % 4 !== 0) return false;
       const sigBuf = Buffer.from(sig, "base64");
+      if (sigBuf.toString("base64") !== sig) return false;
       if (sigBuf.length !== expectedBuf.length) return false;
       return timingSafeEqual(sigBuf, expectedBuf);
     } catch {

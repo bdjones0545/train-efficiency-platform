@@ -5,9 +5,8 @@
  */
 
 import { db } from "../db";
-import { sql, eq } from "drizzle-orm";
-import { attentionItems, employmentApplicants, teamTrainingProspects } from "@shared/schema";
-import { writeTimeline } from "./ceo-heartbeat-service";
+import { sql } from "drizzle-orm";
+import { agentOperatingTimeline, attentionItems, employmentApplicants, teamTrainingProspects } from "@shared/schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -89,31 +88,29 @@ function rows(r: unknown): any[] {
  * This prevents duplicate prospect/applicant/attention rows when a crash after
  * a downstream write causes a retry that reclaims the stale processing lease.
  *
- * @returns true if effect was executed; false if already done or fn failed.
+ * @returns true if effect was executed; false if it was already completed.
+ * A failed business write rejects and rolls back both the write and effect row.
  */
 async function tryEffect(
   inboundId: string,
   effectType: string,
-  fn: () => Promise<void>,
+  fn: (tx: any) => Promise<void>,
 ): Promise<boolean> {
-  try {
-    const claimed = rows(await db.execute(sql`
+  return db.transaction(async (tx) => {
+    const claimed = rows(await tx.execute(sql`
       INSERT INTO agentmail_effect_log (id, inbound_id, effect_type)
       VALUES (gen_random_uuid()::text, ${inboundId}, ${effectType})
       ON CONFLICT (inbound_id, effect_type) DO NOTHING
       RETURNING id
     `));
-    if (!claimed[0]) {
-      // Effect was completed in a prior processing attempt — skip safely.
-      return false;
-    }
-    await fn();
+    if (!claimed[0]) return false;
+
+    // The business write and completion record share this transaction. A thrown
+    // error or process/connection failure rolls both back, leaving the effect
+    // retryable. Concurrent attempts serialize on the unique constraint.
+    await fn(tx);
     return true;
-  } catch (err: any) {
-    console.error(`[AgentMail Effect] ${effectType} failed for inbound=${inboundId}:`, err?.message);
-    // Individual effect failure is non-critical — does not fail overall processing.
-    return false;
-  }
+  });
 }
 
 // ─── Intent extraction ───────────────────────────────────────────────────────
@@ -326,16 +323,16 @@ function levelFromSeverity(s: ClassificationResult["severity"]): string {
 }
 
 async function addToAttentionInbox(
+  executor: any,
   orgId: string,
   inboundId: string,
   email: InboundEmailPayload,
   result: ClassificationResult & { suggestedReply?: string },
 ): Promise<string | null> {
-  try {
-    const score = severityScore(result.severity);
+  const score = severityScore(result.severity);
     const level = levelFromSeverity(result.severity);
 
-    const [item] = await db.insert(attentionItems).values({
+    const [item] = await executor.insert(attentionItems).values({
       orgId,
       level,
       category: "agentmail_inbound",
@@ -360,11 +357,8 @@ async function addToAttentionInbox(
       },
     }).returning({ id: attentionItems.id });
 
-    return item?.id ?? null;
-  } catch (e: any) {
-    console.error("[AgentMail Inbound] Attention inbox error:", e?.message);
-    return null;
-  }
+  if (!item?.id) throw new Error("Attention item insert returned no id");
+  return item.id;
 }
 
 // ─── Downstream record creation ───────────────────────────────────────────────
@@ -387,9 +381,9 @@ async function createDownstreamRecord(
   const body = email.bodyText ?? "";
 
   if (classification === "new_lead" || classification === "pricing_question" || classification === "coach_partner_inquiry") {
-    await tryEffect(inboundId, "prospect", async () => {
+    await tryEffect(inboundId, "prospect", async (tx) => {
       const nameParts = (email.fromName ?? email.fromEmail.split("@")[0]).split(" ");
-      await db.insert(teamTrainingProspects).values({
+      await tx.insert(teamTrainingProspects).values({
         orgId,
         prospectName: email.fromName ?? email.fromEmail,
         organizationType: "inbound_email",
@@ -405,9 +399,9 @@ async function createDownstreamRecord(
   }
 
   if (classification === "employment_candidate") {
-    await tryEffect(inboundId, "applicant", async () => {
+    await tryEffect(inboundId, "applicant", async (tx) => {
       const nameParts = (email.fromName ?? "Unknown Applicant").split(" ");
-      await db.insert(employmentApplicants).values({
+      await tx.insert(employmentApplicants).values({
         orgId,
         firstName: nameParts[0] ?? "Unknown",
         lastName: nameParts.slice(1).join(" ") || "Applicant",
@@ -421,27 +415,26 @@ async function createDownstreamRecord(
   }
 
   if (classification === "software_bug_report") {
-    await tryEffect(inboundId, "software_task", async () => {
-      // Table may not exist on all deployments — catch and log rather than throw.
-      try {
-        await db.execute(sql`
-          INSERT INTO software_improvement_tasks (id, organization_id, title, description, severity, status, source_agent, priority, created_at, updated_at)
+    await tryEffect(inboundId, "software_task", async (tx) => {
+        await tx.execute(sql`
+          INSERT INTO software_improvement_tasks (
+            id, organization_id, title, problem_summary, severity, status,
+            source_agent, source_type, priority, created_at, updated_at
+          )
           VALUES (
             gen_random_uuid()::text,
             ${orgId},
             ${"Bug report: " + email.subject.slice(0, 100)},
             ${"Inbound bug report from " + email.fromEmail + "\n\n" + body.slice(0, 800)},
             ${"high"},
-            ${"open"},
+            ${"detected"},
+            ${"agentmail_inbound"},
             ${"agentmail_inbound"},
             ${80},
             NOW(), NOW()
           )
           ON CONFLICT DO NOTHING
         `);
-      } catch (e: any) {
-        console.warn("[AgentMail Inbound] software_improvement_tasks not available:", e?.message);
-      }
     });
   }
 }
@@ -449,13 +442,13 @@ async function createDownstreamRecord(
 // ─── CEO Heartbeat timeline ───────────────────────────────────────────────────
 
 async function notifyCeoHeartbeat(
+  executor: any,
   orgId: string,
   email: InboundEmailPayload,
   result: ClassificationResult,
   inboundId: string,
 ): Promise<void> {
-  try {
-    await writeTimeline({
+  const [row] = await executor.insert(agentOperatingTimeline).values({
       orgId,
       agentName: result.routedAgent,
       actionType: "agentmail_inbound",
@@ -473,16 +466,19 @@ async function notifyCeoHeartbeat(
         classification: result.classification,
         severity: result.severity,
       },
-    });
-  } catch (e: any) {
-    console.error("[AgentMail Inbound] CEO Heartbeat timeline error:", e?.message);
-  }
+    }).returning({ id: agentOperatingTimeline.id });
+  if (!row?.id) throw new Error("CEO timeline insert returned no id");
 }
 
 // ─── Main processor ──────────────────────────────────────────────────────────
 
 export async function processInboundAgentMail(
   payload: InboundEmailPayload,
+  enhanceOverride?: (
+    base: ClassificationResult,
+    subject: string,
+    body: string,
+  ) => Promise<ClassificationResult & { suggestedReply?: string }>,
 ): Promise<ProcessResult> {
   const orgId = payload.organizationId;
 
@@ -494,7 +490,7 @@ export async function processInboundAgentMail(
   );
 
   // 2b. AI enhancement (best-effort)
-  const result = await enhanceWithAI(baseResult, payload.subject, payload.bodyText ?? "");
+  const result = await (enhanceOverride ?? enhanceWithAI)(baseResult, payload.subject, payload.bodyText ?? "");
 
   // 3. Persist + crash-recovery state machine
   //
@@ -655,33 +651,33 @@ export async function processInboundAgentMail(
 
     // 7. Add to Attention Inbox — idempotent via effect log
     let attentionItemId: string | null = null;
-    await tryEffect(inboundId, "attention_item", async () => {
-      attentionItemId = await addToAttentionInbox(orgId, inboundId, payload, result);
+    await tryEffect(inboundId, "attention_item", async (tx) => {
+      attentionItemId = await addToAttentionInbox(tx, orgId, inboundId, payload, result);
     });
 
     // 7b. Reply queue entry — idempotent via effect log
     if (result.suggestedReply) {
-      await tryEffect(inboundId, "reply_queue", async () => {
-        const { createReplyQueueEntry } = await import("../agentmail-reply-routes");
-        await createReplyQueueEntry({
-          organizationId: orgId,
-          inboundMessageId: inboundId,
-          inbox: payload.inbox,
-          agentName: result.routedAgent,
-          classification: result.classification,
-          recipientEmail: payload.fromEmail,
-          recipientName: payload.fromName,
-          subject: `Re: ${payload.subject}`,
-          draftBody: result.suggestedReply,
-          confidence: result.confidence,
-          threadId: payload.providerThreadId,
-        });
+      await tryEffect(inboundId, "reply_queue", async (tx) => {
+        await tx.execute(sql`
+          INSERT INTO agent_mail_reply_queue (
+            id, organization_id, inbound_message_id, inbox, agent_name, classification,
+            recipient_email, recipient_name, subject, draft_body, status,
+            approval_status, confidence, thread_id, provider_inbound_message_id,
+            created_at, updated_at
+          ) VALUES (
+            gen_random_uuid()::text, ${orgId}, ${inboundId}, ${payload.inbox},
+            ${result.routedAgent}, ${result.classification}, ${payload.fromEmail},
+            ${payload.fromName ?? null}, ${`Re: ${payload.subject}`}, ${result.suggestedReply},
+            'pending_review', 'pending_review', ${result.confidence},
+            ${payload.providerThreadId ?? null}, ${payload.providerMessageId ?? null}, NOW(), NOW()
+          ) ON CONFLICT (organization_id, inbound_message_id) DO NOTHING
+        `);
       });
     }
 
     // 8. CEO Heartbeat timeline — idempotent via effect log
-    await tryEffect(inboundId, "ceo_timeline", async () => {
-      await notifyCeoHeartbeat(orgId, payload, result, inboundId);
+    await tryEffect(inboundId, "ceo_timeline", async (tx) => {
+      await notifyCeoHeartbeat(tx, orgId, payload, result, inboundId);
     });
 
     // 9. Mark completed — processing_state transition: processing → completed

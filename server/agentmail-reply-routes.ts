@@ -67,6 +67,7 @@ async function ensureReplyTables(): Promise<void> {
         approved_at          TIMESTAMPTZ,
         sent_at              TIMESTAMPTZ,
         provider_message_id  TEXT,
+        provider_inbound_message_id TEXT,
         thread_id            TEXT,
         delivery_status      TEXT,
         rejection_reason     TEXT,
@@ -80,6 +81,7 @@ async function ensureReplyTables(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_approval    ON agent_mail_reply_queue (approval_status)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_inbox       ON agent_mail_reply_queue (inbox)`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_inbound     ON agent_mail_reply_queue (inbound_message_id)`);
+    await db.execute(sql`ALTER TABLE agent_mail_reply_queue ADD COLUMN IF NOT EXISTS provider_inbound_message_id TEXT`);
     // Dedup migration: remove duplicate rows before creating the unique index.
     // Keeps the oldest record per (organization_id, inbound_message_id) pair so
     // the UNIQUE INDEX creation never fails on deployments with pre-existing dups.
@@ -254,6 +256,7 @@ export async function createReplyQueueEntry(params: {
   draftBody: string;
   confidence?: number;
   threadId?: string;
+  providerInboundMessageId?: string;
 }): Promise<string | null> {
   if (!DRAFTABLE_CLASSIFICATIONS.has(params.classification)) return null;
   if (!params.draftBody?.trim()) return null;
@@ -263,7 +266,7 @@ export async function createReplyQueueEntry(params: {
       INSERT INTO agent_mail_reply_queue (
         id, organization_id, inbound_message_id, inbox, agent_name, classification,
         recipient_email, recipient_name, subject, draft_body,
-        status, approval_status, confidence, thread_id, created_at, updated_at
+        status, approval_status, confidence, thread_id, provider_inbound_message_id, created_at, updated_at
       ) VALUES (
         gen_random_uuid()::text,
         ${params.organizationId},
@@ -279,6 +282,7 @@ export async function createReplyQueueEntry(params: {
         ${"pending_review"},
         ${params.confidence ?? 0},
         ${params.threadId ?? null},
+        ${params.providerInboundMessageId ?? null},
         NOW(), NOW()
       )
       RETURNING id
@@ -660,12 +664,13 @@ export async function registerAgentMailReplyRoutes(
 
       // Send via AgentMail
       let sendResult: { ok: boolean; messageId?: string; error?: string; blocked?: boolean };
-      if (reply.thread_id) {
+      if (reply.provider_inbound_message_id) {
         sendResult = await replyFromAgentInbox({
           organizationId: orgId,
           agentName: reply.agent_name,
           fromInbox: reply.inbox as AgentInbox,
-          threadId: reply.thread_id,
+          replyToMessageId: reply.provider_inbound_message_id,
+          threadId: reply.thread_id ?? undefined,
           to: reply.recipient_email,
           subject: reply.subject,
           body: bodyToSend,

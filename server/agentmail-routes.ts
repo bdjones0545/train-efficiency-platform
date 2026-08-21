@@ -7,6 +7,7 @@ import type { Express } from "express";
 import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import {
   isAgentMailConfigured,
   verifyAgentMailConnection,
@@ -102,6 +103,42 @@ async function persistQuarantine(p: QuarantineParams): Promise<boolean> {
   }
 }
 
+type DeliveryClaim = "claimed" | "completed" | "processing" | "payload_mismatch";
+
+async function claimWebhookDelivery(svixId: string, rawBody: Buffer): Promise<DeliveryClaim> {
+  const payloadHash = createHash("sha256").update(rawBody).digest("hex");
+  const claimed = rows(await db.execute(sql`
+    INSERT INTO agentmail_webhook_deliveries (svix_id, payload_hash, status, claimed_at, updated_at)
+    VALUES (${svixId}, ${payloadHash}, 'processing', NOW(), NOW())
+    ON CONFLICT (svix_id) DO UPDATE
+      SET status = 'processing', claimed_at = NOW(), last_error = NULL, updated_at = NOW()
+    WHERE agentmail_webhook_deliveries.payload_hash = EXCLUDED.payload_hash
+      AND (
+        agentmail_webhook_deliveries.status = 'failed'
+        OR (agentmail_webhook_deliveries.status = 'processing'
+            AND agentmail_webhook_deliveries.claimed_at < NOW() - INTERVAL '5 minutes')
+      )
+    RETURNING status
+  `));
+  if (claimed.length > 0) return "claimed";
+
+  const existing = rows(await db.execute(sql`
+    SELECT payload_hash, status FROM agentmail_webhook_deliveries WHERE svix_id = ${svixId}
+  `))[0];
+  if (!existing || existing.payload_hash !== payloadHash) return "payload_mismatch";
+  return existing.status === "completed" ? "completed" : "processing";
+}
+
+async function finishWebhookDelivery(svixId: string, ok: boolean, error?: string): Promise<void> {
+  await db.execute(sql`
+    UPDATE agentmail_webhook_deliveries
+    SET status = ${ok ? "completed" : "failed"},
+        completed_at = ${ok ? sql`NOW()` : sql`NULL`},
+        last_error = ${error ?? null}, updated_at = NOW()
+    WHERE svix_id = ${svixId}
+  `);
+}
+
 // Legacy shim — kept so any callers that already imported it still compile.
 // The real migration now lives in agentmail-migration.ts.
 async function ensureAgentMailTables(): Promise<void> {
@@ -155,7 +192,19 @@ export async function registerAgentMailRoutes(
   app: Express,
   isAuthenticated: (req: any, res: any, next: any) => void,
   requireRole: (...roles: string[]) => (req: any, res: any, next: any) => void,
+  ownershipOverrides: Partial<{
+    provisionOrgInboxes: typeof provisionOrgInboxes;
+    activateOrgInboxes: typeof activateOrgInboxes;
+    disableOrgInbox: typeof disableOrgInbox;
+    retireOrgInbox: typeof retireOrgInbox;
+    retireAllOrgInboxes: typeof retireAllOrgInboxes;
+  }> = {},
 ): Promise<void> {
+  const provisionOwnership = ownershipOverrides.provisionOrgInboxes ?? provisionOrgInboxes;
+  const activateOwnership = ownershipOverrides.activateOrgInboxes ?? activateOrgInboxes;
+  const disableOwnership = ownershipOverrides.disableOrgInbox ?? disableOrgInbox;
+  const retireOwnership = ownershipOverrides.retireOrgInbox ?? retireOrgInbox;
+  const retireAllOwnership = ownershipOverrides.retireAllOrgInboxes ?? retireAllOrgInboxes;
   // Deterministic ordered migration — must succeed before any route handles traffic.
   // Uses the shared runAgentMailMigration() from agentmail-migration.ts; concurrent
   // calls share the same in-flight promise (idempotent).
@@ -440,15 +489,16 @@ export async function registerAgentMailRoutes(
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       if (!isAgentMailConfigured()) return res.status(503).json({ message: "AgentMail not configured." });
 
-      const { agentName, fromInbox, threadId, to, subject, body } = req.body;
-      if (!fromInbox || !threadId || !to || !subject || !body) {
-        return res.status(400).json({ message: "fromInbox, threadId, to, subject, and body are required" });
+      const { agentName, fromInbox, replyToMessageId, threadId, to, subject, body } = req.body;
+      if (!fromInbox || !replyToMessageId || !to || !subject || !body) {
+        return res.status(400).json({ message: "fromInbox, replyToMessageId, to, subject, and body are required" });
       }
 
       const result = await replyFromAgentInbox({
         organizationId: orgId,
         agentName: agentName ?? "Manual Reply",
         fromInbox: fromInbox as AgentInbox,
+        replyToMessageId,
         threadId,
         to,
         subject,
@@ -503,11 +553,27 @@ export async function registerAgentMailRoutes(
         return res.status(status).json({ error: verifyResult.error });
       }
 
+      const svixId = Array.isArray(req.headers["svix-id"])
+        ? req.headers["svix-id"][0]
+        : req.headers["svix-id"];
+      if (!svixId) return res.status(401).json({ error: "Missing svix-id" });
+      const deliveryClaim = await claimWebhookDelivery(svixId, rawBody);
+      if (deliveryClaim === "payload_mismatch") {
+        return res.status(401).json({ error: "Webhook delivery ID payload mismatch" });
+      }
+      if (deliveryClaim === "completed") {
+        return res.json({ received: true, duplicate: true });
+      }
+      if (deliveryClaim === "processing") {
+        return res.status(409).json({ error: "Webhook delivery already processing" });
+      }
+
       // ── Parse verified event ──────────────────────────────────────────────
       let event: any;
       try {
         event = JSON.parse(rawBody.toString("utf8"));
       } catch {
+        await finishWebhookDelivery(svixId, false, "invalid_json");
         return res.status(400).json({ error: "Webhook body is not valid JSON" });
       }
 
@@ -526,6 +592,7 @@ export async function registerAgentMailRoutes(
         const msg = event?.message;
         if (!msg) {
           console.warn(`[AgentMail] Webhook ${eventType}: missing 'message' object`);
+          await finishWebhookDelivery(svixId, false, "missing_message_object");
           return res.status(400).json({ error: "Malformed webhook: missing message object" });
         }
 
@@ -546,8 +613,10 @@ export async function registerAgentMailRoutes(
             reason: "missing_inbox_id",
           });
           if (!persisted) {
+            await finishWebhookDelivery(svixId, false, "quarantine_persistence_failed");
             return res.status(503).json({ error: "Quarantine persistence failed — retry later" });
           }
+          await finishWebhookDelivery(svixId, true);
           return res.json({ received: true, routed: false, reason: "missing_inbox_id" });
         }
 
@@ -585,8 +654,10 @@ export async function registerAgentMailRoutes(
             reason: routingReason,
           });
           if (!persisted) {
+            await finishWebhookDelivery(svixId, false, "quarantine_persistence_failed");
             return res.status(503).json({ error: "Quarantine persistence failed — retry later" });
           }
+          await finishWebhookDelivery(svixId, true);
           return res.json({ received: true, routed: false, reason: routingReason });
         }
 
@@ -610,9 +681,12 @@ export async function registerAgentMailRoutes(
         });
 
         console.log("[AgentMail] Inbound processed:", processResult.classification, processResult.routedAgent);
-        return res.json({ received: true, routed: processResult.ok, ...processResult });
+        await finishWebhookDelivery(svixId, processResult.ok, processResult.error);
+        if (!processResult.ok) return res.status(503).json({ received: true, routed: false, ...processResult });
+        return res.json({ received: true, routed: true, ...processResult });
       }
 
+      await finishWebhookDelivery(svixId, true);
       res.json({ received: true, routed: false, reason: "not_an_inbound_email_event" });
     } catch (e: any) {
       console.error("[AgentMail] Webhook error:", e?.message);
@@ -704,7 +778,7 @@ export async function registerAgentMailRoutes(
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const roles: AgentMailRole[] | undefined = req.body?.roles;
-      const result = await provisionOrgInboxes(orgId, roles);
+      const result = await provisionOwnership(orgId, roles);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message });
@@ -718,7 +792,7 @@ export async function registerAgentMailRoutes(
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const roles: AgentMailRole[] | undefined = req.body?.roles;
-      const result = await activateOrgInboxes(orgId, roles);
+      const result = await activateOwnership(orgId, roles);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message });
@@ -745,7 +819,7 @@ export async function registerAgentMailRoutes(
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const role = req.params.role as AgentMailRole;
       const reason: string | undefined = req.body?.reason;
-      const result = await disableOrgInbox(orgId, role, reason);
+      const result = await disableOwnership(orgId, role, reason);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message });
@@ -759,7 +833,7 @@ export async function registerAgentMailRoutes(
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       const role = req.params.role as AgentMailRole;
-      const result = await retireOrgInbox(orgId, role);
+      const result = await retireOwnership(orgId, role);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message });
@@ -772,7 +846,7 @@ export async function registerAgentMailRoutes(
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
-      const result = await retireAllOrgInboxes(orgId);
+      const result = await retireAllOwnership(orgId);
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ ok: false, error: e?.message });
