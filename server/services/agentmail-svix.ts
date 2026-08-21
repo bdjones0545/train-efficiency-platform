@@ -17,6 +17,7 @@
  * Invariants enforced by this module:
  *   - AGENTMAIL_WEBHOOK_SECRET not set → always reject (503-class: unavailable).
  *   - Missing any svix-* header → reject 401.
+ *   - svix-timestamp malformed (trailing junk, decimal, whitespace) → reject 401.
  *   - Timestamp outside ±5 minutes → reject 401 (replay protection).
  *   - No signature match → reject 401.
  *   - Malformed signature bytes → reject 401.
@@ -78,10 +79,34 @@ export function verifyAgentMailWebhook(
     return { ok: false, error: `Missing required webhook headers: ${missing}`, httpStatus: 401 };
   }
 
-  // ── Timestamp replay protection ────────────────────────────────────────────
-  const tsSeconds = parseInt(msgTimestamp, 10);
-  if (!Number.isFinite(tsSeconds)) {
-    return { ok: false, error: "svix-timestamp is not a valid integer", httpStatus: 401 };
+  // ── Strict timestamp validation ────────────────────────────────────────────
+  // parseInt() accepts trailing junk ("1724200000junk" → 1724200000).
+  // We require the ENTIRE string to be a valid integer representation:
+  //   - Only digits, optionally prefixed by "-"
+  //   - No decimals, no trailing characters, no whitespace
+  //   - Empty string rejected
+  //   - Negative timestamps rejected (no valid Svix timestamp is negative)
+  //   - Overflow/unreasonably large values rejected
+  if (!/^\d+$/.test(msgTimestamp)) {
+    return {
+      ok: false,
+      error:
+        "svix-timestamp must be a non-negative integer with no trailing characters, " +
+        `decimals, or whitespace (received: ${JSON.stringify(msgTimestamp)})`,
+      httpStatus: 401,
+    };
+  }
+
+  const tsSeconds = Number(msgTimestamp);
+
+  // Guard overflow (Number() returns Infinity for very large strings) and
+  // implausible future timestamps (year ~2286+).
+  if (!Number.isFinite(tsSeconds) || tsSeconds > 9_999_999_999 || tsSeconds < 0) {
+    return {
+      ok: false,
+      error: `svix-timestamp value is out of valid range (received: ${msgTimestamp})`,
+      httpStatus: 401,
+    };
   }
 
   const nowSeconds = Math.floor(Date.now() / 1000);

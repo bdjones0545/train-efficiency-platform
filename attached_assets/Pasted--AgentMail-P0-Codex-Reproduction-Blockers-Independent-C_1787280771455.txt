@@ -1,0 +1,385 @@
+# AgentMail P0 — Codex Reproduction Blockers
+
+Independent Codex verification did NOT reproduce the claimed 86/86 result.
+
+Fresh disposable PostgreSQL AgentMail run:
+
+* 39 passed
+* 20 failed
+* 4 cancelled
+* exit status 1
+
+General TrainEfficiency regressions remain healthy:
+
+* `npm test` — 315/315
+* `npm run test:security` — 91/91
+
+Do NOT deploy.
+
+Do not redesign AgentMail again.
+
+Fix only the remaining independently reproduced blockers below.
+
+## 1. Fix Migration Transaction Boundary
+
+Current defect:
+
+`pg_advisory_xact_lock` is acquired through a transaction, but some required DDL subsequently runs through the global connection/pool via `execDDL`.
+
+The global connection cannot see tables created but not yet committed inside the transaction.
+
+Codex reproduced:
+
+`42P01: relation "agent_mail_inbound_messages" does not exist`
+
+### Required fix
+
+Every AgentMail DDL operation governed by this migration must execute through the SAME locked transaction/connection.
+
+Do not call the global DB/pool from inside the locked migration.
+
+Preferred structure:
+
+`db.transaction(async tx => {`
+`  acquire advisory xact lock through tx`
+`  execute ALL AgentMail DDL through tx`
+`})`
+
+Refactor `execDDL` if necessary so it accepts an executor/transaction rather than reaching for the global pool.
+
+### Prove behaviorally
+
+Against a completely fresh disposable PostgreSQL database:
+
+* one migration succeeds
+* serial rerun succeeds
+* two concurrent migration callers succeed
+* all expected tables exist
+* all expected columns exist
+* all expected indexes/constraints exist
+* `_ready` becomes true only after complete success
+
+Force one required DDL statement to fail and prove:
+
+* transaction rolls back
+* `_ready` remains false
+* webhook returns 503
+* partial schema is not treated as ready
+
+Do not accept source-string inspection for this gate.
+
+## 2. Fix Effect Ledger Semantics
+
+Current critical defect:
+
+`tryEffect()` inserts the unique effect-log record BEFORE executing the business effect.
+
+If the business write fails, the ledger remains and retry permanently skips the unfinished effect.
+
+The ledger currently means:
+
+`claimed`
+
+while the code treats it as:
+
+`completed`.
+
+### Required invariant
+
+An effect may be considered complete only AFTER its business write succeeds.
+
+Implement a proper minimal state model.
+
+For example:
+
+`pending`
+→ business operation
+→ `completed`
+
+On failure:
+
+→ `failed` or retryable state
+
+The exact schema is your choice, but it must guarantee:
+
+* concurrent workers cannot execute the same effect simultaneously
+* successful effect is not repeated
+* failed effect remains retryable
+* crash after claim but before completion is reclaimable
+* ledger cannot say completed when the business write did not happen
+
+A transaction combining ledger and business write is preferred where both use the same database and transactional boundary.
+
+Where that is impossible, implement explicit claim/lease/completion semantics.
+
+### Remove swallowed downstream failures
+
+Review all six effects:
+
+* prospect
+* applicant
+* software_task
+* attention_item
+* reply_queue
+* ceo_timeline
+
+Codex found some helpers catch/suppress errors or return `null`.
+
+A failed business write must not be recorded as completed.
+
+Distinguish intentionally skipped/no-op from actual success.
+
+## 3. Add Real Partial-Failure Recovery Tests
+
+Do not directly insert fake effect-log rows and call that recovery proof.
+
+For each effect type where practical:
+
+1. Receive a valid inbound event.
+2. Claim processing.
+3. Complete an earlier effect.
+4. Force the target business write to fail.
+5. Verify it is NOT marked completed.
+6. Allow/reclaim processing.
+7. Retry.
+8. Verify completed effects do not repeat.
+9. Verify failed effect executes successfully exactly once.
+10. Verify final inbound state becomes completed only when required effects are complete.
+
+At minimum behaviorally exercise all six effect types through the real processing path.
+
+## 4. Strict Svix Timestamp Parsing
+
+Current defect:
+
+Values such as:
+
+`1724200000junk`
+
+are accepted by `parseInt()`.
+
+Require the entire timestamp value to be a valid integer representation.
+
+Reject:
+
+* suffix junk
+* prefix junk
+* decimals
+* whitespace tricks if not explicitly allowed by provider contract
+* empty value
+* overflow/invalid numeric range
+
+Do not merely parse the numeric prefix.
+
+Add signed malformed-timestamp tests.
+
+## 5. Svix Delivery Replay Protection
+
+Cryptographic timestamp tolerance alone does not prevent replay of the exact same valid delivery during the tolerance window.
+
+Add a bounded replay ledger keyed by the provider delivery identity, preferably:
+
+`svix-id`
+
+Requirements:
+
+* first valid delivery accepted
+* exact same delivery ID replay rejected/ignored safely
+* ledger written only after authentication succeeds
+* retention bounded appropriately
+* concurrent duplicate delivery cannot both process
+
+Coordinate this with existing provider-message idempotency rather than creating contradictory duplicate semantics.
+
+## 6. Fix HTTP Reply Route End-to-End
+
+The service supports:
+
+`POST /v0/inboxes/:inbox_id/messages/:message_id/reply`
+
+but Codex found the TrainEfficiency HTTP reply route accepts only `threadId` and never supplies `replyToMessageId`.
+
+Therefore normal route traffic falls back to new-message send.
+
+Fix the application contract.
+
+A reply operation must carry the actual provider message ID required by AgentMail.
+
+Do not substitute thread ID unless current official provider documentation explicitly says it is accepted.
+
+Behaviorally prove:
+
+HTTP reply request
+→ TrainEfficiency route
+→ service
+→ documented AgentMail `/messages/:message_id/reply`
+
+with the correct persisted provider inbox ID and provider message ID.
+
+## 7. Complete Cross-Tenant Behavioral Tests
+
+The current suite does not actually execute all six downstream business effects for two organizations.
+
+Create the required disposable schema.
+
+Tests must FAIL if required downstream tables are missing.
+
+Behaviorally process Org A inbound and prove no Org B records are created in:
+
+* prospect
+* applicant
+* software task
+* attention item
+* reply queue
+* CEO timeline
+
+Then repeat for Org B.
+
+No swallowed missing-table errors count as passing tests.
+
+## 8. Behavioral Lifecycle Authorization
+
+Do not rely on source inspection.
+
+Invoke the actual route middleware/handlers and prove for every lifecycle mutation:
+
+* ADMIN → allowed for own organization
+* COACH → 403
+* STAFF → 403
+* CLIENT → 403
+* Org A ADMIN targeting Org B → cannot mutate Org B
+
+Cover:
+
+* provision
+* activate
+* disable
+* retire
+* retire-all
+
+## 9. Behavioral Quarantine Failure
+
+Force quarantine persistence to fail through a correctly signed real webhook request.
+
+Prove:
+
+* no 200/202 success acknowledgement
+* retryable failure returned
+* no downstream tenant state created
+
+## 10. Provisioning Recovery Tests
+
+Behaviorally test:
+
+* concurrent provisioning
+* provider transient failure then retry
+* provider success + local persistence failure
+* local ownership row missing provider inbox ID
+* reconciliation retry
+
+Verify deterministic `client_id` prevents duplicate provider resources.
+
+Mocks are acceptable for provider behavior, but the application workflow must actually execute.
+
+## 11. Fresh Acceptance Gate
+
+After fixing the above, start from a completely fresh disposable PostgreSQL database.
+
+Do not use an already-migrated development database as acceptance evidence.
+
+Run the entire AgentMail suite using the same concurrency behavior Codex used.
+
+Then run:
+
+* `npm test`
+* `npm run test:security`
+
+Report exact totals.
+
+The acceptance requirement is not a particular test count.
+
+The requirement is:
+
+**zero AgentMail failures on a fresh database under normal concurrent test execution.**
+
+## Production Boundary
+
+Do NOT:
+
+* deploy
+* execute production DDL
+* provision live AgentMail resources
+* activate live ownership
+* modify production webhook configuration
+* retire global inboxes
+* push
+
+## Final Report
+
+Return:
+
+# AgentMail P0 — Codex Reproduction Remediation
+
+## Migration Transaction
+
+## Fresh Database
+
+## Concurrent Migration
+
+## Effect Ledger
+
+## Six-Effect Recovery
+
+## Svix Timestamp Validation
+
+## Svix Replay Protection
+
+## Reply Route
+
+## Cross-Tenant Behavioral Tests
+
+## Lifecycle Authorization Tests
+
+## Quarantine Failure Test
+
+## Provisioning Recovery
+
+## Regression Tests
+
+## Production Changes
+
+## Limitations
+
+## Verdict
+
+Explicitly answer:
+
+* All AgentMail DDL on locked transaction?
+* Fresh DB migration succeeds?
+* Concurrent migration succeeds?
+* Failed effect can be retried?
+* Failed effect can be falsely marked complete?
+* Successful effect can execute twice after reclaim?
+* All six effects behaviorally exercised?
+* Malformed Svix timestamp rejected?
+* Same-window Svix replay prevented?
+* HTTP reply route uses provider message ID?
+* Full downstream cross-tenant isolation behaviorally proven?
+* Lifecycle role behavior behaviorally proven?
+* Quarantine DB failure behaviorally proven?
+* Provisioning recovery behaviorally proven?
+* Fresh concurrent AgentMail suite green?
+* `npm test` green?
+* `npm run test:security` green?
+* Production modified?
+* Push performed?
+
+End with exactly one:
+
+**AGENTMAIL P0 REMEDIATED — READY FOR CODEX RE-VERIFICATION**
+
+or
+
+**P0 REMAINS OPEN**
+
+Do not deploy even if your own tests pass.

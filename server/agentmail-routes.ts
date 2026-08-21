@@ -45,6 +45,51 @@ function rows(r: unknown): any[] {
   return Array.isArray(x?.rows) ? x.rows : [];
 }
 
+// ─── Svix replay protection ───────────────────────────────────────────────────
+
+/**
+ * Atomically claim a Svix delivery ID in the replay ledger.
+ *
+ * Returns true  if this is a NEW delivery (never seen before) — proceed.
+ * Returns false if this is a DUPLICATE (same svix-id already processed).
+ *
+ * On DB error, fails OPEN (returns true) so a transient DB failure does not
+ * permanently drop valid deliveries.  The timestamp-based tolerance window
+ * already limits replay risk.
+ *
+ * Entries are bounded by agentmail_svix_deliveries.received_at; the migration
+ * adds an index on received_at for efficient cleanup.
+ */
+async function claimSvixDelivery(svixId: string): Promise<boolean> {
+  try {
+    const result = rows(await db.execute(sql`
+      INSERT INTO agentmail_svix_deliveries (svix_id, received_at)
+      VALUES (${svixId}, NOW())
+      ON CONFLICT (svix_id) DO NOTHING
+      RETURNING svix_id
+    `));
+    return result.length > 0; // true = new, false = replay
+  } catch {
+    return true; // DB error → fail open (allow, don't drop deliveries)
+  }
+}
+
+/**
+ * Prune old Svix delivery IDs from the replay ledger.
+ * Retains only entries from the last `windowMinutes` minutes (default: 10).
+ * Called inline in the webhook handler to bound table growth without a cron.
+ */
+async function pruneSvixDeliveries(windowMinutes = 10): Promise<void> {
+  try {
+    await db.execute(sql`
+      DELETE FROM agentmail_svix_deliveries
+      WHERE received_at < NOW() - (${windowMinutes} || ' minutes')::INTERVAL
+    `);
+  } catch {
+    // Non-critical cleanup failure — do not affect response
+  }
+}
+
 // ─── Quarantine persistence helper ───────────────────────────────────────────
 
 interface QuarantineParams {
@@ -434,22 +479,35 @@ export async function registerAgentMailRoutes(
   });
 
   // ─── POST /api/agentmail/reply ────────────────────────────────────────────
+  //
+  // replyToMessageId is REQUIRED — it is the provider message_id of the message
+  // being replied to, which is needed for the correct reply endpoint:
+  //   POST /v0/inboxes/{inbox_id}/messages/{message_id}/reply
+  //
+  // threadId is OPTIONAL and only used for the outbound audit log (legacy compat).
+  // Passing only threadId (without replyToMessageId) falls back to a new-message
+  // send, which is not a true reply. This route enforces the correct contract.
   app.post("/api/agentmail/reply", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
       if (!isAgentMailConfigured()) return res.status(503).json({ message: "AgentMail not configured." });
 
-      const { agentName, fromInbox, threadId, to, subject, body } = req.body;
-      if (!fromInbox || !threadId || !to || !subject || !body) {
-        return res.status(400).json({ message: "fromInbox, threadId, to, subject, and body are required" });
+      const { agentName, fromInbox, replyToMessageId, threadId, to, subject, body } = req.body;
+      if (!fromInbox || !replyToMessageId || !to || !subject || !body) {
+        return res.status(400).json({
+          message: "fromInbox, replyToMessageId, to, subject, and body are required. " +
+            "replyToMessageId must be the provider message_id from the AgentMail delivery (not a thread_id). " +
+            "Passing only threadId would silently fall back to a new-message send.",
+        });
       }
 
       const result = await replyFromAgentInbox({
         organizationId: orgId,
         agentName: agentName ?? "Manual Reply",
         fromInbox: fromInbox as AgentInbox,
-        threadId,
+        replyToMessageId, // required — routes to /messages/{id}/reply
+        threadId,         // optional — for audit log only
         to,
         subject,
         body,
@@ -501,6 +559,25 @@ export async function registerAgentMailRoutes(
         const status = verifyResult.httpStatus ?? 401;
         console.warn(`[AgentMail] Webhook rejected (${status}): ${verifyResult.error}`);
         return res.status(status).json({ error: verifyResult.error });
+      }
+
+      // ── Replay protection — claim the svix-id in the bounded ledger ───────
+      // Cryptographic timestamp tolerance (±5 min) prevents most replays but
+      // does NOT prevent the exact same signed delivery from landing twice
+      // within the tolerance window.  We deduplicate by svix-id here.
+      // First delivery: claimed → proceed.
+      // Duplicate delivery: not claimed → acknowledge safely with 200.
+      // On DB error: fail open (allow) to avoid dropping legitimate deliveries.
+      const svixId: string = (req.headers["svix-id"] as string) ?? "";
+      if (svixId) {
+        const isNew = await claimSvixDelivery(svixId);
+        if (!isNew) {
+          console.log(`[AgentMail] Replay rejected — svix-id=${svixId} already processed`);
+          return res.json({ received: true, duplicate: true, reason: "replay_duplicate" });
+        }
+        // Non-blocking cleanup of old entries (older than 10 min window).
+        // Best-effort — failure does not affect this delivery.
+        pruneSvixDeliveries().catch(() => {});
       }
 
       // ── Parse verified event ──────────────────────────────────────────────

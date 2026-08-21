@@ -1,4 +1,4 @@
-- [AgentMail Provider Contract](agentmail-provider-contract.md) — event_type (not type), event.message (not event.email), to=array, inbox_id (not id), client_id idempotency; webhook auth = Authorization:Bearer header (not HMAC); Svix unverified from docs.
+- [AgentMail Provider Contract](agentmail-provider-contract.md) — effect log state machine (pending→completed|failed), SAVEPOINT pattern for DDL, strict Svix timestamp, replay protection via svix_deliveries, reply route needs replyToMessageId not threadId.
 - [Kevin Launcher + Inbox](kevin-launcher.md) — single FAB drawer (Chat+Inbox only); never setLocation inside its portal; nav-registry routes must match App.tsx paths exactly; blocks-SSE protocol.
 - [Kevin live tunnel = Hermes runs](kevin-hermes-live-tunnel.md) — gateway 404s the signed /tasks contract; dispatch falls back to /v1/runs + polling; enum + idempotency + org-filter gotchas.
 - [Kevin Dispatch Signing Contract](kevin-dispatch-signing.md) — use signKevinOutboundBody() (v1: scheme); NEVER buildSignedHeaders for Kevin; KEVIN_OUTBOUND_HMAC_SECRET wrong fingerprint (canary test fails until Bryan corrects it).

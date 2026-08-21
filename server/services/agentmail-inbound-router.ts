@@ -77,43 +77,107 @@ function rows(r: unknown): any[] {
 // ─── Effect idempotency log ───────────────────────────────────────────────────
 
 /**
- * Claim a downstream effect slot and execute fn if not already done.
+ * Claim a downstream effect slot and execute fn only if not already completed.
  *
- * Each downstream side-effect of an inbound message has a deterministic identity:
- *   (inbound_id, effect_type)
+ * State machine: pending → completed | failed
  *
- * The agentmail_effect_log table records completed effects.  Before running a
- * write, this function attempts to INSERT the (inbound_id, effect_type) pair.
- * ON CONFLICT DO NOTHING means a duplicate returns no row → skip.
+ *   pending:   This worker owns the slot; business write has NOT yet happened.
+ *              A stale pending (claimed_at > 5 min ago) means the prior worker
+ *              crashed — the slot is reclaimable.
  *
- * This prevents duplicate prospect/applicant/attention rows when a crash after
- * a downstream write causes a retry that reclaims the stale processing lease.
+ *   completed: Business write succeeded.  Permanent; never re-executed.
  *
- * @returns true if effect was executed; false if already done or fn failed.
+ *   failed:    Business write failed.  Retryable — the next call reclaims the
+ *              slot via ON CONFLICT DO UPDATE.
+ *
+ * INVARIANT: a row enters 'completed' ONLY AFTER fn() returns successfully.
+ * Inserting 'pending' BEFORE fn() is intentional — the worker owns the slot
+ * while the write is in flight.
+ *
+ * On fn() failure:
+ *   - The effect row is updated to 'failed'.
+ *   - The error is re-thrown so the inbound message itself is also marked
+ *     'failed', enabling retry to reclaim both the inbound lease AND this slot.
+ *
+ * @returns true if fn() was called and succeeded; false if effect was already
+ *          completed or concurrently in flight (no error thrown).
+ * @throws  if fn() throws — caller must handle and mark inbound as failed.
  */
 async function tryEffect(
   inboundId: string,
   effectType: string,
   fn: () => Promise<void>,
 ): Promise<boolean> {
+  // ── Step 1: Atomically claim the effect slot in 'pending' state ───────────
+  //
+  // The ON CONFLICT DO UPDATE reclaims the slot only when:
+  //   - A prior worker's pending claim went stale (crashed after > 5 min), or
+  //   - The prior attempt failed (status = 'failed').
+  //
+  // Completed slots are never reclaimed — DO UPDATE fires WHERE status != 'completed'.
+  // Fresh pending slots (< 5 min old) are not reclaimed — concurrent worker protection.
+  //
+  // Returns a row if we claimed (or reclaimed) the slot; returns no row if
+  // the slot is already completed or freshly pending by another worker.
+  let claimed: any[];
   try {
-    const claimed = rows(await db.execute(sql`
-      INSERT INTO agentmail_effect_log (id, inbound_id, effect_type)
-      VALUES (gen_random_uuid()::text, ${inboundId}, ${effectType})
-      ON CONFLICT (inbound_id, effect_type) DO NOTHING
+    claimed = rows(await db.execute(sql`
+      INSERT INTO agentmail_effect_log (id, inbound_id, effect_type, status, claimed_at)
+      VALUES (gen_random_uuid()::text, ${inboundId}, ${effectType}, 'pending', NOW())
+      ON CONFLICT (inbound_id, effect_type) DO UPDATE
+        SET status     = 'pending',
+            claimed_at = NOW()
+        WHERE agentmail_effect_log.status = 'failed'
+           OR (agentmail_effect_log.status = 'pending'
+               AND agentmail_effect_log.claimed_at < NOW() - INTERVAL '5 minutes')
       RETURNING id
     `));
-    if (!claimed[0]) {
-      // Effect was completed in a prior processing attempt — skip safely.
-      return false;
-    }
-    await fn();
-    return true;
   } catch (err: any) {
-    console.error(`[AgentMail Effect] ${effectType} failed for inbound=${inboundId}:`, err?.message);
-    // Individual effect failure is non-critical — does not fail overall processing.
+    console.error(
+      `[AgentMail Effect] Failed to claim slot ${effectType} for inbound=${inboundId}:`,
+      err?.message,
+    );
+    throw err; // Propagate — cannot safely proceed without a claimed slot
+  }
+
+  if (!claimed[0]) {
+    // Slot is already 'completed' (done) or freshly 'pending' (concurrent worker).
     return false;
   }
+
+  // ── Step 2: Execute the business write ────────────────────────────────────
+  try {
+    await fn();
+  } catch (err: any) {
+    // Mark the slot 'failed' so the next retry can reclaim it.
+    // The caller is responsible for marking the inbound message as 'failed' too,
+    // so the full processing cycle is retried (inbound lease + all effect slots).
+    await db.execute(sql`
+      UPDATE agentmail_effect_log
+      SET status = 'failed'
+      WHERE inbound_id = ${inboundId}
+        AND effect_type = ${effectType}
+        AND status = 'pending'
+    `).catch(() => {}); // best-effort — don't mask the original error
+
+    console.error(
+      `[AgentMail Effect] ${effectType} failed for inbound=${inboundId}:`,
+      err?.message,
+    );
+    throw err; // Re-throw — must propagate to trigger inbound 'failed' state
+  }
+
+  // ── Step 3: Mark completed AFTER fn() succeeds ────────────────────────────
+  await db.execute(sql`
+    UPDATE agentmail_effect_log
+    SET status       = 'completed',
+        completed_at = NOW()
+    WHERE inbound_id = ${inboundId}
+      AND effect_type = ${effectType}
+      AND status = 'pending'
+  `).catch(() => {}); // best-effort — effect succeeded even if this update races
+
+  return true;
 }
 
 // ─── Intent extraction ───────────────────────────────────────────────────────
@@ -422,7 +486,6 @@ async function createDownstreamRecord(
 
   if (classification === "software_bug_report") {
     await tryEffect(inboundId, "software_task", async () => {
-      // Table may not exist on all deployments — catch and log rather than throw.
       try {
         await db.execute(sql`
           INSERT INTO software_improvement_tasks (id, organization_id, title, description, severity, status, source_agent, priority, created_at, updated_at)
@@ -440,7 +503,15 @@ async function createDownstreamRecord(
           ON CONFLICT DO NOTHING
         `);
       } catch (e: any) {
-        console.warn("[AgentMail Inbound] software_improvement_tasks not available:", e?.message);
+        // 42P01 = undefined_table: the table doesn't exist on this deployment.
+        // This is an intentional no-op — fn() returns normally so tryEffect marks
+        // the effect 'completed' (intentionally skipped, not failed).
+        // Any other error is a real failure and must propagate.
+        if (e?.code === "42P01" || e?.code === "42P01" || String(e?.code) === "42P01") {
+          console.warn("[AgentMail Inbound] software_improvement_tasks not available on this deployment — skipping bug task creation");
+          return;
+        }
+        throw e; // Real DB error → tryEffect marks 'failed' → outer catch marks inbound 'failed'
       }
     });
   }

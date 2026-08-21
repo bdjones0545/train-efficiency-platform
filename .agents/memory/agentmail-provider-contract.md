@@ -1,109 +1,90 @@
 ---
 name: AgentMail Provider Contract
-description: Verified provider API shapes, webhook auth mechanism, and key implementation rules for the AgentMail integration.
+description: All critical invariants for the AgentMail integration — provider API contract, webhook auth, effect log state machine, migration patterns, and replay protection.
 ---
 
-## Verified Provider Contract (from live docs)
+## Provider API Contract
+- `event_type` not `type` in webhook payload
+- `event.message` not `event.email` for message data
+- `to` is an ARRAY in send requests
+- `inbox_id` not `id` for inbox identification
+- `client_id` provides idempotency on sends
+- Webhook auth = `Authorization: Bearer <secret>` header (Svix, not HMAC)
+- Svix is unverified from AgentMail docs — use their actual delivery mechanism
 
-### Event shape
-- Dispatch field: `event.event_type` (NOT `event.type`)
-- Handled events: `message.received`, `message.received.spam`, `message.received.blocked`, `message.received.unauthenticated`
-- Email data lives at `event.message` (NOT `event.email` or `event.data`)
-- `message.to` is an **array** of RFC 2822 address strings (NOT a single string)
-- `message.inbox_id` is the authoritative provider inbox identity for routing
-- `message.message_id` is the SMTP Message-ID — use for DB deduplication
-- `message.thread_id` is the thread identifier
-- `event.event_id` is the webhook delivery ID
+## Outbound API Paths
+- Send: `POST /v0/inboxes/{inbox_id}/messages/send`
+- Reply: `POST /v0/inboxes/{inbox_id}/messages/{message_id}/reply`
+- Inbox must be resolved via `getActiveOwnershipRow(orgId, role)` first
 
-### Inbox creation API
-- Response field: `inbox_id` (NOT `id`)
-- Idempotency: pass `client_id` parameter on creation — provider returns existing inbox on duplicate
-- Convention: `te-{orgId}-{role}` as the `client_id` for per-org inboxes
+## Webhook Signature Verification (`agentmail-svix.ts`)
+- HMAC-SHA256 over `"svix-id.svix-timestamp.rawBodyUtf8"`
+- Signing key = base64-decode of part after "whsec_" in the secret
+- Strict timestamp: `/^\d+$/.test(msgTimestamp)` — rejects trailing junk, decimals, whitespace, empty, negative, hex
+- Timestamp range check: `0 ≤ ts ≤ 9_999_999_999` AND `|age| ≤ 300s`
+- NO unsigned bypass mode in any environment
+- Missing `AGENTMAIL_WEBHOOK_SECRET` → 503 (not allow)
 
-### Webhook authentication — Svix (NOT Bearer token)
-- AgentMail uses **Svix** for webhook delivery (ref: agentmail.to/docs/webhook-verification)
-- Required headers: `svix-id`, `svix-timestamp`, `svix-signature` (space-delimited `v1,<base64>` list)
-- Signed content: `${svix-id}.${svix-timestamp}.${rawBodyUtf8}`
-- Signing key: base64-decode of `AGENTMAIL_WEBHOOK_SECRET` after stripping `whsec_` prefix
-- Timestamp replay protection: ±5 minutes (matches Svix default)
-- **NEVER reconstruct from JSON.stringify(req.body)** — use `req.rawBody` (Buffer from `express.json({ verify })`)
-- Missing secret → **503** (not 200, not 401); wrong sig → **401**; no dev bypass exists
-- Verification module: `server/services/agentmail-svix.ts` → `verifyAgentMailWebhook(rawBody, headers)`
-- Test fixture: `buildTestSvixSignature(secret, msgId, tsSeconds, rawBodyString)` → `"v1,<base64>"` string (4 args, returns string — NOT an object)
-- `handleAgentMailWebhook` in agentmail-service.ts is **DEPRECATED** — returns `{ok:false}` always
+## Replay Protection (`agentmail_svix_deliveries` table)
+- After Svix verification succeeds, claim the svix-id: `INSERT ON CONFLICT DO NOTHING RETURNING svix_id`
+- Returns row = new delivery (proceed); no row = duplicate (return 200 `{duplicate:true}`)
+- Fail open on DB error (return true) — don't drop legitimate deliveries
+- Prune inline (best-effort) entries older than 10 min
 
-**Why:** Codex re-verification confirmed Svix from live docs; prior Bearer token auth was wrong. `req.rawBody` is captured at `server/index.ts` line ~147 via `express.json({ verify: (req, res, buf) => { req.rawBody = buf; } })`.
+## Reply Route Contract (`POST /api/agentmail/reply`)
+- Requires `replyToMessageId` (provider message_id of the message being replied to)
+- `threadId` is OPTIONAL (audit log only)
+- Passing only `threadId` would silently fall back to new-message send — FORBIDDEN
+- Route validates `!replyToMessageId` and returns 400 with explanation
 
-## Key Implementation Rules
+## Effect Log State Machine (`agentmail_effect_log`)
+- Columns: `id`, `inbound_id`, `effect_type`, `status` (pending|completed|failed), `claimed_at`, `completed_at` (nullable)
+- `completed_at` has NO DEFAULT (null until fn() succeeds)
+- State: pending → completed (permanent) or failed (retryable)
+- Claim: `INSERT ... status='pending', claimed_at=NOW() ON CONFLICT DO UPDATE SET status='pending', claimed_at=NOW() WHERE status='failed' OR (status='pending' AND claimed_at < NOW()-'5min')`
+- Completed slots: NEVER reclaimed (DO UPDATE WHERE clause prevents)
+- Failed slots: reclaimed on retry
+- Fresh pending (< 5 min): NOT reclaimed (concurrent worker protection)
+- Stale pending (> 5 min): reclaimed (crash recovery)
+- After fn() success: UPDATE status='completed', completed_at=NOW()
+- After fn() failure: UPDATE status='failed' then re-throw (so inbound message also fails)
+- `software_task` effect: catches ONLY 42P01 (undefined_table) as intentional no-op; all other errors re-throw
 
-### Routing authority — inbox_id is MANDATORY (no address fallback)
-- `resolveOrgByProviderInboxId(providerInboxId, toAddress)` is the **only** routing path
-- `resolveOrgFromInbox(toAddress)` (address-only) is NOT used in the webhook handler — removed
-- Missing `inbox_id` → quarantine immediately (cannot establish tenant identity without it)
-- Unknown `inbox_id` → quarantine; quarantine persistence failure → **503** (so provider retries, not 200)
-- Quarantine rows: `organization_id = NULL`, `routing_status = 'quarantine'`, `processing_state = 'completed'`
-- `persistQuarantine()` helper in agentmail-routes.ts returns `false` on DB error → caller returns 503
+## Migration Pattern (`agentmail-migration.ts`)
 
-### Processing state machine
-States: `received → processing → completed | failed`
-- `STALE_LEASE_MS = 5 minutes`, `MAX_ATTEMPTS = 3`
-- Stale processing lease → reclaimed by retry (crash recovery)
-- Failed + attempts ≥ MAX → permanently skipped (`max_processing_attempts`)
-- Always mark `processing_state = 'completed'` after successful downstream routing
+### execDDL SAVEPOINT Pattern — CRITICAL
+PostgreSQL marks the transaction ABORTED on ANY error, even when JavaScript catches it.
+Catching `42710` (duplicate constraint) without SAVEPOINT leaves the transaction aborted —
+every subsequent SQL fails with `25P02`.
 
-### Lifecycle auth
-- All ownership **mutation** routes (`provision`, `activate`, `disable`, `retire`, `retire-all`) are `requireRole("ADMIN")` ONLY
-- Read-only routes (`list`, `verify`) allow COACH+ADMIN
+The ONLY correct pattern for idempotent DDL inside a transaction:
+```typescript
+SAVEPOINT sp_N;
+-- DDL statement (may error)
+-- On success: RELEASE SAVEPOINT sp_N
+-- On failure: ROLLBACK TO SAVEPOINT sp_N; RELEASE SAVEPOINT sp_N; check benign code
+```
 
-### Activation gate (7 checks — all HARD REQUIRED)
-1. `provider_inbox_id` must be persisted (not null)
-2. Row must belong to the requesting org
-3. `verifyInboxExists()` must return `{ exists: true }`
-4. Provider must return an email address (hard required — not optional `if (verification.email &&)`)
-5. Provider email must exactly match persisted address (case-insensitive)
-6. Provider must return an `inboxId` (hard required — not optional)
-7. Provider `inboxId` must exactly equal stored `provider_inbox_id`
+`execDDL(tx, stmt)` implements this pattern. NEVER use bare try/catch without SAVEPOINT.
 
-**Why:** Codex audit found gates 4-5 were optional (only checked mismatches, not missing values). Gates 6-7 were absent entirely. All 7 gates must be hard-required for activation.
+### Benign DDL codes (safely ignorable via SAVEPOINT pattern):
+- `42710` — duplicate_object (constraint/index already exists)
+- `42701` — duplicate_column (ADD COLUMN IF NOT EXISTS belt-and-suspenders)
+- `0A000` — feature_not_supported (DROP NOT NULL on already-nullable)
+- `42703` — undefined_column (DROP NOT NULL on missing column)
 
-### Downstream idempotency — agentmail_effect_log
-- Table: `agentmail_effect_log (id, inbound_id, effect_type, UNIQUE(inbound_id, effect_type))`
-- Pattern: `INSERT ON CONFLICT DO NOTHING RETURNING id` — claimed slot means proceed, no row means skip
-- Helper: `tryEffect(inboundId, effectType, fn)` in agentmail-inbound-router.ts
-- Effect types: `prospect`, `applicant`, `software_task`, `attention_item`, `reply_queue`, `ceo_timeline`
-- `createDownstreamRecord(orgId, email, result, inboundId)` — 4th param is now required
-- Individual effect failures are non-critical (tryEffect catches and returns false, doesn't propagate)
+### execDDL must ALWAYS receive `tx` not `db`
+- On fresh DB, tables created inside `tx` are invisible to the global pool
+- Every ALTER TABLE inside `_runDDL` must go through `execDDL(tx, stmt)`
+- Large CREATE TABLE blocks can use `tx.execute(sql\`...\`)` directly
 
-### Outbound API — correct endpoints
-- Send: `POST /v0/inboxes/{providerInboxId}/messages/send` — `to` must be an **array**
-- Reply: `POST /v0/inboxes/{providerInboxId}/messages/{messageId}/reply`
-- Both require `providerInboxId` from `getActiveOwnershipRow(orgId, role)` — returns `{emailAddress, providerInboxId}`
-- `getActiveOwnershipRow` returns `null` when no active row with `provider_inbox_id IS NOT NULL` — fail closed
+### Advisory lock
+- `pg_advisory_xact_lock(8675309999001::bigint)` — transaction-scoped, auto-released on commit/rollback
+- Inside `db.transaction(async (tx) => { await tx.execute(sql\`SELECT pg_advisory_xact_lock(...)\`) })`
 
-### Migration: execDDL vs tx.execute
-- `execDDL(stmt)` uses global `db.execute` — only safe for tables that ALREADY EXIST in committed DB
-- Newly created tables (e.g. `agentmail_effect_log`) need indexes created via `tx.execute(sql`...`)` (template literal, not `sql.raw()`) within the SAME transaction
-- `tx.execute(sql.raw(stmt))` does NOT work — Drizzle transaction proxy rejects `sql.raw()` type
-- Use template literal `tx.execute(sql`CREATE INDEX...`)` inside the tx for new-table DDL
-
-### Schema constraints
-- `UNIQUE` partial index on `provider_inbox_id WHERE provider_inbox_id IS NOT NULL` — multiple NULLs allowed
-- `CHECK` on `role IN ('revenue','hiring','scheduling','support','operations','ceo')`
-- `CHECK` on `ownership_state IN ('provisioning','active','disabled','retired')`
-
-### Migration ordering
-- `agentmail-migration.ts` is the single deterministic migration; do NOT run ad-hoc DDL
-- Ordering: inbound table first → ownership table → outbound audit table
-- Readiness gate: `isAgentMailSchemaReady()` checked at webhook handler entry; returns 503 while migrating
-
-## Test Files
-- `server/tests/agentmail-multitenant.test.ts` — 12 multi-tenant isolation tests
-- `server/tests/agentmail-provider-contract.test.ts` — 35 provider contract behavioral tests (tests 2-4 updated for Svix deprecation)
-- `server/tests/agentmail-p0-remediation.test.ts` — 51 P0 remediation tests across 12 items (ALL PASSING)
-- Combined run: 86 tests, 0 failures
-
-## buildTestSvixSignature call signature
-`buildTestSvixSignature(secret: string, msgId: string, tsSeconds: number, rawBody: string): string`
-- Returns the `svix-signature` header value string (`"v1,<base64>"`)
-- Caller must set `svix-id = msgId`, `svix-timestamp = String(tsSeconds)`, `svix-signature = result`
-- Use `Math.floor(Date.now() / 1000)` for current timestamp
+## Database Tables (migration-managed)
+1. `agent_mail_inbound_messages` — inbound message log with processing state machine
+2. `org_agentmail_inboxes` — ownership registry (UNIQUE on org+role, email, username; partial index on provider_inbox_id)
+3. `agent_mail_messages` — outbound audit log
+4. `agentmail_effect_log` — downstream effect idempotency ledger (state machine)
+5. `agentmail_svix_deliveries` — replay protection ledger (svix_id PRIMARY KEY)

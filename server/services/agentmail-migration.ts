@@ -6,23 +6,26 @@
  * any traffic (readiness gate enforced in agentmail-routes.ts).
  *
  * Process safety:
- *   pg_advisory_xact_lock is used inside a transaction so the lock is tied to a
- *   single DB connection (transaction-scoped) rather than a pool session. Two
- *   server processes racing on startup both acquire the lock in order; the second
- *   runs all IF NOT EXISTS DDL (no-ops) and commits cleanly.
+ *   pg_advisory_xact_lock is acquired through the SAME transaction that runs
+ *   all DDL.  Every statement — CREATE TABLE, ALTER TABLE, CREATE INDEX — is
+ *   executed through the transaction connection (tx), never through the global
+ *   pool (db).  This is critical: the global pool cannot see tables created
+ *   but not yet committed inside the transaction (relation "X" does not exist).
  *
  * Error handling:
  *   DDL failures propagate and keep _ready = false EXCEPT:
  *   - 42710 (duplicate_object): ADD CONSTRAINT already exists — safe to ignore.
  *   - 42701 (duplicate_column): ADD COLUMN already exists — safe to ignore.
- *   - 0A000 (feature_not_supported): ALTER COLUMN DROP NOT NULL on already-nullable — safe.
+ *   - 0A000 (feature_not_supported): ALTER COLUMN DROP NOT NULL on already-nullable.
  *   - 42703 (undefined_column): DROP NOT NULL on missing column — safe.
  *
  * Ordering:
  *   1. agent_mail_inbound_messages  (must exist before ownership FKs or triggers)
  *   2. org_agentmail_inboxes        (UNIQUE constraints + partial index)
  *   3. agent_mail_messages          (outbound audit log)
- *   4. agentmail_effect_log         (downstream idempotency ledger)
+ *   4. agentmail_effect_log         (downstream idempotency ledger — pending→completed state)
+ *   5. agentmail_svix_deliveries    (replay protection ledger keyed by svix-id)
+ *   6. automation_settings drift guard
  */
 
 import { db } from "../db";
@@ -81,24 +84,58 @@ const BENIGN_DDL_CODES = new Set([
 ]);
 
 /**
- * Execute a single DDL statement on the global db connection.
+ * Execute a single DDL statement through the provided executor.
  *
- * IMPORTANT: This MUST only be called for tables that already exist in the
- * committed database state (e.g. idempotent ALTER TABLE, CREATE INDEX on
- * existing tables).  For DDL on tables created within the same transaction,
- * use tx.execute(sql`...`) directly — the global db connection cannot see
- * uncommitted rows or tables from another connection's transaction.
+ * INVARIANT: executor MUST be the transaction (tx) that holds the advisory
+ * lock — NEVER the global db/pool.  The global connection cannot see tables
+ * created but not yet committed inside the transaction.
  *
- * Propagates all errors EXCEPT well-known benign idempotency codes.
- * Every swallowed code is logged so unexpected issues surface in development.
+ * CRITICAL: In PostgreSQL, ANY error inside a transaction immediately marks
+ * the transaction as ABORTED.  All subsequent commands in the same transaction
+ * fail with `25P02` — even if the application catches and swallows the error.
+ *
+ * Solution: wrap each DDL statement in a SAVEPOINT / ROLLBACK TO SAVEPOINT.
+ * This pattern creates a nested "sub-transaction".  On failure:
+ *   1. ROLLBACK TO SAVEPOINT restores the transaction to its pre-error state
+ *      (un-aborts it), so subsequent DDL statements can proceed.
+ *   2. RELEASE SAVEPOINT discards the savepoint.
+ *   3. The benign error is swallowed — the outer transaction remains healthy.
+ *
+ * On success:
+ *   1. RELEASE SAVEPOINT discards the savepoint (commits the nested work).
+ *
+ * This is the ONLY correct way to handle "IF NOT EXISTS" semantics inside a
+ * transaction when the DDL may fail with idempotency-class errors.
  */
-async function execDDL(statement: string): Promise<void> {
+let _spSeq = 0;
+async function execDDL(executor: any, statement: string): Promise<void> {
+  // Generate a unique savepoint name for this invocation.
+  // Names must be SQL identifiers (alphanumeric + underscore, no hyphens).
+  const sp = `sp_agentmail_${Date.now()}_${(_spSeq++) % 10000}`;
+
+  // ── Create the savepoint BEFORE the DDL ──────────────────────────────────
+  await executor.execute(sql.raw(`SAVEPOINT ${sp}`));
+
   try {
-    await db.execute(sql.raw(statement));
+    await executor.execute(sql.raw(statement));
+    // DDL succeeded — release the savepoint (confirms the nested work).
+    await executor.execute(sql.raw(`RELEASE SAVEPOINT ${sp}`));
   } catch (err: any) {
+    // ── DDL failed — ROLLBACK TO SAVEPOINT first ─────────────────────────
+    // This is mandatory: it un-aborts the outer transaction.
+    // Without this, every subsequent SQL in the transaction would fail
+    // with `25P02 current transaction is aborted`.
+    try {
+      await executor.execute(sql.raw(`ROLLBACK TO SAVEPOINT ${sp}`));
+      await executor.execute(sql.raw(`RELEASE SAVEPOINT ${sp}`));
+    } catch {
+      // If ROLLBACK itself fails, the transaction is unrecoverable.
+      // Re-throw the original error (not the rollback error).
+    }
+
     const code: string = err?.code ?? err?.cause?.code ?? "";
     if (BENIGN_DDL_CODES.has(code)) {
-      // Safe to ignore — e.g. constraint already exists from a previous run.
+      // Known idempotency class — safe to skip (e.g. constraint already exists).
       return;
     }
     // Unknown DDL error — propagate to fail the migration.
@@ -122,6 +159,10 @@ async function _migrate(): Promise<void> {
   // Two processes racing on startup: one blocks at pg_advisory_xact_lock until
   // the other commits; then it re-runs all IF NOT EXISTS DDL (idempotent no-ops)
   // and also commits cleanly.
+  //
+  // CRITICAL: _runDDL(tx) receives the transaction object and must pass it to
+  // execDDL() for every statement.  Using the global db inside _runDDL would
+  // read from a different pool connection that cannot see uncommitted tables.
   await db.transaction(async (tx) => {
     await tx.execute(sql`SELECT pg_advisory_xact_lock(${ADVISORY_LOCK_KEY}::bigint)`);
     await _runDDL(tx);
@@ -130,7 +171,7 @@ async function _migrate(): Promise<void> {
 
 // ─── All DDL steps ────────────────────────────────────────────────────────────
 
-async function _runDDL(tx: typeof db): Promise<void> {
+async function _runDDL(tx: any): Promise<void> {
   // ── Step 1: Inbound messages ──────────────────────────────────────────────
   await tx.execute(sql`
     CREATE TABLE IF NOT EXISTS agent_mail_inbound_messages (
@@ -168,7 +209,8 @@ async function _runDDL(tx: typeof db): Promise<void> {
     )
   `);
 
-  // Upgrade columns on pre-existing tables — all safe to ignore benign codes.
+  // Upgrade columns on pre-existing tables — benign codes are swallowed.
+  // ALL execDDL calls pass tx (not db) so they stay on the locked connection.
   const inboundAlters = [
     `ALTER TABLE agent_mail_inbound_messages ALTER COLUMN organization_id DROP NOT NULL`,
     `ALTER TABLE agent_mail_inbound_messages ADD COLUMN IF NOT EXISTS routing_status       TEXT NOT NULL DEFAULT 'routed'`,
@@ -182,7 +224,7 @@ async function _runDDL(tx: typeof db): Promise<void> {
     `ALTER TABLE agent_mail_inbound_messages ADD COLUMN IF NOT EXISTS last_error            TEXT`,
     `ALTER TABLE agent_mail_inbound_messages ADD COLUMN IF NOT EXISTS raw_payload           JSONB`,
   ];
-  for (const stmt of inboundAlters) await execDDL(stmt);
+  for (const stmt of inboundAlters) await execDDL(tx, stmt);
 
   const inboundIndexes = [
     `CREATE INDEX IF NOT EXISTS idx_agentmail_inbound_org       ON agent_mail_inbound_messages (organization_id)`,
@@ -192,7 +234,7 @@ async function _runDDL(tx: typeof db): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_agentmail_inbound_provider_inbox ON agent_mail_inbound_messages (provider_inbox_id)`,
     `CREATE INDEX IF NOT EXISTS idx_agentmail_inbound_rcvd      ON agent_mail_inbound_messages (received_at DESC)`,
   ];
-  for (const idx of inboundIndexes) await execDDL(idx);
+  for (const idx of inboundIndexes) await execDDL(tx, idx);
 
   // ── Step 2: Ownership table ────────────────────────────────────────────────
   await tx.execute(sql`
@@ -221,19 +263,19 @@ async function _runDDL(tx: typeof db): Promise<void> {
   `);
 
   // Partial UNIQUE index — NULLs are excluded so multiple un-provisioned rows coexist.
-  await execDDL(`
+  await execDDL(tx, `
     CREATE UNIQUE INDEX IF NOT EXISTS uix_org_agentmail_provider_inbox_id
     ON org_agentmail_inboxes (provider_inbox_id)
     WHERE provider_inbox_id IS NOT NULL
   `);
 
   // ADD CONSTRAINT — swallows 42710 if already present from a prior run.
-  await execDDL(`
+  await execDDL(tx, `
     ALTER TABLE org_agentmail_inboxes
     ADD CONSTRAINT chk_org_agentmail_role
     CHECK (role IN ('revenue','hiring','scheduling','support','operations','ceo'))
   `);
-  await execDDL(`
+  await execDDL(tx, `
     ALTER TABLE org_agentmail_inboxes
     ADD CONSTRAINT chk_org_agentmail_state
     CHECK (ownership_state IN ('provisioning','active','disabled','retired'))
@@ -244,7 +286,7 @@ async function _runDDL(tx: typeof db): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_org_agentmail_inboxes_email ON org_agentmail_inboxes (email_address)`,
     `CREATE INDEX IF NOT EXISTS idx_org_agentmail_inboxes_state ON org_agentmail_inboxes (ownership_state)`,
   ];
-  for (const idx of ownershipIndexes) await execDDL(idx);
+  for (const idx of ownershipIndexes) await execDDL(tx, idx);
 
   // ── Step 3: Outbound audit log ─────────────────────────────────────────────
   await tx.execute(sql`
@@ -268,35 +310,82 @@ async function _runDDL(tx: typeof db): Promise<void> {
     `CREATE INDEX IF NOT EXISTS idx_agent_mail_org    ON agent_mail_messages (organization_id)`,
     `CREATE INDEX IF NOT EXISTS idx_agent_mail_inbox  ON agent_mail_messages (inbox)`,
     `CREATE INDEX IF NOT EXISTS idx_agent_mail_status ON agent_mail_messages (status)`,
-  ]) await execDDL(idx);
+  ]) await execDDL(tx, idx);
 
   // ── Step 4: Effect log — downstream idempotency ledger ────────────────────
-  // Each downstream side-effect triggered by an inbound message is recorded here.
-  // Before executing any effect, the processor claims it via INSERT ON CONFLICT DO NOTHING.
-  // If the claim fails, the effect was already completed — skip it.
-  // This prevents duplicate prospect/applicant/attention records on retry after crash.
+  //
+  // State machine: pending → completed | failed
+  //
+  // pending:   claimed by a worker — business write has NOT yet happened.
+  //            If worker crashes, claimed_at goes stale after 5 minutes and
+  //            a retry can reclaim via ON CONFLICT DO UPDATE.
+  //
+  // completed: business write succeeded and was confirmed.  This state is
+  //            permanent — no retry allowed.  The unique (inbound_id, effect_type)
+  //            constraint enforces exactly-once delivery.
+  //
+  // failed:    business write failed.  Retry is allowed — the claim loop uses
+  //            ON CONFLICT DO UPDATE to reclaim failed slots.
+  //
+  // INVARIANT: a row may only enter 'completed' AFTER the business write
+  //            succeeds.  Inserting 'pending' BEFORE the write is intentional —
+  //            the worker owns the slot while the write is in flight.  The
+  //            'completed' transition happens AFTER the write returns.
   await tx.execute(sql`
     CREATE TABLE IF NOT EXISTS agentmail_effect_log (
       id           TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
       inbound_id   TEXT        NOT NULL,
       effect_type  TEXT        NOT NULL,
-      completed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      status       TEXT        NOT NULL DEFAULT 'pending',  -- pending | completed | failed
+      claimed_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at TIMESTAMPTZ,                             -- NULL until status = completed
       UNIQUE (inbound_id, effect_type)
     )
   `);
-  // MUST use tx.execute here — table was created in this same transaction.
-  // execDDL uses the global db connection which cannot see the uncommitted table.
-  try {
-    await tx.execute(sql`
-      CREATE INDEX IF NOT EXISTS idx_agentmail_effect_inbound ON agentmail_effect_log (inbound_id)
-    `);
-  } catch (err: any) {
-    const code: string = err?.code ?? err?.cause?.code ?? "";
-    if (!BENIGN_DDL_CODES.has(code)) throw err;
-  }
 
-  // ── Step 5: automation_settings schema drift guard ─────────────────────────
-  await execDDL(`
+  // Upgrade existing rows from old schema (which had no status/claimed_at columns
+  // and completed_at was NOT NULL DEFAULT NOW()).  Existing rows were by definition
+  // already completed so default them to 'completed'.
+  const effectLogAlters = [
+    `ALTER TABLE agentmail_effect_log ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'completed'`,
+    `ALTER TABLE agentmail_effect_log ALTER COLUMN status SET DEFAULT 'pending'`,
+    `ALTER TABLE agentmail_effect_log ADD COLUMN IF NOT EXISTS claimed_at TIMESTAMPTZ`,
+    // completed_at was NOT NULL DEFAULT NOW() in the old schema.
+    // First remove NOT NULL, then remove the DEFAULT so new rows get NULL
+    // (completed_at should only be set when status transitions to 'completed').
+    `ALTER TABLE agentmail_effect_log ALTER COLUMN completed_at DROP NOT NULL`,
+    `ALTER TABLE agentmail_effect_log ALTER COLUMN completed_at DROP DEFAULT`,
+  ];
+  for (const stmt of effectLogAlters) await execDDL(tx, stmt);
+
+  await execDDL(tx, `
+    CREATE INDEX IF NOT EXISTS idx_agentmail_effect_inbound ON agentmail_effect_log (inbound_id)
+  `);
+  await execDDL(tx, `
+    CREATE INDEX IF NOT EXISTS idx_agentmail_effect_status ON agentmail_effect_log (status)
+  `);
+
+  // ── Step 5: Svix delivery replay ledger ───────────────────────────────────
+  //
+  // Cryptographic timestamp tolerance (±5 min) prevents most replays but does
+  // not prevent the EXACT same signed delivery from being processed twice within
+  // the window.  This table provides a bounded deduplication ledger keyed by
+  // the Svix delivery ID (svix-id header) — unique per delivery attempt.
+  //
+  // Retention: entries older than 10 minutes are pruned periodically (cron or
+  // inline cleanup) since no valid delivery would arrive after the 5-min window.
+  await tx.execute(sql`
+    CREATE TABLE IF NOT EXISTS agentmail_svix_deliveries (
+      svix_id     TEXT        PRIMARY KEY,
+      received_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await execDDL(tx, `
+    CREATE INDEX IF NOT EXISTS idx_agentmail_svix_received ON agentmail_svix_deliveries (received_at DESC)
+  `);
+
+  // ── Step 6: automation_settings schema drift guard ─────────────────────────
+  await execDDL(tx, `
     ALTER TABLE org_automation_settings
     ADD COLUMN IF NOT EXISTS never_auto_send BOOLEAN NOT NULL DEFAULT TRUE
   `);
