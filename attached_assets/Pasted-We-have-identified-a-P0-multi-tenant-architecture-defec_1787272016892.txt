@@ -1,0 +1,37 @@
+We have identified a P0 multi-tenant architecture defect in TrainEfficiency's AgentMail integration.
+
+Do not simply patch resolveOrgFromInbox() or remove SELECT id FROM organizations LIMIT 1.
+
+Current ground truth:
+
+AgentMail uses one global API key/domain.
+Six global role inboxes exist: revenue, hiring, scheduling, support, operations, ceo.
+These inboxes are shared across organizations.
+There is no persisted authoritative organization → AgentMail inbox ownership relationship.
+Therefore inbound AgentMail messages cannot currently be safely attributed to a specific TrainEfficiency organization.
+The current fallback can attribute inbound data to the first organization in the database.
+
+TASK: Design and implement tenant-safe AgentMail addressing and routing.
+
+First inspect the existing organization creation/integration lifecycle and AgentMail provisioning architecture. Determine the cleanest way to give each organization a unique provider routing identity.
+
+Requirements:
+
+Every organization using AgentMail must have unique, authoritative routing identity.
+Persist the organization ↔ AgentMail ownership relationship.
+Prefer immutable provider identifiers where available in addition to normalized addresses.
+Database constraints must prevent ambiguous ownership.
+Inbound routing must resolve exactly one organization.
+Zero matches → fail closed/quarantine.
+Multiple matches → fail closed/quarantine.
+Completely remove the first-organization/default-organization fallback.
+Webhook-supplied organization IDs must not be trusted as the tenant authority.
+Preserve/improve provider-event idempotency.
+Existing organizations need an explicit safe migration/provisioning strategy.
+Do not silently invent addresses for existing production organizations.
+Add cross-tenant regression tests with at least two organizations.
+Prove Organization A inbound mail cannot create or mutate Organization B records.
+
+Do not deploy until the architecture, migration implications, tests, and production rollout strategy are reported.
+
+Return the proposed architecture before performing any production mutation.
