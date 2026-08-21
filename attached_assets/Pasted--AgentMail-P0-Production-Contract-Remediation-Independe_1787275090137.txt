@@ -1,0 +1,410 @@
+# AgentMail P0 — Production Contract Remediation
+
+Independent Codex verification found that the first-organization routing defect is removed, but the AgentMail P0 remains open.
+
+Do NOT deploy the current implementation.
+
+Your task is to remediate the implementation against the actual current AgentMail provider contract and close the production-readiness defects identified by independent verification.
+
+## Ground Truth
+
+Positive findings that should be preserved:
+
+* `SELECT id FROM organizations LIMIT 1` fallback is gone.
+* No equivalent default-organization fallback was found.
+* Per-organization ownership persistence exists.
+* Full immutable organization UUID is used in generated addresses.
+* Address-based Org A / Org B isolation works in current fixtures.
+* Unknown and legacy addresses logically fail closed.
+* Disabled/retired ownership does not route.
+* Outbound missing ownership fails closed.
+* Webhook-supplied organization IDs are ignored.
+* Atomic duplicate exclusion exists for non-null provider message IDs.
+* Codex security stack has no blocking collision.
+
+Do not regress these properties.
+
+# 1. Correct AgentMail Provider Contract
+
+The current implementation appears to target an incorrect/legacy event shape.
+
+Independently verify the current official AgentMail API/webhook contract before mutation.
+
+Update inbound handling to support the actual documented event.
+
+Codex verification found the current documented model uses concepts including:
+
+* `event_type: "message.received"`
+* `message`
+* destination recipients represented as an array
+* stable `inbox_id`
+
+Do not blindly copy these fields from this prompt.
+
+Verify them against the current provider documentation and implement against the verified contract.
+
+Add fixtures modeled on the real documented provider payload.
+
+# 2. Provider Inbox ID Must Be Authoritative
+
+The ownership table already contains `provider_inbox_id`, but the current implementation reportedly reads:
+
+`providerResult.inbox?.id`
+
+Independent verification found the provider returns `inbox_id`.
+
+Verify the provider response contract and correct persistence.
+
+Requirements:
+
+* persist the real immutable provider inbox ID
+* database uniqueness on `provider_inbox_id`
+* active ownership cannot exist without a verified provider inbox ID
+* inbound routing should use provider inbox ID as the primary trusted identity
+* normalized destination address should be corroborating evidence, not the sole tenant authority
+
+Preferred invariant:
+
+`provider inbox ID → exactly one active organization-owned inbox`
+
+If provider inbox ID and destination address disagree:
+
+→ fail closed
+→ quarantine
+→ no tenant-owned downstream processing
+
+Never guess which value is correct.
+
+# 3. Correct Webhook Signature Verification
+
+Replace the current custom/legacy signature behavior with the actual current AgentMail verification contract.
+
+Independent verification found AgentMail uses Svix-style webhook headers/signatures.
+
+Verify the provider specification.
+
+Requirements:
+
+* verify over original raw request bytes
+* use all required provider signature headers
+* verify timestamp/replay window
+* timing-safe/provider-supported verification
+* invalid signature → reject
+* missing signature → reject in production
+* no configuration state where a public production webhook silently becomes unsigned
+
+Do not reconstruct the signed body using `JSON.stringify(req.body)`.
+
+Add behavioral signature tests using provider-compatible fixtures.
+
+# 4. Fix Ownership Schema Constraints
+
+Harden `org_agentmail_inboxes`.
+
+At minimum verify/add:
+
+* FK → organizations where compatible with repository architecture
+* UNIQUE provider inbox ID
+* UNIQUE email address
+* UNIQUE username
+* UNIQUE organization + role
+* valid role constraint
+* valid lifecycle-state constraint
+
+Do not introduce constraints without checking existing data compatibility.
+
+# 5. Replace Unsafe Startup DDL for This Feature
+
+Independent verification reproduced a fresh-database failure:
+
+* `organization_id` remained NOT NULL
+* routing columns were missing
+
+The ownership ALTER operations currently execute before inbound-table creation.
+
+Do not patch this merely by rearranging two startup calls if the feature can be moved to a controlled migration safely.
+
+For this AgentMail feature, create a deterministic schema migration/install sequence.
+
+Requirements:
+
+* correct ordering
+* transactional where PostgreSQL permits
+* idempotent
+* safe under multiple application instances
+* migration failure must not result in application accepting AgentMail traffic against partial schema
+* readiness gate before AgentMail webhook processing
+
+Do NOT attempt to redesign TrainEfficiency's entire runtime-DDL architecture in this task.
+
+Limit the migration correction to what this AgentMail P0 requires.
+
+Prove the result against a fresh disposable database.
+
+# 6. Fix Quarantine Persistence
+
+Preserve:
+
+`organization_id = NULL`
+
+Correct the remaining issues.
+
+Requirements:
+
+* `routing_status = 'quarantine'`
+* separate explicit `routing_reason`
+* quarantine insert failures must not be swallowed
+* preserve enough provider evidence for investigation
+* provider message/event identity should support deduplication
+* no tenant downstream processing from quarantine
+
+Determine which raw/provider identifiers can safely be persisted without storing unnecessary sensitive content.
+
+Do not log raw payloads.
+
+# 7. Lifecycle Authorization
+
+Provisioning and lifecycle mutation are high-authority operations.
+
+Independent verification found COACH currently has mutation authority.
+
+Re-evaluate the intended product policy.
+
+Unless repository evidence establishes otherwise, provisioning, activation, disable, retirement and retire-all should require organization ADMIN authority.
+
+Do not give COACH provider-resource provisioning authority merely because another AgentMail endpoint supports COACH.
+
+Tenant scope must remain server-derived.
+
+# 8. Activation Gate
+
+Activation must not blindly promote provisioning rows.
+
+Before an inbox becomes `active`, require:
+
+* persisted provider inbox ID
+* successful provider verification
+* correct expected address/domain
+* ownership still belongs to the organization
+* provider resource exists
+* all required role inboxes satisfy activation policy
+
+If verification fails:
+
+→ remain non-active
+→ fail closed
+
+# 9. Provisioning Idempotency
+
+Use AgentMail's verified provider-supported idempotency mechanism for inbox creation where available.
+
+Independent verification indicates a `client_id` mechanism may exist.
+
+Verify this with current documentation.
+
+Provisioning retries must not accidentally create duplicate provider inboxes.
+
+Existing DB rows with missing provider resources must not simply be skipped forever.
+
+Implement reconciliation behavior.
+
+# 10. Fix Role Parameter Semantics
+
+Independent verification found routes pass `roles` to functions that do not accept role arrays.
+
+Correct the contract.
+
+Prove:
+
+* requested roles are actually honored
+* unsupported roles rejected
+* omitted roles follow an explicit documented policy
+* activation/disable/retire operate on the intended scope only
+
+Do not silently ignore lifecycle parameters.
+
+# 11. Crash-Recoverable Inbound Processing
+
+Current atomic insert solves duplicate ownership but creates another failure mode:
+
+insert inbound record
+→ crash during downstream processing
+→ retry sees duplicate
+→ downstream work never completes
+
+Design a bounded recovery mechanism.
+
+Do not build a massive workflow engine.
+
+A suitable model may use states such as:
+
+`received`
+→ `processing`
+→ `completed`
+
+with:
+
+* processing lease/timestamp
+* retry eligibility
+* bounded retry count
+* last error
+* safe reclaim of stale processing
+* idempotent downstream operations where necessary
+
+A provider retry must not permanently suppress unfinished work merely because the inbound row already exists.
+
+# 12. Behavioral Tests
+
+The previous 11 tests are not sufficient by themselves.
+
+Preserve them where still valid and add tests using the actual provider contract.
+
+At minimum prove:
+
+* real documented `message.received` fixture accepted
+* provider inbox ID resolves Org A
+* provider inbox ID resolves Org B
+* provider ID/address disagreement quarantines
+* Org A cannot write Org B state
+* webhook org ID injection ignored
+* invalid signature rejected
+* missing production signature rejected
+* replayed/expired signature rejected
+* unknown provider inbox quarantines
+* legacy global inbox quarantines
+* disabled/retired ownership quarantines
+* quarantine persists with NULL org and correct status/reason
+* duplicate delivery does not duplicate completed processing
+* interrupted processing can be safely resumed
+* provisioning retry is provider-idempotent
+* activation without verification denied
+* COACH cannot mutate ownership lifecycle if ADMIN is the established policy
+* Org A ADMIN cannot mutate Org B ownership
+* fresh database receives correct final schema in one deterministic setup
+
+# 13. Preserve Codex Stack Compatibility
+
+Do not modify these Codex security changes unless genuinely required:
+
+* `23f7e5f`
+* `39dc0b0`
+* `f129f88`
+
+Preserve unrelated working-tree files:
+
+* `server/beta-wave6-routes.ts`
+* `server/financial-brain.ts`
+
+If a collision becomes unavoidable, STOP and report it rather than overwriting work.
+
+# 14. Production Boundary
+
+Do NOT:
+
+* deploy
+* run production DDL
+* provision production AgentMail resources
+* activate production ownership
+* change production webhook configuration
+* retire global inboxes
+* repair historical data
+* push without authorization
+
+All provider behavior should be mocked or exercised only against an explicitly safe non-production environment.
+
+# Final Verification
+
+Run:
+
+* AgentMail behavioral suite
+* fresh disposable database migration/schema test
+* authentication/authorization suites
+* tenant-isolation suites
+* secret/security suites
+* relevant Codex security regressions
+
+Separate:
+
+PASS
+FAIL
+NOT RUN
+NOT VERIFIED
+
+# Final Report
+
+Return:
+
+# AgentMail P0 — Remediation Final Report
+
+## Provider Contract
+
+## Webhook Envelope
+
+## Signature Verification
+
+## Provider Identity
+
+## Ownership Schema
+
+## Tenant Isolation
+
+## Quarantine
+
+## Outbound Isolation
+
+## Lifecycle Authorization
+
+## Provisioning
+
+## Activation
+
+## Idempotency
+
+## Crash Recovery
+
+## Migration Safety
+
+## Tests
+
+## Codex Compatibility
+
+## Production Changes
+
+## Git Status
+
+## Limitations
+
+## Verdict
+
+Explicitly answer:
+
+* Real provider event supported?
+* Real provider signature verification implemented?
+* Unsigned production webhook possible?
+* Provider inbox ID authoritative?
+* Provider inbox ID unique?
+* Address/ID mismatch fails closed?
+* First-org fallback gone?
+* Cross-tenant contamination path remaining?
+* Quarantine persists correctly?
+* Lifecycle ADMIN-only?
+* Activation requires provider verification?
+* Provisioning provider-idempotent?
+* Interrupted inbound processing recoverable?
+* Fresh database schema correct?
+* Runtime partial-schema traffic possible?
+* Codex collision?
+* Production modified?
+* Push performed?
+
+End with one:
+
+**AGENTMAIL P0 REMEDIATED — READY FOR INDEPENDENT RE-VERIFICATION**
+
+**PARTIAL — DO NOT DEPLOY**
+
+**P0 REMAINS OPEN**
+
+Do not deploy even if your own verification passes.
+
+The next step after a successful result is independent Codex re-verification.

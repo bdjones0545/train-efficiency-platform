@@ -272,7 +272,9 @@ test("8 — Duplicate provider event is idempotent (ON CONFLICT DO NOTHING)", as
   assert.ok(r1.ok, "First delivery must succeed");
   assert.ok(r2.ok, "Second delivery must succeed (idempotent)");
   assert.ok(r2.skipped, "Second delivery must be marked as skipped");
-  assert.equal(r2.skipReason, "duplicate provider_message_id");
+  // Crash-recovery state machine: second delivery sees processing_state='completed'
+  // and returns 'already_completed' (previously 'duplicate provider_message_id').
+  assert.equal(r2.skipReason, "already_completed");
 
   // Exactly one row in the DB
   const countRows = rows(

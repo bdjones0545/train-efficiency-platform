@@ -25,7 +25,7 @@ import {
 } from "./services/agentmail-inbound-router";
 import {
   resolveOrgFromInbox,
-  ensureOwnershipTable,
+  resolveOrgByProviderInboxId,
   provisionOrgInboxes,
   activateOrgInboxes,
   disableOrgInbox,
@@ -35,6 +35,10 @@ import {
   listOrgInboxes,
   type AgentMailRole,
 } from "./services/agentmail-ownership-service";
+import {
+  runAgentMailMigration,
+  isAgentMailSchemaReady,
+} from "./services/agentmail-migration";
 
 function rows(r: unknown): any[] {
   if (Array.isArray(r)) return r;
@@ -42,50 +46,9 @@ function rows(r: unknown): any[] {
   return Array.isArray(x?.rows) ? x.rows : [];
 }
 
+// Legacy shim — kept so any callers that already imported it still compile.
+// The real migration now lives in agentmail-migration.ts.
 async function ensureAgentMailTables(): Promise<void> {
-  // Schema migration: add never_auto_send column if missing (schema drift guard)
-  try {
-    await db.execute(sql`
-      ALTER TABLE org_automation_settings
-      ADD COLUMN IF NOT EXISTS never_auto_send BOOLEAN NOT NULL DEFAULT TRUE
-    `);
-  } catch (e: any) {
-    console.error("[AgentMail] never_auto_send migration error:", e?.message);
-  }
-
-  // Outbound audit log
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS agent_mail_messages (
-        id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        organization_id     TEXT NOT NULL,
-        agent_name          TEXT NOT NULL,
-        inbox               TEXT NOT NULL,
-        to_email            TEXT NOT NULL,
-        from_email          TEXT,
-        subject             TEXT NOT NULL,
-        body_preview        TEXT,
-        provider_message_id TEXT,
-        status              TEXT NOT NULL DEFAULT 'queued',
-        error_message       TEXT,
-        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_mail_org    ON agent_mail_messages (organization_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_mail_inbox  ON agent_mail_messages (inbox)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_mail_status ON agent_mail_messages (status)`);
-  } catch (e: any) {
-    console.error("[AgentMail] Outbound table setup error:", e?.message);
-  }
-
-  // Ownership table + inbound schema migrations
-  try {
-    await ensureOwnershipTable();
-  } catch (e: any) {
-    console.error("[AgentMail] Ownership table setup error:", e?.message);
-  }
-
   // Inbound messages
   try {
     await db.execute(sql`
@@ -137,7 +100,15 @@ export async function registerAgentMailRoutes(
   isAuthenticated: (req: any, res: any, next: any) => void,
   requireRole: (...roles: string[]) => (req: any, res: any, next: any) => void,
 ): Promise<void> {
-  await ensureAgentMailTables();
+  // Deterministic ordered migration — must succeed before any route handles traffic.
+  // Uses the shared runAgentMailMigration() from agentmail-migration.ts; concurrent
+  // calls share the same in-flight promise (idempotent).
+  try {
+    await runAgentMailMigration();
+  } catch (e: any) {
+    console.error("[AgentMail] Schema migration failed — AgentMail routes degraded:", e?.message);
+    // Don't throw: let the process start so /status can report the problem.
+  }
 
   // ─── GET /api/agentmail/status ─────────────────────────────────────────────
   app.get("/api/agentmail/status", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
@@ -435,72 +406,130 @@ export async function registerAgentMailRoutes(
     }
   });
 
-  // ─── POST /api/agentmail/webhook ──────────────────────────────────────────
-  // Public endpoint — no auth, validated by HMAC signature
+  // ─── POST /api/agentmail/webhook ─────────────────────────────────────────────
+  // Public endpoint — authenticated via Authorization custom delivery header.
+  // Configure AGENTMAIL_WEBHOOK_SECRET in Replit Secrets, then set the same value
+  // as `Authorization: Bearer <secret>` when creating the webhook at AgentMail.
+  //
+  // Event parsing follows the verified AgentMail provider contract:
+  //   - Dispatch field: event_type (not type)
+  //   - Payload location: event.message (not event.email / event.data)
+  //   - Recipient: message.to is an ARRAY of RFC 2822 strings
+  //   - Inbox identity: message.inbox_id (not id)
+  //   - Deduplication key: message.message_id (SMTP Message-ID)
   app.post("/api/agentmail/webhook", async (req: any, res) => {
     try {
-      const rawBody = JSON.stringify(req.body);
-      const sig = req.headers["x-agentmail-signature"] as string | undefined;
-
-      const result = await handleAgentMailWebhook(rawBody, sig);
-      if (!result.ok) {
-        return res.status(401).json({ error: result.error });
+      // ── Readiness gate ────────────────────────────────────────────────────
+      // Block webhook traffic until the schema migration has completed.
+      // 503 causes the provider to retry rather than dropping the event.
+      if (!isAgentMailSchemaReady()) {
+        console.warn("[AgentMail] Webhook received before schema ready — returning 503");
+        return res.status(503).json({ error: "Service starting up — retry later" });
       }
 
-      const event = result.event as any;
-      const eventType: string = event?.type ?? "unknown";
+      // ── Authentication ────────────────────────────────────────────────────
+      // Pass the already-parsed req.body (NOT JSON.stringify) and raw headers.
+      const authResult = await handleAgentMailWebhook(req.body, req.headers);
+      if (!authResult.ok) {
+        return res.status(401).json({ error: authResult.error });
+      }
+
+      const event = authResult.event as any;
+
+      // Dispatch on event_type — verified field name from AgentMail docs
+      const eventType: string = event?.event_type ?? event?.type ?? "unknown";
       console.log("[AgentMail] Webhook received:", eventType);
 
-      // ── Inbound email event routing ───────────────────────────────────────
-      if (eventType === "email.received" || eventType === "inbound" || event?.email) {
-        const emailData = event?.email ?? event?.data ?? event;
+      // ── Inbound email events ──────────────────────────────────────────────
+      const RECEIVED_EVENTS = new Set([
+        "message.received",
+        "message.received.spam",
+        "message.received.blocked",
+        "message.received.unauthenticated",
+      ]);
 
-        const toAddress: string = emailData?.to ?? emailData?.to_email ?? "";
-        // Extract role from address — works for both legacy ("revenue@domain") and
-        // per-org ("revenue-<hex>@domain") formats.
+      if (RECEIVED_EVENTS.has(eventType)) {
+        const msg = event?.message;
+        if (!msg) {
+          console.warn(`[AgentMail] Webhook ${eventType}: missing 'message' object`);
+          return res.json({ received: true, routed: false, reason: "missing_message_object" });
+        }
+
+        // inbox_id is the authoritative provider inbox identity (verified from docs)
+        const providerInboxId: string | null = msg.inbox_id ?? null;
+
+        // to is an ARRAY of RFC 2822 address strings (verified from docs)
+        const toList: string[] = Array.isArray(msg.to)
+          ? msg.to
+          : msg.to ? [msg.to] : [];
+        const toAddress: string = toList[0] ?? "";
+
+        // Extract the role prefix from the local-part for inbox routing
         const inboxRole = toAddress.split("@")[0]?.split("-")[0]?.toLowerCase() ?? "unknown";
 
-        // Resolve owning organization — authoritative DB lookup, no fallback.
-        // Webhook-supplied org IDs (if any in the payload) are never consulted.
-        const resolveResult = await resolveOrgFromInbox(toAddress).catch(() => ({
-          orgId: null as string | null,
-          role: null as AgentMailRole | null,
-          reason: "no_ownership_record" as const,
-        }));
+        // SMTP Message-ID — authoritative deduplication key
+        const providerMessageId: string | null = msg.message_id ?? null;
+        const providerThreadId:  string | null = msg.thread_id  ?? null;
+        const providerEventId:   string | null = event.event_id ?? null;
+
+        // ── Organization resolution ─────────────────────────────────────────
+        // Primary path: resolve by provider inbox_id, corroborate with address.
+        // Fallback: address-only resolution when inbox_id absent.
+        let resolveResult: { orgId: string | null; role: AgentMailRole | null; reason: string };
+
+        if (providerInboxId) {
+          resolveResult = await resolveOrgByProviderInboxId(providerInboxId, toAddress).catch(() => ({
+            orgId: null as string | null,
+            role: null as AgentMailRole | null,
+            reason: "no_ownership_record",
+          }));
+        } else {
+          resolveResult = await resolveOrgFromInbox(toAddress).catch(() => ({
+            orgId: null as string | null,
+            role: null as AgentMailRole | null,
+            reason: "no_ownership_record",
+          }));
+        }
 
         if (!resolveResult.orgId) {
           const routingReason = resolveResult.reason;
-          const providerMsgId: string | null =
-            emailData?.id ?? emailData?.message_id ?? null;
+          console.warn(
+            `[AgentMail] Quarantine (${routingReason}) providerInboxId=${providerInboxId ?? "none"} to=${toAddress}`,
+          );
 
-          console.warn(`[AgentMail] Quarantine (${routingReason}) for address:`, toAddress);
-
-          // Persist quarantine record with NULL organization_id — never creates org-owned state.
-          // Idempotent via ON CONFLICT so duplicate webhook deliveries are harmless.
-          await db.execute(sql`
+          // Persist quarantine row — organization_id = NULL (never org-owned state).
+          // Errors are LOGGED, not silently swallowed (Issue 6 fix).
+          const qErr = await db.execute(sql`
             INSERT INTO agent_mail_inbound_messages (
               id, organization_id, inbox, from_email, from_name, to_email, subject,
-              body_text, provider_message_id,
+              body_text, provider_message_id, provider_inbox_id, provider_event_id,
               routed_status, routing_status, routing_reason, routed_at,
-              received_at, created_at, updated_at
+              processing_state, received_at, created_at, updated_at
             ) VALUES (
               gen_random_uuid()::text,
               NULL,
               ${inboxRole},
-              ${emailData?.from ?? "unknown"},
-              ${emailData?.from_name ?? null},
-              ${toAddress},
-              ${emailData?.subject ?? "(no subject)"},
-              ${emailData?.text ?? emailData?.body ?? null},
-              ${providerMsgId},
+              ${msg.from ?? "unknown"},
+              ${null},
+              ${toAddress || "unknown"},
+              ${msg.subject ?? "(no subject)"},
+              ${msg.text ?? null},
+              ${providerMessageId},
+              ${providerInboxId},
+              ${providerEventId},
+              ${"quarantine"},
               ${"quarantine"},
               ${routingReason},
-              ${routingReason},
               NOW(),
+              ${"completed"},
               NOW(), NOW(), NOW()
             )
             ON CONFLICT (provider_message_id) DO NOTHING
-          `).catch(() => {});
+          `).catch((e: any) => e);
+
+          if (qErr instanceof Error) {
+            console.error("[AgentMail] Quarantine DB insert failed:", qErr.message);
+          }
 
           return res.json({ received: true, routed: false, reason: routingReason });
         }
@@ -511,16 +540,17 @@ export async function registerAgentMailRoutes(
         const processResult = await processInboundAgentMail({
           organizationId,
           inbox: resolvedRole,
-          fromEmail: emailData?.from ?? emailData?.from_email ?? "unknown",
-          fromName: emailData?.from_name ?? emailData?.sender_name ?? undefined,
+          fromEmail: msg.from ?? "unknown",
+          fromName: undefined,
           toEmail: toAddress,
-          subject: emailData?.subject ?? "(no subject)",
-          bodyText: emailData?.text ?? emailData?.body_text ?? emailData?.plain ?? undefined,
-          bodyHtml: emailData?.html ?? emailData?.body_html ?? undefined,
-          providerMessageId: emailData?.id ?? emailData?.message_id ?? undefined,
-          providerThreadId: emailData?.thread_id ?? undefined,
-          receivedAt: emailData?.date ? new Date(emailData.date) : new Date(),
-          rawPayload: event,
+          subject: msg.subject ?? "(no subject)",
+          bodyText: msg.text ?? undefined,
+          bodyHtml: msg.html ?? undefined,
+          providerMessageId: providerMessageId ?? undefined,
+          providerInboxId: providerInboxId ?? undefined,
+          providerThreadId: providerThreadId ?? undefined,
+          providerEventId: providerEventId ?? undefined,
+          receivedAt: msg.timestamp ? new Date(msg.timestamp) : new Date(),
         });
 
         console.log("[AgentMail] Inbound processed:", processResult.classification, processResult.routedAgent);
@@ -611,8 +641,9 @@ export async function registerAgentMailRoutes(
     }
   });
 
-  // POST /api/agentmail/ownership/provision — register per-org inbox rows in DB (no provider API call yet)
-  app.post("/api/agentmail/ownership/provision", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  // POST /api/agentmail/ownership/provision — provision per-org inboxes at provider + DB
+  // ADMIN-only: mutates provider state and ownership rows.
+  app.post("/api/agentmail/ownership/provision", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -624,8 +655,9 @@ export async function registerAgentMailRoutes(
     }
   });
 
-  // POST /api/agentmail/ownership/activate — mark provisioned inboxes as active
-  app.post("/api/agentmail/ownership/activate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  // POST /api/agentmail/ownership/activate — activate provisioned inboxes (gated on provider verification)
+  // ADMIN-only: mutates ownership_state.
+  app.post("/api/agentmail/ownership/activate", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -650,7 +682,8 @@ export async function registerAgentMailRoutes(
   });
 
   // POST /api/agentmail/ownership/disable/:role — soft-disable one role inbox
-  app.post("/api/agentmail/ownership/disable/:role", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  // ADMIN-only: mutates ownership_state.
+  app.post("/api/agentmail/ownership/disable/:role", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -664,7 +697,8 @@ export async function registerAgentMailRoutes(
   });
 
   // POST /api/agentmail/ownership/retire/:role — permanently retire one role inbox
-  app.post("/api/agentmail/ownership/retire/:role", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  // ADMIN-only: irreversible lifecycle change.
+  app.post("/api/agentmail/ownership/retire/:role", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
@@ -677,7 +711,8 @@ export async function registerAgentMailRoutes(
   });
 
   // POST /api/agentmail/ownership/retire-all — retire all inboxes for the org
-  app.post("/api/agentmail/ownership/retire-all", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  // ADMIN-only: irreversible, org-wide lifecycle change.
+  app.post("/api/agentmail/ownership/retire-all", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });

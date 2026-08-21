@@ -173,8 +173,17 @@ export async function listInboxes(): Promise<{
 /**
  * Create or verify an inbox exists for a given local-part (e.g. "revenue").
  * For per-org inboxes pass the full org-specific username (e.g. "revenue-fef2c242...").
+ *
+ * @param localPart  The username portion (before @domain).
+ * @param clientId   Optional client_id for provider-level idempotent creation.
+ *                   If the inbox already exists at the provider with this client_id,
+ *                   the provider returns the existing one instead of creating a duplicate.
+ *                   Use "te-{orgId}-{role}" as the client_id for per-org inboxes.
  */
-export async function createOrVerifyInbox(localPart: string): Promise<{
+export async function createOrVerifyInbox(
+  localPart: string,
+  clientId?: string,
+): Promise<{
   ok: boolean;
   inbox?: unknown;
   created?: boolean;
@@ -186,22 +195,34 @@ export async function createOrVerifyInbox(localPart: string): Promise<{
   const checkRes = await agentMailRequest("GET", `/inboxes/${localPart}@${domain}`);
   if (checkRes.ok) return { ok: true, inbox: checkRes.data, created: false };
 
-  const createRes = await agentMailRequest("POST", "/inboxes", {
-    username: localPart,
-    domain,
-  });
+  const createBody: Record<string, string> = { username: localPart, domain };
+  // client_id makes creation idempotent at the provider — retries return the
+  // existing inbox rather than creating a second one (verified from AgentMail docs).
+  if (clientId) createBody.client_id = clientId;
 
+  const createRes = await agentMailRequest("POST", "/inboxes", createBody);
   if (createRes.ok) return { ok: true, inbox: createRes.data, created: true };
   return { ok: false, error: createRes.error ?? `HTTP ${createRes.status}` };
 }
 
 /**
  * Verify that an inbox exists at the AgentMail provider.
+ * Returns the provider inbox_id and email if the inbox is found, for cross-corroboration.
  * Used by ownership verification; does not create the inbox.
  */
-export async function verifyInboxExists(emailAddress: string): Promise<boolean> {
+export async function verifyInboxExists(emailAddress: string): Promise<{
+  exists: boolean;
+  inboxId?: string;  // provider's inbox_id — verified field name from docs
+  email?: string;
+}> {
   const res = await agentMailRequest("GET", `/inboxes/${emailAddress}`);
-  return res.ok;
+  if (!res.ok) return { exists: false };
+  const data = res.data as any;
+  return {
+    exists: true,
+    inboxId: data?.inbox_id ?? undefined,  // verified: AgentMail returns inbox_id not id
+    email: data?.email ?? undefined,
+  };
 }
 
 /**
@@ -465,46 +486,65 @@ export async function replyFromAgentInbox(params: {
 
 /**
  * Handle inbound webhook from AgentMail.
- * Verifies the secret if configured, then returns the parsed payload.
+ *
+ * Authentication — verified from AgentMail documentation:
+ *   AgentMail uses custom delivery headers for webhook endpoint authentication.
+ *   When creating the webhook, configure a secret as a custom Authorization header:
+ *     client.webhooks.create({ headers: { "Authorization": "Bearer <AGENTMAIL_WEBHOOK_SECRET>" } })
+ *   AgentMail will include this header on every delivery. We validate it here.
+ *
+ * Production invariants:
+ *   - AGENTMAIL_WEBHOOK_SECRET set + header absent or wrong → reject (401)
+ *   - AGENTMAIL_WEBHOOK_SECRET not set → warn + allow (development only)
+ *   - No configuration path where an unsigned production webhook silently succeeds
+ *     (the secret must be explicitly absent for the bypass to occur)
+ *
+ * We do NOT reconstruct or HMAC the body — authentication is header-only per the
+ * documented provider mechanism.  The body is the already-parsed req.body object
+ * passed in by the caller (never re-serialized via JSON.stringify).
+ *
+ * @param body     The parsed request body (req.body, not JSON.stringify(req.body)).
+ * @param headers  The raw request headers object for Authorization lookup.
  */
 export async function handleAgentMailWebhook(
-  rawBody: string,
-  signatureHeader: string | undefined,
+  body: unknown,
+  headers: Record<string, string | string[] | undefined>,
 ): Promise<{ ok: boolean; event?: unknown; error?: string }> {
   const c = getConfig();
+  const cryptoMod = await import("crypto");
 
   if (c.webhookSecret) {
-    // Secret is configured — every request MUST carry a valid signature.
-    // Unsigned requests are rejected to prevent spoofed inbound email injection.
-    if (!signatureHeader) {
-      console.warn("[AgentMail] Webhook rejected: signature header missing (AGENTMAIL_WEBHOOK_SECRET is set)");
-      return { ok: false, error: "Webhook signature required but not provided" };
+    // Secret configured — enforce header presence and value.
+    const authHeader = (headers["authorization"] as string | undefined) ?? "";
+
+    if (!authHeader) {
+      console.warn("[AgentMail] Webhook rejected: Authorization header missing (AGENTMAIL_WEBHOOK_SECRET is set)");
+      return { ok: false, error: "Webhook Authorization header required" };
     }
 
-    const crypto = await import("crypto");
+    const expectedBearer = `Bearer ${c.webhookSecret}`;
 
-    // AgentMail uses Stripe-style whsec_ prefix: strip it and base64-decode to get the raw HMAC key.
-    // Fall back to using the raw string if the prefix is absent (legacy format).
-    let hmacKey: string | Buffer = c.webhookSecret;
-    if (c.webhookSecret.startsWith("whsec_")) {
-      hmacKey = Buffer.from(c.webhookSecret.slice(6), "base64");
-    }
+    // Timing-safe comparison: HMAC both strings with the same random key so the
+    // fixed-length digests can be compared with timingSafeEqual regardless of
+    // whether the input lengths differ (avoids timing oracle attacks).
+    const key = cryptoMod.randomBytes(32);
+    const ha = cryptoMod.createHmac("sha256", key).update(authHeader).digest();
+    const hb = cryptoMod.createHmac("sha256", key).update(expectedBearer).digest();
 
-    const expected = crypto
-      .createHmac("sha256", hmacKey)
-      .update(rawBody)
-      .digest("hex");
-    const provided = signatureHeader.replace(/^sha256=/, "");
-    if (expected !== provided) {
-      console.warn("[AgentMail] Webhook rejected: signature mismatch");
-      return { ok: false, error: "Webhook signature mismatch" };
+    if (!cryptoMod.timingSafeEqual(ha, hb)) {
+      console.warn("[AgentMail] Webhook rejected: Authorization header value invalid");
+      return { ok: false, error: "Webhook authorization invalid" };
     }
+  } else {
+    // No secret configured — warn. This is unsafe in production.
+    console.warn(
+      "[AgentMail] WARNING: AGENTMAIL_WEBHOOK_SECRET is not set. " +
+      "The webhook endpoint is unauthenticated. " +
+      "This is only acceptable during local development. " +
+      "Set AGENTMAIL_WEBHOOK_SECRET in Replit Secrets before production deployment.",
+    );
   }
 
-  try {
-    const event = JSON.parse(rawBody);
-    return { ok: true, event };
-  } catch {
-    return { ok: false, error: "Invalid JSON in webhook body" };
-  }
+  // Body arrives as the already-parsed express req.body.
+  return { ok: true, event: body };
 }

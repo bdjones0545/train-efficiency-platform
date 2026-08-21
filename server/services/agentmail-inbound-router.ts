@@ -36,8 +36,10 @@ export interface InboundEmailPayload {
   subject: string;
   bodyText?: string;
   bodyHtml?: string;
-  providerMessageId?: string;
+  providerMessageId?: string;  // SMTP Message-ID — authoritative dedup key
+  providerInboxId?: string;    // Provider's inbox_id — authoritative inbox identity
   providerThreadId?: string;
+  providerEventId?: string;    // Webhook event_id from the envelope
   receivedAt?: Date;
   rawPayload?: unknown;
 }
@@ -437,18 +439,38 @@ export async function processInboundAgentMail(
     payload.bodyText ?? "",
   );
 
-  // 3. AI enhancement (best-effort)
+  // 2b. AI enhancement (best-effort)
   const result = await enhanceWithAI(baseResult, payload.subject, payload.bodyText ?? "");
 
-  // 3. Persist inbound record — atomic idempotency via ON CONFLICT DO NOTHING
+  // 3. Persist + crash-recovery state machine
+  //
+  // States: received → processing → completed | failed
+  //
+  // On duplicate delivery (provider_message_id conflict):
+  //   completed  → idempotent skip (already done)
+  //   processing + fresh lease (< STALE_LEASE_MS) → concurrent skip
+  //   processing + stale lease → reclaim and retry
+  //   failed + attempts < MAX → reclaim and retry
+  //   failed + attempts >= MAX → permanent skip
+  //
+  // This means a process crash mid-handling does NOT permanently suppress
+  // retries — a subsequent delivery reclaims the stale lease and reprocesses.
+
+  const STALE_LEASE_MS = 5 * 60 * 1000;  // 5 minutes
+  const MAX_ATTEMPTS   = 3;
+
   let inboundId: string | null = null;
+
   try {
+    // ── Step A: INSERT — or detect conflict ────────────────────────────────
     const inserted = rows(await db.execute(sql`
       INSERT INTO agent_mail_inbound_messages (
         id, organization_id, inbox, from_email, from_name, to_email,
-        subject, body_text, body_html, provider_message_id, provider_thread_id,
+        subject, body_text, body_html,
+        provider_message_id, provider_inbox_id, provider_thread_id, provider_event_id,
         classification, confidence, routed_agent, routed_status,
         routing_status, routing_reason, routed_at,
+        processing_state, processing_attempts,
         action_type, action_payload, raw_payload, error_message,
         received_at, created_at, updated_at
       ) VALUES (
@@ -462,12 +484,15 @@ export async function processInboundAgentMail(
         ${payload.bodyText ?? null},
         ${payload.bodyHtml ?? null},
         ${payload.providerMessageId ?? null},
+        ${payload.providerInboxId ?? null},
         ${payload.providerThreadId ?? null},
+        ${payload.providerEventId ?? null},
         ${result.classification},
         ${result.confidence},
         ${result.routedAgent},
-        ${"processing"},
-        ${"routed"}, ${"resolved"}, NOW(),
+        ${"received"},
+        ${"routed"}, ${"resolved"}, NULL,
+        ${"received"}, ${0},
         ${result.classification},
         ${JSON.stringify({ suggestedReply: result.suggestedReply, intentSignals: result.intentSignals })},
         ${payload.rawPayload ? JSON.stringify(payload.rawPayload) : null},
@@ -476,23 +501,51 @@ export async function processInboundAgentMail(
         NOW(), NOW()
       )
       ON CONFLICT (provider_message_id) DO NOTHING
-      RETURNING id
+      RETURNING id, processing_state, processing_attempts
     `));
 
-    if (!inserted[0]?.id) {
-      // ON CONFLICT fired — this is a duplicate delivery
-      if (payload.providerMessageId) {
-        const existing = rows(await db.execute(sql`
-          SELECT id FROM agent_mail_inbound_messages
-          WHERE provider_message_id = ${payload.providerMessageId}
-          LIMIT 1
-        `));
-        return { ok: true, skipped: true, skipReason: "duplicate provider_message_id", inboundId: existing[0]?.id };
-      }
-      return { ok: false, error: "Failed to persist inbound message" };
-    }
+    if (inserted[0]?.id) {
+      // Fresh row — we own it, proceed to claim below
+      inboundId = inserted[0].id;
+    } else if (payload.providerMessageId) {
+      // Conflict — fetch the existing row to decide
+      const existing = rows(await db.execute(sql`
+        SELECT id, processing_state, processing_started_at, processing_attempts
+        FROM agent_mail_inbound_messages
+        WHERE provider_message_id = ${payload.providerMessageId}
+        LIMIT 1
+      `));
 
-    inboundId = inserted[0].id;
+      if (!existing[0]) {
+        // Should not happen (conflict implies row exists), but guard anyway
+        return { ok: false, error: "Failed to locate conflicting inbound message" };
+      }
+
+      const row = existing[0];
+      const state:    string = row.processing_state;
+      const attempts: number = Number(row.processing_attempts ?? 0);
+      const startedAt: number = row.processing_started_at
+        ? new Date(row.processing_started_at).getTime()
+        : 0;
+
+      if (state === "completed") {
+        return { ok: true, skipped: true, skipReason: "already_completed", inboundId: row.id };
+      }
+
+      if (state === "processing" && Date.now() - startedAt < STALE_LEASE_MS) {
+        return { ok: true, skipped: true, skipReason: "concurrent_processing", inboundId: row.id };
+      }
+
+      if (state === "failed" && attempts >= MAX_ATTEMPTS) {
+        return { ok: true, skipped: true, skipReason: "max_processing_attempts", inboundId: row.id };
+      }
+
+      // Stale lease / failed-but-retryable / received — fall through to claim
+      inboundId = row.id;
+    } else {
+      // No provider_message_id — can't resolve conflict; treat as failure
+      return { ok: false, error: "Failed to persist inbound message (no deduplication key)" };
+    }
   } catch (e: any) {
     console.error("[AgentMail Inbound] DB insert error:", e?.message);
     return { ok: false, error: `DB insert failed: ${e?.message}` };
@@ -500,59 +553,112 @@ export async function processInboundAgentMail(
 
   if (!inboundId) return { ok: false, error: "Failed to persist inbound message" };
 
-  // 5. Spam → store only, skip routing
-  if (result.classification === "spam_or_noise") {
-    await db.execute(sql`
-      UPDATE agent_mail_inbound_messages SET routed_status = 'spam_stored' WHERE id = ${inboundId}
-    `).catch(() => {});
-    return { ok: true, inboundId, classification: result.classification, routedAgent: "none", skipped: true, skipReason: "spam_or_noise" };
-  }
+  // ── Step B: Atomic lease claim ───────────────────────────────────────────
+  try {
+    const claimed = rows(await db.execute(sql`
+      UPDATE agent_mail_inbound_messages
+      SET processing_state      = 'processing',
+          processing_started_at = NOW(),
+          processing_attempts   = processing_attempts + 1,
+          updated_at            = NOW()
+      WHERE id = ${inboundId}
+        AND (
+          processing_state = 'received'
+          OR (processing_state = 'failed' AND processing_attempts < ${MAX_ATTEMPTS})
+          OR (processing_state = 'processing'
+              AND processing_started_at < NOW() - INTERVAL '5 minutes')
+        )
+      RETURNING id
+    `));
 
-  // 6. Create downstream records
-  await createDownstreamRecord(orgId, payload, result);
-
-  // 7. Add to Attention Inbox
-  const attentionItemId = await addToAttentionInbox(orgId, inboundId, payload, result);
-
-  // 7b. Auto-create reply queue entry if a suggested reply exists
-  if (result.suggestedReply) {
-    try {
-      const { createReplyQueueEntry } = await import("../agentmail-reply-routes");
-      await createReplyQueueEntry({
-        organizationId: orgId,
-        inboundMessageId: inboundId,
-        inbox: payload.inbox,
-        agentName: result.routedAgent,
-        classification: result.classification,
-        recipientEmail: payload.fromEmail,
-        recipientName: payload.fromName,
-        subject: `Re: ${payload.subject}`,
-        draftBody: result.suggestedReply,
-        confidence: result.confidence,
-        threadId: payload.providerThreadId,
-      });
-    } catch (e: any) {
-      console.error("[AgentMail Inbound] Reply queue entry error:", e?.message);
+    if (!claimed[0]?.id) {
+      // Another worker claimed it between our SELECT and UPDATE
+      return { ok: true, skipped: true, skipReason: "concurrent_processing", inboundId };
     }
+  } catch (e: any) {
+    console.error("[AgentMail Inbound] Lease claim error:", e?.message);
+    return { ok: false, error: `Lease claim failed: ${e?.message}` };
   }
 
-  // 8. CEO Heartbeat timeline
-  await notifyCeoHeartbeat(orgId, payload, result, inboundId);
+  // Downstream processing — wrapped so any error sets processing_state = 'failed'
+  // rather than leaving the row stuck in 'processing'.
+  try {
+    // 5. Spam → store only, skip routing
+    if (result.classification === "spam_or_noise") {
+      await db.execute(sql`
+        UPDATE agent_mail_inbound_messages
+        SET routed_status    = 'spam_stored',
+            processing_state = 'completed',
+            routed_at        = NOW(),
+            updated_at       = NOW()
+        WHERE id = ${inboundId}
+      `).catch(() => {});
+      return { ok: true, inboundId, classification: result.classification, routedAgent: "none", skipped: true, skipReason: "spam_or_noise" };
+    }
 
-  // 9. Mark routed
-  await db.execute(sql`
-    UPDATE agent_mail_inbound_messages
-    SET routed_status = 'routed', action_type = ${result.classification}
-    WHERE id = ${inboundId}
-  `).catch(() => {});
+    // 6. Create downstream records
+    await createDownstreamRecord(orgId, payload, result);
 
-  return {
-    ok: true,
-    inboundId,
-    classification: result.classification,
-    routedAgent: result.routedAgent,
-    attentionItemId: attentionItemId ?? undefined,
-  };
+    // 7. Add to Attention Inbox
+    const attentionItemId = await addToAttentionInbox(orgId, inboundId, payload, result);
+
+    // 7b. Auto-create reply queue entry if a suggested reply exists
+    if (result.suggestedReply) {
+      try {
+        const { createReplyQueueEntry } = await import("../agentmail-reply-routes");
+        await createReplyQueueEntry({
+          organizationId: orgId,
+          inboundMessageId: inboundId,
+          inbox: payload.inbox,
+          agentName: result.routedAgent,
+          classification: result.classification,
+          recipientEmail: payload.fromEmail,
+          recipientName: payload.fromName,
+          subject: `Re: ${payload.subject}`,
+          draftBody: result.suggestedReply,
+          confidence: result.confidence,
+          threadId: payload.providerThreadId,
+        });
+      } catch (e: any) {
+        console.error("[AgentMail Inbound] Reply queue entry error:", e?.message);
+      }
+    }
+
+    // 8. CEO Heartbeat timeline
+    await notifyCeoHeartbeat(orgId, payload, result, inboundId);
+
+    // 9. Mark completed — processing_state transition: processing → completed
+    await db.execute(sql`
+      UPDATE agent_mail_inbound_messages
+      SET routed_status    = 'routed',
+          routing_status   = 'routed',
+          routed_at        = NOW(),
+          action_type      = ${result.classification},
+          processing_state = 'completed',
+          updated_at       = NOW()
+      WHERE id = ${inboundId}
+    `).catch(() => {});
+
+    return {
+      ok: true,
+      inboundId,
+      classification: result.classification,
+      routedAgent: result.routedAgent,
+      attentionItemId: attentionItemId ?? undefined,
+    };
+  } catch (downstreamErr: any) {
+    // Downstream failure — mark as 'failed' so a subsequent retry can reclaim the lease.
+    const errMsg = downstreamErr?.message ?? "unknown downstream error";
+    console.error("[AgentMail Inbound] Downstream processing failed:", errMsg);
+    await db.execute(sql`
+      UPDATE agent_mail_inbound_messages
+      SET processing_state = 'failed',
+          last_error       = ${errMsg},
+          updated_at       = NOW()
+      WHERE id = ${inboundId}
+    `).catch(() => {});
+    return { ok: false, error: `Downstream processing failed: ${errMsg}`, inboundId };
+  }
 }
 
 // ─── Map inbox to default agent ──────────────────────────────────────────────
