@@ -172,6 +172,7 @@ export async function listInboxes(): Promise<{
 
 /**
  * Create or verify an inbox exists for a given local-part (e.g. "revenue").
+ * For per-org inboxes pass the full org-specific username (e.g. "revenue-fef2c242...").
  */
 export async function createOrVerifyInbox(localPart: string): Promise<{
   ok: boolean;
@@ -192,6 +193,15 @@ export async function createOrVerifyInbox(localPart: string): Promise<{
 
   if (createRes.ok) return { ok: true, inbox: createRes.data, created: true };
   return { ok: false, error: createRes.error ?? `HTTP ${createRes.status}` };
+}
+
+/**
+ * Verify that an inbox exists at the AgentMail provider.
+ * Used by ownership verification; does not create the inbox.
+ */
+export async function verifyInboxExists(emailAddress: string): Promise<boolean> {
+  const res = await agentMailRequest("GET", `/inboxes/${emailAddress}`);
+  return res.ok;
 }
 
 /**
@@ -231,6 +241,29 @@ export async function sendAgentEmail(params: {
   error?: string;
   blocked?: boolean;
 }> {
+  // ── 1. Ownership check — must run before the send guard so a non-provisioned
+  //       org fails closed immediately rather than hitting policy evaluation.
+  const { getActiveOutboundAddress } = await import("./agentmail-ownership-service");
+  const fromEmail = await getActiveOutboundAddress(params.organizationId, params.fromInbox);
+  if (!fromEmail) {
+    const errMsg =
+      `AgentMail outbound blocked: no active inbox ownership for ` +
+      `org=${params.organizationId} role=${params.fromInbox}. ` +
+      `Provision and activate org inboxes before sending.`;
+    console.error(`[AgentMail] ${errMsg}`);
+    await logAgentMailMessage({
+      organizationId: params.organizationId,
+      agentName: params.agentName,
+      inbox: params.fromInbox,
+      toEmail: params.to,
+      subject: params.subject,
+      status: "failed",
+      errorMessage: errMsg,
+    });
+    return { ok: false, error: "AgentMail inbox not provisioned for this organization", blocked: true };
+  }
+
+  // ── 2. Send guard policy check
   const guardResult = await checkAgentMailSendPolicy({
     orgId: params.organizationId,
     agentName: params.agentName,
@@ -250,10 +283,6 @@ export async function sendAgentEmail(params: {
     );
     return { ok: false, error: guardResult.reason, blocked: true };
   }
-
-  const c = getConfig();
-  const domain = c.orgDomain || "agentmail.to";
-  const fromEmail = `${params.fromInbox}@${domain}`;
 
   const payload = {
     from: fromEmail,
@@ -335,6 +364,28 @@ export async function replyFromAgentInbox(params: {
   error?: string;
   blocked?: boolean;
 }> {
+  // ── 1. Ownership check — must run before the send guard (same reason as sendAgentEmail).
+  const { getActiveOutboundAddress } = await import("./agentmail-ownership-service");
+  const fromEmail = await getActiveOutboundAddress(params.organizationId, params.fromInbox);
+  if (!fromEmail) {
+    const errMsg =
+      `AgentMail reply blocked: no active inbox ownership for ` +
+      `org=${params.organizationId} role=${params.fromInbox}. ` +
+      `Provision and activate org inboxes before sending.`;
+    console.error(`[AgentMail] ${errMsg}`);
+    await logAgentMailMessage({
+      organizationId: params.organizationId,
+      agentName: params.agentName,
+      inbox: params.fromInbox,
+      toEmail: params.to,
+      subject: params.subject,
+      status: "failed",
+      errorMessage: errMsg,
+    });
+    return { ok: false, error: "AgentMail inbox not provisioned for this organization", blocked: true };
+  }
+
+  // ── 2. Send guard policy check
   const guardResult = await checkAgentMailSendPolicy({
     orgId: params.organizationId,
     agentName: params.agentName,
@@ -354,10 +405,6 @@ export async function replyFromAgentInbox(params: {
     );
     return { ok: false, error: guardResult.reason, blocked: true };
   }
-
-  const c = getConfig();
-  const domain = c.orgDomain || "agentmail.to";
-  const fromEmail = `${params.fromInbox}@${domain}`;
 
   const payload = {
     from: fromEmail,

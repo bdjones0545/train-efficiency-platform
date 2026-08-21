@@ -21,9 +21,20 @@ import {
 } from "./services/agentmail-service";
 import {
   processInboundAgentMail,
-  resolveOrgFromInbox,
   INBOUND_TEST_CASES,
 } from "./services/agentmail-inbound-router";
+import {
+  resolveOrgFromInbox,
+  ensureOwnershipTable,
+  provisionOrgInboxes,
+  activateOrgInboxes,
+  disableOrgInbox,
+  retireOrgInbox,
+  retireAllOrgInboxes,
+  verifyOrgInboxProvisioning,
+  listOrgInboxes,
+  type AgentMailRole,
+} from "./services/agentmail-ownership-service";
 
 function rows(r: unknown): any[] {
   if (Array.isArray(r)) return r;
@@ -66,6 +77,13 @@ async function ensureAgentMailTables(): Promise<void> {
     await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_agent_mail_status ON agent_mail_messages (status)`);
   } catch (e: any) {
     console.error("[AgentMail] Outbound table setup error:", e?.message);
+  }
+
+  // Ownership table + inbound schema migrations
+  try {
+    await ensureOwnershipTable();
+  } catch (e: any) {
+    console.error("[AgentMail] Ownership table setup error:", e?.message);
   }
 
   // Inbound messages
@@ -438,32 +456,61 @@ export async function registerAgentMailRoutes(
         const emailData = event?.email ?? event?.data ?? event;
 
         const toAddress: string = emailData?.to ?? emailData?.to_email ?? "";
-        const inboxLocal = toAddress.split("@")[0]?.toLowerCase() ?? "operations";
+        // Extract role from address — works for both legacy ("revenue@domain") and
+        // per-org ("revenue-<hex>@domain") formats.
+        const inboxRole = toAddress.split("@")[0]?.split("-")[0]?.toLowerCase() ?? "unknown";
 
-        // Resolve org — best-effort
-        let organizationId: string | null = await resolveOrgFromInbox(toAddress).catch(() => null);
-        if (!organizationId) {
-          console.warn("[AgentMail] Could not resolve org for inbox:", toAddress);
-          // Store unresolved for admin review
+        // Resolve owning organization — authoritative DB lookup, no fallback.
+        // Webhook-supplied org IDs (if any in the payload) are never consulted.
+        const resolveResult = await resolveOrgFromInbox(toAddress).catch(() => ({
+          orgId: null as string | null,
+          role: null as AgentMailRole | null,
+          reason: "no_ownership_record" as const,
+        }));
+
+        if (!resolveResult.orgId) {
+          const routingReason = resolveResult.reason;
+          const providerMsgId: string | null =
+            emailData?.id ?? emailData?.message_id ?? null;
+
+          console.warn(`[AgentMail] Quarantine (${routingReason}) for address:`, toAddress);
+
+          // Persist quarantine record with NULL organization_id — never creates org-owned state.
+          // Idempotent via ON CONFLICT so duplicate webhook deliveries are harmless.
           await db.execute(sql`
             INSERT INTO agent_mail_inbound_messages (
-              id, organization_id, inbox, from_email, to_email, subject,
-              body_text, provider_message_id, routed_status, error_message, received_at, created_at, updated_at
+              id, organization_id, inbox, from_email, from_name, to_email, subject,
+              body_text, provider_message_id,
+              routed_status, routing_status, routing_reason, routed_at,
+              received_at, created_at, updated_at
             ) VALUES (
-              gen_random_uuid()::text, 'unresolved', ${inboxLocal},
-              ${emailData?.from ?? "unknown"}, ${toAddress},
-              ${emailData?.subject ?? "(no subject)"}, ${emailData?.text ?? emailData?.body ?? null},
-              ${emailData?.id ?? emailData?.message_id ?? null},
-              ${"failed"}, ${"Could not resolve organization from inbox address"},
+              gen_random_uuid()::text,
+              NULL,
+              ${inboxRole},
+              ${emailData?.from ?? "unknown"},
+              ${emailData?.from_name ?? null},
+              ${toAddress},
+              ${emailData?.subject ?? "(no subject)"},
+              ${emailData?.text ?? emailData?.body ?? null},
+              ${providerMsgId},
+              ${"quarantine"},
+              ${routingReason},
+              ${routingReason},
+              NOW(),
               NOW(), NOW(), NOW()
             )
+            ON CONFLICT (provider_message_id) DO NOTHING
           `).catch(() => {});
-          return res.json({ received: true, routed: false, reason: "org_unresolved" });
+
+          return res.json({ received: true, routed: false, reason: routingReason });
         }
+
+        const organizationId = resolveResult.orgId;
+        const resolvedRole = resolveResult.role ?? inboxRole;
 
         const processResult = await processInboundAgentMail({
           organizationId,
-          inbox: inboxLocal,
+          inbox: resolvedRole,
           fromEmail: emailData?.from ?? emailData?.from_email ?? "unknown",
           fromName: emailData?.from_name ?? emailData?.sender_name ?? undefined,
           toEmail: toAddress,
@@ -547,6 +594,97 @@ export async function registerAgentMailRoutes(
       res.json(result);
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Test send failed" });
+    }
+  });
+
+  // ─── Per-org Inbox Ownership — Provisioning & Lifecycle Routes ───────────
+
+  // GET /api/agentmail/ownership — list inboxes for the authenticated org
+  app.get("/api/agentmail/ownership", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const inboxes = await listOrgInboxes(orgId);
+      res.json({ ok: true, orgId, inboxes });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // POST /api/agentmail/ownership/provision — register per-org inbox rows in DB (no provider API call yet)
+  app.post("/api/agentmail/ownership/provision", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const roles: AgentMailRole[] | undefined = req.body?.roles;
+      const result = await provisionOrgInboxes(orgId, roles);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // POST /api/agentmail/ownership/activate — mark provisioned inboxes as active
+  app.post("/api/agentmail/ownership/activate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const roles: AgentMailRole[] | undefined = req.body?.roles;
+      const result = await activateOrgInboxes(orgId, roles);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // POST /api/agentmail/ownership/verify — check provider + DB state alignment
+  app.post("/api/agentmail/ownership/verify", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const result = await verifyOrgInboxProvisioning(orgId);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // POST /api/agentmail/ownership/disable/:role — soft-disable one role inbox
+  app.post("/api/agentmail/ownership/disable/:role", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const role = req.params.role as AgentMailRole;
+      const reason: string | undefined = req.body?.reason;
+      const result = await disableOrgInbox(orgId, role, reason);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // POST /api/agentmail/ownership/retire/:role — permanently retire one role inbox
+  app.post("/api/agentmail/ownership/retire/:role", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const role = req.params.role as AgentMailRole;
+      const result = await retireOrgInbox(orgId, role);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
+    }
+  });
+
+  // POST /api/agentmail/ownership/retire-all — retire all inboxes for the org
+  app.post("/api/agentmail/ownership/retire-all", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const result = await retireAllOrgInboxes(orgId);
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: e?.message });
     }
   });
 }

@@ -1,0 +1,232 @@
+# AgentMail Tenant-Safe Routing — Architecture Approved with Revisions
+
+Proceed with implementation of the proposed per-organization AgentMail routing architecture, subject to the following revisions.
+
+## Architecture Decision
+
+APPROVED:
+
+* unique AgentMail role inboxes per organization
+* persisted authoritative organization → inbox ownership
+* exact-match inbound routing
+* no default/fallback organization
+* fail closed on unresolved or ambiguous ownership
+* org-specific outbound sender addresses
+* atomic provider-message idempotency
+* webhook-supplied organization IDs are never tenant authority
+* no historical message reprocessing as part of this implementation
+
+## Required Revision 1 — Routing Identifier
+
+Do NOT use only `orgId[0:8]` as the durable tenant suffix.
+
+Eight UUID hex characters provide only a 32-bit namespace and can eventually collide.
+
+Use an immutable identifier with materially stronger uniqueness.
+
+Preferred options, in order:
+
+1. Full UUID without hyphens if AgentMail local-part constraints permit it.
+2. At least 16 hexadecimal characters of the immutable UUID.
+3. A separately generated immutable high-entropy AgentMail routing key persisted against the organization.
+
+Do not use organization slug, organization name, or another mutable identifier.
+
+Database uniqueness constraints remain mandatory.
+
+## Required Revision 2 — Quarantine Semantics
+
+Do NOT represent unresolved routing as:
+
+`organization_id = '_quarantine_'`
+
+An unresolved message has no known organization and the persistence model should preserve that truth.
+
+Prefer either:
+
+### Option A — Nullable tenant ownership
+
+`organization_id = NULL`
+
+with explicit fields such as:
+
+* `routing_status`
+* `routing_reason`
+* `routed_at`
+
+Possible statuses:
+
+* `routed`
+* `unresolved`
+* `ambiguous`
+
+### Option B — Dedicated quarantine persistence
+
+Use a separate AgentMail quarantine table if that better fits the existing schema.
+
+Choose the smallest architecture consistent with the current repository.
+
+A quarantined event must never create:
+
+* organization attention items
+* prospects
+* applicants
+* reply queue records
+* CEO Heartbeat organization records
+* other tenant-owned downstream records
+
+## Provisioning Decision
+
+Provision new AgentMail identities **ahead of routing cutover**.
+
+This may be performed live because creation of unused inboxes is additive and should not affect current traffic.
+
+Sequence:
+
+schema
+→ provision
+→ provider verification
+→ DB verification
+→ test
+→ routing cutover
+
+Do not cut routing over unless every AgentMail-enabled organization intended for migration is fully provisioned and verified.
+
+No maintenance window is required unless implementation evidence discovers a provider constraint requiring one.
+
+## Provisioning Scope
+
+Provision **only organizations that explicitly have AgentMail enabled**.
+
+Do not automatically create six provider inboxes for every TrainEfficiency organization.
+
+AgentMail enablement should become the provisioning lifecycle trigger.
+
+Future lifecycle:
+
+AgentMail enabled
+→ provision six role identities
+→ persist authoritative ownership
+→ verify provider
+→ mark active
+→ permit inbound/outbound routing
+
+Also define safe disable/retirement behavior.
+
+Recommended ownership states:
+
+`provisioning`
+→ `active`
+→ `disabled`
+→ `retired`
+
+Only `active` inbox ownership may route inbound mail or originate outbound AgentMail messages.
+
+## Global Inbox Grace Period
+
+Keep the six legacy global role inboxes for an initial **30-day grace period** after cutover.
+
+Do not route them automatically.
+
+Messages arriving at legacy addresses must enter quarantine because the legacy address contains no authoritative tenant identity.
+
+Monitor legacy inbound volume during the grace period.
+
+At approximately 30 days:
+
+* if traffic is zero/negligible and known senders have transitioned, retire them;
+* if meaningful traffic remains, review before deletion.
+
+Do not blindly delete them based solely on elapsed time.
+
+## Replies to Historical Emails
+
+Do NOT automatically forward replies sent to old global role inboxes.
+
+A reply to a global inbox is still tenant-ambiguous.
+
+Without another trusted persisted identifier establishing tenant ownership:
+
+global address
+→ quarantine
+→ operator/admin review
+
+Never infer tenant from message content, sender identity, subject, organization name, or webhook-provided organization ID.
+
+If a later architecture can correlate an immutable historical outbound message/thread identifier to one organization, that can be evaluated separately.
+
+Do not add speculative correlation to this implementation.
+
+## Outbound Migration
+
+After an organization's AgentMail ownership records are verified and active, all new AgentMail outbound messages for that organization must originate from its corresponding organization-specific role inbox.
+
+No fallback to the legacy global inbox.
+
+Missing active ownership:
+
+→ fail closed
+→ record operational error
+→ no outbound send
+
+## Provider Identity
+
+When provisioning each inbox, persist any immutable provider identifier returned by AgentMail.
+
+Where available, store:
+
+* provider inbox ID
+* provider account/domain identifier
+
+Inbound routing should use the strongest trusted identifier available while still validating that it corresponds to the persisted organization-owned inbox.
+
+Address matching must remain normalized and exact.
+
+## Idempotency
+
+Implement atomic provider-message idempotency using the existing unique provider-message identifier.
+
+`ON CONFLICT ... DO NOTHING RETURNING ...`
+
+or the repository's canonical equivalent is appropriate.
+
+Concurrent duplicate delivery must result in a clean duplicate outcome, not a generic processing error.
+
+## Regression Requirements
+
+Prove:
+
+* Org A inbox → Org A only
+* Org B inbox → Org B only
+* Org A cannot write Org B records
+* unknown inbox → quarantine
+* ambiguous ownership → quarantine
+* legacy global inbox → quarantine
+* webhook-supplied foreign organization ID ignored
+* duplicate provider event → one processing cycle
+* disabled inbox ownership → denied/quarantined
+* missing outbound ownership → no send
+* one organization's disable/retirement does not affect another organization
+
+## Production Boundary
+
+Implementation and non-production verification are authorized.
+
+Do NOT yet:
+
+* provision production AgentMail inboxes
+* execute production schema mutation
+* cut production routing over
+* delete legacy inboxes
+* modify historical production attribution
+* deploy to production
+
+Return the implementation, tests, provisioning plan, exact production migration sequence, rollback strategy, and any remaining decisions before production mutation.
+
+## Final Requirement
+
+The completed architecture must maintain this invariant:
+
+> An inbound AgentMail event may create organization-owned state only when one authoritative active persisted AgentMail identity resolves to exactly one organization.
+
+No fallback. No guessed tenant. No synthetic tenant.

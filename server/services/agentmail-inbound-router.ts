@@ -256,17 +256,19 @@ Respond ONLY with valid JSON: { "classification": "...", "confidence": 0.0-1.0, 
 
 // ─── Resolve orgId from inbox address ────────────────────────────────────────
 
+/**
+ * Thin delegation wrapper — all routing logic lives in agentmail-ownership-service.ts.
+ * Kept here for backward compatibility with existing importers.
+ * Returns null on any failure; caller must quarantine the message.
+ */
 export async function resolveOrgFromInbox(toEmail: string): Promise<string | null> {
-  // Try to find an org that has AgentMail configured — use first org as fallback
-  // In a multi-tenant setup you'd match the domain, but for single-tenant we use the first org.
-  try {
-    const orgRows = rows(await db.execute(sql`
-      SELECT id FROM organizations LIMIT 1
-    `));
-    return orgRows[0]?.id ?? null;
-  } catch {
-    return null;
-  }
+  const { resolveOrgFromInbox: resolve } = await import("../services/agentmail-ownership-service");
+  const result = await resolve(toEmail).catch(() => ({
+    orgId: null as null,
+    role: null as null,
+    reason: "no_ownership_record" as const,
+  }));
+  return result.orgId;
 }
 
 // ─── Attention Inbox insertion ────────────────────────────────────────────────
@@ -428,21 +430,7 @@ export async function processInboundAgentMail(
 ): Promise<ProcessResult> {
   const orgId = payload.organizationId;
 
-  // 1. Idempotency check
-  if (payload.providerMessageId) {
-    try {
-      const existing = rows(await db.execute(sql`
-        SELECT id FROM agent_mail_inbound_messages
-        WHERE provider_message_id = ${payload.providerMessageId}
-        LIMIT 1
-      `));
-      if (existing.length > 0) {
-        return { ok: true, skipped: true, skipReason: "duplicate provider_message_id", inboundId: existing[0].id };
-      }
-    } catch { /* table may not exist yet — will be created */ }
-  }
-
-  // 2. Classify
+  // 1. Classify
   const baseResult = classifyInboundEmail(
     payload.inbox,
     payload.subject,
@@ -452,7 +440,7 @@ export async function processInboundAgentMail(
   // 3. AI enhancement (best-effort)
   const result = await enhanceWithAI(baseResult, payload.subject, payload.bodyText ?? "");
 
-  // 4. Persist inbound record
+  // 3. Persist inbound record — atomic idempotency via ON CONFLICT DO NOTHING
   let inboundId: string | null = null;
   try {
     const inserted = rows(await db.execute(sql`
@@ -460,6 +448,7 @@ export async function processInboundAgentMail(
         id, organization_id, inbox, from_email, from_name, to_email,
         subject, body_text, body_html, provider_message_id, provider_thread_id,
         classification, confidence, routed_agent, routed_status,
+        routing_status, routing_reason, routed_at,
         action_type, action_payload, raw_payload, error_message,
         received_at, created_at, updated_at
       ) VALUES (
@@ -477,7 +466,8 @@ export async function processInboundAgentMail(
         ${result.classification},
         ${result.confidence},
         ${result.routedAgent},
-        ${"routed"},
+        ${"processing"},
+        ${"routed"}, ${"resolved"}, NOW(),
         ${result.classification},
         ${JSON.stringify({ suggestedReply: result.suggestedReply, intentSignals: result.intentSignals })},
         ${payload.rawPayload ? JSON.stringify(payload.rawPayload) : null},
@@ -485,9 +475,24 @@ export async function processInboundAgentMail(
         ${payload.receivedAt ?? new Date()},
         NOW(), NOW()
       )
+      ON CONFLICT (provider_message_id) DO NOTHING
       RETURNING id
     `));
-    inboundId = inserted[0]?.id ?? null;
+
+    if (!inserted[0]?.id) {
+      // ON CONFLICT fired — this is a duplicate delivery
+      if (payload.providerMessageId) {
+        const existing = rows(await db.execute(sql`
+          SELECT id FROM agent_mail_inbound_messages
+          WHERE provider_message_id = ${payload.providerMessageId}
+          LIMIT 1
+        `));
+        return { ok: true, skipped: true, skipReason: "duplicate provider_message_id", inboundId: existing[0]?.id };
+      }
+      return { ok: false, error: "Failed to persist inbound message" };
+    }
+
+    inboundId = inserted[0].id;
   } catch (e: any) {
     console.error("[AgentMail Inbound] DB insert error:", e?.message);
     return { ok: false, error: `DB insert failed: ${e?.message}` };
