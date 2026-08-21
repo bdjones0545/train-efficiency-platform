@@ -887,7 +887,7 @@ export default function HomePage() {
   }
 
   function integrationsStatus(): SubsystemStatus {
-    const count = health?.integrationsConnected ?? 0;
+    const count = healthQ.data?.integrationsConnected ?? 0;
     if (!healthQ.data) return "unknown";
     if (count > 0) return "operational";
     return "degraded";
@@ -930,7 +930,7 @@ export default function HomePage() {
       name: "Integrations",
       status: integrationsStatus(),
       detail: healthQ.data
-        ? `${health?.integrationsConnected ?? 0} connected`
+        ? `${healthQ.data?.integrationsConnected ?? 0} connected`
         : "Loading…",
     },
   ];
