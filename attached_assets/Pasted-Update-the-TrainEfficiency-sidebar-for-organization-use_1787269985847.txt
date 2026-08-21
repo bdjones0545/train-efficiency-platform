@@ -1,0 +1,155 @@
+Update the **TrainEfficiency sidebar for organization users** to reduce clutter and make the product feel simpler, while keeping the underlying systems fully operational.
+
+## Goal
+
+Hide the following items from the organization-user sidebar:
+
+* **Messages**
+* **AI Workforce**
+* **Intelligence**
+* **Approvals**
+* **AI Workforce Ready** card/banner
+
+These capabilities should continue functioning **under the hood**. This is primarily a navigation and presentation cleanup, not a feature-removal project.
+
+## Important
+
+Do **not** delete or disable the underlying systems.
+
+Preserve:
+
+* AI workforce agents and orchestration
+* intelligence/background analysis
+* approval workflows and approval records
+* messaging infrastructure
+* notifications and events
+* automations
+* integrations
+* background jobs
+* APIs
+* database tables
+* routes needed internally
+* governance and operational logic
+
+Organization users simply should not need to navigate directly into these infrastructure-oriented areas during normal use.
+
+## Keep visible in the sidebar
+
+Preserve the existing navigation for:
+
+* Home
+* Schedule
+* Athletes
+* Leads
+* Revenue
+* Program Tools
+* Settings
+
+Also preserve:
+
+* organization branding/header
+* user/profile area
+* logout
+* expand/collapse behavior
+* current responsive/mobile behavior
+* existing visual design
+
+## Remove
+
+Completely remove the sidebar rendering for:
+
+**Messages**
+
+**AI Workforce**
+
+**Intelligence**
+
+**Approvals**
+
+Also remove the bottom:
+
+**AI Workforce Ready**
+“Agents active · Connect accounts to expand”
+
+card.
+
+Do not leave empty gaps, separators, unused containers, or spacing where these components previously existed.
+
+## Under-the-hood philosophy
+
+TrainEfficiency should use AI and automation heavily without requiring organization users to manage the machinery directly.
+
+The desired experience is:
+
+**Users manage their business. TrainEfficiency manages the AI workforce.**
+
+AI Workforce, Intelligence, Approvals, and related operational systems should behave more like platform infrastructure.
+
+They can still:
+
+* execute tasks
+* evaluate information
+* request or process approvals internally
+* generate intelligence
+* send messages
+* run workflows
+* trigger automations
+* maintain audit/history records
+
+But they should not consume primary sidebar space unless there is a specific user-facing reason to expose them later.
+
+## Approval behavior
+
+Hiding **Approvals** from navigation must not remove approval enforcement.
+
+If an automation or AI worker requires approval before taking an action, the underlying approval system should continue working.
+
+If organization-user intervention is required, surface that action contextually through the appropriate workflow, notification, task, modal, or page rather than requiring users to regularly visit a dedicated Approvals section.
+
+## Attention counters
+
+Remove sidebar-specific badges associated with hidden navigation items, such as the current **Approvals 908** badge.
+
+Also inspect the large **“908 items need attention”** banner at the top of the sidebar.
+
+Do not blindly remove it.
+
+Determine what contributes to that count.
+
+If internal AI workforce, governance, approval, intelligence, or system records are generating hundreds of items that organization users are not expected to manage manually, those items should not pollute the main organization-user attention count.
+
+The organization-user attention system should surface **actual actionable business items**, not internal platform operational noise.
+
+## Verification
+
+After implementation, verify:
+
+1. Messages is no longer visible in the org-user sidebar.
+2. AI Workforce is no longer visible.
+3. Intelligence is no longer visible.
+4. Approvals is no longer visible.
+5. AI Workforce Ready card is gone.
+6. Remaining navigation is positioned cleanly with no empty spaces.
+7. Desktop sidebar works correctly.
+8. Mobile sidebar works correctly.
+9. AI workforce functionality still operates.
+10. Intelligence/background processes still operate.
+11. Approval enforcement still operates.
+12. Messaging infrastructure still operates where used.
+13. No database records, APIs, routes, integrations, jobs, or backend services were unintentionally removed.
+14. Existing organization-user permissions remain intact.
+15. No unrelated redesign is introduced.
+
+Keep this change **narrow and surgical**.
+
+The target sidebar should essentially become:
+
+**Home**
+**Schedule**
+**Athletes**
+**Leads**
+**Revenue**
+**Program Tools**
+**Settings**
+
+with the AI and automation infrastructure quietly powering the application behind the scenes.

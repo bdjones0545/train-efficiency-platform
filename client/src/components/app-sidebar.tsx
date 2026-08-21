@@ -39,10 +39,7 @@ import {
   Zap,
   CheckSquare,
   Bell,
-  MessageSquare,
-  BookOpen,
   LayoutDashboard,
-  Heart,
 } from "lucide-react";
 import { setLastOrgSlug } from "@/lib/logout";
 import type { UserProfile } from "@shared/schema";
@@ -277,6 +274,18 @@ function AccordionSection({
 // AttentionCountChip — compact badge at top of sidebar
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+// Sources that represent real business actions the org user should handle.
+// AI-internal sources (brain, approval, outreach, trigger, revenue-agent) are excluded
+// so platform operational noise does not inflate the count.
+const BUSINESS_ATTENTION_SOURCES = new Set([
+  "deal",
+  "financial",
+  "subscriptions",
+  "scheduling",
+  "churn",
+  "revenue",
+]);
+
 function AttentionCountChip({
   role,
   onNavClick,
@@ -293,7 +302,12 @@ function AttentionCountChip({
     refetchInterval: 5 * 60_000,
   });
 
-  const active = items.filter(
+  // Only surface business-facing items — filter out AI workforce / platform noise
+  const businessItems = items.filter((i: any) =>
+    BUSINESS_ATTENTION_SOURCES.has(i.source)
+  );
+
+  const active = businessItems.filter(
     (i: any) => i.status === "active" || i.status === "escalated"
   );
   const criticalCount = active.filter(
@@ -337,48 +351,6 @@ function AttentionCountChip({
   );
 }
 
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// WorkforceCta — org-state-aware entry point for AI Workforce
-// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-interface SetupStatus {
-  isConfigured: boolean;
-  hasWorkforceRecord: boolean;
-  hasDepartments: boolean;
-  hasGovernanceSettings: boolean;
-  hasAutomationSettings: boolean;
-  setupCompleteFlag: boolean;
-}
-
-function WorkforceCta({ onNavClick }: { onNavClick: () => void }) {
-  const { data: _status, isLoading } = useQuery<SetupStatus>({
-    queryKey: ["/api/ai-workforce/setup-status"],
-    staleTime: 2 * 60 * 1000,
-  });
-
-  if (isLoading) return null;
-
-  return (
-    <Link href="/admin/ai-workforce" onClick={onNavClick}>
-      <div
-        className="mx-2 mb-2 flex items-center gap-2.5 px-3 py-2.5 rounded-md border border-violet-200/60 dark:border-violet-800/40 bg-gradient-to-r from-violet-50/80 to-purple-50/80 dark:from-violet-900/20 dark:to-purple-900/20 hover:from-violet-100 hover:to-purple-100 dark:hover:from-violet-900/30 dark:hover:to-purple-900/30 transition-colors cursor-pointer"
-        data-testid="cta-workforce-dashboard"
-      >
-        <div className="h-6 w-6 rounded bg-violet-100 dark:bg-violet-800/50 flex items-center justify-center flex-shrink-0">
-          <Zap className="h-3.5 w-3.5 text-violet-600 dark:text-violet-400" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-xs font-semibold text-violet-900 dark:text-violet-200 leading-tight">
-            AI Workforce Ready
-          </p>
-          <p className="text-[10px] text-violet-500 dark:text-violet-400 leading-tight mt-0.5">
-            Agents active · Connect accounts to expand
-          </p>
-        </div>
-      </div>
-    </Link>
-  );
-}
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // AppSidebar — main component
@@ -399,13 +371,6 @@ export function AppSidebar() {
   const { data: profile } = useQuery<UserProfile>({
     queryKey: ["/api/profile"],
     enabled: isAuthenticated,
-  });
-
-  const { data: attentionItems = [] } = useQuery<any[]>({
-    queryKey: ["/api/attention"],
-    enabled: isAuthenticated,
-    staleTime: 2 * 60_000,
-    refetchInterval: 5 * 60_000,
   });
 
   const role = profile?.role || "CLIENT";
@@ -489,17 +454,6 @@ export function AppSidebar() {
   useEffect(() => {
     if (orgSlug) setLastOrgSlug(orgSlug);
   }, [orgSlug]);
-
-  // Attention badge count for Approvals link
-  const activeAttention = attentionItems.filter(
-    (i: any) => i.status === "active" || i.status === "escalated"
-  );
-  const approvalsCount = activeAttention.filter(
-    (i: any) =>
-      i.level === "critical" ||
-      i.status === "escalated" ||
-      i.level === "important"
-  ).length;
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // Section definitions — outcome-based primary nav
@@ -694,90 +648,6 @@ export function AppSidebar() {
     ],
   };
 
-  // ── AI WORKFORCE — admin only ─────────────────────────────────────────────────
-  const aiWorkforceSection: NavSection = {
-    id: "ai-workforce",
-    label: "AI Workforce",
-    icon: Bot,
-    items: [
-      {
-        title: "Agent Status",
-        url: "/admin/ai-workforce",
-        icon: Bot,
-        testId: "nav-workforce-health",
-      },
-      {
-        title: "Activity",
-        url: "/admin/ai-workforce/activity",
-        icon: BarChart2,
-        testId: "nav-workforce-activity",
-      },
-      {
-        title: "Approvals",
-        url: "/admin/ai-approvals",
-        icon: CheckSquare,
-        testId: "nav-ai-approvals",
-      },
-      {
-        title: "Leaderboard",
-        url: "/admin/ai-workforce/leaderboard",
-        icon: Trophy,
-        testId: "nav-workforce-leaderboard",
-      },
-      {
-        title: "Apex — Growth Agent",
-        url: "/admin/apex-agent",
-        icon: Target,
-        testId: "nav-apex-agent",
-      },
-      {
-        title: "Pulse — Retention Agent",
-        url: "/admin/pulse-agent",
-        icon: Heart,
-        testId: "nav-pulse-agent",
-      },
-    ],
-  };
-
-  // ── INTELLIGENCE — admin only ─────────────────────────────────────────────────
-  const intelligenceSection: NavSection = {
-    id: "intelligence",
-    label: "Intelligence",
-    icon: Brain,
-    items: [
-      {
-        title: "CEO Heartbeat",
-        url: "/admin/ceo-heartbeat",
-        icon: Brain,
-        testId: "nav-business-overview",
-      },
-      {
-        title: "Kevin Console",
-        url: "/admin/kevin",
-        icon: Bot,
-        testId: "nav-kevin-console",
-      },
-      {
-        title: "Kevin Slack EOH",
-        url: "/admin/kevin-slack",
-        icon: Bot,
-        testId: "nav-kevin-slack-eoh",
-      },
-      {
-        title: "Recommendations",
-        url: "/admin/recommendations",
-        icon: Zap,
-        testId: "nav-recommendations",
-      },
-      {
-        title: "Org Memory",
-        url: "/admin/organizational-memory",
-        icon: BookOpen,
-        testId: "nav-org-memory",
-      },
-    ],
-  };
-
   // ── SETTINGS ─────────────────────────────────────────────────────────────────
   const settingsSection: NavSection = {
     id: "settings",
@@ -929,20 +799,6 @@ export function AppSidebar() {
     testId: "nav-home",
   };
 
-  const messagesItem: NavItem = {
-    title: "Messages",
-    url: "/admin/agentmail",
-    icon: MessageSquare,
-    testId: "nav-messages",
-  };
-
-  const approvalsItem: NavItem = {
-    title: "Approvals",
-    url: "/admin/attention",
-    icon: CheckSquare,
-    testId: "nav-approvals",
-  };
-
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // Auto-expand parent section for the active route
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -953,8 +809,6 @@ export function AppSidebar() {
       athletesSection,
       leadsSection,
       revenueSection,
-      aiWorkforceSection,
-      intelligenceSection,
       settingsSection,
     ];
     const active = allSections.find((s) => sectionIsActive(location, s.items));
@@ -1070,17 +924,6 @@ export function AppSidebar() {
                 />
               )}
 
-              {/* MESSAGES — admin only, direct link */}
-              {isAdmin && (
-                <div className="mb-0.5">
-                  <DirectNavLink
-                    item={messagesItem}
-                    location={location}
-                    onClick={handleNavClick}
-                  />
-                </div>
-              )}
-
               {/* REVENUE */}
               {revenueSection.items.length > 0 && (
                 <AccordionSection
@@ -1091,38 +934,6 @@ export function AppSidebar() {
                   onNavClick={handleNavClick}
                 />
               )}
-
-              {/* AI WORKFORCE — admin only */}
-              {isAdmin && (
-                <AccordionSection
-                  section={aiWorkforceSection}
-                  isOpen={openSections.has("ai-workforce")}
-                  onToggle={toggleSection}
-                  location={location}
-                  onNavClick={handleNavClick}
-                />
-              )}
-
-              {/* INTELLIGENCE — admin only */}
-              {isAdmin && (
-                <AccordionSection
-                  section={intelligenceSection}
-                  isOpen={openSections.has("intelligence")}
-                  onToggle={toggleSection}
-                  location={location}
-                  onNavClick={handleNavClick}
-                />
-              )}
-
-              {/* APPROVALS — direct link with attention badge */}
-              <div className="mb-0.5">
-                <DirectNavLink
-                  item={approvalsItem}
-                  location={location}
-                  onClick={handleNavClick}
-                  badge={approvalsCount > 0 ? approvalsCount : undefined}
-                />
-              </div>
 
               {/* PROGRAM TOOLS — dynamic (if org has active tools) */}
               {programToolItems.length > 0 && (
@@ -1151,8 +962,6 @@ export function AppSidebar() {
 
             </div>
 
-            {/* AI Workforce CTA — admin only */}
-            {isAdmin && <WorkforceCta onNavClick={handleNavClick} />}
           </>
         )}
 
