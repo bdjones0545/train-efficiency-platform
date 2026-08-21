@@ -4,6 +4,13 @@
   "type": "module",
   "license": "MIT",
   "scripts": {
+    "test": "node script/test-runner.mjs default",
+    "test:unit": "node script/test-runner.mjs unit",
+    "test:security": "node script/test-runner.mjs security",
+    "test:db": "node script/test-runner.mjs db",
+    "test:server": "node script/test-runner.mjs server",
+    "test:e2e": "node script/test-runner.mjs e2e",
+    "test:all": "node script/test-runner.mjs all",
     "dev": "NODE_ENV=development tsx server/index.ts",
     "build": "tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",

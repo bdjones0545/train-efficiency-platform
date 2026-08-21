@@ -1,0 +1,162 @@
+{
+  "version": 1,
+  "classifications": {
+    "static": "STATIC / SOURCE INSPECTION",
+    "unit": "UNIT",
+    "db": "DB INTEGRATION",
+    "server": "LIVE SERVER / API",
+    "e2e": "BROWSER / E2E",
+    "external": "PROVIDER / EXTERNAL INTEGRATION"
+  },
+  "suites": {
+    "default": {
+      "command": "npm test",
+      "description": "Non-mutating tests with network and real database access disabled",
+      "dependencies": ["Node.js", "tsx"],
+      "mutating": false,
+      "safeForLocalDefault": true,
+      "safeForCI": true,
+      "requiredEnvironment": []
+    },
+    "unit": {
+      "command": "npm run test:unit",
+      "description": "Unit and source-inspection tests that need no infrastructure",
+      "dependencies": ["Node.js", "tsx"],
+      "mutating": false,
+      "safeForLocalDefault": true,
+      "safeForCI": true,
+      "requiredEnvironment": []
+    },
+    "security": {
+      "command": "npm run test:security",
+      "description": "Logging, authorization, tenant-isolation, and secret-handling regressions",
+      "dependencies": ["Node.js", "tsx"],
+      "mutating": false,
+      "safeForLocalDefault": true,
+      "safeForCI": true,
+      "requiredEnvironment": []
+    },
+    "db": {
+      "command": "npm run test:db",
+      "description": "Tests that read and write an explicitly designated disposable test database",
+      "dependencies": ["PostgreSQL"],
+      "mutating": true,
+      "safeForLocalDefault": false,
+      "safeForCI": true,
+      "requiredEnvironment": ["TEST_DATABASE_URL"]
+    },
+    "server": {
+      "command": "npm run test:server",
+      "description": "Tests against an already-running non-production API",
+      "dependencies": ["running TrainEfficiency API"],
+      "mutating": true,
+      "safeForLocalDefault": false,
+      "safeForCI": true,
+      "requiredEnvironment": ["TEST_BASE_URL"]
+    },
+    "e2e": {
+      "command": "npm run test:e2e",
+      "description": "Reserved classification; no browser runner is installed",
+      "dependencies": ["browser runner (not installed)"],
+      "mutating": false,
+      "safeForLocalDefault": false,
+      "safeForCI": false,
+      "requiredEnvironment": []
+    }
+  },
+  "inventory": [
+    {
+      "classification": "static",
+      "suites": ["unit", "default"],
+      "files": [
+        "server/__tests__/payment-model.spec.ts",
+        "server/__tests__/sprint3-idempotency-concurrency.spec.ts",
+        "server/tests/book-funnel-promo-code.test.ts",
+        "server/tests/book-funnel-receipt-upload.test.ts",
+        "server/tests/cron-job-locks-wiring.test.ts",
+        "server/tests/hotfix-admin-setup.test.ts",
+        "server/tests/org-isolation-helpers.test.ts",
+        "server/tests/outreach-cron-locks-wiring.test.ts",
+        "server/tests/phase1b-authz.test.ts",
+        "server/tests/phase1c-org-isolation.test.ts",
+        "server/tests/phase1d-authz.test.ts",
+        "server/tests/phase1e-authz.test.ts",
+        "server/tests/phase1f-authz.test.ts",
+        "server/tests/phase1g-authz.test.ts",
+        "server/tests/phase1h-authz.test.ts",
+        "server/tests/phase1i-authz.test.ts",
+        "server/tests/reminder-cron-locks-wiring.test.ts",
+        "server/tests/write-only-cron-locks-wiring.test.ts"
+      ]
+    },
+    {
+      "classification": "unit",
+      "suites": ["unit", "default"],
+      "files": [
+        "server/tests/github-issue-phase2a.test.ts"
+      ],
+      "note": "No database or provider calls."
+    },
+    {
+      "classification": "unit",
+      "suites": ["security", "default"],
+      "files": [
+        "server/tests/api-request-logger.test.ts",
+        "server/tests/autonomy-trust-authorization.test.ts",
+        "server/tests/email-audit-authorization.test.ts",
+        "server/tests/org-isolation-helpers.test.ts",
+        "server/tests/phase1b-authz.test.ts",
+        "server/tests/phase1c-org-isolation.test.ts",
+        "server/tests/phase1d-authz.test.ts",
+        "server/tests/phase1e-authz.test.ts",
+        "server/tests/phase1f-authz.test.ts",
+        "server/tests/phase1g-authz.test.ts",
+        "server/tests/phase1h-authz.test.ts",
+        "server/tests/phase1i-authz.test.ts",
+        "server/tests/secrets-and-token-hash.test.ts"
+      ]
+    },
+    {
+      "classification": "external",
+      "suites": [],
+      "files": [
+        "server/tests/automation-kill-switch.test.ts",
+        "server/tests/gmail-draft-phase2b.test.ts",
+        "server/tests/slack-alert-phase2c.test.ts"
+      ],
+      "note": "Unit-like harnesses import live DB/provider send paths. Kept manual; slack-alert-phase2c currently has pre-existing policy assertion failures."
+    },
+    {
+      "classification": "db",
+      "suites": ["db"],
+      "files": [
+        "server/tests/apex-agent.test.ts",
+        "server/tests/cron-job-locks.test.ts",
+        "server/tests/send-path-audit.test.ts",
+        "server/tests/stripe-webhook.test.ts",
+        "server/tests/tool-workflow-safety.test.ts"
+      ]
+    },
+    {
+      "classification": "server",
+      "suites": ["server"],
+      "files": [
+        "server/__tests__/organization-isolation.spec.ts",
+        "server/agents/pulse-agent.test.ts",
+        "server/tests/admin-auth.test.ts"
+      ]
+    },
+    {
+      "classification": "server",
+      "suites": [],
+      "files": ["server/tests/connector-layer.test.ts"],
+      "note": "Requires both a live server and real DB imports; retained as a manual mixed-infrastructure test."
+    },
+    {
+      "classification": "server",
+      "suites": [],
+      "files": ["test-wiring.ts"],
+      "note": "Manual destructive acceptance script: writes and deletes DB rows and calls a live server."
+    }
+  ]
+}
