@@ -629,7 +629,7 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
         byJob[`workflow:${r.job_name}`] = Number(r.count);
       }
 
-      const pending = (byStatus.pending ?? 0) + (byStatus.retrying ?? 0);
+      const pending = (byStatus.pending ?? 0) + (byStatus.processing ?? 0) + (byStatus.retrying ?? 0);
       const finalFailed = byStatus.final_failed ?? 0;
       const workflowDlq = byStatus.workflow_dead_letter ?? 0;
       const total = pending + finalFailed + workflowDlq;
@@ -646,6 +646,20 @@ export async function registerCeoHeartbeatRoutes(app: Express): Promise<void> {
       });
     } catch (e: any) {
       res.status(500).json({ message: e.message });
+    }
+  });
+
+  app.post("/api/admin/ceo-heartbeat/dead-letter/:id/replay", isAuthenticated, requireAdminOrCoach, async (req: any, res) => {
+    try {
+      const orgId = await getOrgId(req);
+      if (!orgId) return res.status(400).json({ message: "orgId required" });
+      const replayedBy = req.user?.claims?.sub ?? req.user?.id;
+      const { replayDeadLetterJob } = await import("./services/agent-dead-letter-service");
+      const replayed = await replayDeadLetterJob(req.params.id, orgId, replayedBy);
+      if (!replayed) return res.status(404).json({ message: "Dead-letter item not found or not replayable" });
+      return res.json({ replayed: true });
+    } catch (e: any) {
+      return res.status(500).json({ message: e.message });
     }
   });
 

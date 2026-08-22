@@ -618,6 +618,8 @@ app.use((req, res, next) => {
   // ─── Autonomy Policy Engine — Action Executor ─────────────────────────────
   // Evaluates proposed Gmail actions against org policy every 5 minutes.
   // Auto-executes only if all policy checks pass; otherwise marks awaiting_approval.
+  const { startAgentDeadLetterWorker } = await import("./services/agent-dead-letter-service");
+  await startAgentDeadLetterWorker();
   const { startActionExecutor } = await import("./services/agent-action-executor");
   startActionExecutor();
 
@@ -728,6 +730,8 @@ app.use((req, res, next) => {
   async function gracefulShutdown(signal: string) {
     console.log(`[Shutdown] ${signal} received — stopping background workers`);
     try {
+      const { stopAgentDeadLetterWorker } = await import("./services/agent-dead-letter-service");
+      stopAgentDeadLetterWorker();
       const { stopKevinEventWorker } = await import("./services/kevin-event-service");
       stopKevinEventWorker();
       console.log("[Shutdown] Kevin event worker stopped");
