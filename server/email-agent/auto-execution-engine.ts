@@ -2,7 +2,6 @@ import { storage } from "../storage";
 import { buildGlobalActionQueue, type GlobalAction } from "./global-priority-engine";
 import { logTriggerEvent, updateTriggerEvent } from "./trigger-logger";
 import { db } from "../db";
-import { sql } from "drizzle-orm";
 import { pushToDeadLetter } from "../services/agent-dead-letter-service";
 import { logSystemEvent } from "../reliability-routes";
 
@@ -84,6 +83,12 @@ function isAutoExecutable(action: GlobalAction, settings: Record<string, any>, t
 }
 
 async function executeFollowUp(orgId: string, prospectId: string): Promise<string | null> {
+  const {
+    claimFollowUp, completeFollowUpSend, ensureFollowUpReliabilitySchema,
+    executeFollowUpProviderEffect, isPermanentFollowUpFailure, markFollowUpSendSkipped,
+    recordFollowUpFailure,
+  } = await import("./follow-up-reliability");
+  await ensureFollowUpReliabilitySchema();
   const dueFollowUps = await storage.getDueFollowUps(orgId);
   const prospectFollowUps = dueFollowUps.filter((f) => f.prospectId === prospectId);
   if (prospectFollowUps.length === 0) return null;
@@ -93,29 +98,33 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
   // PHASE 2: Atomic row claim — atomically transition status from 'pending' → 'processing'.
   // Includes org_id in the WHERE clause to guarantee cross-tenant isolation.
   // If 0 rows returned, another worker (follow-up-cron) already claimed this row; skip.
-  const claimResult = await db.execute(sql`
-    UPDATE email_follow_ups
-    SET status = 'processing'
-    WHERE id = ${followUp.id} AND org_id = ${orgId} AND status = 'pending'
-    RETURNING id
-  `).catch(() => null);
-  const claimedRows = Array.isArray(claimResult)
-    ? claimResult
-    : ((claimResult as any)?.rows ?? []);
-  if (claimedRows.length === 0) {
+  const claimed = await claimFollowUp(orgId, followUp.id).catch(() => null);
+  if (!claimed) {
     console.log(`[Auto-Execute] follow-up ${followUp.id} already claimed by concurrent worker — skipping`);
     return null;
   }
 
   const prospect = await storage.getTeamTrainingProspect(followUp.prospectId);
-  if (!prospect?.contactEmail) return null;
-  if (prospect.outreachStatus === "Do Not Contact" || prospect.outreachStatus === "Replied") return null;
+  if (!prospect?.contactEmail) {
+    await storage.updateFollowUp(followUp.id, { status: "skipped", processingStartedAt: null });
+    return null;
+  }
+  if (prospect.outreachStatus === "Do Not Contact" || prospect.outreachStatus === "Replied") {
+    await storage.updateFollowUp(followUp.id, { status: "cancelled", processingStartedAt: null });
+    return null;
+  }
 
   const optedOut = await storage.isProspectOptedOut(orgId, prospect.contactEmail);
-  if (optedOut) return null;
+  if (optedOut) {
+    await storage.updateFollowUp(followUp.id, { status: "cancelled", processingStartedAt: null });
+    return null;
+  }
 
   const activeDeal = await storage.getTeamTrainingDealByProspect(followUp.prospectId, orgId).catch(() => null);
-  if (activeDeal && !["won", "lost"].includes(activeDeal.status)) return null;
+  if (activeDeal && !["won", "lost"].includes(activeDeal.status)) {
+    await storage.updateFollowUp(followUp.id, { status: "skipped", processingStartedAt: null });
+    return null;
+  }
 
   const org = await storage.getOrganizationById(orgId);
   const businessName = org?.name ?? "Our Training Facility";
@@ -219,35 +228,41 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
         result: { followUpId: followUp.id, stepNumber: followUp.stepNumber },
       })
       .catch(() => {});
+    await storage.updateFollowUp(followUp.id, { status: "skipped", processingStartedAt: null });
     console.log(
       `[Auto-Execute] follow-up ${followUp.id} ${policy.decision} by Autonomy Policy: ${policy.reasons.join("; ")}`
     );
     return null;
   }
 
-  // PHASE 4: All automated sends go through the Send Guard chain.
-  const { guardedSendTeamTrainingOutreachEmail } = await import("../services/guarded-outbound-email");
-  const sendResult = await guardedSendTeamTrainingOutreachEmail({
-    orgId,
-    recipientEmail: prospect.contactEmail,
-    recipientName: prospect.contactName || undefined,
-    subject: subject!,
-    body: body!,
-    branding,
-    trackingId: followUp.id,
-    sourceSystem: "auto_execution_engine",
-    sourceRecordId: followUp.id,
-    triggeredBy: "auto_execute",
-    emailType: "follow_up",
-    policyDecision: "auto_execute",
-  });
-  if (sendResult.blocked) {
-    await storage.updateFollowUp(followUp.id, { status: "skipped" });
-    console.warn(`[Auto-Execute] Send Guard blocked follow-up ${followUp.id}: ${sendResult.blockReason}`);
-    return null;
+  let gmailActionId = "";
+  try {
+    await executeFollowUpProviderEffect(orgId, followUp.id, async () => {
+      const { guardedSendTeamTrainingOutreachEmail } = await import("../services/guarded-outbound-email");
+      const sendResult = await guardedSendTeamTrainingOutreachEmail({
+        orgId, recipientEmail: prospect.contactEmail!, recipientName: prospect.contactName || undefined,
+        subject: subject!, body: body!, branding, trackingId: followUp.id,
+        sourceSystem: "auto_execution_engine", sourceRecordId: followUp.id,
+        triggeredBy: "auto_execute", emailType: "follow_up", policyDecision: "auto_execute",
+      });
+      if (sendResult.blocked) {
+        throw Object.assign(new Error(sendResult.blockReason ?? "Send guard blocked"), { businessSkip: true });
+      }
+    });
+    const completion = await completeFollowUpSend({
+      orgId, followUpId: followUp.id, prospectId: followUp.prospectId,
+      recipientEmail: prospect.contactEmail, subject: subject!, body: body!,
+    });
+    gmailActionId = completion.gmailActionId;
+  } catch (error: any) {
+    if (error?.businessSkip) {
+      await markFollowUpSendSkipped(orgId, followUp.id);
+      await storage.updateFollowUp(followUp.id, { status: "skipped", processingStartedAt: null });
+      return null;
+    }
+    await recordFollowUpFailure(orgId, followUp.id, error?.message ?? String(error), undefined, isPermanentFollowUpFailure(error));
+    throw error;
   }
-
-  await storage.updateFollowUp(followUp.id, { status: "sent", sentAt: new Date(), subject, body });
   await storage.logOutreachEvent({
     orgId,
     prospectId: followUp.prospectId,
@@ -257,30 +272,11 @@ async function executeFollowUp(orgId: string, prospectId: string): Promise<strin
   });
 
   // Record outcome for attribution
-  const { gmailAgentActions: _outGaa } = await import("@shared/schema");
-  const [gmailAction] = await db
-    .insert(_outGaa)
-    .values({
-      orgId,
-      actionType: "follow_up_email",
-      recipientEmail: prospect.contactEmail,
-      subject: subject!,
-      bodyPreview: (body ?? "").slice(0, 300),
-      riskLevel: "low",
-      approvalRequired: false,
-      status: "auto_executed",
-      communicationDomain: "team_training",
-      createdByAgent: "auto_execution_engine",
-      executedAt: new Date(),
-    })
-    .returning()
-    .catch(() => [{ id: "" }] as { id: string }[]);
-
-  if (gmailAction?.id) {
+  if (gmailActionId) {
     const { createOutcomeOnSend } = await import("../services/outcome-intelligence-service");
     createOutcomeOnSend({
       orgId,
-      gmailActionId: gmailAction.id,
+      gmailActionId,
       communicationDomain: "team_training",
       messageType: "follow_up",
       recipientEmail: prospect.contactEmail,

@@ -887,7 +887,10 @@ export const teamTrainingOutreachDrafts = pgTable("team_training_outreach_drafts
 
 export const followUpStatusEnum = pgEnum("follow_up_status", [
   "pending",
+  "processing",
+  "retrying",
   "sent",
+  "failed",
   "cancelled",
   "skipped",
 ]);
@@ -901,6 +904,12 @@ export const emailFollowUps = pgTable("email_follow_ups", {
   scheduledFor: timestamp("scheduled_for").notNull(),
   sentAt: timestamp("sent_at"),
   status: followUpStatusEnum("status").default("pending"),
+  attemptCount: integer("attempt_count").notNull().default(0),
+  maxAttempts: integer("max_attempts").notNull().default(3),
+  nextRetryAt: timestamp("next_retry_at"),
+  processingStartedAt: timestamp("processing_started_at"),
+  lastError: text("last_error"),
+  failedAt: timestamp("failed_at"),
   subject: text("subject"),
   body: text("body"),
   messageVariantId: varchar("message_variant_id"),

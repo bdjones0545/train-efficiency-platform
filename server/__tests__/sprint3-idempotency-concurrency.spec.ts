@@ -141,24 +141,26 @@ describe("Phase 3 — Email outreach idempotency", () => {
 
   test("email_follow_ups atomic claim includes org_id in WHERE (prevents cross-worker duplicate processing)", () => {
     const cron = src("server/email-agent/follow-up-cron.ts");
+    const lifecycle = src("server/email-agent/follow-up-reliability.ts");
     assert.ok(
-      cron.includes("email_follow_ups"),
-      "follow-up-cron must reference the correct email_follow_ups table (not follow_ups)"
+      cron.includes("claimFollowUp") && lifecycle.includes("UPDATE email_follow_ups"),
+      "follow-up-cron must delegate to the shared atomic email_follow_ups claim"
     );
     assert.ok(
-      cron.includes("org_id"),
+      lifecycle.includes("org_id=$2") && lifecycle.includes("status IN ('pending','retrying')"),
       "atomic claim must include org_id in WHERE clause for org isolation"
     );
   });
 
   test("auto-execution-engine atomic claim targets email_follow_ups with org_id guard", () => {
     const engine = src("server/email-agent/auto-execution-engine.ts");
+    const lifecycle = src("server/email-agent/follow-up-reliability.ts");
     assert.ok(
-      engine.includes("email_follow_ups"),
-      "auto-execution-engine must reference email_follow_ups (not follow_ups)"
+      engine.includes("claimFollowUp") && lifecycle.includes("UPDATE email_follow_ups"),
+      "auto-execution-engine must delegate to the shared atomic email_follow_ups claim"
     );
     assert.ok(
-      engine.includes("org_id"),
+      lifecycle.includes("org_id=$2"),
       "atomic claim must include org_id in WHERE clause"
     );
   });

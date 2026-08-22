@@ -2992,8 +2992,11 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(emailFollowUps)
       .where(and(
         eq(emailFollowUps.orgId, orgId),
-        eq(emailFollowUps.status, "pending"),
-        lte(emailFollowUps.scheduledFor, new Date()),
+        or(
+          and(eq(emailFollowUps.status, "pending"), lte(emailFollowUps.scheduledFor, new Date())),
+          and(eq(emailFollowUps.status, "retrying"), lte(emailFollowUps.nextRetryAt, new Date())),
+          and(eq(emailFollowUps.status, "processing"), lt(emailFollowUps.processingStartedAt, new Date(Date.now() - 5 * 60 * 1000))),
+        ),
       ));
   }
 

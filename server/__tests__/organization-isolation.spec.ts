@@ -217,21 +217,21 @@ describe("Agent audit — dead-letter orgId enforcement", () => {
 
 describe("Agent audit — atomic claim org isolation", () => {
   test("auto-execution-engine atomic claim includes org_id in WHERE", async () => {
-    const src = await import("node:fs").then(fs =>
-      fs.readFileSync("server/email-agent/auto-execution-engine.ts", "utf-8")
-    );
+    const fs = await import("node:fs");
+    const src = fs.readFileSync("server/email-agent/auto-execution-engine.ts", "utf-8");
+    const lifecycle = fs.readFileSync("server/email-agent/follow-up-reliability.ts", "utf-8");
     assert.ok(
-      src.includes("email_follow_ups") && src.includes("AND org_id = ${orgId}"),
+      src.includes("claimFollowUp") && lifecycle.includes("UPDATE email_follow_ups") && lifecycle.includes("org_id=$2"),
       "Atomic claim must target email_follow_ups with AND org_id — prevents cross-org row claim"
     );
   });
 
   test("follow-up-cron atomic claim includes org_id in WHERE", async () => {
-    const src = await import("node:fs").then(fs =>
-      fs.readFileSync("server/email-agent/follow-up-cron.ts", "utf-8")
-    );
+    const fs = await import("node:fs");
+    const src = fs.readFileSync("server/email-agent/follow-up-cron.ts", "utf-8");
+    const lifecycle = fs.readFileSync("server/email-agent/follow-up-reliability.ts", "utf-8");
     assert.ok(
-      src.includes("email_follow_ups") && src.includes("AND org_id = ${orgId}"),
+      src.includes("claimFollowUp") && lifecycle.includes("UPDATE email_follow_ups") && lifecycle.includes("org_id=$2"),
       "Atomic claim must target email_follow_ups with AND org_id — prevents cross-org row claim"
     );
   });
