@@ -296,7 +296,7 @@ function EventDetailDialog({
   const start = new Date(booking.startAt);
   const end = new Date(booking.endAt);
   const isPast = end < new Date();
-  const isActive = booking.status === "CONFIRMED" || booking.status === "PENDING";
+  const isActive = ["CONFIRMED", "PENDING", "RESCHEDULED"].includes(booking.status);
   const color = getEventColor(booking);
 
   return (
@@ -892,7 +892,7 @@ function AgendaView({
                   const start = new Date(b.startAt);
                   const end = new Date(b.endAt);
                   const isPast = end < new Date();
-                  const isActive = b.status === "CONFIRMED" || b.status === "PENDING";
+                  const isActive = ["CONFIRMED", "PENDING", "RESCHEDULED"].includes(b.status);
                   const color = getEventColor(b);
                   const isRedeemed = redeemedBookingIds.has(b.id);
                   return (

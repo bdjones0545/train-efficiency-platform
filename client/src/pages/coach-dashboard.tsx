@@ -99,6 +99,7 @@ function timeStr(hour: number, minute: number) {
 const statusColors: Record<string, string> = {
   PENDING: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border-yellow-500/30",
   CONFIRMED: "bg-primary/10 text-primary border-primary/30",
+  RESCHEDULED: "bg-purple-500/15 text-purple-700 dark:text-purple-400 border-purple-500/30",
   CANCELLED: "bg-red-500/15 text-red-700 dark:text-red-400 border-red-500/30",
   COMPLETED: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 border-emerald-500/30",
   NO_SHOW: "bg-muted text-muted-foreground border-muted-foreground/20",
@@ -106,7 +107,7 @@ const statusColors: Record<string, string> = {
 
 function detectConflicts(bookings: BookingWithDetails[]): Set<string> {
   const conflictIds = new Set<string>();
-  const active = bookings.filter((b) => ["CONFIRMED", "PENDING"].includes(b.status));
+  const active = bookings.filter((b) => ["CONFIRMED", "PENDING", "RESCHEDULED"].includes(b.status));
   for (let i = 0; i < active.length; i++) {
     for (let j = i + 1; j < active.length; j++) {
       const a = active[i], b = active[j];
@@ -424,7 +425,7 @@ function BookingBlock({
   const colorClass = isConflict
     ? "bg-red-500/10 text-red-800 dark:text-red-300 border-red-500/40"
     : statusColors[booking.status] || statusColors.PENDING;
-  const isActive = ["CONFIRMED", "PENDING"].includes(booking.status);
+  const isActive = ["CONFIRMED", "PENDING", "RESCHEDULED"].includes(booking.status);
   const isCompleted = booking.status === "COMPLETED";
   const isRedeemed = redeemedIds.has(booking.id);
 
@@ -474,11 +475,10 @@ function BookingBlock({
             )}
           </div>
 
-          {height >= 36 && (
-            <div className="flex flex-col gap-0.5 shrink-0 items-end">
-              {isActive && (
-                <>
-                  <Tooltip>
+          <div className="flex flex-col gap-0.5 shrink-0 items-end">
+            {isActive && (
+              <>
+                <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         variant="ghost"
@@ -492,7 +492,9 @@ function BookingBlock({
                       </Button>
                     </TooltipTrigger>
                     <TooltipContent>Mark Completed</TooltipContent>
-                  </Tooltip>
+                </Tooltip>
+                {height >= 36 && (
+                  <>
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
@@ -523,10 +525,12 @@ function BookingBlock({
                     </TooltipTrigger>
                     <TooltipContent>Cancel</TooltipContent>
                   </Tooltip>
-                </>
-              )}
-              {isCompleted && !isRedeemed && (
-                <Tooltip>
+                  </>
+                )}
+              </>
+            )}
+            {isCompleted && !isRedeemed && (
+              <Tooltip>
                   <TooltipTrigger asChild>
                     <Button
                       variant="ghost"
@@ -540,15 +544,14 @@ function BookingBlock({
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>Redeem Session</TooltipContent>
-                </Tooltip>
-              )}
-              {isCompleted && isRedeemed && (
-                <Badge variant="secondary" className="text-[9px] px-1 py-0">
-                  Redeemed
-                </Badge>
-              )}
-            </div>
-          )}
+              </Tooltip>
+            )}
+            {isCompleted && isRedeemed && (
+              <Badge variant="secondary" className="text-[9px] px-1 py-0">
+                Redeemed
+              </Badge>
+            )}
+          </div>
         </div>
       </div>
     </TooltipProvider>
@@ -842,7 +845,7 @@ function DaySessionList({
         {sorted.map((b) => {
           const start = parseISO(b.startAt as unknown as string);
           const end = parseISO(b.endAt as unknown as string);
-          const isActive = ["CONFIRMED", "PENDING"].includes(b.status);
+          const isActive = ["CONFIRMED", "PENDING", "RESCHEDULED"].includes(b.status);
           const isCompleted = b.status === "COMPLETED";
           const isRedeemed = redeemedIds.has(b.id);
           const isConflict = conflictIds.has(b.id);
