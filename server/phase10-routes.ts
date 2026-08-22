@@ -470,7 +470,7 @@ export async function registerPhase10Routes(app: Express) {
       const myReps = reputations.filter(r => agentIds.includes(r.agentId));
 
       const avgRating = myReviews.length > 0 ? myReviews.reduce((s, r) => s + (r.rating ?? 0), 0) / myReviews.length : 0;
-      const totalRoyalties = myRoyalties.reduce((s, r) => s + (r.royaltyAmount ?? 0), 0);
+      const totalRoyalties = myRoyalties.reduce((s, r) => s + (r.developerShare ?? 0), 0);
 
       const agentSuccess = templates.map(t => {
         const tReviews = myReviews.filter(r => r.agentId === t.agentId);
@@ -983,78 +983,6 @@ export async function registerPhase10Routes(app: Express) {
       });
     } catch (e: any) {
       res.status(500).json({ message: "RC-2 audit failed", error: e.message });
-    }
-  });
-
-  // ─── Stripe Revenue Integration (Part 4 foundation) ──────────────────────────
-
-  app.post("/api/stripe/marketplace-webhook", async (req, res) => {
-    try {
-      const { getUncachableStripeClient } = await import("./stripeClient");
-      const stripe = getUncachableStripeClient();
-      const sig = req.headers["stripe-signature"] as string;
-      const webhookSecret = process.env.STRIPE_MARKETPLACE_WEBHOOK_SECRET;
-
-      let event: any;
-      if (webhookSecret && sig) {
-        try {
-          event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-        } catch {
-          return res.status(400).json({ message: "Webhook signature invalid" });
-        }
-      } else {
-        event = req.body; // dev mode: accept raw event
-      }
-
-      const { agentRevenueEvents, royaltyDistributions } = await import("@shared/schema");
-
-      if (event.type === "checkout.session.completed") {
-        const session = event.data.object;
-        const agentId = session.metadata?.agentId;
-        const orgId = session.metadata?.orgId;
-        const amount = (session.amount_total ?? 0) / 100;
-
-        if (agentId && orgId && amount > 0) {
-          await db.insert(agentRevenueEvents).values({
-            agentId,
-            orgId,
-            eventType: "install_purchase",
-            amount,
-            currency: session.currency ?? "usd",
-            stripeEventId: session.id,
-            metadata: { sessionId: session.id, customerId: session.customer },
-          }).catch(() => {});
-        }
-      }
-
-      if (event.type === "invoice.paid") {
-        const invoice = event.data.object;
-        const agentId = invoice.metadata?.agentId;
-        const orgId = invoice.metadata?.orgId;
-        const developerId = invoice.metadata?.developerId;
-        const amount = (invoice.amount_paid ?? 0) / 100;
-
-        if (agentId && developerId && amount > 0) {
-          const royaltyRate = 0.30;
-          const royaltyAmount = amount * royaltyRate;
-          const period = new Date().toISOString().substring(0, 7);
-          await db.insert(royaltyDistributions).values({
-            developerId,
-            agentId,
-            revenueSource: "subscription",
-            period,
-            grossRevenue: amount,
-            royaltyRate,
-            royaltyAmount,
-            status: "pending",
-          }).catch(() => {});
-        }
-      }
-
-      res.json({ received: true, type: event.type });
-    } catch (e: any) {
-      console.error("[marketplace-webhook] error:", e);
-      res.status(500).json({ message: "Webhook processing failed" });
     }
   });
 

@@ -15,10 +15,14 @@
  */
 
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { db } from "../db";
+import { after, test } from "node:test";
+import { db, pool } from "../db";
 import { stripeWebhookEvents, walletTransactions, financialEventFailures } from "@shared/schema";
 import { eq } from "drizzle-orm";
+
+after(async () => {
+  await pool.end();
+});
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 

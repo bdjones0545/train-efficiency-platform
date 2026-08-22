@@ -4440,11 +4440,42 @@ export const agentRevenueEvents = pgTable("agent_revenue_events", {
   eventType: text("event_type").notNull(), // installation | usage | subscription | revenue_recovered
   amount: doublePrecision("amount").default(0),
   royaltyAmount: doublePrecision("royalty_amount").default(0),
+  currency: text("currency"),
+  stripeEventId: text("stripe_event_id"),
   attribution: jsonb("attribution"),
   period: text("period"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  stripeEventUnique: uniqueIndex("agent_revenue_events_stripe_event_unique").on(table.stripeEventId),
+}));
 export type AgentRevenueEvent = typeof agentRevenueEvents.$inferSelect;
+
+// ─── Marketplace Stripe Event Ledger ──────────────────────────────────────────
+// Durable claim state for verified marketplace events. This is the idempotency
+// boundary for financial mutations and binds a Stripe event ID to its exact body.
+export const marketplaceStripeEvents = pgTable("marketplace_stripe_events", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  stripeEventId: text("stripe_event_id").notNull(),
+  eventType: text("event_type").notNull(),
+  payloadHash: text("payload_hash").notNull(),
+  processingStatus: text("processing_status").notNull().default("processing"), // processing | completed | failed
+  financialAction: text("financial_action"),
+  organizationId: text("organization_id"),
+  agentId: text("agent_id"),
+  developerId: text("developer_id"),
+  amountCents: integer("amount_cents"),
+  currency: text("currency"),
+  failureMessage: text("failure_message"),
+  attemptCount: integer("attempt_count").notNull().default(1),
+  claimedAt: timestamp("claimed_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+}, (table) => ({
+  stripeEventUnique: uniqueIndex("marketplace_stripe_events_stripe_event_unique").on(table.stripeEventId),
+  statusIndex: index("marketplace_stripe_events_status_idx").on(table.processingStatus),
+}));
+export type MarketplaceStripeEvent = typeof marketplaceStripeEvents.$inferSelect;
 
 // ─── Developer Payouts ────────────────────────────────────────────────────────
 // Payout records — infrastructure only. No payment processing yet.
@@ -4609,6 +4640,7 @@ export const royaltyDistributions = pgTable("royalty_distributions", {
   developerId: text("developer_id").notNull(),
   agentId: text("agent_id").notNull(),
   revenueSource: text("revenue_source").notNull(), // install | usage | subscription | revenue_recovered
+  stripeEventId: text("stripe_event_id"),
   grossRevenue: doublePrecision("gross_revenue").default(0),
   platformShare: doublePrecision("platform_share").default(0),
   developerShare: doublePrecision("developer_share").default(0),
@@ -4617,7 +4649,12 @@ export const royaltyDistributions = pgTable("royalty_distributions", {
   payoutStatus: text("payout_status").default("pending"), // pending | processing | paid | cancelled
   period: text("period"),            // "2026-05"
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => ({
+  stripeEventUnique: uniqueIndex("royalty_distributions_stripe_event_unique").on(table.stripeEventId),
+  legacyPeriodUnique: uniqueIndex("royalty_distributions_legacy_period_unique")
+    .on(table.developerId, table.agentId, table.revenueSource, table.period)
+    .where(sql`${table.stripeEventId} IS NULL`),
+}));
 export type RoyaltyDistribution = typeof royaltyDistributions.$inferSelect;
 
 // ─── Agent Verification Reviews ───────────────────────────────────────────────

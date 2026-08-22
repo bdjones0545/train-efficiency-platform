@@ -5,6 +5,7 @@ import { createServer } from "http";
 import { runMigrations } from 'stripe-replit-sync';
 import { getStripeSync } from './stripeClient';
 import { WebhookHandlers } from './webhookHandlers';
+import { registerMarketplaceStripeWebhook } from "./services/marketplace-stripe-webhook";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import { validateEmailProvider } from "./email";
 import { orgErrorMiddleware } from "./lib/resolve-org-id";
@@ -141,6 +142,10 @@ app.post(
     }
   }
 );
+
+// Marketplace events need exact Stripe-signed bytes just like the primary path.
+// Register before express.json() so the body remains a Buffer for verification.
+registerMarketplaceStripeWebhook(app);
 
 app.use(
   express.json({

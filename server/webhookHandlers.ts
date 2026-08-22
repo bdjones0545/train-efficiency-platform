@@ -40,7 +40,7 @@ function logWebhookEvent(params: {
 }
 
 // ── Event-level idempotency: check and insert stripe_webhook_events ───────────
-async function checkAndInsertWebhookEvent(params: {
+export async function checkAndInsertWebhookEvent(params: {
   stripeEventId: string;
   eventType: string;
   livemode: boolean;
@@ -53,13 +53,27 @@ async function checkAndInsertWebhookEvent(params: {
   metadata?: Record<string, any> | null;
 }): Promise<{ alreadyProcessed: boolean; rowId: string }> {
   const existing = await db
-    .select()
+    .select({
+      id: stripeWebhookEvents.id,
+      processedStatus: stripeWebhookEvents.processedStatus,
+    })
     .from(stripeWebhookEvents)
     .where(eq(stripeWebhookEvents.stripeEventId, params.stripeEventId))
     .limit(1)
     .catch(() => []);
 
   if (existing.length > 0) {
+    if (existing[0].processedStatus === 'failed') {
+      const [reclaimed] = await db.update(stripeWebhookEvents)
+        .set({ processedStatus: 'processing', processingError: null, processedAt: null })
+        .where(and(
+          eq(stripeWebhookEvents.id, existing[0].id),
+          eq(stripeWebhookEvents.processedStatus, 'failed'),
+        ))
+        .returning({ id: stripeWebhookEvents.id })
+        .catch(() => []);
+      if (reclaimed) return { alreadyProcessed: false, rowId: reclaimed.id };
+    }
     return { alreadyProcessed: true, rowId: existing[0].id };
   }
 
@@ -75,22 +89,33 @@ async function checkAndInsertWebhookEvent(params: {
     userId: params.userId ?? null,
     amountCents: params.amountCents ?? null,
     metadata: params.metadata ?? null,
-  }).returning().catch(async () => {
-    // Race condition: another request just inserted — treat as already processed
-    const row = await db.select().from(stripeWebhookEvents)
-      .where(eq(stripeWebhookEvents.stripeEventId, params.stripeEventId))
-      .limit(1).catch(() => []);
-    return row.length > 0 ? row : [];
-  });
+  }).onConflictDoNothing().returning();
 
-  if (!inserted) {
-    return { alreadyProcessed: true, rowId: '' };
+  if (inserted) return { alreadyProcessed: false, rowId: inserted.id };
+
+  // A concurrent delivery won the unique claim. Only failed events can be
+  // reclaimed; completed and in-progress events remain deduplicated.
+  const raced = await db.select({
+    id: stripeWebhookEvents.id,
+    processedStatus: stripeWebhookEvents.processedStatus,
+  }).from(stripeWebhookEvents)
+    .where(eq(stripeWebhookEvents.stripeEventId, params.stripeEventId))
+    .limit(1);
+  if (raced[0]?.processedStatus === 'failed') {
+    const [reclaimed] = await db.update(stripeWebhookEvents)
+      .set({ processedStatus: 'processing', processingError: null, processedAt: null })
+      .where(and(
+        eq(stripeWebhookEvents.id, raced[0].id),
+        eq(stripeWebhookEvents.processedStatus, 'failed'),
+      ))
+      .returning({ id: stripeWebhookEvents.id });
+    if (reclaimed) return { alreadyProcessed: false, rowId: reclaimed.id };
   }
 
-  return { alreadyProcessed: false, rowId: inserted.id };
+  return { alreadyProcessed: true, rowId: raced[0]?.id ?? '' };
 }
 
-async function markWebhookEventDone(rowId: string, status: 'succeeded' | 'failed', error?: string) {
+export async function markWebhookEventDone(rowId: string, status: 'succeeded' | 'failed', error?: string) {
   if (!rowId) return;
   await db.update(stripeWebhookEvents)
     .set({ processedStatus: status, processingError: error ?? null, processedAt: new Date() })
