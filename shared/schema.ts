@@ -3457,6 +3457,7 @@ export const workflowJobs = pgTable("workflow_jobs", {
   idempotencyKey: text("idempotency_key").unique(),
   lockedBy: text("locked_by"),
   lockedAt: timestamp("locked_at"),
+  executionGeneration: integer("execution_generation").notNull().default(0),
 
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -3465,6 +3466,32 @@ export const workflowJobs = pgTable("workflow_jobs", {
 export const insertWorkflowJobsSchema = createInsertSchema(workflowJobs).omit({ id: true, createdAt: true, updatedAt: true });
 export type WorkflowJob = typeof workflowJobs.$inferSelect;
 export type InsertWorkflowJob = z.infer<typeof insertWorkflowJobsSchema>;
+
+// Durable identity for a workflow job's business effect. Ordinary retries keep
+// the same generation; an explicit operator replay advances the generation.
+export const workflowJobEffects = pgTable("workflow_job_effects", {
+  id: text("id").primaryKey().$defaultFn(() => crypto.randomUUID()),
+  orgId: text("org_id").notNull(),
+  workflowJobId: text("workflow_job_id").notNull(),
+  effectKey: text("effect_key").notNull(),
+  executionGeneration: integer("execution_generation").notNull().default(0),
+  state: text("state").notNull().default("claimed"), // claimed | completed | failed
+  attemptCount: integer("attempt_count").notNull().default(0),
+  result: jsonb("result"),
+  lastError: text("last_error"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => ({
+  jobEffectGenerationUnique: uniqueIndex("workflow_job_effects_identity_unique").on(
+    table.orgId,
+    table.workflowJobId,
+    table.effectKey,
+    table.executionGeneration,
+  ),
+}));
+
+export type WorkflowJobEffect = typeof workflowJobEffects.$inferSelect;
 
 // ─── Agent Execution Locks ────────────────────────────────────────────────────
 // Prevent race conditions: two workflows cannot act on the same entity at once.

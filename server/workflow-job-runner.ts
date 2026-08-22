@@ -19,6 +19,7 @@ import {
   failWorkflowJob,
   classifyJobFailure,
   detectAndHandleStuckJobs,
+  executeWorkflowJobEffect,
   getJobQueueStats,
   WORKER_ID,
 } from "./workflow-job-queue";
@@ -54,7 +55,7 @@ export async function executeWorkflowJob(job: typeof workflowJobs.$inferSelect):
     // Check emergency pause before executing
     const gov = await getGovernanceSettings(orgId);
     if (gov.emergencyPause) {
-      await failWorkflowJob(jobId, "GOVERNANCE_BLOCKED: Emergency pause is active. Job paused until operator restores operations.", "governance");
+      await failWorkflowJob(jobId, "GOVERNANCE_BLOCKED: Emergency pause is active. Job paused until operator restores operations.", "governance", job.lockedBy!);
       return;
     }
 
@@ -69,9 +70,9 @@ export async function executeWorkflowJob(job: typeof workflowJobs.$inferSelect):
       outputSnapshot: { jobId, jobType },
     });
 
-    let result: Record<string, any>;
-
-    switch (jobType) {
+    const effect = await executeWorkflowJobEffect(job, "execution", async () => {
+      let result: Record<string, any>;
+      switch (jobType) {
       case "memory_lifecycle":
         result = await executeMemoryLifecycleJob(orgId, payload as any);
         break;
@@ -99,13 +100,15 @@ export async function executeWorkflowJob(job: typeof workflowJobs.$inferSelect):
 
       default:
         result = { skipped: true, message: `Unknown job type: ${jobType}` };
-    }
+      }
+      return result;
+    });
 
-    await completeWorkflowJob(jobId, result);
+    await completeWorkflowJob(jobId, effect.result, job.lockedBy!);
   } catch (err: any) {
     const errMsg = err?.message ?? String(err);
     const errorType = classifyJobFailure(errMsg);
-    await failWorkflowJob(jobId, errMsg, errorType);
+    await failWorkflowJob(jobId, errMsg, errorType, job.lockedBy!);
   }
 }
 

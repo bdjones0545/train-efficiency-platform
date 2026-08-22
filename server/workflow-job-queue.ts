@@ -16,7 +16,8 @@
  *   - Bounded retries with classified failures
  */
 
-import { db } from "./db";
+import { db, pool } from "./db";
+import type { PoolClient } from "pg";
 import { sql as sqlRaw } from "drizzle-orm";
 import { workflowJobs, agentExecutionLocks, orgExecutionRateLimits } from "@shared/schema";
 import { eq, and, lte, lt, isNull, or, sql, desc, inArray } from "drizzle-orm";
@@ -41,7 +42,9 @@ import { getGovernanceSettings } from "./capability-enforcement-engine";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 export const LOCK_TTL_MS = 5 * 60 * 1000;    // 5 minutes default lock TTL
-export const STUCK_JOB_THRESHOLD_MS = 10 * 60 * 1000;  // 10 minutes = stuck
+// The workflow claim lease is authoritative. Both direct reclaim and the
+// compatibility stuck-job sweep use this same five-minute boundary.
+export const STUCK_JOB_THRESHOLD_MS = LOCK_TTL_MS;
 export const WORKER_ID = `worker-${process.pid}-${Date.now()}`;
 
 // Retry backoff schedule (ms) — per attempt
@@ -98,6 +101,35 @@ export type JobExecutionResult = {
   errorType?: ErrorType;
   duplicate?: boolean;
 };
+
+let reliabilitySchemaInitialization: Promise<void> | null = null;
+
+export async function ensureWorkflowJobReliabilitySchema(): Promise<void> {
+  if (reliabilitySchemaInitialization) return reliabilitySchemaInitialization;
+  reliabilitySchemaInitialization = (async () => {
+    await pool.query(`ALTER TABLE workflow_jobs
+      ADD COLUMN IF NOT EXISTS execution_generation INTEGER NOT NULL DEFAULT 0`);
+    await pool.query(`CREATE TABLE IF NOT EXISTS workflow_job_effects (
+      id TEXT PRIMARY KEY,
+      org_id TEXT NOT NULL,
+      workflow_job_id TEXT NOT NULL,
+      effect_key TEXT NOT NULL,
+      execution_generation INTEGER NOT NULL DEFAULT 0,
+      state TEXT NOT NULL CHECK (state IN ('claimed','completed','failed')),
+      attempt_count INTEGER NOT NULL DEFAULT 0,
+      result JSONB,
+      last_error TEXT,
+      completed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (org_id, workflow_job_id, effect_key, execution_generation)
+    )`);
+  })().catch((error) => {
+    reliabilitySchemaInitialization = null;
+    throw error;
+  });
+  return reliabilitySchemaInitialization;
+}
 
 // ─── Enqueue ──────────────────────────────────────────────────────────────────
 
@@ -184,46 +216,51 @@ export async function enqueueWorkflowJob(input: EnqueueJobInput): Promise<JobExe
  * Atomically claim the next available job for this worker.
  * Uses UPDATE...RETURNING to prevent race conditions between workers.
  */
-export async function claimNextJob(orgId?: string): Promise<typeof workflowJobs.$inferSelect | null> {
+export async function claimNextJob(
+  orgId?: string,
+  workerId = WORKER_ID,
+): Promise<typeof workflowJobs.$inferSelect | null> {
+  await ensureWorkflowJobReliabilitySchema();
   const now = new Date();
+  const databaseNow = sql`NOW()`;
+  const leaseExpiredBefore = sql`NOW() - INTERVAL '5 minutes'`;
 
-  // Build the claim query — atomic UPDATE...RETURNING pattern
-  const conditions = [
-    or(eq(workflowJobs.status, "queued"), eq(workflowJobs.status, "retrying")),
-    lte(workflowJobs.scheduledFor, now),
-    or(isNull(workflowJobs.lockedBy), lt(workflowJobs.lockedAt, new Date(now.getTime() - LOCK_TTL_MS))),
-  ];
+  const eligible = or(
+    and(
+      inArray(workflowJobs.status, ["queued", "retrying"]),
+      lte(workflowJobs.scheduledFor, databaseNow),
+      or(isNull(workflowJobs.lockedBy), lt(workflowJobs.lockedAt, leaseExpiredBefore)),
+    ),
+    and(eq(workflowJobs.status, "running"), lt(workflowJobs.lockedAt, leaseExpiredBefore)),
+  );
+  const conditions = [eligible];
 
   if (orgId) conditions.push(eq(workflowJobs.orgId, orgId));
 
-  // Find candidate (priority order: critical > high > normal > low)
-  const PRIORITY_ORDER = { critical: 0, high: 1, normal: 2, low: 3 };
-
-  const candidates = await db
-    .select()
+  // Candidate selection and compare-and-swap claim are one statement. The
+  // eligible predicate is repeated on the UPDATE so a stale candidate cannot
+  // revive a terminal or newly-owned row.
+  const candidate = db
+    .select({ id: workflowJobs.id })
     .from(workflowJobs)
     .where(and(...conditions))
     .orderBy(sql`CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END`, workflowJobs.scheduledFor)
     .limit(1);
 
-  if (!candidates.length) return null;
-
-  const candidate = candidates[0];
-
-  // Atomic lock acquisition
   const [claimed] = await db
     .update(workflowJobs)
     .set({
       status: "running",
-      lockedBy: WORKER_ID,
-      lockedAt: now,
-      startedAt: now,
+      lockedBy: workerId,
+      lockedAt: databaseNow,
+      startedAt: databaseNow,
       attempts: sql`${workflowJobs.attempts} + 1`,
       updatedAt: now,
     })
     .where(and(
-      eq(workflowJobs.id, candidate.id),
-      or(isNull(workflowJobs.lockedBy), lt(workflowJobs.lockedAt, new Date(now.getTime() - LOCK_TTL_MS))),
+      eq(workflowJobs.id, candidate),
+      eligible,
+      ...(orgId ? [eq(workflowJobs.orgId, orgId)] : []),
     ))
     .returning();
 
@@ -232,12 +269,12 @@ export async function claimNextJob(orgId?: string): Promise<typeof workflowJobs.
   await logUnifiedAction({
     orgId: claimed.orgId,
     actorType: "system",
-    actorName: WORKER_ID,
+    actorName: workerId,
     actionType: "job_claimed",
     status: "completed",
     riskLevel: "low",
     reasoningSummary: `Job claimed by worker: ${claimed.jobType} (attempt ${(claimed.attempts ?? 0)})`,
-    outputSnapshot: { jobId: claimed.id, workerId: WORKER_ID },
+    outputSnapshot: { jobId: claimed.id, workerId },
   });
 
   return claimed;
@@ -245,12 +282,20 @@ export async function claimNextJob(orgId?: string): Promise<typeof workflowJobs.
 
 // ─── Complete ─────────────────────────────────────────────────────────────────
 
-export async function completeWorkflowJob(jobId: string, result: Record<string, any>): Promise<void> {
+export async function completeWorkflowJob(
+  jobId: string,
+  result: Record<string, any>,
+  workerId = WORKER_ID,
+): Promise<boolean> {
   const now = new Date();
   const [job] = await db
     .update(workflowJobs)
     .set({ status: "completed", completedAt: now, result, lockedBy: null, lockedAt: null, updatedAt: now })
-    .where(eq(workflowJobs.id, jobId))
+    .where(and(
+      eq(workflowJobs.id, jobId),
+      eq(workflowJobs.status, "running"),
+      eq(workflowJobs.lockedBy, workerId),
+    ))
     .returning();
 
   if (job) {
@@ -265,6 +310,88 @@ export async function completeWorkflowJob(jobId: string, result: Record<string, 
       outputSnapshot: { jobId, jobType: job.jobType, durationMs: job.startedAt ? now.getTime() - new Date(job.startedAt).getTime() : null },
     });
   }
+  return Boolean(job);
+}
+
+// ─── Durable Business Effects ────────────────────────────────────────────────
+
+type ClaimedWorkflowJob = typeof workflowJobs.$inferSelect;
+
+export async function executeWorkflowJobEffect(
+  job: ClaimedWorkflowJob,
+  effectKey: string,
+  execute: () => Promise<Record<string, any>>,
+  afterEffectCompleted?: () => Promise<void> | void,
+): Promise<{ executed: boolean; result: Record<string, any> }> {
+  await ensureWorkflowJobReliabilitySchema();
+  const generation = job.executionGeneration ?? 0;
+  await pool.query(`INSERT INTO workflow_job_effects
+    (id,org_id,workflow_job_id,effect_key,execution_generation,state,attempt_count)
+    VALUES($1,$2,$3,$4,$5,'claimed',1)
+    ON CONFLICT(org_id,workflow_job_id,effect_key,execution_generation) DO NOTHING`,
+    [crypto.randomUUID(), job.orgId, job.id, effectKey, generation]);
+  const current = await pool.query(`SELECT state,result FROM workflow_job_effects
+    WHERE org_id=$1 AND workflow_job_id=$2 AND effect_key=$3 AND execution_generation=$4`,
+    [job.orgId, job.id, effectKey, generation]);
+  if (current.rows[0]?.state === "completed") {
+    return { executed: false, result: current.rows[0].result ?? {} };
+  }
+
+  const result = await execute();
+  const completed = await pool.query(`UPDATE workflow_job_effects SET
+      state='completed',result=$5::jsonb,last_error=NULL,completed_at=NOW(),updated_at=NOW()
+    WHERE org_id=$1 AND workflow_job_id=$2 AND effect_key=$3 AND execution_generation=$4
+      AND state IN ('claimed','failed') RETURNING id`,
+    [job.orgId, job.id, effectKey, generation, JSON.stringify(result)]);
+  if (!completed.rowCount) throw new Error("Workflow effect identity was lost before completion");
+  await afterEffectCompleted?.();
+  return { executed: true, result };
+}
+
+/** Execute a DB-local effect and its completion marker in one transaction. */
+export async function executeTransactionalWorkflowJobEffect(
+  job: ClaimedWorkflowJob,
+  effectKey: string,
+  execute: (client: PoolClient) => Promise<Record<string, any>>,
+): Promise<{ executed: boolean; result: Record<string, any> }> {
+  await ensureWorkflowJobReliabilitySchema();
+  const client = await pool.connect();
+  const generation = job.executionGeneration ?? 0;
+  try {
+    await client.query("BEGIN");
+    await client.query(`INSERT INTO workflow_job_effects
+      (id,org_id,workflow_job_id,effect_key,execution_generation,state,attempt_count)
+      VALUES($1,$2,$3,$4,$5,'claimed',1)
+      ON CONFLICT(org_id,workflow_job_id,effect_key,execution_generation) DO NOTHING`,
+      [crypto.randomUUID(), job.orgId, job.id, effectKey, generation]);
+    const current = await client.query(`SELECT state,result FROM workflow_job_effects
+      WHERE org_id=$1 AND workflow_job_id=$2 AND effect_key=$3 AND execution_generation=$4 FOR UPDATE`,
+      [job.orgId, job.id, effectKey, generation]);
+    if (current.rows[0]?.state === "completed") {
+      await client.query("COMMIT");
+      return { executed: false, result: current.rows[0].result ?? {} };
+    }
+    const result = await execute(client);
+    await client.query(`UPDATE workflow_job_effects SET state='completed',result=$5::jsonb,
+      last_error=NULL,completed_at=NOW(),updated_at=NOW()
+      WHERE org_id=$1 AND workflow_job_id=$2 AND effect_key=$3 AND execution_generation=$4`,
+      [job.orgId, job.id, effectKey, generation, JSON.stringify(result)]);
+    await client.query("COMMIT");
+    return { executed: true, result };
+  } catch (error) {
+    await client.query("ROLLBACK").catch(() => undefined);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function recordWorkflowJobEffectFailure(job: ClaimedWorkflowJob, error: string): Promise<void> {
+  await ensureWorkflowJobReliabilitySchema();
+  await pool.query(`UPDATE workflow_job_effects SET state='failed',last_error=$5,updated_at=NOW()
+    WHERE org_id=$1 AND workflow_job_id=$2 AND effect_key=$3 AND execution_generation=$4
+      AND state <> 'completed'`,
+    [job.orgId, job.id, "execution", job.executionGeneration ?? 0, error]);
 }
 
 // ─── Fail + Retry ─────────────────────────────────────────────────────────────
@@ -277,15 +404,19 @@ export async function failWorkflowJob(
   jobId: string,
   error: string,
   errorType: ErrorType = "transient",
-): Promise<void> {
-  const [job] = await db.select().from(workflowJobs).where(eq(workflowJobs.id, jobId));
-  if (!job) return;
+  workerId = WORKER_ID,
+): Promise<boolean> {
+  const [job] = await db.select().from(workflowJobs).where(and(
+    eq(workflowJobs.id, jobId),
+    eq(workflowJobs.status, "running"),
+    eq(workflowJobs.lockedBy, workerId),
+  ));
+  if (!job) return false;
 
   const now = new Date();
   const attempts = job.attempts ?? 0;
   const maxAttempts = job.maxAttempts ?? 3;
-
-  await logUnifiedAction({
+  const logFailure = () => logUnifiedAction({
     orgId: job.orgId,
     actorType: "system",
     actorName: "job-queue",
@@ -298,7 +429,7 @@ export async function failWorkflowJob(
 
   // Governance failures → pause until operator acts
   if (errorType === "governance") {
-    await db.update(workflowJobs).set({
+    const updated = await db.update(workflowJobs).set({
       status: "paused",
       lastError: error,
       errorType,
@@ -306,7 +437,11 @@ export async function failWorkflowJob(
       lockedBy: null,
       lockedAt: null,
       updatedAt: now,
-    }).where(eq(workflowJobs.id, jobId));
+    }).where(and(eq(workflowJobs.id, jobId), eq(workflowJobs.status, "running"), eq(workflowJobs.lockedBy, workerId))).returning();
+
+    if (!updated.length) return false;
+    await recordWorkflowJobEffectFailure(job, error);
+    await logFailure();
 
     await logUnifiedAction({
       orgId: job.orgId,
@@ -317,22 +452,33 @@ export async function failWorkflowJob(
       riskLevel: "high",
       reasoningSummary: `Job paused due to governance block. Operator review required before retry.`,
     });
-    return;
+    return true;
   }
 
   // Fatal failures → dead letter immediately
   if (errorType === "fatal" || attempts >= maxAttempts) {
-    await moveToDeadLetter(jobId, error, errorType);
-    return;
+    const moved = await moveToDeadLetter(jobId, error, errorType, workerId);
+    if (moved) {
+      await recordWorkflowJobEffectFailure(job, error);
+      await logFailure();
+    }
+    return moved;
   }
 
   // Transient / rate_limited / timeout / blocked → schedule retry
-  await retryWorkflowJob(jobId, error, errorType);
+  const retried = await retryWorkflowJob(jobId, error, errorType, workerId);
+  if (retried) {
+    await recordWorkflowJobEffectFailure(job, error);
+    await logFailure();
+  }
+  return retried;
 }
 
-export async function retryWorkflowJob(jobId: string, error: string, errorType: ErrorType): Promise<void> {
-  const [job] = await db.select().from(workflowJobs).where(eq(workflowJobs.id, jobId));
-  if (!job) return;
+export async function retryWorkflowJob(jobId: string, error: string, errorType: ErrorType, workerId = WORKER_ID): Promise<boolean> {
+  const [job] = await db.select().from(workflowJobs).where(and(
+    eq(workflowJobs.id, jobId), eq(workflowJobs.status, "running"), eq(workflowJobs.lockedBy, workerId),
+  ));
+  if (!job) return false;
 
   const attempts = job.attempts ?? 0;
   const backoffMs = BACKOFF_SCHEDULE[Math.min(attempts, BACKOFF_SCHEDULE.length - 1)];
@@ -340,17 +486,20 @@ export async function retryWorkflowJob(jobId: string, error: string, errorType: 
   // Rate limited → longer backoff
   const effectiveBackoff = errorType === "rate_limited" ? Math.max(backoffMs, 300_000) : backoffMs;
   const nextRetryAt = new Date(Date.now() + effectiveBackoff);
+  const retryDueAt = sql`NOW() + (${effectiveBackoff} * INTERVAL '1 millisecond')`;
 
-  await db.update(workflowJobs).set({
+  const updated = await db.update(workflowJobs).set({
     status: "retrying",
     lastError: error,
     errorType,
-    nextRetryAt,
-    scheduledFor: nextRetryAt,
+    nextRetryAt: retryDueAt,
+    scheduledFor: retryDueAt,
     lockedBy: null,
     lockedAt: null,
     updatedAt: new Date(),
-  }).where(eq(workflowJobs.id, jobId));
+  }).where(and(eq(workflowJobs.id, jobId), eq(workflowJobs.status, "running"), eq(workflowJobs.lockedBy, workerId))).returning();
+
+  if (!updated.length) return false;
 
   await logUnifiedAction({
     orgId: job.orgId,
@@ -362,16 +511,17 @@ export async function retryWorkflowJob(jobId: string, error: string, errorType: 
     reasoningSummary: `Job retry scheduled in ${(effectiveBackoff / 1000).toFixed(0)}s (attempt ${attempts}/${job.maxAttempts}, error type: ${errorType}).`,
     outputSnapshot: { jobId, nextRetryAt: nextRetryAt.toISOString(), errorType },
   });
+  return true;
 }
 
 // ─── Dead Letter ──────────────────────────────────────────────────────────────
 
-export async function moveToDeadLetter(jobId: string, error: string, errorType: ErrorType): Promise<void> {
+export async function moveToDeadLetter(jobId: string, error: string, errorType: ErrorType, workerId: string): Promise<boolean> {
   const now = new Date();
   const [job] = await db
     .update(workflowJobs)
     .set({ status: "dead_letter", lastError: error, errorType, failedAt: now, lockedBy: null, lockedAt: null, updatedAt: now })
-    .where(eq(workflowJobs.id, jobId))
+    .where(and(eq(workflowJobs.id, jobId), eq(workflowJobs.status, "running"), eq(workflowJobs.lockedBy, workerId)))
     .returning();
 
   if (job) {
@@ -386,6 +536,7 @@ export async function moveToDeadLetter(jobId: string, error: string, errorType: 
       outputSnapshot: { jobId, jobType: job.jobType, errorType, attempts: job.attempts },
     });
   }
+  return Boolean(job);
 }
 
 // ─── Cancel ───────────────────────────────────────────────────────────────────
@@ -438,7 +589,7 @@ export async function pauseOrgJobs(orgId: string, pausedBy: string): Promise<num
 export async function resumeOrgJobs(orgId: string, resumedBy: string): Promise<number> {
   const result = await db
     .update(workflowJobs)
-    .set({ status: "queued", scheduledFor: new Date(), updatedAt: new Date() })
+    .set({ status: "queued", scheduledFor: sql`NOW()`, updatedAt: new Date() })
     .where(and(
       eq(workflowJobs.orgId, orgId),
       eq(workflowJobs.status, "paused"),
@@ -647,14 +798,14 @@ export function classifyJobFailure(error: string): ErrorType {
 // ─── Stuck Job Detection ──────────────────────────────────────────────────────
 
 export async function detectAndHandleStuckJobs(): Promise<{ stuckCount: number; fixedCount: number }> {
-  const stuckThreshold = new Date(Date.now() - STUCK_JOB_THRESHOLD_MS);
+  const stuckThreshold = sql`NOW() - INTERVAL '5 minutes'`;
 
   const stuckJobs = await db
     .select()
     .from(workflowJobs)
     .where(and(
       eq(workflowJobs.status, "running"),
-      lt(workflowJobs.startedAt, stuckThreshold),
+      lt(workflowJobs.lockedAt, stuckThreshold),
     ));
 
   let fixedCount = 0;
@@ -675,20 +826,29 @@ export async function detectAndHandleStuckJobs(): Promise<{ stuckCount: number; 
     });
 
     if (attempts >= maxAttempts) {
-      await moveToDeadLetter(job.id, "Job exceeded max execution time (stuck)", "timeout");
+      if (job.lockedBy && await moveToDeadLetter(job.id, "Job exceeded max execution lease", "timeout", job.lockedBy)) {
+        fixedCount++;
+      }
     } else {
-      // Release lock and reschedule
-      await db.update(workflowJobs).set({
+      // CAS against the ownership snapshot. A concurrent normal reclaim changes
+      // locked_by/locked_at, so this compatibility sweep then affects zero rows.
+      const stuckBackoff = BACKOFF_SCHEDULE[Math.min(attempts, BACKOFF_SCHEDULE.length - 1)];
+      const fixed = await db.update(workflowJobs).set({
         status: "retrying",
         lockedBy: null,
         lockedAt: null,
         lastError: "Stuck: exceeded execution time limit",
         errorType: "timeout",
-        scheduledFor: new Date(Date.now() + BACKOFF_SCHEDULE[Math.min(attempts, BACKOFF_SCHEDULE.length - 1)]),
+        scheduledFor: sql`NOW() + (${stuckBackoff} * INTERVAL '1 millisecond')`,
         updatedAt: new Date(),
-      }).where(eq(workflowJobs.id, job.id));
+      }).where(and(
+        eq(workflowJobs.id, job.id),
+        eq(workflowJobs.status, "running"),
+        eq(workflowJobs.lockedBy, job.lockedBy!),
+        eq(workflowJobs.lockedAt, job.lockedAt!),
+      )).returning({ id: workflowJobs.id });
+      fixedCount += fixed.length;
     }
-    fixedCount++;
   }
 
   // Also release stale locks (expired)
@@ -711,14 +871,14 @@ export async function getJobQueueStats(orgId: string) {
   const counts: Record<string, number> = {};
   for (const r of rows) counts[r.status] = r.count;
 
-  const stuckThreshold = new Date(Date.now() - STUCK_JOB_THRESHOLD_MS);
+  const stuckThreshold = sql`NOW() - INTERVAL '5 minutes'`;
   const [stuckResult] = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(workflowJobs)
     .where(and(
       eq(workflowJobs.orgId, orgId),
       eq(workflowJobs.status, "running"),
-      lt(workflowJobs.startedAt, stuckThreshold),
+      lt(workflowJobs.lockedAt, stuckThreshold),
     ));
 
   // Average execution time from recently completed jobs
@@ -767,6 +927,7 @@ export async function getJobsForWorkflowRun(orgId: string, workflowRunId: string
 }
 
 export async function retryDeadLetterJob(jobId: string, orgId: string, retriedBy: string): Promise<{ ok: boolean; error?: string }> {
+  await ensureWorkflowJobReliabilitySchema();
   const [job] = await db.select().from(workflowJobs).where(and(eq(workflowJobs.id, jobId), eq(workflowJobs.orgId, orgId)));
   if (!job) return { ok: false, error: "Job not found" };
   if (job.status !== "dead_letter" && job.status !== "failed" && job.status !== "paused") {
@@ -781,16 +942,23 @@ export async function retryDeadLetterJob(jobId: string, orgId: string, retriedBy
     }
   } catch (_) { /* non-blocking */ }
 
-  await db.update(workflowJobs).set({
+  const replayed = await db.update(workflowJobs).set({
     status: "queued",
     lockedBy: null,
     lockedAt: null,
     lastError: null,
     errorType: null,
     nextRetryAt: null,
-    scheduledFor: new Date(),
+    attempts: 0,
+    executionGeneration: sql`${workflowJobs.executionGeneration} + 1`,
+    scheduledFor: sql`NOW()`,
     updatedAt: new Date(),
-  }).where(eq(workflowJobs.id, jobId));
+  }).where(and(
+    eq(workflowJobs.id, jobId),
+    eq(workflowJobs.orgId, orgId),
+    inArray(workflowJobs.status, ["dead_letter", "failed", "paused"]),
+  )).returning();
+  if (!replayed.length) return { ok: false, error: "Job ownership or terminal state changed" };
 
   await logUnifiedAction({
     orgId,
