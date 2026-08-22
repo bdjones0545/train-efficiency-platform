@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { db } from "../db";
+import { isShuttingDown, trackBackgroundTask } from "./runtime-shutdown";
 import {
   eq, and, desc, lt, gte, sql, or, isNull
 } from "drizzle-orm";
@@ -39,6 +40,8 @@ export interface CeoPriority {
   urgency: "critical" | "high" | "medium" | "low";
   domain?: string;
 }
+
+const activeLockDrains = new Map<string, () => void>();
 
 export interface HeartbeatStatus {
   isRunning: boolean;
@@ -125,6 +128,7 @@ export async function acquireJobLock(
   jobName: string,
   ttlMinutes = 60
 ): Promise<{ acquired: boolean; lockKey: string; ownerToken: string; expiresAt: Date | null; failure?: "lock_service" }> {
+  if (isShuttingDown()) return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null };
   const dbLockKey = `${orgId}:${jobName}`;
   const ttlSeconds = Math.max(1, Math.floor(ttlMinutes * 60));
 
@@ -141,7 +145,13 @@ export async function acquireJobLock(
       WHERE job_execution_locks.expires_at < NOW()
       RETURNING expires_at`);
     const rows = result?.rows ?? result;
-    if (rows?.[0]) return { acquired: true, lockKey, ownerToken, expiresAt: rows[0].expires_at };
+    if (rows?.[0]) {
+      let resolveDrain!: () => void;
+      const drain = new Promise<void>(resolve => { resolveDrain = resolve; });
+      activeLockDrains.set(ownerToken, resolveDrain);
+      void trackBackgroundTask(`scheduler-lock:${dbLockKey}`, () => drain);
+      return { acquired: true, lockKey, ownerToken, expiresAt: rows[0].expires_at };
+    }
     return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null };
   } catch (error) {
     console.error(`[CronLock] Acquisition service failure for ${dbLockKey}:`, error);
@@ -202,10 +212,15 @@ export function startJobLockHeartbeat(lockHandle: string, ttlMinutes: number): (
 export async function releaseJobLock(lockHandle: string, explicitOwnerToken?: string): Promise<boolean> {
   const { dbLockKey, ownerToken } = parseJobLockHandle(lockHandle, explicitOwnerToken);
   if (!dbLockKey || !ownerToken) return false;
-  const [released] = await db.delete(jobExecutionLocks)
-    .where(and(eq(jobExecutionLocks.lockKey, dbLockKey), eq(jobExecutionLocks.id, ownerToken)))
-    .returning({ id: jobExecutionLocks.id });
-  return Boolean(released);
+  try {
+    const [released] = await db.delete(jobExecutionLocks)
+      .where(and(eq(jobExecutionLocks.lockKey, dbLockKey), eq(jobExecutionLocks.id, ownerToken)))
+      .returning({ id: jobExecutionLocks.id });
+    return Boolean(released);
+  } finally {
+    activeLockDrains.get(ownerToken)?.();
+    activeLockDrains.delete(ownerToken);
+  }
 }
 
 export async function runWithJobLockLease(
@@ -214,7 +229,8 @@ export async function runWithJobLockLease(
   ttlMinutes: number,
   work: () => Promise<void>,
   acquire: typeof acquireJobLock = acquireJobLock,
-): Promise<{ executed: boolean; reason: "completed" | "contended" | "lock_service_failure" }> {
+): Promise<{ executed: boolean; reason: "completed" | "contended" | "lock_service_failure" | "shutdown" }> {
+  if (isShuttingDown()) return { executed: false, reason: "shutdown" };
   let lock;
   try {
     lock = await acquire(orgId, jobName, ttlMinutes);
@@ -225,9 +241,13 @@ export async function runWithJobLockLease(
   if (!lock.acquired) {
     return { executed: false, reason: lock.failure === "lock_service" ? "lock_service_failure" : "contended" };
   }
+  if (isShuttingDown()) {
+    await releaseJobLock(lock.lockKey);
+    return { executed: false, reason: "shutdown" };
+  }
   const stopHeartbeat = startJobLockHeartbeat(lock.lockKey, ttlMinutes);
   try {
-    await work();
+    await trackBackgroundTask(`scheduler:${orgId}:${jobName}`, work);
     return { executed: true, reason: "completed" };
   } finally {
     stopHeartbeat();

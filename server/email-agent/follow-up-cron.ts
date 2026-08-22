@@ -11,6 +11,7 @@ import { acquireJobLock, releaseJobLock } from "../services/ceo-heartbeat-servic
 import { like } from "drizzle-orm";
 import { pushToDeadLetter } from "../services/agent-dead-letter-service";
 import { logSystemEvent } from "../reliability-routes";
+import { isShuttingDown, registerShutdownStop, trackBackgroundTask } from "../services/runtime-shutdown";
 import {
   claimFollowUp,
   completeFollowUpSend,
@@ -484,18 +485,29 @@ export async function processFollowUpsForOrg(
 
 let followUpCronInitialized = false;
 let followUpCronIsRunning = false;
+let followUpStartTimer: NodeJS.Timeout | null = null;
+let followUpInterval: NodeJS.Timeout | null = null;
 
 export function initializeFollowUpCron(): void {
-  if (followUpCronInitialized) return;
+  if (followUpCronInitialized || isShuttingDown()) return;
   followUpCronInitialized = true;
 
-  setTimeout(() => runFollowUpCron(), 15_000);
-  setInterval(() => runFollowUpCron(), 60 * 60 * 1000);
+  registerShutdownStop("follow-up-cron", stopFollowUpCron);
+  followUpStartTimer = setTimeout(() => { void trackBackgroundTask("follow-up-cron", runFollowUpCron); }, 15_000);
+  followUpInterval = setInterval(() => { void trackBackgroundTask("follow-up-cron", runFollowUpCron); }, 60 * 60 * 1000);
 
   console.log("[FollowUp Cron] started — will run hourly");
 }
 
+export function stopFollowUpCron(): void {
+  if (followUpStartTimer) clearTimeout(followUpStartTimer);
+  if (followUpInterval) clearInterval(followUpInterval);
+  followUpStartTimer = null;
+  followUpInterval = null;
+}
+
 async function runFollowUpCron(): Promise<void> {
+  if (isShuttingDown()) return;
   // Global guard: prevent overlapping ticks (Priority 3)
   if (followUpCronIsRunning) {
     console.log("[FollowUp Cron] previous run still in progress — skipping this tick");
@@ -521,6 +533,7 @@ async function runFollowUpCron(): Promise<void> {
     }
 
     for (const orgId of Array.from(orgIds)) {
+      if (isShuttingDown()) break;
       // Per-org lock: prevents the same org processing twice if a tick fires mid-run
       const { acquired, lockKey } = await acquireJobLock(orgId, "follow_up_cron", 55).catch(
         (error) => { console.error(`[FollowUp Cron] org ${orgId} lock failure:`, error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }

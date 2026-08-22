@@ -10,6 +10,8 @@ import { validateEmailProvider } from "./email";
 import { orgErrorMiddleware } from "./lib/resolve-org-id";
 import { runStartupOrgAudit } from "./lib/startup-org-audit";
 import { assertRequiredSecrets } from "./lib/secrets";
+import { pool } from "./db";
+import { shutdownRuntime } from "./services/runtime-shutdown";
 
 const app = express();
 const httpServer = createServer(app);
@@ -724,29 +726,15 @@ app.use((req, res, next) => {
     },
   );
 
-  // ── Graceful shutdown — stop Kevin event worker before exit ───────────────
-  // This prevents the 5-min interval from keeping the process alive during
-  // hot-reload or SIGTERM from the process manager.
+  // Stop external intake, stop background starts, drain active work, then close DB.
   async function gracefulShutdown(signal: string) {
-    console.log(`[Shutdown] ${signal} received — stopping background workers`);
-    try {
-      const { stopAgentDeadLetterWorker } = await import("./services/agent-dead-letter-service");
-      stopAgentDeadLetterWorker();
-      const { stopKevinEventWorker } = await import("./services/kevin-event-service");
-      stopKevinEventWorker();
-      console.log("[Shutdown] Kevin event worker stopped");
-    } catch {
-      // Non-fatal — worker may not have started
-    }
-    httpServer.close(() => {
-      console.log("[Shutdown] HTTP server closed");
-      process.exit(0);
+    const result = await shutdownRuntime({
+      reason: signal,
+      graceMs: Number(process.env.SHUTDOWN_GRACE_MS ?? 10_000),
+      stopAccepting: () => new Promise<void>((resolve) => httpServer.close(() => resolve())),
+      closeResources: () => pool.end(),
     });
-    // Force exit after 10 s if something hangs
-    setTimeout(() => {
-      console.warn("[Shutdown] Forcing exit after timeout");
-      process.exit(1);
-    }, 10_000).unref();
+    process.exit(result.timedOut ? 1 : 0);
   }
 
   process.once("SIGTERM", () => gracefulShutdown("SIGTERM"));

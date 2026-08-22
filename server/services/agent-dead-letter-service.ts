@@ -9,6 +9,7 @@
 import { db, pool } from "../db";
 import { sql } from "drizzle-orm";
 import { CircuitOpenError, executeWithCircuitBreaker, jitteredDelayMs, type RetryRandom } from "./retry-reliability";
+import { isShuttingDown, registerShutdownStop, trackBackgroundTask } from "./runtime-shutdown";
 
 let tableReady = false;
 
@@ -402,22 +403,24 @@ export async function processOneDeadLetterJob(workerId: string, orgId?: string):
 let workerTimer: NodeJS.Timeout | null = null;
 let workerStopping = false;
 export async function startAgentDeadLetterWorker(): Promise<void> {
-  if (workerTimer) return;
+  if (workerTimer || isShuttingDown()) return;
   await ensureTable();
   registerDeadLetterReplayHandler("agent_action_executor", requeueAgentActionDeadLetter);
   workerStopping = false;
   const workerId = `agent-dlq-${process.pid}-${Math.random().toString(36).slice(2)}`;
   const poll = async () => {
-    if (workerStopping) return;
+    if (workerStopping || isShuttingDown()) return;
     try {
-      for (let processed = 0; !workerStopping && processed < 25; processed++) {
+      for (let processed = 0; !workerStopping && !isShuttingDown() && processed < 25; processed++) {
         if (!await processOneDeadLetterJob(workerId)) break;
       }
     }
     catch (error: any) { console.error("[AgentDeadLetterWorker] poll failed:", error.message); }
   };
-  await poll();
-  workerTimer = setInterval(poll, 30_000);
+  registerShutdownStop("agent-dead-letter-worker", stopAgentDeadLetterWorker);
+  await trackBackgroundTask("agent-dead-letter-poll", poll);
+  if (workerStopping || isShuttingDown()) return;
+  workerTimer = setInterval(() => { void trackBackgroundTask("agent-dead-letter-poll", poll); }, 30_000);
   workerTimer.unref();
   console.log("[AgentDeadLetterWorker] Started");
 }

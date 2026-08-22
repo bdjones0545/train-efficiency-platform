@@ -350,12 +350,15 @@ let _cronHandle: ReturnType<typeof setInterval> | null = null;
 
 export function startKevinEventWorker(): void {
   if (_cronHandle) return;
-  _cronHandle = setInterval(() => {
-    flushPendingKevinEvents().catch((e) =>
-      console.warn("[KevinEvents] worker error:", e?.message),
-    );
-  }, 5 * 60 * 1000); // 5 minutes
-  console.log("[KevinEvents] event worker started (5-min interval)");
+  void import("./runtime-shutdown").then(({ isShuttingDown, registerShutdownStop, trackBackgroundTask }) => {
+    if (isShuttingDown()) return;
+    registerShutdownStop("kevin-event-worker", stopKevinEventWorker);
+    _cronHandle = setInterval(() => {
+      void trackBackgroundTask("kevin-event-flush", flushPendingKevinEvents).catch((e) =>
+        console.warn("[KevinEvents] worker error:", e?.message));
+    }, 5 * 60 * 1000); // 5 minutes
+    console.log("[KevinEvents] event worker started (5-min interval)");
+  });
 }
 
 export function stopKevinEventWorker(): void {

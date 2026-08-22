@@ -28,6 +28,7 @@ import { logUnifiedAction } from "./unified-action-logger";
 import { db } from "./db";
 import { workflowJobs, workflowRuns } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
+import { isShuttingDown, registerShutdownStop, trackBackgroundTask } from "./services/runtime-shutdown";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -177,17 +178,18 @@ async function executeNotificationJob(orgId: string, payload: { type: string; me
 // ─── Poll Loop ────────────────────────────────────────────────────────────────
 
 async function pollAndProcess(): Promise<void> {
-  if (shutdownRequested || activeJobs >= MAX_CONCURRENCY) return;
+  if (shutdownRequested || isShuttingDown() || activeJobs >= MAX_CONCURRENCY) return;
 
   try {
     // Claim and process up to (MAX_CONCURRENCY - activeJobs) jobs
     const slots = MAX_CONCURRENCY - activeJobs;
     for (let i = 0; i < slots; i++) {
+      if (shutdownRequested || isShuttingDown()) break;
       const job = await claimNextJob();
       if (!job) break;
 
       activeJobs++;
-      executeWorkflowJob(job)
+      trackBackgroundTask(`workflow-job:${job.id}`, () => executeWorkflowJob(job))
         .catch(err => console.error(`[JobRunner] Unhandled error in job ${job.id}:`, err))
         .finally(() => { activeJobs--; });
     }
@@ -199,6 +201,7 @@ async function pollAndProcess(): Promise<void> {
 // ─── Start / Stop ─────────────────────────────────────────────────────────────
 
 export function startWorkflowJobRunner(): void {
+  if (isShuttingDown()) return;
   if (!ENABLED) {
     console.log("[JobRunner] Disabled (set USE_WORKFLOW_JOB_QUEUE=true to enable)");
     return;
@@ -210,6 +213,8 @@ export function startWorkflowJobRunner(): void {
   }
 
   isRunning = true;
+  shutdownRequested = false;
+  registerShutdownStop("workflow-job-runner", stopWorkflowJobRunner);
   console.log(`[JobRunner] Started — worker: ${WORKER_ID}, poll: ${POLL_INTERVAL_MS}ms, concurrency: ${MAX_CONCURRENCY}`);
 
   // Main poll loop
@@ -219,6 +224,7 @@ export function startWorkflowJobRunner(): void {
 
   // Stuck job detection loop
   stuckCheckTimer = setInterval(async () => {
+    if (shutdownRequested || isShuttingDown()) return;
     try {
       const { stuckCount, fixedCount } = await detectAndHandleStuckJobs();
       if (stuckCount > 0) {
@@ -229,17 +235,15 @@ export function startWorkflowJobRunner(): void {
     }
   }, STUCK_CHECK_INTERVAL_MS);
 
-  // Graceful shutdown
-  const shutdown = () => {
-    console.log("[JobRunner] Graceful shutdown initiated…");
-    shutdownRequested = true;
-    if (pollTimer) clearInterval(pollTimer);
-    if (stuckCheckTimer) clearInterval(stuckCheckTimer);
-    isRunning = false;
-  };
+}
 
-  process.on("SIGTERM", shutdown);
-  process.on("SIGINT", shutdown);
+export function stopWorkflowJobRunner(): void {
+  shutdownRequested = true;
+  if (pollTimer) clearInterval(pollTimer);
+  if (stuckCheckTimer) clearInterval(stuckCheckTimer);
+  pollTimer = null;
+  stuckCheckTimer = null;
+  isRunning = false;
 }
 
 export function getRunnerStatus() {
