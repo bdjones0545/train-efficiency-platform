@@ -399,7 +399,10 @@ export function startBusinessBrainCron() {
           org.id,
           "business_brain_cron",
           55 // 55-minute TTL — matches the hourly interval with a small buffer
-        ).catch(() => ({ acquired: true, lockKey: "" }));
+        ).catch((error) => {
+          console.error(`[BusinessBrain] Lock failure for org ${org.id}:`, error);
+          return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const };
+        });
 
         if (!acquired) {
           console.log(`[BusinessBrain] Lock held for org ${org.id} — skipping duplicate run`);

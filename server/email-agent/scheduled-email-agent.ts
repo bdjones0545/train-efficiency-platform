@@ -517,7 +517,7 @@ async function runDailyJobForAllOrgs(): Promise<void> {
         // Only guards the cron path — manual triggers call runEmailAgentForOrg directly.
         const { acquireJobLock, releaseJobLock } = await import("../services/ceo-heartbeat-service");
         const { acquired, lockKey } = await acquireJobLock(org.id, "scheduled_email_agent", 1440).catch(
-          () => ({ acquired: true, lockKey: "" })
+          (error) => { console.error("[Scheduled Email Agent] lock failure:", error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }
         );
         if (!acquired) {
           console.log(`[Email Agent Cron] Lock held for org ${org.id} — skipping duplicate run`);

@@ -52,11 +52,10 @@ describe("automated-outreach crons acquire + release a job lock", () => {
         assert.ok(/finally\s*{[^}]*releaseJobLock/s.test(c.src), `${c.file} should release in finally`);
       });
 
-      it("uses the fail-open lock-error pattern", () => {
-        assert.ok(
-          c.src.includes('acquired: true, lockKey: ""'),
-          `${c.file} should fail open on lock-system error`,
-        );
+      it("fails closed on lock-service errors", () => {
+        if (c.file === "server/agentmail-followup-routes.ts") return; // AgentMail is an explicit scope boundary.
+        assert.ok(!c.src.includes('acquired: true, lockKey: ""'), `${c.file} must not fail open`);
+        assert.ok(c.src.includes("acquired: false"), `${c.file} should skip on lock failure`);
       });
 
       it("still invokes the unchanged send sweep", () => {

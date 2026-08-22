@@ -709,7 +709,7 @@ export async function runPulseForAllOrgs(
   for (const org of orgs) {
     // Per-org lock: prevents duplicate daily runs across instances (autoscale).
     const { acquired, lockKey } = await acquireJobLock(org.id, "pulse_daily_cron", 1440).catch(
-      () => ({ acquired: true, lockKey: "" })
+      (error) => { console.error("[Pulse Agent] lock failure:", error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }
     );
     if (!acquired) {
       console.log(`[Pulse][${org.id}] Lock held — skipping duplicate run`);

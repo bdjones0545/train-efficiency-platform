@@ -248,7 +248,7 @@ export function startSessionReminderJob() {
   const guardedRun = async () => {
     const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
     const { acquired, lockKey } = await acquireJobLock("__global__", "session_reminders", 60).catch(
-      () => ({ acquired: true, lockKey: "" })
+      (error) => { console.error("[Session Reminders] lock failure:", error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }
     );
     if (!acquired) {
       console.log("[Session Reminders] Lock held by another instance — skipping this run");

@@ -342,7 +342,7 @@ export function startRevenueAgentCron(getOrgIds: () => Promise<string[]>) {
             // Per-org lock: prevents duplicate scheduled runs across instances (autoscale).
             const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
             const { acquired, lockKey } = await acquireJobLock(orgId, "revenue_agent_cron", 60).catch(
-              () => ({ acquired: true, lockKey: "" })
+              (error) => { console.error("[Revenue Agent] lock failure:", error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }
             );
             if (!acquired) {
               console.log(`[RevenueAgent] Lock held for org ${orgId} — skipping duplicate run`);

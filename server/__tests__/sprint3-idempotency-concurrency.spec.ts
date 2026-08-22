@@ -93,24 +93,20 @@ describe("Phase 2 — Heartbeat concurrency protection", () => {
     );
   });
 
-  test("acquireJobLock takeover uses atomic UPDATE (no TOCTOU SELECT+UPDATE)", () => {
+  test("acquireJobLock takeover uses atomic INSERT ON CONFLICT (no TOCTOU)", () => {
     const heartbeat = src("server/services/ceo-heartbeat-service.ts");
-    // Look for the atomic UPDATE pattern inside the catch block
-    const catchBlock = heartbeat.slice(
-      heartbeat.indexOf("} catch {"),
-      heartbeat.indexOf("} catch {") + 600
+    const fnBlock = heartbeat.slice(heartbeat.indexOf("export async function acquireJobLock("), heartbeat.indexOf("function parseJobLockHandle"));
+    assert.ok(
+      fnBlock.includes("ON CONFLICT (lock_key) DO UPDATE"),
+      "lock takeover must use one atomic INSERT ON CONFLICT statement"
     );
     assert.ok(
-      catchBlock.includes(".update(jobExecutionLocks)"),
-      "lock takeover must use a single UPDATE instead of SELECT+UPDATE"
-    );
-    assert.ok(
-      catchBlock.includes(".returning("),
-      "atomic takeover UPDATE must use .returning() to confirm exactly one row was claimed"
+      fnBlock.includes("RETURNING expires_at"),
+      "atomic takeover must return the claimed row"
     );
     // The old SELECT pattern must be gone from the catch block
     assert.ok(
-      !catchBlock.includes(".select().from(jobExecutionLocks)"),
+      !fnBlock.includes(".select().from(jobExecutionLocks)"),
       "lock takeover must NOT use SELECT then UPDATE — that is a TOCTOU race"
     );
   });
@@ -118,7 +114,7 @@ describe("Phase 2 — Heartbeat concurrency protection", () => {
   test("lock key formula includes orgId prefix for strict org isolation", () => {
     const heartbeat = src("server/services/ceo-heartbeat-service.ts");
     assert.ok(
-      heartbeat.includes("${orgId}:${jobName}:"),
+      heartbeat.includes("${orgId}:${jobName}"),
       "lock key must be prefixed with orgId to prevent cross-org lock collisions"
     );
   });
@@ -385,7 +381,7 @@ describe("Phase 8 — Concurrency stress safety", () => {
     assert.ok(trxUpdateCount >= 1, "creditWallet must use trx.update (inside transaction)");
   });
 
-  test("acquireJobLock expired-lock takeover is atomic (UPDATE...WHERE expiresAt < now RETURNING)", () => {
+  test("acquireJobLock expired-lock takeover is atomic and expiry-gated", () => {
     const heartbeat = src("server/services/ceo-heartbeat-service.ts");
     const fnStart = heartbeat.indexOf("export async function acquireJobLock(");
     // Function spans ~35 lines; use 1500 chars to capture the entire body
@@ -395,13 +391,12 @@ describe("Phase 8 — Concurrency stress safety", () => {
       !fnBlock.includes(".select().from(jobExecutionLocks)"),
       "acquireJobLock expired-lock takeover must NOT use SELECT+UPDATE — use atomic UPDATE...WHERE...RETURNING"
     );
-    // Must contain the atomic UPDATE
     assert.ok(
-      fnBlock.includes(".update(jobExecutionLocks)"),
-      "acquireJobLock expired-lock takeover must use a single atomic UPDATE"
+      fnBlock.includes("ON CONFLICT (lock_key) DO UPDATE"),
+      "acquireJobLock expired-lock takeover must use a single atomic upsert"
     );
     assert.ok(
-      fnBlock.includes("lt(jobExecutionLocks.expiresAt, now)"),
+      fnBlock.includes("job_execution_locks.expires_at < NOW()"),
       "atomic takeover must filter WHERE expiresAt < now to prevent race on non-expired locks"
     );
   });

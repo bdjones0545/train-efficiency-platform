@@ -41,11 +41,9 @@ describe("reminder crons acquire + release a global job lock", () => {
         assert.ok(/finally\s*{[^}]*releaseJobLock/s.test(c.src), `${c.file} should release in finally`);
       });
 
-      it("uses the fail-open lock-error pattern", () => {
-        assert.ok(
-          c.src.includes('acquired: true, lockKey: ""'),
-          `${c.file} should fail open on lock-system error`,
-        );
+      it("fails closed on lock-service errors", () => {
+        assert.ok(!c.src.includes('acquired: true, lockKey: ""'), `${c.file} must not fail open`);
+        assert.ok(c.src.includes("acquired: false"), `${c.file} should skip on lock failure`);
       });
 
       it("still invokes the unchanged sweep function", () => {

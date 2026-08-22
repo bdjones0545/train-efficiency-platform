@@ -60,7 +60,7 @@ export function startWeeklyReminderJob() {
   const guardedRun = async () => {
     const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
     const { acquired, lockKey } = await acquireJobLock("__global__", "weekly_reminder", 120).catch(
-      () => ({ acquired: true, lockKey: "" })
+      (error) => { console.error("[Weekly Reminder] lock failure:", error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }
     );
     if (!acquired) {
       console.log("[Weekly Reminder] Lock held by another instance — skipping this run");

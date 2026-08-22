@@ -17,7 +17,7 @@ import { describe, it, after } from "node:test";
 import assert from "node:assert/strict";
 import { db } from "../db.js";
 import { jobExecutionLocks } from "@shared/schema.js";
-import { like } from "drizzle-orm";
+import { eq, like, sql } from "drizzle-orm";
 import { acquireJobLock, releaseJobLock } from "../services/ceo-heartbeat-service.js";
 
 const TS = Date.now();
@@ -42,16 +42,10 @@ describe("cron job locks (DB integration)", () => {
     const orgId = `test-lock-org-exp-${TS}`;
     const job = `test_lock_b_${TS}`;
     const ttl = 60;
-    const now = Date.now();
-    // Pre-seed the exact key acquireJobLock() will compute, but already expired.
-    const lockKey = `${orgId}:${job}:${Math.floor(now / (ttl * 60 * 1000))}`;
-    await db.insert(jobExecutionLocks).values({
-      orgId,
-      jobName: job,
-      lockKey,
-      expiresAt: new Date(now - 1000),
-      status: "acquired",
-    });
+    const first = await acquireJobLock(orgId, job, ttl);
+    await db.update(jobExecutionLocks)
+      .set({ expiresAt: sql`NOW() - INTERVAL '1 second'` })
+      .where(eq(jobExecutionLocks.id, first.ownerToken));
     const res = await acquireJobLock(orgId, job, ttl);
     assert.equal(res.acquired, true, "expired lock should be taken over");
     await releaseJobLock(res.lockKey);

@@ -359,7 +359,7 @@ export function initializeLeadCaptureSequenceCron(): void {
   const guardedRun = async () => {
     const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
     const { acquired, lockKey } = await acquireJobLock("__global__", "lead_capture_sequences", 30).catch(
-      () => ({ acquired: true, lockKey: "" })
+      (error) => { console.error("[Lead Capture] lock failure:", error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }
     );
     if (!acquired) {
       console.log("[LeadCapture Sequences] Lock held by another instance — skipping this run");

@@ -512,7 +512,7 @@ export async function runApexForAllOrgs(triggeredBy: "cron" | "manual" | "startu
   for (const org of orgs) {
     // Per-org lock: prevents duplicate daily runs across instances (autoscale).
     const { acquired, lockKey } = await acquireJobLock(org.id, "apex_daily_cron", 1440).catch(
-      () => ({ acquired: true, lockKey: "" })
+      (error) => { console.error("[Apex Agent] lock failure:", error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }
     );
     if (!acquired) {
       console.log(`[Apex][${org.id}] Lock held — skipping duplicate run`);

@@ -523,7 +523,7 @@ async function runFollowUpCron(): Promise<void> {
     for (const orgId of Array.from(orgIds)) {
       // Per-org lock: prevents the same org processing twice if a tick fires mid-run
       const { acquired, lockKey } = await acquireJobLock(orgId, "follow_up_cron", 55).catch(
-        () => ({ acquired: true, lockKey: "" })
+        (error) => { console.error(`[FollowUp Cron] org ${orgId} lock failure:`, error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }
       );
       if (!acquired) {
         console.log(`[FollowUp Cron] org ${orgId} lock held — skipping this tick`);

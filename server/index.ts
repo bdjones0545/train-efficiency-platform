@@ -212,23 +212,15 @@ app.use((req, res, next) => {
   // always acquired on the first attempt. When another instance already holds
   // the lock, the body is skipped and logged. Per-org jobs lock on org.id;
   // process-global jobs lock on the "__global__" sentinel.
-  const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
+  const { acquireJobLock, releaseJobLock, runWithJobLockLease } = await import("./services/ceo-heartbeat-service");
   async function runWithJobLock(
     lockScope: string,
     jobName: string,
     ttlMinutes: number,
     fn: () => Promise<void>,
   ): Promise<void> {
-    const { acquired, lockKey } = await acquireJobLock(lockScope, jobName, ttlMinutes);
-    if (!acquired) {
-      console.log(`[Cron] Skipped ${jobName} for ${lockScope} — lock held by another instance`);
-      return;
-    }
-    try {
-      await fn();
-    } finally {
-      await releaseJobLock(lockKey);
-    }
+    const outcome = await runWithJobLockLease(lockScope, jobName, ttlMinutes, fn);
+    if (!outcome.executed) console.log(`[Cron] Skipped ${jobName} for ${lockScope} — ${outcome.reason}`);
   }
 
   const { detectOutcomesForOrg, executeAutoActions, runCampaignEngine } = await import("./action-tracking");

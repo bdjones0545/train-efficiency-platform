@@ -64,8 +64,8 @@ describe("A. index.ts crons are wrapped in job locks", () => {
 });
 
 // Mirror of acquireJobLock()'s key formula (server/services/ceo-heartbeat-service.ts).
-function lockKey(scope: string, jobName: string, ttlMinutes: number, nowMs: number): string {
-  return `${scope}:${jobName}:${Math.floor(nowMs / (ttlMinutes * 60 * 1000))}`;
+function lockKey(scope: string, jobName: string, _ttlMinutes: number, _nowMs: number): string {
+  return `${scope}:${jobName}`;
 }
 
 describe("B. lock-key derivation contract", () => {
@@ -89,9 +89,9 @@ describe("B. lock-key derivation contract", () => {
     assert.notEqual(a, b);
   });
 
-  it("a later TTL window yields a different key (allows re-acquire next tick)", () => {
+  it("a later TTL window keeps the stable key (expiry controls takeover)", () => {
     const a = lockKey("org-1", "financial_event_retry", 15, now);
     const b = lockKey("org-1", "financial_event_retry", 15, now + 15 * 60_000 + 1);
-    assert.notEqual(a, b);
+    assert.equal(a, b);
   });
 });

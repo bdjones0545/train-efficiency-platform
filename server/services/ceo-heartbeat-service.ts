@@ -124,46 +124,115 @@ export async function acquireJobLock(
   orgId: string,
   jobName: string,
   ttlMinutes = 60
-): Promise<{ acquired: boolean; lockKey: string }> {
-  const now = new Date();
-  const lockKey = `${orgId}:${jobName}:${Math.floor(now.getTime() / (ttlMinutes * 60 * 1000))}`;
-  const expiresAt = new Date(now.getTime() + ttlMinutes * 60 * 1000);
+): Promise<{ acquired: boolean; lockKey: string; ownerToken: string; expiresAt: Date | null; failure?: "lock_service" }> {
+  const dbLockKey = `${orgId}:${jobName}`;
+  const ttlSeconds = Math.max(1, Math.floor(ttlMinutes * 60));
 
   try {
-    await db.insert(jobExecutionLocks).values({
-      orgId,
-      jobName,
-      lockKey,
-      expiresAt,
-      status: "acquired",
-    });
-    return { acquired: true, lockKey };
-  } catch {
-    // Unique constraint violation = lock already held
-    // Atomic takeover — single UPDATE prevents TOCTOU race between two concurrent workers
-    // both seeing the same expired lock and both trying to claim it.
-    const [taken] = await db
-      .update(jobExecutionLocks)
-      .set({ status: "acquired", acquiredAt: now, expiresAt, releasedAt: null })
-      .where(and(
-        eq(jobExecutionLocks.lockKey, lockKey),
-        lt(jobExecutionLocks.expiresAt, now),
-      ))
-      .returning({ id: jobExecutionLocks.id });
-
-    if (taken) return { acquired: true, lockKey };
-    return { acquired: false, lockKey };
+    const ownerToken = crypto.randomUUID();
+    const lockKey = `${dbLockKey}#${ownerToken}`;
+    const result: any = await db.execute(sql`INSERT INTO job_execution_locks
+      (id, org_id, job_name, lock_key, acquired_at, expires_at, released_at, status)
+      VALUES (${ownerToken}, ${orgId}, ${jobName}, ${dbLockKey}, NOW(),
+        NOW() + (${ttlSeconds} * INTERVAL '1 second'), NULL, 'acquired')
+      ON CONFLICT (lock_key) DO UPDATE SET
+        id=EXCLUDED.id, org_id=EXCLUDED.org_id, job_name=EXCLUDED.job_name,
+        acquired_at=NOW(), expires_at=EXCLUDED.expires_at, released_at=NULL, status='acquired'
+      WHERE job_execution_locks.expires_at < NOW()
+      RETURNING expires_at`);
+    const rows = result?.rows ?? result;
+    if (rows?.[0]) return { acquired: true, lockKey, ownerToken, expiresAt: rows[0].expires_at };
+    return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null };
+  } catch (error) {
+    console.error(`[CronLock] Acquisition service failure for ${dbLockKey}:`, error);
+    return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" };
   }
 }
 
-export async function releaseJobLock(lockKey: string): Promise<void> {
-  // DELETE the row so the same lock key can be re-acquired later in the same
-  // time-bucket window.  An UPDATE to "released" kept the row alive and caused
-  // the UNIQUE constraint to fire on the next manual run, blocking it forever
-  // within the same 28-minute window.
-  await db.delete(jobExecutionLocks)
-    .where(eq(jobExecutionLocks.lockKey, lockKey))
-    .catch(() => {});
+function parseJobLockHandle(lockHandle: string, explicitOwnerToken?: string): { dbLockKey: string; ownerToken: string } {
+  if (explicitOwnerToken) return { dbLockKey: lockHandle, ownerToken: explicitOwnerToken };
+  const separator = lockHandle.lastIndexOf("#");
+  if (separator < 1) return { dbLockKey: "", ownerToken: "" };
+  return { dbLockKey: lockHandle.slice(0, separator), ownerToken: lockHandle.slice(separator + 1) };
+}
+
+export async function renewJobLock(lockHandle: string, ownerTokenOrTtl: string | number, maybeTtl?: number): Promise<boolean> {
+  const explicitOwner = typeof ownerTokenOrTtl === "string" ? ownerTokenOrTtl : undefined;
+  const ttlMinutes = typeof ownerTokenOrTtl === "number" ? ownerTokenOrTtl : maybeTtl!;
+  const { dbLockKey, ownerToken } = parseJobLockHandle(lockHandle, explicitOwner);
+  if (!dbLockKey || !ownerToken) return false;
+  const ttlSeconds = Math.max(1, Math.floor(ttlMinutes * 60));
+  const [renewed] = await db.update(jobExecutionLocks)
+    .set({ expiresAt: sql`NOW() + (${ttlSeconds} * INTERVAL '1 second')` })
+    .where(and(
+      eq(jobExecutionLocks.lockKey, dbLockKey),
+      eq(jobExecutionLocks.id, ownerToken),
+      eq(jobExecutionLocks.status, "acquired"),
+      gte(jobExecutionLocks.expiresAt, sql`NOW()`),
+    ))
+    .returning({ id: jobExecutionLocks.id });
+  return Boolean(renewed);
+}
+
+export function startJobLockHeartbeat(lockHandle: string, ttlMinutes: number): () => void {
+  // Renew at one third of the TTL, leaving a two-thirds safety margin.
+  const intervalMs = Math.max(100, Math.floor(ttlMinutes * 60_000 / 3));
+  let stopped = false;
+  let renewing = false;
+  const timer = setInterval(async () => {
+    if (stopped || renewing) return;
+    renewing = true;
+    try {
+      const renewed = await renewJobLock(lockHandle, ttlMinutes);
+      if (!renewed) {
+        stopped = true;
+        clearInterval(timer);
+        console.error(`[CronLock] Lease ownership lost for ${lockHandle}; heartbeat stopped`);
+      }
+    } catch (error) {
+      console.error(`[CronLock] Lease renewal failed for ${lockHandle}:`, error);
+    } finally {
+      renewing = false;
+    }
+  }, intervalMs);
+  timer.unref?.();
+  return () => { stopped = true; clearInterval(timer); };
+}
+
+export async function releaseJobLock(lockHandle: string, explicitOwnerToken?: string): Promise<boolean> {
+  const { dbLockKey, ownerToken } = parseJobLockHandle(lockHandle, explicitOwnerToken);
+  if (!dbLockKey || !ownerToken) return false;
+  const [released] = await db.delete(jobExecutionLocks)
+    .where(and(eq(jobExecutionLocks.lockKey, dbLockKey), eq(jobExecutionLocks.id, ownerToken)))
+    .returning({ id: jobExecutionLocks.id });
+  return Boolean(released);
+}
+
+export async function runWithJobLockLease(
+  orgId: string,
+  jobName: string,
+  ttlMinutes: number,
+  work: () => Promise<void>,
+  acquire: typeof acquireJobLock = acquireJobLock,
+): Promise<{ executed: boolean; reason: "completed" | "contended" | "lock_service_failure" }> {
+  let lock;
+  try {
+    lock = await acquire(orgId, jobName, ttlMinutes);
+  } catch (error) {
+    console.error(`[CronLock] Lock service failure for ${orgId}:${jobName}:`, error);
+    return { executed: false, reason: "lock_service_failure" };
+  }
+  if (!lock.acquired) {
+    return { executed: false, reason: lock.failure === "lock_service" ? "lock_service_failure" : "contended" };
+  }
+  const stopHeartbeat = startJobLockHeartbeat(lock.lockKey, ttlMinutes);
+  try {
+    await work();
+    return { executed: true, reason: "completed" };
+  } finally {
+    stopHeartbeat();
+    await releaseJobLock(lock.lockKey);
+  }
 }
 
 // ─── Idempotency key helpers ──────────────────────────────────────────────────
