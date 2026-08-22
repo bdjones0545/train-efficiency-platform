@@ -1,0 +1,445 @@
+You are working in **TrainEfficiency**.
+
+Stripe marketplace payment-integrity remediation is complete.
+
+Authoritative remediation status:
+
+`STRIPE P0 CLOSED`
+
+Verified remediation commit:
+
+`5a6918697ebaf2687827de674804169b51fe89ea`
+
+Subject:
+
+`fix(stripe): harden marketplace payment integrity`
+
+Branch:
+
+`fix/stripe-marketplace-integrity`
+
+Verified evidence:
+
+* marketplace fresh-schema suite: 7/7 PASS
+* primary webhook retry suite: 1/1 PASS
+* combined fresh-schema Stripe result: 8/8 PASS
+* existing primary Stripe suite: 15/15 PASS
+* tenant-isolation helper suite: 7/7 PASS
+* tenant-isolation route suite: 14/14 PASS
+* `git diff --check`: PASS
+* no remediation-introduced TypeScript diagnostics
+* production untouched
+* production DB untouched
+* no deployment
+* no live financial mutation
+* remediation commit created
+* nothing pushed
+
+This pass is **integration readiness only**.
+
+Do not add new Stripe functionality.
+
+Do not begin another remediation.
+
+---
+
+# 1. Establish exact repository state
+
+Report:
+
+* repository path
+* current branch
+* current HEAD
+* current `origin/main`
+* remediation branch HEAD
+* remediation commit parent/base
+* working-tree status
+* modified files
+* untracked files
+
+Preserve all unrelated work.
+
+Do not reset, clean, overwrite, stash, or stage unrelated files.
+
+---
+
+# 2. Verify remediation commit scope
+
+Inspect:
+
+`5a6918697ebaf2687827de674804169b51fe89ea`
+
+Expected files:
+
+* `server/index.ts`
+* `server/phase10-routes.ts`
+* `server/services/marketplace-stripe-webhook.ts`
+* `server/tests/stripe-marketplace-webhook.integration.test.ts`
+* `server/tests/stripe-primary-webhook-retry.integration.test.ts`
+* `server/tests/stripe-webhook.test.ts`
+* `server/webhookHandlers.ts`
+* `shared/schema.ts`
+
+Verify:
+
+* no unrelated code
+* no production secrets
+* no temporary audit harnesses
+* no accidental docs/memory files
+* no unrelated user work
+
+Report anything unexpected.
+
+---
+
+# 3. Refresh current mainline
+
+Fetch/refresh `origin/main`.
+
+Determine whether it advanced since the Stripe remediation branch was created.
+
+If main advanced:
+
+inspect every overlapping file.
+
+Pay particular attention to:
+
+* `server/index.ts`
+* `server/phase10-routes.ts`
+* `server/webhookHandlers.ts`
+* `shared/schema.ts`
+
+Check for:
+
+* textual conflicts
+* semantic conflicts
+* middleware-order changes
+* schema changes
+* Stripe route changes
+* startup changes
+
+Do not blindly merge if main changed materially.
+
+---
+
+# 4. Review critical Stripe invariants
+
+Inspect the final remediation diff and confirm the integrated result would preserve:
+
+## Marketplace verification
+
+* raw body before JSON parsing
+* marketplace secret required
+* signature required
+* valid Stripe verification required
+* no `event = req.body` fallback
+* Stripe client awaited
+
+## Idempotency
+
+* durable marketplace event ledger
+* unique Stripe event ID
+* payload-hash binding
+* serial replay deduplication
+* concurrent replay deduplication
+* conflicting event content fails closed
+
+## Tenant ownership
+
+* persisted Stripe customer determines organization
+* active installed-agent mapping required
+* published agent/developer mapping authoritative
+* metadata only corroborates
+* metadata cannot redirect revenue
+
+## Financial integrity
+
+* canonical amount
+* canonical currency
+* Stripe event identity persisted
+* revenue linked to event
+* royalty linked to event
+* canonical developer share used
+
+## Failure semantics
+
+* financial write + event state use proper transaction semantics
+* failed mutation does not become completed
+* failed event becomes retryable
+* failure receives non-2xx
+* completed event deduplicates
+
+## Primary webhook
+
+* failed primary event can be reclaimed
+* completed/in-progress events remain deduplicated
+
+---
+
+# 5. Run final verification before integration
+
+Use fresh disposable PostgreSQL.
+
+Run:
+
+### Marketplace + primary fresh-schema suite
+
+Expected prior result:
+
+* 8 passed
+* 0 failed
+
+Report actual result.
+
+### Existing primary Stripe suite
+
+Expected:
+
+* 15 passed
+* 0 failed
+
+### Tenant isolation helper
+
+Expected:
+
+* 7 passed
+* 0 failed
+
+### Tenant isolation routes
+
+Expected:
+
+* 14 passed
+* 0 failed
+
+### Diff hygiene
+
+Run:
+
+`git diff --check`
+
+### TypeScript
+
+Run the existing repository check.
+
+The baseline was already red.
+
+Previous remediation result:
+
+* 352 repository diagnostics
+* no new diagnostics caused by the Stripe remediation
+
+Determine whether the remediation introduces any new scoped diagnostic.
+
+Do not fix unrelated baseline TypeScript errors.
+
+---
+
+# 6. Integration simulation
+
+Perform a non-destructive merge/rebase analysis against current `origin/main`.
+
+Prefer:
+
+* `git merge-tree`
+* temporary worktree
+* temporary integration branch
+
+Do not mutate primary user work.
+
+Report:
+
+* textual conflicts
+* semantic conflicts
+* resulting tree
+* whether integration is fast-forward, clean cherry-pick, or requires reconciliation
+
+Do not integrate yet if there is meaningful risk.
+
+---
+
+# 7. Startup Stripe network side effect
+
+The remediation pass observed:
+
+an existing application startup initializer attempted an external Stripe API request using an expired development/test key when the development workflow restarted.
+
+No payment or financial mutation occurred.
+
+Do not fix this in the Stripe P0 integration pass.
+
+Instead:
+
+* identify the exact startup initializer responsible
+* identify what triggers the network call
+* state whether it happens on every startup or only under certain configuration
+* confirm the Stripe P0 remediation did not introduce it
+* classify it as a separate operational finding
+
+Use:
+
+`STARTUP STRIPE PROVIDER CALL — P1 CANDIDATE`
+
+if confirmed.
+
+Do not widen integration scope.
+
+---
+
+# 8. Integration-readiness verdict
+
+Use:
+
+`READY TO INTEGRATE`
+
+only if:
+
+* remediation commit scope is clean
+* current mainline has no unresolved collision
+* all Stripe suites remain green
+* no new scoped TypeScript diagnostics
+* security/payment invariants survive
+* no unrelated work would enter integration
+
+Otherwise use:
+
+`NOT READY TO INTEGRATE`
+
+and state the single blocking issue.
+
+---
+
+# 9. No production and no live Stripe
+
+Do not:
+
+* deploy
+* call Stripe intentionally
+* create charges
+* create PaymentIntents
+* create Checkout Sessions
+* issue refunds
+* mutate subscriptions
+* touch production DB
+* use production secrets
+
+If normal development startup attempts another external Stripe call, stop the triggering process if safe and report it.
+
+Do not use that call as verification.
+
+---
+
+# 10. No push yet
+
+Do not merge to main.
+
+Do not push.
+
+This pass ends with integration readiness.
+
+---
+
+# Final report
+
+Return exactly:
+
+## 1. Integration Verdict
+
+`READY TO INTEGRATE`
+
+or:
+
+`NOT READY TO INTEGRATE`
+
+## 2. Repository State
+
+Report:
+
+* remediation branch
+* remediation SHA
+* remediation base
+* current `origin/main`
+* working-tree state
+
+## 3. Commit Scope
+
+Report exact files and whether unrelated content exists.
+
+## 4. Final Stripe Verification
+
+Exact results for:
+
+* fresh Stripe suite
+* primary Stripe suite
+* tenant helper
+* tenant routes
+* diff check
+* scoped TypeScript assessment
+
+## 5. Security / Financial Invariants
+
+PASS/FAIL for:
+
+* signature verification
+* replay protection
+* conflicting payload
+* tenant ownership
+* revenue integrity
+* royalty integrity
+* failure/retry
+* primary failed-event retry
+
+## 6. Current Main Delta
+
+Report:
+
+* whether main advanced
+* overlapping files
+* semantic risk
+
+## 7. Integration Simulation
+
+Report:
+
+* method
+* conflicts
+* resulting verdict
+
+## 8. Startup Stripe Provider Call
+
+Report:
+
+* exact initializer
+* trigger
+* whether pre-existing
+* whether remediation caused it
+* severity classification
+
+Do not fix it here.
+
+## 9. Production / Git State
+
+State:
+
+* production touched?
+* production DB touched?
+* live Stripe intentionally called?
+* accidental startup Stripe call observed?
+* deployment performed?
+* merge performed?
+* push performed?
+* unrelated work preserved?
+
+## 10. Recommended Next Action
+
+If ready:
+
+`Integrate Stripe P0 remediation commit 5a691869 into the intended TrainEfficiency mainline.`
+
+If not ready:
+
+state the specific blocker that must be resolved first.
+
+Stop there.
+
+Do not integrate automatically.
