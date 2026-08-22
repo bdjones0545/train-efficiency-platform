@@ -18248,7 +18248,7 @@ Respond with this exact JSON structure:
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Organization not found" });
       const { enqueueWorkflowJob } = await import("./workflow-job-queue");
-      const result = await enqueueWorkflowJob({ orgId: orgId, ...req.body });
+      const result = await enqueueWorkflowJob({ ...req.body, orgId });
       res.json(result);
     } catch (e: any) {
       console.error("[job-queue/enqueue] error:", e);

@@ -22,23 +22,24 @@ function src(file: string): string {
 // ─── PHASE 1 — Workflow Job Idempotency ──────────────────────────────────────
 
 describe("Phase 1 — Workflow job idempotency", () => {
-  test("workflow_jobs.idempotencyKey has .unique() in Drizzle schema", () => {
+  test("workflow_jobs idempotency is uniquely scoped by organization in Drizzle schema", () => {
     const schema = src("shared/schema.ts");
     // Find the idempotencyKey line inside the workflowJobs table block
     const tableStart = schema.indexOf('export const workflowJobs = pgTable("workflow_jobs"');
     assert.ok(tableStart !== -1, "workflowJobs table must be defined in schema");
     const tableBlock = schema.slice(tableStart, tableStart + 2000);
     assert.ok(
-      tableBlock.includes('idempotency_key").unique()'),
-      'workflow_jobs.idempotencyKey must have .unique() to prevent TOCTOU races on concurrent enqueues'
+      tableBlock.includes('workflow_jobs_org_idempotency_key_unique') &&
+        tableBlock.includes('.on(t.orgId, t.idempotencyKey)'),
+      'workflow_jobs must enforce unique (org_id, idempotency_key) identity'
     );
   });
 
   test("DB-level unique index is created at startup (partial index on non-null keys)", () => {
     const queue = src("server/workflow-job-queue.ts");
     assert.ok(
-      queue.includes("workflow_jobs_idempotency_key_unique"),
-      "startup executeSql must create the unique index workflow_jobs_idempotency_key_unique"
+      queue.includes("workflow_jobs_org_idempotency_key_unique"),
+      "runtime DDL must create the organization-scoped workflow idempotency index"
     );
     assert.ok(
       queue.includes("WHERE idempotency_key IS NOT NULL"),
@@ -290,13 +291,14 @@ describe("Phase 6 — Agent action consistency", () => {
     );
   });
 
-  test("workflow_jobs.idempotencyKey has UNIQUE constraint (prevents duplicate job creation)", () => {
+  test("workflow_jobs has organization-scoped UNIQUE identity (prevents duplicate job creation)", () => {
     const schema = src("shared/schema.ts");
     const tableStart = schema.indexOf('export const workflowJobs = pgTable("workflow_jobs"');
     const tableBlock = schema.slice(tableStart, tableStart + 2000);
     assert.ok(
-      tableBlock.includes('idempotency_key").unique()'),
-      "workflow_jobs.idempotencyKey must be UNIQUE to close the TOCTOU enqueue race"
+      tableBlock.includes('workflow_jobs_org_idempotency_key_unique') &&
+        tableBlock.includes('.on(t.orgId, t.idempotencyKey)'),
+      "workflow_jobs must enforce unique (org_id, idempotency_key) identity"
     );
   });
 
@@ -404,8 +406,8 @@ describe("Phase 8 — Concurrency stress safety", () => {
   test("workflow_jobs has DB unique index enforced at startup (closes TOCTOU enqueue race)", () => {
     const queue = src("server/workflow-job-queue.ts");
     assert.ok(
-      queue.includes("CREATE UNIQUE INDEX IF NOT EXISTS workflow_jobs_idempotency_key_unique"),
-      "workflow-job-queue must create the unique index at startup"
+      queue.includes("CREATE UNIQUE INDEX IF NOT EXISTS workflow_jobs_org_idempotency_key_unique"),
+      "workflow-job-queue must create the organization-scoped unique index"
     );
   });
 

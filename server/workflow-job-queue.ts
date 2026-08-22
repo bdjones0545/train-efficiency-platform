@@ -24,20 +24,36 @@ import { eq, and, lte, lt, isNull, or, sql, desc, inArray } from "drizzle-orm";
 import { logUnifiedAction } from "./unified-action-logger";
 import { getGovernanceSettings } from "./capability-enforcement-engine";
 
-// Enforce DB-level unique constraint on idempotency_key at startup.
-// This closes the TOCTOU race: two concurrent enqueues with the same key both
-// pass the app-level SELECT check but only one INSERT wins at the DB level.
-(async () => {
-  try {
-    await db.execute(sqlRaw`
-      CREATE UNIQUE INDEX IF NOT EXISTS workflow_jobs_idempotency_key_unique
-      ON workflow_jobs (idempotency_key)
-      WHERE idempotency_key IS NOT NULL
-    `);
-  } catch {
-    // Index may already exist — safe to ignore
-  }
-})();
+// Replace the legacy global key constraint with tenant-scoped uniqueness.
+// PostgreSQL permits multiple NULL values, preserving non-idempotent enqueue.
+let idempotencySchemaInitialization: Promise<void> | null = null;
+export async function ensureWorkflowJobIdempotencySchema(): Promise<void> {
+  if (idempotencySchemaInitialization) return idempotencySchemaInitialization;
+  idempotencySchemaInitialization = (async () => {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`ALTER TABLE workflow_jobs
+        DROP CONSTRAINT IF EXISTS workflow_jobs_idempotency_key_unique`);
+      await client.query(`ALTER TABLE workflow_jobs
+        DROP CONSTRAINT IF EXISTS workflow_jobs_idempotency_key_key`);
+      await client.query("DROP INDEX IF EXISTS workflow_jobs_idempotency_key_unique");
+      await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS workflow_jobs_org_idempotency_key_unique
+        ON workflow_jobs (org_id, idempotency_key)
+        WHERE idempotency_key IS NOT NULL`);
+      await client.query("COMMIT");
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      throw error;
+    } finally {
+      client.release();
+    }
+  })().catch((error) => {
+      idempotencySchemaInitialization = null;
+      throw error;
+  });
+  return idempotencySchemaInitialization;
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -138,12 +154,16 @@ export async function ensureWorkflowJobReliabilitySchema(): Promise<void> {
  * idempotencyKey already exists and is not failed/cancelled, return it.
  */
 export async function enqueueWorkflowJob(input: EnqueueJobInput): Promise<JobExecutionResult> {
+  await ensureWorkflowJobIdempotencySchema();
   // Idempotency check — never create duplicate jobs
   if (input.idempotencyKey) {
     const [existing] = await db
       .select()
       .from(workflowJobs)
-      .where(eq(workflowJobs.idempotencyKey, input.idempotencyKey));
+      .where(and(
+        eq(workflowJobs.orgId, input.orgId),
+        eq(workflowJobs.idempotencyKey, input.idempotencyKey),
+      ));
 
     if (existing && !["failed", "cancelled", "dead_letter"].includes(existing.status)) {
       await logUnifiedAction({
@@ -187,7 +207,10 @@ export async function enqueueWorkflowJob(input: EnqueueJobInput): Promise<JobExe
       const [racing] = await db
         .select()
         .from(workflowJobs)
-        .where(eq(workflowJobs.idempotencyKey, input.idempotencyKey));
+        .where(and(
+          eq(workflowJobs.orgId, input.orgId),
+          eq(workflowJobs.idempotencyKey, input.idempotencyKey),
+        ));
       if (racing) {
         return { jobId: racing.id, status: racing.status as JobStatus, duplicate: true };
       }

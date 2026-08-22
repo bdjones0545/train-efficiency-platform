@@ -3454,14 +3454,17 @@ export const workflowJobs = pgTable("workflow_jobs", {
   result: jsonb("result"),
 
   // Idempotency + locking
-  idempotencyKey: text("idempotency_key").unique(),
+  idempotencyKey: text("idempotency_key"),
   lockedBy: text("locked_by"),
   lockedAt: timestamp("locked_at"),
   executionGeneration: integer("execution_generation").notNull().default(0),
 
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  orgIdempotencyUnique: uniqueIndex("workflow_jobs_org_idempotency_key_unique")
+    .on(t.orgId, t.idempotencyKey),
+}));
 
 export const insertWorkflowJobsSchema = createInsertSchema(workflowJobs).omit({ id: true, createdAt: true, updatedAt: true });
 export type WorkflowJob = typeof workflowJobs.$inferSelect;
