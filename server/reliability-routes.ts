@@ -3,6 +3,7 @@ import { requireRole } from "./lib/require-role";
 import { isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { getSchemaReadiness } from "./schema-bootstrap";
 
 // ─── Drizzle result normalisers ─────────────────────────────────────────────
 function toArr(r: any): any[] {
@@ -19,88 +20,15 @@ function toN(r: any): number {
   try { const rows = [...r]; return +(rows[0]?.n ?? 0); } catch { return 0; }
 }
 
-// ─── Table creation ──────────────────────────────────────────────────────────
-async function ensureReliabilityTables() {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS system_logs (
-      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      level       TEXT NOT NULL DEFAULT 'info',
-      service     TEXT NOT NULL DEFAULT 'platform',
-      event_type  TEXT NOT NULL DEFAULT 'event',
-      message     TEXT NOT NULL DEFAULT '',
-      metadata    JSONB
-    )
-  `);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_system_logs_created ON system_logs(created_at DESC)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_system_logs_level ON system_logs(level, created_at DESC)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_system_logs_service ON system_logs(service, created_at DESC)`);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS client_errors (
-      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      route       TEXT,
-      message     TEXT,
-      stack       TEXT,
-      user_agent  TEXT,
-      source      TEXT,
-      line        INTEGER,
-      col         INTEGER
-    )
-  `);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_client_errors_created ON client_errors(created_at DESC)`);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS query_failures (
-      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      route       TEXT,
-      query_key   TEXT,
-      status_code INTEGER,
-      message     TEXT
-    )
-  `);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_query_failures_created ON query_failures(created_at DESC)`);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS health_check_results (
-      id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      check_name       TEXT NOT NULL,
-      status           TEXT NOT NULL,
-      response_time_ms INTEGER,
-      details          TEXT
-    )
-  `);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hcr_created ON health_check_results(created_at DESC)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hcr_name ON health_check_results(check_name, created_at DESC)`);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS system_alerts (
-      id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      severity    TEXT NOT NULL DEFAULT 'info',
-      title       TEXT NOT NULL,
-      description TEXT,
-      resolved_at TIMESTAMPTZ
-    )
-  `);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_alerts_created ON system_alerts(created_at DESC)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_alerts_severity ON system_alerts(severity, resolved_at)`);
-}
-
 // ─── Module-level state ───────────────────────────────────────────────────────
-let _tablesReady = false;
 let _lastRetentionRun: Date | null = null;
 const _serverStartedAt = Date.now();
 const RETENTION_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 // ─── Public persist helpers (called by other routes) ─────────────────────────
 async function ensureTablesOnce() {
-  if (_tablesReady) return;
-  await ensureReliabilityTables();
-  _tablesReady = true;
+  const schema = getSchemaReadiness();
+  if (schema.state !== "ready") throw new Error(`Required schema is ${schema.state}`);
 }
 
 export async function persistClientError(data: {
@@ -588,8 +516,7 @@ function startReliabilityCrons() {
 
 // ─── Route registration ───────────────────────────────────────────────────────
 export async function registerReliabilityRoutes(app: Express) {
-  await ensureReliabilityTables();
-  _tablesReady = true;
+  await ensureTablesOnce();
   startReliabilityCrons();
 
   // Run health checks shortly after startup (wait for HTTP server to be ready)
@@ -989,11 +916,14 @@ export async function registerReliabilityRoutes(app: Express) {
     } catch {
       tablesStatus = "degraded";
     }
-    const healthy = dbStatus === "ok";
+    const schema = getSchemaReadiness();
+    const healthy = dbStatus === "ok" && schema.state === "ready";
     res.status(healthy ? 200 : 503).json({
       status: healthy ? "healthy" : "unhealthy",
       timestamp: new Date().toISOString(),
       database: dbStatus,
+      schema: schema.state,
+      schemaVersion: schema.version,
       tables: tablesStatus,
       version: process.env.npm_package_version ?? "1.0.0",
       responseTimeMs: Date.now() - t0,
