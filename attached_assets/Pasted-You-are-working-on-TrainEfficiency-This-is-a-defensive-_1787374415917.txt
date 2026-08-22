@@ -1,0 +1,290 @@
+You are working on **TrainEfficiency**.
+
+This is a **defensive payment-integrity audit** of our own application.
+
+Do not implement fixes yet.
+
+Do not deploy.
+
+Do not touch production.
+
+Do not call live Stripe.
+
+Use only local code inspection, deterministic mocks, existing tests, and disposable/local database infrastructure.
+
+## Current known state
+
+AgentMail is complete and must remain untouched:
+
+`AGENTMAIL P0 INTEGRATED AND CLOSED`
+
+Current mainline was previously verified at:
+
+`f67315ce1e084385c4ec36438e9e1ebd4a74ee44`
+
+A prior Stripe audit identified concerns around:
+
+`/api/stripe/marketplace-webhook`
+
+Preliminary findings to independently verify:
+
+1. The marketplace webhook may accept an unverified JSON body when the marketplace webhook secret or signature is absent.
+2. The signed-verification branch may call an asynchronous Stripe client factory without awaiting it, potentially preventing proper `constructEvent` verification.
+3. Marketplace financial writes may not match the current persisted schema.
+4. Some database failures may be caught/suppressed.
+5. Marketplace event processing may lack durable provider-event idempotency/replay protection.
+
+Do not assume these findings are correct. Verify them behaviorally.
+
+# Audit objective
+
+Determine whether the TrainEfficiency Stripe marketplace payment path is:
+
+* cryptographically verified
+* fail-closed
+* schema-valid
+* tenant-safe
+* idempotent
+* replay-safe
+* transactional
+* recoverable after failure
+
+## 1. Repository safety
+
+Before testing:
+
+* report current branch
+* report HEAD
+* report current mainline/base
+* report working-tree status
+
+Preserve unrelated work.
+
+Do not reset, clean, overwrite, commit, merge, or push unrelated files.
+
+## 2. Inspect both Stripe webhook paths
+
+Compare:
+
+* primary Stripe webhook
+* marketplace Stripe webhook
+
+For each determine:
+
+* raw-body handling
+* signature verification
+* secret requirement
+* tenant resolution
+* provider event-ID persistence
+* idempotency
+* transaction boundaries
+* failure handling
+
+## 3. Marketplace signature behavior
+
+Using local deterministic request signing/mocks only, behaviorally test:
+
+* missing secret
+* missing signature
+* invalid signature
+* valid signature
+* tampered body
+* valid signature with valid-looking marketplace event
+
+No external Stripe requests.
+
+For every case report:
+
+* HTTP/result behavior
+* whether handler processing occurred
+* whether database state changed
+
+The secure expectation is that unverified provider requests cannot cause financial mutation.
+
+## 4. Verify async Stripe client behavior
+
+Determine whether the marketplace handler obtains the Stripe client asynchronously.
+
+If so, verify whether the current code correctly awaits that client before using webhook verification methods.
+
+Behaviorally establish whether a properly signed marketplace event can reach the intended verified processing path.
+
+Do not fix it yet.
+
+## 5. Verify actual schema compatibility
+
+Use a fresh disposable/local PostgreSQL database.
+
+Exercise the real marketplace persistence path.
+
+Determine whether the fields written by the handler actually exist in:
+
+* current database schema
+* Drizzle schema
+* runtime DDL where applicable
+
+Report any mismatch and its actual consequence:
+
+* successful mutation
+* rejected mutation
+* silent failure
+* partial mutation
+* event loss
+
+## 6. Replay/idempotency
+
+Using the same valid local event:
+
+* process it once
+* process it again
+* process two copies concurrently
+
+Determine whether financial state can duplicate.
+
+Inspect whether Stripe provider event IDs have durable database uniqueness.
+
+Then test the same event ID with conflicting financial content.
+
+Report behavior.
+
+## 7. Tenant isolation
+
+Create disposable fixtures for:
+
+* Organization A
+* Organization B
+
+Test whether marketplace metadata can cause a financial event associated with one persisted owner to mutate another organization.
+
+Persisted ownership/provider mapping should be authoritative.
+
+Request/event metadata alone must not be able to override tenant ownership.
+
+## 8. Transaction/failure behavior
+
+For the marketplace financial flow, identify all related writes.
+
+Force a database failure during processing.
+
+Determine whether:
+
+* earlier writes roll back
+* event is incorrectly considered completed
+* retry remains possible
+* the handler acknowledges an event whose financial mutation failed
+* failure is durably recorded anywhere
+
+## 9. Do not widen scope
+
+Do not repair:
+
+* unrelated authorization
+* AgentMail
+* API logging
+* autonomy
+* general TypeScript errors
+* unrelated database architecture
+
+Only investigate enough surrounding Stripe/payment code to understand this financial path.
+
+# Required verdict
+
+Return exactly one:
+
+`STRIPE P0 VERIFIED`
+
+Use only if an unverified/replayed/cross-tenant request can behaviorally cause critical financial-state mutation or corruption.
+
+`STRIPE P0 DESIGN DEFECT / MUTATION CURRENTLY BROKEN`
+
+Use if the insecure entry point exists but the current implementation/schema prevents the intended financial mutation, causing a broken or silently losing financial pipeline.
+
+`STRIPE P1 VERIFIED`
+
+Use if a material payment-integrity defect is proven but does not reach P0 severity.
+
+`NO STRIPE P0/P1 DEFECT VERIFIED`
+
+Use only if behavioral testing disproves the suspected material defects.
+
+# Final report
+
+Return:
+
+## 1. Stripe Audit Verdict
+
+## 2. Primary Webhook
+
+Report signature, raw-body, idempotency and failure behavior.
+
+## 3. Marketplace Webhook
+
+Report:
+
+* missing secret
+* missing signature
+* invalid signature
+* valid signature
+* async Stripe-client behavior
+* actual mutation behavior
+
+## 4. Schema Compatibility
+
+Show each relevant mismatch and its behavioral consequence.
+
+## 5. Replay / Idempotency
+
+Report:
+
+* first event
+* serial replay
+* concurrent replay
+* same-ID/conflicting-content behavior
+
+## 6. Tenant Isolation
+
+Report Org A / Org B results and authoritative ownership source.
+
+## 7. Transaction / Failure Recovery
+
+Report:
+
+* forced write failure
+* rollback
+* acknowledgement behavior
+* retry behavior
+* durable failure handling
+
+## 8. Highest-Severity Findings
+
+Rank only behaviorally supported findings.
+
+Distinguish:
+
+* VERIFIED
+* SUSPECTED
+* NOT VERIFIED
+
+## 9. Recommended Remediation
+
+Define the smallest remediation required.
+
+Do **not** implement it.
+
+## 10. Production / Git State
+
+Explicitly state:
+
+* production touched?
+* production DB touched?
+* live Stripe called?
+* production secrets used?
+* deployment performed?
+* source files modified?
+* commits created?
+* push performed?
+* unrelated work preserved?
+
+Stop after the report.
+
+Do not begin remediation automatically.
