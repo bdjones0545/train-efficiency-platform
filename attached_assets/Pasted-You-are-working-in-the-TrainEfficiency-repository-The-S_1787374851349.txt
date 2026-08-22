@@ -1,0 +1,852 @@
+You are working in the **TrainEfficiency** repository.
+
+The Stripe/payment integrity audit concluded:
+
+`STRIPE P0 VERIFIED`
+
+This is now a **remediation pass**.
+
+Do not widen scope into unrelated TrainEfficiency systems.
+
+Do not touch AgentMail.
+
+Do not touch the separate autonomy, email-audit, API logging, or unified test-runner workstreams.
+
+## Verified P0 failures
+
+The marketplace Stripe webhook:
+
+`POST /api/stripe/marketplace-webhook`
+
+has behaviorally verified defects:
+
+1. Unsigned requests can create financial records.
+2. Missing marketplace secret does not fail closed.
+3. Missing signature does not fail closed.
+4. Valid signed requests cannot reach proper verification because:
+
+   * `getUncachableStripeClient()` is asynchronous but is called without `await`
+   * the route receives parsed JSON rather than the exact raw Stripe body
+5. Same Stripe event ID can be replayed serially.
+6. Same event ID can be replayed concurrently.
+7. Same event ID can be reused with conflicting financial values.
+8. Marketplace metadata can redirect financial attribution to another organization.
+9. Database write failures are swallowed and still return HTTP 200.
+10. There is no durable marketplace provider-event ledger.
+11. Important financial fields are silently discarded because handler fields do not match persisted schema.
+12. Marketplace financial work has no durable failure/retry model.
+
+Verified behavioral examples from the audit:
+
+* unsigned `checkout.session.completed` → financial row created
+* unsigned `invoice.paid` → royalty row created
+* serial replay → duplicate financial row
+* concurrent replay → duplicate financial rows
+* Org A installed resource + metadata Org B → Org B financial attribution
+* forced DB failure → HTTP 200 with no durable failure record
+
+This pass must eliminate those failure modes.
+
+---
+
+# 1. Establish current repository state
+
+Before modifying anything, report:
+
+* repository path
+* branch
+* HEAD
+* current `origin/main`
+* working-tree status
+* modified files
+* untracked files
+
+The audit reported a local branch state that may differ from `origin/main`, so do not assume the current checked-out branch is the integration target.
+
+Preserve all unrelated work.
+
+Do not reset, clean, overwrite, or stage unrelated files.
+
+If needed, create a clean isolated remediation branch/worktree from the correct current `origin/main`.
+
+---
+
+# 2. Make marketplace webhook verification fail closed
+
+The marketplace webhook must never process provider events unless Stripe verification succeeds.
+
+Required invariant:
+
+**No verified Stripe event → no marketplace financial mutation.**
+
+Require all of:
+
+* marketplace webhook secret configured
+* `stripe-signature` header present
+* exact raw request bytes available
+* Stripe signature verification succeeds
+
+If any requirement is missing or invalid:
+
+* reject request
+* do not process event
+* do not write financial state
+
+Do not preserve the existing fallback:
+
+`event = req.body`
+
+Remove all fail-open processing.
+
+---
+
+# 3. Fix raw-body middleware ordering
+
+The marketplace webhook must receive the exact Stripe-signed request bytes.
+
+Do not verify a JSON-parsed/re-serialized object.
+
+Arrange middleware so:
+
+`POST /api/stripe/marketplace-webhook`
+
+is handled with raw-body parsing before the global JSON parser consumes the body.
+
+Use the same safe architectural pattern as the primary Stripe webhook where appropriate.
+
+Verify behaviorally that:
+
+* a locally generated valid Stripe signature passes
+* a one-byte/body-content change causes verification failure
+
+---
+
+# 4. Fix asynchronous Stripe client use
+
+`getUncachableStripeClient()` is asynchronous.
+
+Await it correctly before accessing:
+
+`stripe.webhooks.constructEvent(...)`
+
+Add regression coverage proving the verified path actually reaches `constructEvent`.
+
+Do not merely add `await` without fixing raw-body handling.
+
+Both issues must be corrected.
+
+---
+
+# 5. Add durable marketplace event ledger
+
+Create durable database-backed marketplace event processing state.
+
+At minimum store:
+
+* Stripe event ID
+* event type
+* payload hash or equivalent integrity fingerprint
+* processing state
+* timestamps
+* failure information where appropriate
+
+Required processing states should distinguish at least the concepts of:
+
+* processing/claimed
+* completed
+* failed/retryable
+
+Use naming consistent with TrainEfficiency's existing architecture.
+
+## Database-level uniqueness
+
+Stripe event ID must be uniquely constrained.
+
+Replay safety must survive:
+
+* process restart
+* multiple server instances
+* concurrent webhook delivery
+
+Do not use in-memory dedupe.
+
+---
+
+# 6. Bind event ID to event contents
+
+A reused Stripe event ID with conflicting payload must not silently process as a duplicate.
+
+Bind the durable claim to a hash/fingerprint of the verified event payload.
+
+Required behavior:
+
+### Same ID + same verified payload
+
+Idempotent duplicate.
+
+Do not repeat financial mutation.
+
+### Same ID + conflicting verified payload
+
+Fail closed and surface a security/data-integrity error.
+
+Do not overwrite prior financial state.
+
+---
+
+# 7. Fix tenant ownership
+
+Marketplace metadata must not be authoritative for organization ownership.
+
+Current verified defect:
+
+* persisted resource belonged to Organization A
+* event metadata supplied Organization B
+* revenue was attributed to Organization B
+
+Replace this with authoritative persisted ownership resolution.
+
+For every marketplace event:
+
+derive:
+
+* organization
+* installed agent/resource
+* developer/vendor/coach where applicable
+
+from persisted TrainEfficiency mappings tied to trusted Stripe/provider identifiers.
+
+Event metadata may be corroborating evidence only.
+
+If metadata conflicts with persisted ownership:
+
+fail closed or ignore the untrusted metadata according to the safest existing product contract.
+
+Never use arbitrary:
+
+`metadata.orgId`
+
+as the authority for financial attribution.
+
+---
+
+# 8. Add two-tenant hardening
+
+Behaviorally prove:
+
+* Org A provider/resource cannot credit Org B
+* Org B metadata cannot override Org A persisted ownership
+* unknown provider/resource identity fails closed
+* conflicting provider identity fails closed
+* valid Org A transaction credits only Org A
+* valid Org B transaction credits only Org B
+
+Test with two complete disposable tenant fixtures.
+
+---
+
+# 9. Align marketplace schema
+
+The audit found handler/schema mismatches.
+
+## `agent_revenue_events`
+
+Handler attempted:
+
+* `currency`
+* `stripeEventId`
+* `metadata`
+
+but those were not persisted.
+
+## `royalty_distributions`
+
+Handler attempted:
+
+* `royaltyRate`
+* `royaltyAmount`
+* `status`
+
+but actual persisted schema did not contain those exact fields.
+
+Determine the intended financial source of truth.
+
+Do not simply add every field blindly.
+
+For each required value decide whether it should live in:
+
+* marketplace event ledger
+* revenue event
+* royalty distribution
+* existing canonical financial table
+
+Then align:
+
+* Drizzle schema
+* runtime DDL/migrations
+* handler writes
+* tests
+
+Critical provider identity and financial values must not be silently dropped.
+
+---
+
+# 10. Preserve Stripe event identity
+
+The final persisted financial state must be traceable to the verified Stripe event that produced it.
+
+Ensure the canonical provider event ID is durably associated with the financial mutation.
+
+At minimum, the event ledger must allow an auditor to determine:
+
+* Stripe event
+* organization
+* financial action
+* final processing state
+
+Do not permit an accepted financial mutation that cannot be linked back to its provider event.
+
+---
+
+# 11. Transactional processing
+
+The marketplace event claim and critical financial mutation must have correct transactional semantics.
+
+Required invariant:
+
+A marketplace event must never be marked completed unless its financial mutation succeeded.
+
+If the financial write fails:
+
+* rollback where necessary
+* event must remain retryable or be durably marked failed
+* do not mark completed
+
+If successful:
+
+* financial mutation commits
+* event becomes completed
+* retry does not repeat the financial mutation
+
+Use one DB transaction where feasible.
+
+---
+
+# 12. Stop swallowing financial failures
+
+Remove patterns equivalent to:
+
+`.catch(() => {})`
+
+from critical marketplace financial persistence.
+
+A failed financial write must not return HTTP 200 as though the event succeeded unless there is an intentionally durable retry mechanism that has safely captured the work.
+
+For processing failure:
+
+* persist durable failed/retryable state
+* return an appropriate non-2xx/retryable response so Stripe can retry where applicable
+
+Do not silently lose provider events.
+
+---
+
+# 13. Marketplace revenue integrity
+
+For a verified `checkout.session.completed` event, behaviorally prove:
+
+* verified signature required
+* authoritative resource mapping exists
+* correct organization derived
+* correct amount persisted
+* correct currency persisted where part of canonical model
+* provider event ID traceable
+* one event produces one financial outcome
+* replay produces no duplicate
+* concurrent replay produces no duplicate
+
+Also test:
+
+* unknown agent/resource
+* zero amount
+* negative amount
+* malformed amount/currency where applicable
+* conflicting metadata
+
+Fail closed where the event cannot be safely interpreted.
+
+---
+
+# 14. Royalty integrity
+
+For a verified `invoice.paid` or applicable royalty-producing event, behaviorally prove:
+
+* ownership derived from persisted trusted mapping
+* royalty calculation uses canonical application rules
+* intended gross revenue persisted
+* intended royalty rate persisted or deterministically derivable
+* intended royalty amount/share persisted correctly
+* status/payout state maps to actual schema
+* replay does not create duplicate royalty distributions
+
+The prior behavior where intended royalty fields were silently dropped must be eliminated.
+
+---
+
+# 15. Concurrent replay
+
+Use a disposable PostgreSQL database.
+
+Deliver the same correctly signed marketplace event concurrently from at least two requests.
+
+Required:
+
+* one effective financial mutation
+* one completed provider event
+* no duplicate revenue record
+* no duplicate royalty record
+* no stuck processing state
+
+Database constraints/transactionality must enforce this.
+
+Do not rely on timing luck.
+
+---
+
+# 16. Forced financial-write failure
+
+Force the actual marketplace business write to fail after event claim.
+
+Verify:
+
+* no completed event state
+* no partial financial record
+* response is retryable/non-success
+* failure is durable
+* retry after removing the fault succeeds exactly once
+* subsequent retry deduplicates
+
+Do this for at least:
+
+* revenue event
+* royalty-producing event
+
+---
+
+# 17. Missing configuration behavior
+
+Test marketplace webhook with:
+
+### Secret absent
+
+Expected:
+
+* fail closed
+* no processing
+* no DB mutation
+
+### Signature absent
+
+Expected:
+
+* fail closed
+* no processing
+* no DB mutation
+
+### Both absent
+
+Expected:
+
+* fail closed
+* no processing
+* no DB mutation
+
+Production must not silently enter unsigned webhook mode.
+
+---
+
+# 18. Valid signature proof
+
+Generate a local Stripe-compatible signature using test-only deterministic signing.
+
+Prove:
+
+* valid signature → accepted and processed
+* invalid signature → rejected
+* tampered body → rejected
+* stale timestamp if Stripe verification enforces tolerance → rejected appropriately
+
+No live Stripe call.
+
+---
+
+# 19. Primary webhook retry audit
+
+The prior audit identified one unresolved concern:
+
+The primary webhook may insert a provider event record before financial work, then treat any existing event ID as already processed even if the previous attempt failed.
+
+This was:
+
+`SUSPECTED`
+
+not verified.
+
+During this remediation pass, add a focused behavioral test to determine the truth.
+
+Force primary webhook processing to fail after the event is recorded.
+
+Then retry the exact same valid provider event.
+
+Verify whether:
+
+* processing retries correctly, or
+* dedupe incorrectly suppresses the failed event
+
+If behavior is already correct:
+
+do not change it.
+
+If the suspected bug is behaviorally verified:
+
+repair it using proper processing/completed/failed semantics consistent with the marketplace ledger.
+
+Do not expand into unrelated primary Stripe refactoring.
+
+---
+
+# 20. Required behavioral test matrix
+
+Add permanent regression tests covering at minimum:
+
+## Marketplace signature
+
+* missing secret
+* missing signature
+* both missing
+* invalid signature
+* valid signature
+* tampered payload
+
+## Replay
+
+* first event
+* serial duplicate
+* concurrent duplicate
+* same ID + conflicting payload
+
+## Tenant
+
+* Org A valid
+* Org B valid
+* Org A provider + Org B metadata
+* unknown provider identity
+* conflicting provider identity
+
+## Revenue
+
+* valid event
+* forced write failure
+* retry
+* replay
+
+## Royalty
+
+* valid event
+* correct calculation/persistence
+* forced write failure
+* retry
+* replay
+
+## Primary webhook
+
+* forced failure
+* same-event retry
+* completed-event retry
+
+All tests must execute real persistence against a disposable PostgreSQL database where practical.
+
+---
+
+# 21. Fresh-database verification
+
+Create a fresh disposable PostgreSQL environment from zero relevant marketplace state.
+
+Run the complete Stripe/payment-integrity suite.
+
+Do not rely on a developer database already containing runtime DDL.
+
+Verify:
+
+* schema initialization
+* event ledger
+* uniqueness
+* ownership constraints/mappings
+* revenue persistence
+* royalty persistence
+* transaction rollback
+* retry
+
+Exit status must be 0 before closure.
+
+---
+
+# 22. Security regression
+
+Run available existing tests for:
+
+* Stripe
+* payment integrity
+* wallet
+* tenant isolation
+* authorization
+* webhook security
+
+Do not require the separate:
+
+`7e647a2`
+
+unified runner branch.
+
+Use canonical commands available on the remediation baseline.
+
+---
+
+# 23. Type/regression discipline
+
+Run relevant TypeScript checks.
+
+If repository-wide TypeScript is already red:
+
+* distinguish baseline diagnostics
+* prove this remediation introduces no new scoped errors
+
+Do not fix unrelated errors.
+
+Also run:
+
+`git diff --check`
+
+---
+
+# 24. Do not touch production
+
+Absolutely do not:
+
+* call live Stripe
+* charge cards
+* create PaymentIntents
+* create Checkout Sessions
+* issue refunds
+* modify subscriptions
+* modify payouts
+* post test events to production endpoints
+* use production Stripe secrets
+* modify production DB
+* deploy
+
+Use only:
+
+* deterministic Stripe mocks/signing
+* local HTTP invocation
+* disposable PostgreSQL
+
+---
+
+# 25. Preserve unrelated work
+
+Do not touch unrelated user modifications.
+
+Do not include:
+
+* AgentMail changes
+* autonomy changes
+* API logging changes
+* email-audit changes
+* unified test-runner changes
+
+Keep remediation narrowly scoped.
+
+---
+
+# 26. Commit rule
+
+Do not commit until all closure gates pass.
+
+If remediation is fully green:
+
+create one isolated commit with subject:
+
+`fix(stripe): harden marketplace payment integrity`
+
+Commit only the Stripe/payment-integrity remediation and its tests.
+
+Do not push yet.
+
+If any P0 closure test fails:
+
+do not commit and report:
+
+`STRIPE P0 REMAINS OPEN`
+
+---
+
+# Closure standard
+
+You may report:
+
+`STRIPE P0 CLOSED`
+
+only if all of the following are behaviorally proven:
+
+* unsigned marketplace events cannot process
+* missing secret fails closed
+* missing signature fails closed
+* valid signed marketplace event succeeds
+* exact raw-body verification works
+* async Stripe client bug fixed
+* Stripe event ID is durably persisted
+* event IDs are uniquely constrained
+* serial replay cannot duplicate state
+* concurrent replay cannot duplicate state
+* conflicting payload under same event ID fails safely
+* tenant ownership comes from persisted authoritative mappings
+* Org A cannot credit Org B through metadata
+* financial schema persists intended canonical values
+* revenue processing is transactional/retryable
+* royalty processing is transactional/retryable
+* DB failure does not receive false success acknowledgement
+* failed event can recover
+* completed event deduplicates
+* fresh Stripe suite exits 0
+* no remediation-induced security/type regression
+
+Otherwise report:
+
+`STRIPE P0 REMAINS OPEN`
+
+---
+
+# Final report
+
+Return exactly:
+
+## 1. P0 Verdict
+
+`STRIPE P0 CLOSED`
+
+or:
+
+`STRIPE P0 REMAINS OPEN`
+
+## 2. Root Causes Fixed
+
+For each verified P0 defect:
+
+* old failure
+* implementation change
+* new invariant
+
+## 3. Marketplace Signature Matrix
+
+Report:
+
+* missing secret
+* missing signature
+* both missing
+* invalid signature
+* valid signature
+* tampered body
+
+## 4. Replay Matrix
+
+Report:
+
+* first event
+* serial replay
+* concurrent replay
+* same ID / conflicting payload
+
+## 5. Tenant Isolation Matrix
+
+Report Org A vs Org B and authoritative ownership mechanism.
+
+## 6. Revenue Integrity
+
+Report:
+
+* successful processing
+* schema persistence
+* event linkage
+* forced failure
+* retry
+* duplicate prevention
+
+## 7. Royalty Integrity
+
+Report:
+
+* calculation
+* persistence
+* event linkage
+* forced failure
+* retry
+* duplicate prevention
+
+## 8. Transaction / Failure Recovery
+
+Report event-state transitions and rollback behavior.
+
+## 9. Primary Webhook Retry Verification
+
+Report whether the previously suspected failed-event retry problem was verified.
+
+If fixed, describe the repair.
+
+If disproven, say so.
+
+## 10. Fresh Database Results
+
+Exact pass/fail counts and exit status.
+
+## 11. Regression Results
+
+Exact relevant test results.
+
+## 12. Files Changed
+
+Every file and purpose.
+
+## 13. Commit State
+
+Report:
+
+* commit created?
+* SHA
+* subject
+* files committed
+* push performed?
+
+## 14. Production State
+
+Report:
+
+* production touched?
+* live Stripe called?
+* production DB touched?
+* production secrets used?
+* deployment performed?
+
+## 15. Remaining Blockers
+
+If closed:
+
+`No remaining Stripe marketplace P0 blockers identified by this remediation pass.`
+
+If open:
+
+list only concrete P0 blockers.
+
+Stop there.
+
+Do not integrate or push automatically.
