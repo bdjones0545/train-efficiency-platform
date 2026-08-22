@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import { pool } from "../db";
+import { executeWithCircuitBreaker, jitteredDelayMs } from "../services/retry-reliability";
 
 export const FOLLOW_UP_LEASE_MS = 5 * 60 * 1000;
 export const FOLLOW_UP_MAX_ATTEMPTS = 3;
@@ -87,7 +88,7 @@ export async function executeFollowUpProviderEffect(
 ): Promise<{ providerCalled: boolean }> {
   const identity = await prepareFollowUpSend(orgId, followUpId, db);
   if (!identity.shouldSend) return { providerCalled: false };
-  const result = await send();
+  const result = await executeWithCircuitBreaker("email:follow_up_send", send, db === pool ? pool : db as Pool);
   await recordFollowUpProviderSuccess(orgId, followUpId, result?.providerMessageId, db);
   await afterProviderSuccess?.();
   return { providerCalled: true };
@@ -149,14 +150,17 @@ export async function recordFollowUpFailure(
     if (!row.rowCount) throw new Error("Follow-up not found for failure transition");
     const attemptCount = Number(row.rows[0].attempt_count);
     const maxAttempts = Number(row.rows[0].max_attempts);
-    const exhausted = permanent || attemptCount >= maxAttempts;
+    const circuitBlocked = error.startsWith("CIRCUIT_OPEN:");
+    const effectiveAttemptCount = circuitBlocked ? Math.max(0, attemptCount - 1) : attemptCount;
+    const exhausted = !circuitBlocked && (permanent || attemptCount >= maxAttempts);
     const delay = RETRY_DELAYS_MS[Math.min(Math.max(attemptCount - 1, 0), RETRY_DELAYS_MS.length - 1)];
-    const nextRetryAt = exhausted ? null : new Date(Date.now() + delay);
+    const nextRetryAt = exhausted ? null : new Date(Date.now() + jitteredDelayMs(delay));
     await client.query(`UPDATE email_follow_ups SET status=$3::follow_up_status,last_error=$4,processing_started_at=NULL,
-      next_retry_at=$5::timestamptz,failed_at=CASE WHEN $3::text='failed' THEN NOW() ELSE failed_at END,updated_at=NOW()
-      WHERE id=$1 AND org_id=$2`, [followUpId, orgId, exhausted ? "failed" : "retrying", error, nextRetryAt]);
+      next_retry_at=$5::timestamptz,attempt_count=$6,
+      failed_at=CASE WHEN $3::text='failed' THEN NOW() ELSE failed_at END,updated_at=NOW()
+      WHERE id=$1 AND org_id=$2`, [followUpId, orgId, exhausted ? "failed" : "retrying", error, nextRetryAt, effectiveAttemptCount]);
     await client.query("COMMIT");
-    return { state: exhausted ? "failed" : "retrying", attemptCount, nextRetryAt };
+    return { state: exhausted ? "failed" : "retrying", attemptCount: effectiveAttemptCount, nextRetryAt };
   } catch (error_) {
     await client.query("ROLLBACK").catch(() => undefined); throw error_;
   } finally { client.release(); }

@@ -6,8 +6,9 @@
  * Retry schedule: 5 min → 15 min → final_failed after max_retries.
  */
 
-import { db } from "../db";
+import { db, pool } from "../db";
 import { sql } from "drizzle-orm";
+import { CircuitOpenError, executeWithCircuitBreaker, jitteredDelayMs, type RetryRandom } from "./retry-reliability";
 
 let tableReady = false;
 
@@ -95,6 +96,7 @@ export async function pushToDeadLetter(opts: {
   error: Error | string;
   payload?: unknown;
   maxRetries?: number;
+  retryRandom?: RetryRandom;
 }): Promise<string | null> {
   try {
     await ensureTable();
@@ -106,7 +108,7 @@ export async function pushToDeadLetter(opts: {
         (job_name, org_id, error_message, error_stack, max_retries, next_retry_at, payload, status)
       VALUES
         (${opts.jobName}, ${opts.orgId}, ${errorMessage}, ${errorStack},
-         ${maxRetries}, NOW() + INTERVAL '5 minutes',
+         ${maxRetries}, NOW() + (${jitteredDelayMs(300_000, opts.retryRandom)} * INTERVAL '1 millisecond'),
          ${JSON.stringify(opts.payload ?? null)}::jsonb, 'pending')
       RETURNING id
     `);
@@ -239,10 +241,11 @@ export async function markJobResolved(jobId: string): Promise<boolean> {
 export async function incrementRetryCount(jobId: string): Promise<void> {
   try {
     await ensureTable();
+    const delayMs = jitteredDelayMs(15 * 60_000);
     await db.execute(sql`
       UPDATE agent_dead_letter_queue SET
         retry_count = retry_count + 1,
-        next_retry_at = NOW() + INTERVAL '15 minutes',
+        next_retry_at = NOW() + (${delayMs} * INTERVAL '1 millisecond'),
         status = CASE
           WHEN retry_count + 1 >= max_retries THEN 'final_failed'
           ELSE 'retrying'
@@ -310,7 +313,7 @@ export async function failDeadLetterJob(job: ClaimedDeadLetterJob, error: Error 
   const r = await db.execute(sql`UPDATE agent_dead_letter_queue SET
     retry_count=${nextAttempt}, error_message=${message},
     status=${exhausted ? "final_failed" : "retrying"},
-    next_retry_at=${exhausted ? null : sql`NOW() + (${delay} * INTERVAL '1 second')`},
+    next_retry_at=${exhausted ? null : sql`NOW() + (${jitteredDelayMs(delay * 1000)} * INTERVAL '1 millisecond')`},
     final_failed_at=${exhausted ? sql`NOW()` : null}, locked_by=NULL, locked_at=NULL, updated_at=NOW()
     WHERE id=${job.id} AND org_id=${job.orgId} AND status='processing' AND locked_by=${job.lockedBy} RETURNING id`);
   const rows: any[] = Array.isArray(r) ? r as any[] : (r as any).rows ?? [];
@@ -329,9 +332,19 @@ export async function replayDeadLetterJob(jobId: string, orgId: string, replayed
 
 export type DeadLetterReplayHandler = (job: ClaimedDeadLetterJob) => Promise<unknown>;
 const handlers = new Map<string, DeadLetterReplayHandler>();
-export function registerDeadLetterReplayHandler(jobName: string, handler: DeadLetterReplayHandler): () => void {
+const handlerDependencies = new Map<string, string>();
+export function registerDeadLetterReplayHandler(
+  jobName: string, handler: DeadLetterReplayHandler, options?: { dependencyKey?: string },
+): () => void {
   handlers.set(jobName, handler);
-  return () => handlers.delete(jobName);
+  if (options?.dependencyKey) handlerDependencies.set(jobName, options.dependencyKey);
+  return () => { handlers.delete(jobName); handlerDependencies.delete(jobName); };
+}
+
+async function deferDeadLetterJob(job: ClaimedDeadLetterJob, retryAfterMs: number): Promise<void> {
+  await db.execute(sql`UPDATE agent_dead_letter_queue SET status='retrying',locked_by=NULL,locked_at=NULL,
+    next_retry_at=NOW() + (${jitteredDelayMs(Math.max(1_000, retryAfterMs))} * INTERVAL '1 millisecond'),updated_at=NOW()
+    WHERE id=${job.id} AND org_id=${job.orgId} AND status='processing' AND locked_by=${job.lockedBy}`);
 }
 
 export async function requeueAgentActionDeadLetter(job: ClaimedDeadLetterJob): Promise<void> {
@@ -372,9 +385,15 @@ export async function processOneDeadLetterJob(workerId: string, orgId?: string):
     return true;
   }
   try {
-    await handler(job);
+    const dependencyKey = handlerDependencies.get(job.jobName);
+    if (dependencyKey) await executeWithCircuitBreaker(dependencyKey, () => handler(job), pool);
+    else await handler(job);
     await completeDeadLetterJob(job);
   } catch (error) {
+    if (error instanceof CircuitOpenError) {
+      await deferDeadLetterJob(job, error.retryAfterMs);
+      return true;
+    }
     await failDeadLetterJob(job, error instanceof Error ? error : String(error));
   }
   return true;

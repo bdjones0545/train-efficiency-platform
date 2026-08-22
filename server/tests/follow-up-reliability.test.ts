@@ -8,6 +8,7 @@ process.env.DATABASE_URL = connectionString;
 const { Pool } = pg;
 const pool = new Pool({ connectionString });
 const lifecycle = await import("../email-agent/follow-up-reliability");
+const retryReliability = await import("../services/retry-reliability");
 
 async function insertFollowUp(id: string, orgId = "org-a", maxAttempts = 3) {
   await pool.query(`INSERT INTO email_follow_ups
@@ -31,9 +32,10 @@ before(async () => {
       body_preview text,risk_level text,approval_required boolean,status text,communication_domain text,
       created_by_agent text,executed_at timestamptz,result jsonb);`);
   await lifecycle.ensureFollowUpReliabilitySchema(pool);
+  await retryReliability.ensureProviderCircuitSchema(pool);
 });
 beforeEach(async () => {
-  await pool.query(`TRUNCATE follow_up_send_effects,gmail_agent_actions,email_follow_ups`);
+  await pool.query(`TRUNCATE follow_up_send_effects,gmail_agent_actions,email_follow_ups,provider_circuit_breakers`);
 });
 after(async () => { await pool.end(); });
 
@@ -75,6 +77,7 @@ test("timeout, 5xx, and rate limit retry while permanent provider rejection fail
   ];
   let providerCalls=0;
   for(const c of cases){
+    await pool.query(`TRUNCATE provider_circuit_breakers`);
     await insertFollowUp(c.id);await lifecycle.claimFollowUp("org-a",c.id,pool);
     try{await lifecycle.executeFollowUpProviderEffect("org-a",c.id,async()=>{providerCalls++;throw c.error},undefined,pool)}catch(error){
       await lifecycle.recordFollowUpFailure("org-a",c.id,c.error.message,pool,lifecycle.isPermanentFollowUpFailure(error));

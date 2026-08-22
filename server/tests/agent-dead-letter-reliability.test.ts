@@ -27,8 +27,8 @@ async function retryDelaySeconds(id: string): Promise<number | null> {
   return result.rows[0].seconds === null ? null : Number(result.rows[0].seconds);
 }
 function assertDelay(actual: number | null, expected: number) {
-  assert.ok(actual !== null && actual >= expected - 5 && actual <= expected + 1,
-    `expected persisted retry delay near ${expected}s, got ${actual}`);
+  assert.ok(actual !== null && actual >= expected - 5 && actual <= expected * 1.2 + 1,
+    `expected persisted retry delay in jitter bounds for ${expected}s, got ${actual}`);
 }
 
 before(async () => {

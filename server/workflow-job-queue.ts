@@ -23,6 +23,7 @@ import { workflowJobs, agentExecutionLocks, orgExecutionRateLimits } from "@shar
 import { eq, and, lte, lt, isNull, or, sql, desc, inArray } from "drizzle-orm";
 import { logUnifiedAction } from "./unified-action-logger";
 import { getGovernanceSettings } from "./capability-enforcement-engine";
+import { jitteredDelayMs } from "./services/retry-reliability";
 
 // Replace the legacy global key constraint with tenant-scoped uniqueness.
 // PostgreSQL permits multiple NULL values, preserving non-idempotent enqueue.
@@ -507,7 +508,8 @@ export async function retryWorkflowJob(jobId: string, error: string, errorType: 
   const backoffMs = BACKOFF_SCHEDULE[Math.min(attempts, BACKOFF_SCHEDULE.length - 1)];
 
   // Rate limited → longer backoff
-  const effectiveBackoff = errorType === "rate_limited" ? Math.max(backoffMs, 300_000) : backoffMs;
+  const baseBackoff = errorType === "rate_limited" ? Math.max(backoffMs, 300_000) : backoffMs;
+  const effectiveBackoff = jitteredDelayMs(baseBackoff);
   const nextRetryAt = new Date(Date.now() + effectiveBackoff);
   const retryDueAt = sql`NOW() + (${effectiveBackoff} * INTERVAL '1 millisecond')`;
 
@@ -855,7 +857,7 @@ export async function detectAndHandleStuckJobs(): Promise<{ stuckCount: number; 
     } else {
       // CAS against the ownership snapshot. A concurrent normal reclaim changes
       // locked_by/locked_at, so this compatibility sweep then affects zero rows.
-      const stuckBackoff = BACKOFF_SCHEDULE[Math.min(attempts, BACKOFF_SCHEDULE.length - 1)];
+      const stuckBackoff = jitteredDelayMs(BACKOFF_SCHEDULE[Math.min(attempts, BACKOFF_SCHEDULE.length - 1)]);
       const fixed = await db.update(workflowJobs).set({
         status: "retrying",
         lockedBy: null,
