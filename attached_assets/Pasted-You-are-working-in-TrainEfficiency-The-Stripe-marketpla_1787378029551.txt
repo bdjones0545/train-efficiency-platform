@@ -1,0 +1,532 @@
+You are working in **TrainEfficiency**.
+
+The Stripe marketplace remediation is complete and has already passed integration-readiness review.
+
+Authoritative state:
+
+`STRIPE P0 CLOSED`
+
+Remediation commit:
+
+`5a6918697ebaf2687827de674804169b51fe89ea`
+
+Subject:
+
+`fix(stripe): harden marketplace payment integrity`
+
+Integration-readiness verdict:
+
+`READY TO INTEGRATE`
+
+No merge or push has yet been performed.
+
+This pass is for:
+
+1. integrating the exact verified Stripe P0 remediation commit into the intended TrainEfficiency mainline
+2. rerunning focused post-integration verification
+3. pushing only if all integration gates remain green
+
+Do not add new Stripe features.
+
+Do not reopen the Stripe audit.
+
+Do not widen scope into unrelated TrainEfficiency work.
+
+---
+
+# 1. Reconfirm repository and remote state
+
+Before integrating, report:
+
+* repository path
+* current branch
+* current HEAD
+* current `origin/main`
+* remediation branch
+* remediation branch HEAD
+* remediation commit parent/base
+* working-tree status
+* modified files
+* untracked files
+
+Refresh/fetch remote state first.
+
+Confirm that:
+
+`5a6918697ebaf2687827de674804169b51fe89ea`
+
+still exists unchanged.
+
+Preserve all unrelated user work.
+
+Do not reset, clean, stash, overwrite, or stage unrelated files.
+
+---
+
+# 2. Reconfirm current mainline delta
+
+Determine whether `origin/main` has advanced since the integration-readiness pass.
+
+If it has not materially changed, continue.
+
+If it has advanced:
+
+inspect overlap with these Stripe remediation files:
+
+* `server/index.ts`
+* `server/phase10-routes.ts`
+* `server/services/marketplace-stripe-webhook.ts`
+* `server/tests/stripe-marketplace-webhook.integration.test.ts`
+* `server/tests/stripe-primary-webhook-retry.integration.test.ts`
+* `server/tests/stripe-webhook.test.ts`
+* `server/webhookHandlers.ts`
+* `shared/schema.ts`
+
+Check especially for:
+
+* middleware-order conflicts
+* Stripe webhook route changes
+* schema changes
+* event-ledger changes
+* startup changes
+* tenant-mapping changes
+* primary webhook retry changes
+
+If a meaningful semantic conflict exists, stop and report:
+
+`STRIPE INTEGRATION BLOCKED BY MAINLINE DELTA`
+
+Do not force the integration.
+
+---
+
+# 3. Integrate only the verified remediation commit
+
+Integrate exactly:
+
+`5a6918697ebaf2687827de674804169b51fe89ea`
+
+into the intended TrainEfficiency mainline.
+
+Prefer the simplest safe Git operation consistent with current history.
+
+Do not include:
+
+* unrelated user work
+* temporary audit files
+* memory/documentation files
+* AgentMail work
+* autonomy work
+* email-audit work
+* API logging work
+* unified test-runner work
+* any other unmerged Codex/Replit branch
+
+Do not rewrite history unnecessarily.
+
+Do not force-push.
+
+---
+
+# 4. Verify integrated commit scope
+
+After integration, inspect the resulting mainline diff/history.
+
+Confirm that the integrated Stripe change contains only the intended remediation files:
+
+* `server/index.ts`
+* `server/phase10-routes.ts`
+* `server/services/marketplace-stripe-webhook.ts`
+* `server/tests/stripe-marketplace-webhook.integration.test.ts`
+* `server/tests/stripe-primary-webhook-retry.integration.test.ts`
+* `server/tests/stripe-webhook.test.ts`
+* `server/webhookHandlers.ts`
+* `shared/schema.ts`
+
+If an unexpected file entered the integration, stop before pushing.
+
+---
+
+# 5. Post-integration Stripe verification
+
+Use fresh disposable/local PostgreSQL only.
+
+Do not use production.
+
+Rerun the focused verified Stripe suites from the integrated mainline state.
+
+## Marketplace + primary fresh-schema suite
+
+Prior verified result:
+
+* 8 passed
+* 0 failed
+* exit 0
+
+Report actual result.
+
+## Existing primary Stripe suite
+
+Prior result:
+
+* 15 passed
+* 0 failed
+* exit 0
+
+## Tenant-isolation helper suite
+
+Prior result:
+
+* 7 passed
+* 0 failed
+* exit 0
+
+## Tenant-isolation route suite
+
+Prior result:
+
+* 14 passed
+* 0 failed
+* exit 0
+
+Report exact counts and exit status for each.
+
+---
+
+# 6. Reverify P0 invariants after integration
+
+Confirm behaviorally and by source inspection:
+
+## Signature verification
+
+* marketplace secret required
+* Stripe signature required
+* raw body used
+* valid signed event accepted
+* invalid signature rejected
+* tampered body rejected
+* stale signature rejected where applicable
+* no unsigned fallback
+
+## Replay
+
+* Stripe event ID durable
+* database uniqueness enforced
+* serial replay deduplicates
+* concurrent replay deduplicates
+* conflicting body under reused event ID fails closed
+
+## Tenant ownership
+
+* Stripe customer/provider mapping is authoritative
+* active installation required
+* agent/developer mapping persisted
+* metadata cannot redirect financial ownership
+* Org A cannot credit Org B
+
+## Revenue
+
+* amount validated
+* currency persisted
+* provider event traceable
+* one financial result per provider event
+
+## Royalty
+
+* canonical developer share used
+* gross/platform/developer values persisted correctly
+* Stripe event traceable
+* replay does not duplicate royalty rows
+
+## Failure/retry
+
+* failed marketplace writes are not acknowledged as successful
+* durable failed state exists
+* failed event can retry
+* completed event deduplicates
+
+## Primary webhook
+
+* failed primary event can be reclaimed
+* completed event remains deduplicated
+* in-progress claim is not double-processed
+
+If any P0 invariant regresses, do not push.
+
+---
+
+# 7. TypeScript/regression assessment
+
+Run the repository's existing canonical TypeScript check.
+
+Previous state:
+
+* repository baseline red
+* approximately 352 diagnostics
+* no new remediation-introduced diagnostics
+
+Compare integrated output to baseline.
+
+Report:
+
+* total diagnostics
+* new diagnostics in Stripe remediation files
+* whether integration introduced any scoped regression
+
+Do not fix unrelated baseline diagnostics.
+
+Also run:
+
+`git diff --check`
+
+---
+
+# 8. Startup Stripe provider-call finding
+
+A separate existing startup behavior was observed during remediation:
+
+an application startup initializer attempted an external Stripe API request using an expired development/test key.
+
+No financial mutation occurred.
+
+Do not fix this in this integration pass.
+
+Confirm only:
+
+* whether the behavior is still pre-existing
+* whether the Stripe P0 remediation introduced it
+* whether normal post-integration test execution triggered it
+
+Classify separately as:
+
+`STARTUP STRIPE PROVIDER CALL — P1 CANDIDATE`
+
+if still confirmed.
+
+Do not let this separate P1 issue block Stripe P0 integration unless it was actually introduced by the remediation.
+
+---
+
+# 9. Git hygiene
+
+After integration and verification, inspect:
+
+`git status`
+
+`git log --oneline --decorate -n 10`
+
+`git show --stat --oneline HEAD`
+
+`git diff --check`
+
+Confirm:
+
+* the intended Stripe commit is in mainline history
+* no accidental merge artifacts
+* no unrelated file changes
+* unrelated user work remains preserved
+* local mainline is in a safe push state
+
+---
+
+# 10. Push rule
+
+Push only if all of the following are true:
+
+* integration succeeded cleanly
+* Stripe focused suites are green
+* P0 invariants remain intact
+* no new scoped TypeScript regression exists
+* no unrelated files entered integration
+* no force push is required
+
+Push only the intended mainline branch.
+
+Do not push remediation branches or unrelated branches.
+
+Do not force-push.
+
+---
+
+# 11. Verify remote result
+
+After push:
+
+refresh/fetch the remote and confirm:
+
+* remote mainline now contains the Stripe remediation commit
+* local and remote mainline match
+* no unexpected extra commits were pushed
+* `5a6918697ebaf2687827de674804169b51fe89ea` is reachable from remote mainline
+
+Do not rely only on push exit code.
+
+Verify the remote ref.
+
+---
+
+# 12. Production restrictions
+
+Do not:
+
+* deploy
+* touch production database
+* call live Stripe intentionally
+* create PaymentIntents
+* create Checkout Sessions
+* charge cards
+* issue refunds
+* alter subscriptions
+* alter payouts
+* post test webhooks to production
+* use production secrets
+
+This pass is source integration only.
+
+If an existing startup initializer attempts an external development/test Stripe call automatically, report it but do not use it as verification.
+
+---
+
+# 13. Integration closure
+
+If all integration and post-integration gates pass, report:
+
+`STRIPE P0 INTEGRATED AND CLOSED`
+
+This means:
+
+* P0 defect fixed
+* behavioral closure complete
+* verified remediation integrated into source mainline
+* remote mainline contains the fix
+
+It does **not** mean production deployment or live Stripe verification was performed.
+
+If any required gate fails, report:
+
+`STRIPE P0 INTEGRATION REMAINS OPEN`
+
+and state the exact blocker.
+
+---
+
+# Final report
+
+Return exactly:
+
+## 1. Integration Closure Verdict
+
+Use:
+
+* `STRIPE P0 INTEGRATED AND CLOSED`
+* `STRIPE P0 INTEGRATION REMAINS OPEN`
+
+## 2. Mainline Before Integration
+
+Report:
+
+* local mainline
+* remote mainline
+* remediation SHA
+* whether remote advanced
+* unrelated working-tree state
+
+## 3. Integration Action
+
+Report:
+
+* method used
+* resulting mainline SHA
+* fast-forward / merge / cherry-pick / other
+* exact files introduced
+
+## 4. Post-Integration Stripe Tests
+
+Give exact results for:
+
+* fresh marketplace/primary suite
+* primary Stripe suite
+* tenant helper suite
+* tenant route suite
+* exit statuses
+
+## 5. P0 Invariant Verification
+
+PASS/FAIL for:
+
+* signature verification
+* raw body
+* replay durability
+* conflicting payload handling
+* tenant ownership
+* revenue integrity
+* royalty integrity
+* failure/retry
+* primary failed-event retry
+
+## 6. TypeScript / Diff Assessment
+
+Report:
+
+* total diagnostics
+* baseline comparison
+* new Stripe diagnostics
+* `git diff --check`
+
+## 7. Startup Stripe Provider Call
+
+Report:
+
+* observed?
+* pre-existing?
+* remediation introduced?
+* severity classification
+
+Do not fix it.
+
+## 8. Git / Remote State
+
+Report:
+
+* push performed?
+* push target
+* force push?
+* resulting remote mainline SHA
+* local/remote aligned?
+* unrelated work preserved?
+
+## 9. Production State
+
+State:
+
+* production touched?
+* production DB touched?
+* live Stripe intentionally called?
+* deployment performed?
+* production secrets used?
+
+## 10. Remaining Stripe P0 Blockers
+
+If integrated and closed:
+
+`No remaining Stripe P0 source/integration blockers identified.`
+
+Also state:
+
+`Production/live-provider verification remains a separate gate and was not performed in this pass.`
+
+If still open, list only the concrete blocker.
+
+## 11. Recommended Next Action
+
+If closed:
+
+`Remove Stripe P0 from the active remediation queue and track the startup Stripe provider call separately as a P1 operational issue.`
+
+If open:
+
+state the one required remediation step.
+
+Stop there.
+
+Do not begin another TrainEfficiency workstream automatically.
