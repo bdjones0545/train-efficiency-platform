@@ -1,0 +1,168 @@
+You are working in the **TrainEfficiency** repository.
+
+The Stripe P0 implementation, verification, and local integration are already complete.
+
+Do not rerun the audit.
+
+Do not rebuild the remediation.
+
+Do not create another integration commit.
+
+Authoritative integrated local commit:
+
+`c489779437c394e191677ae4d0ed558d7960b27d`
+
+Current remote mainline before this pass:
+
+`origin/main = f67315ce1e084385c4ec36438e9e1ebd4a74ee44`
+
+The prior push failed only because GitHub authentication was invalid:
+
+`Invalid username or token; Password authentication is not supported`
+
+GitHub authentication has now been restored through the workspace’s secure connection mechanism.
+
+This pass is **push + remote verification only**.
+
+## 1. Refresh remote state
+
+Fetch `origin`.
+
+Report:
+
+* current local integrated SHA
+* current `origin/main`
+* whether `origin/main` advanced since the failed push
+* local working-tree state
+
+If `origin/main` is still:
+
+`f67315ce1e084385c4ec36438e9e1ebd4a74ee44`
+
+continue.
+
+If it advanced, do not force-push. Perform a non-destructive collision check first and stop if the new delta materially overlaps the Stripe integration.
+
+## 2. Confirm integrated commit
+
+Verify:
+
+`c489779437c394e191677ae4d0ed558d7960b27d`
+
+is the already-tested integrated Stripe result.
+
+Do not recreate or amend it.
+
+Do not include unrelated files or commits.
+
+## 3. Push
+
+Push the intended TrainEfficiency mainline containing:
+
+`c489779437c394e191677ae4d0ed558d7960b27d`
+
+to:
+
+`origin/main`
+
+Rules:
+
+* normal push only
+* no force push
+* no unrelated branches
+* no additional commits
+* no production deployment
+
+## 4. Verify remote
+
+After push, fetch/refresh the remote again.
+
+Verify:
+
+* `origin/main` points to `c489779437c394e191677ae4d0ed558d7960b27d`, or to an equivalent accepted mainline commit that contains it if the remote legitimately advanced during the operation
+* `5a6918697ebaf2687827de674804169b51fe89ea` is reachable through the integrated history
+* local and remote mainline are aligned
+* no unexpected commits were pushed
+
+Do not rely only on the push exit code.
+
+## 5. Do not rerun Stripe tests unless repository state changed
+
+The integrated commit already passed:
+
+* 8/8 fresh marketplace/primary
+* 15/15 primary Stripe
+* 7/7 tenant helper
+* 14/14 tenant routes
+
+If the exact tested commit is pushed unchanged and remote did not introduce a new integration delta, do not rerun the full suites merely for duplication.
+
+If mainline changed before push and required a new integration result, rerun only the necessary focused Stripe verification before pushing.
+
+## 6. Production restrictions
+
+Do not:
+
+* deploy
+* touch production DB
+* call live Stripe intentionally
+* use production Stripe secrets
+* create charges
+* issue refunds
+* alter subscriptions
+* create payouts
+
+This is Git source integration only.
+
+## Final report
+
+Return:
+
+### 1. Stripe Integration Verdict
+
+Use exactly one:
+
+`STRIPE P0 INTEGRATED AND CLOSED`
+
+or:
+
+`STRIPE P0 INTEGRATION REMAINS OPEN`
+
+### 2. Local State
+
+Report local SHA and branch.
+
+### 3. Remote State Before Push
+
+Report `origin/main`.
+
+### 4. Push Result
+
+Report:
+
+* success/failure
+* target
+* force push? yes/no
+
+### 5. Remote Verification
+
+Report final `origin/main` SHA and whether local/remote align.
+
+### 6. Production State
+
+State:
+
+* production touched?
+* production DB touched?
+* live Stripe called?
+* deployment performed?
+
+### 7. Remaining Blockers
+
+If successful:
+
+`No remaining Stripe P0 source/integration blockers identified.`
+
+If unsuccessful, state only the operational blocker.
+
+Stop there.
