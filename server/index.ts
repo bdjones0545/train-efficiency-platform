@@ -167,6 +167,9 @@ export function log(message: string, source = "express") {
 app.use(createApiRequestLogger(log));
 
 (async () => {
+  const { initializeRequiredSchema } = await import("./schema-bootstrap");
+  await initializeRequiredSchema();
+
   // Dev-data seed: only runs outside production.
   // The seed is already idempotent (checks before inserting), but we add
   // this guard so a fresh production DB never receives dev fixture data.

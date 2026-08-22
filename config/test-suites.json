@@ -130,6 +130,7 @@
       "classification": "db",
       "suites": ["db"],
       "files": [
+        "server/tests/schema-bootstrap.test.ts",
         "server/tests/apex-agent.test.ts",
         "server/tests/cron-job-locks.test.ts",
         "server/tests/send-path-audit.test.ts",
