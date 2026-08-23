@@ -40,7 +40,7 @@ import { startWeeklyReminderJob } from "./weekly-reminder";
 import { startSessionReminderJob } from "./session-reminders";
 import { handleAssistantMessage, executeConfirmedPendingAction, getActivePendingActionsForUser } from "./scheduling-assistant";
 import { runCeoAgentOrchestration } from "./ceo-agent-orchestrator";
-import { onPaymentReceived, onRedemption, onCashoutPaid } from "./revenue-recognition";
+import { onPaymentReceived, onRedemption } from "./revenue-recognition";
 import { executeManualPaymentForOrganization } from "./services/manual-payment-service";
 import { computeCommandCenter, setMonthlyGoal, buildCommandCenterContextString } from "./business-command-center";
 import { getCommandCenterSummary, getCommandCenterBriefing, getCommandCenterActionQueue, getCommandCenterNotifications, getCommandCenterApprovals } from "./command-center-live-routes";
@@ -7194,24 +7194,15 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!["PAID", "DENIED"].includes(status)) {
         return res.status(400).json({ message: "Status must be PAID or DENIED" });
       }
-      const updated = await storage.updateCashoutStatus(id, status);
+      const adminUserId = req.user?.claims?.sub ?? req.user?.id;
+      if (!adminUserId) return res.status(401).json({ message: "Unauthorized" });
+      const orgId = await resolveOrgIdOrThrow(req);
+      const updated = await storage.updateCashoutStatusForOrganization(orgId, id, status, adminUserId);
       if (!updated) return res.status(404).json({ message: "Cashout not found" });
 
-      // ── Revenue recognition: record coach compensation paid ──────────────────
-      if (status === "PAID" && updated) {
-        const adminUserId = req.user.claims.sub;
-        const adminProfile = await storage.getUserProfile(adminUserId);
-        onCashoutPaid({
-          orgId: adminProfile?.organizationId || null,
-          coachId: updated.coachId,
-          cashoutId: updated.id,
-          amountCents: updated.amountCents,
-          createdBy: adminUserId,
-        }).catch(() => {});
-      }
-
       res.json(updated);
-    } catch (error) {
+    } catch (error: any) {
+      if (handleOrgError(error, res)) return;
       console.error("Error updating cashout status:", error);
       res.status(500).json({ message: "Failed to update cashout status" });
     }

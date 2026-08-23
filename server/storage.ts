@@ -250,6 +250,7 @@ export interface IStorage {
   getAllCashouts(): Promise<Cashout[]>;
   createCashout(cashout: InsertCashout): Promise<Cashout>;
   updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined>;
+  updateCashoutStatusForOrganization(orgId: string, id: string, status: string, createdBy: string): Promise<Cashout | undefined>;
   markRedemptionsSent(coachId: string): Promise<void>;
 
   getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
@@ -1280,6 +1281,44 @@ export class DatabaseStorage implements IStorage {
   async updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined> {
     const [updated] = await db.update(cashouts).set({ status: status as any, processedAt: new Date() }).where(eq(cashouts.id, id)).returning();
     return updated;
+  }
+
+  async updateCashoutStatusForOrganization(
+    orgId: string,
+    id: string,
+    status: string,
+    createdBy: string,
+  ): Promise<Cashout | undefined> {
+    return db.transaction(async (trx) => {
+      const ownedCoachIds = trx
+        .select({ id: coachProfiles.id })
+        .from(coachProfiles)
+        .where(eq(coachProfiles.organizationId, orgId));
+      const [updated] = await trx
+        .update(cashouts)
+        .set({ status: status as any, processedAt: new Date() })
+        .where(and(eq(cashouts.id, id), inArray(cashouts.coachId, ownedCoachIds)))
+        .returning();
+      if (!updated) return undefined;
+
+      if (status === "PAID") {
+        await trx
+          .insert(revenueLedgerEvents)
+          .values({
+            orgId,
+            coachId: updated.coachId,
+            eventType: "coach_compensation_paid",
+            amountCents: updated.amountCents,
+            reason: "Coach compensation paid via cashout",
+            sourceAction: "cashout_paid",
+            createdBy,
+            idempotencyKey: `coach_compensation_paid:${updated.id}`,
+          })
+          .onConflictDoNothing({ target: revenueLedgerEvents.idempotencyKey });
+      }
+
+      return updated;
+    });
   }
 
   async markRedemptionsSent(coachId: string): Promise<void> {
