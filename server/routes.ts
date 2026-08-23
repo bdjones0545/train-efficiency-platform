@@ -41,6 +41,7 @@ import { startSessionReminderJob } from "./session-reminders";
 import { handleAssistantMessage, executeConfirmedPendingAction, getActivePendingActionsForUser } from "./scheduling-assistant";
 import { runCeoAgentOrchestration } from "./ceo-agent-orchestrator";
 import { onPaymentReceived, onRedemption, onCashoutPaid } from "./revenue-recognition";
+import { executeManualPaymentForOrganization } from "./services/manual-payment-service";
 import { computeCommandCenter, setMonthlyGoal, buildCommandCenterContextString } from "./business-command-center";
 import { getCommandCenterSummary, getCommandCenterBriefing, getCommandCenterActionQueue, getCommandCenterNotifications, getCommandCenterApprovals } from "./command-center-live-routes";
 
@@ -4353,37 +4354,24 @@ export async function registerRoutes(
         return res.status(400).json({ message: "Method must be cash, venmo, or stripe" });
       }
 
-      const user = await storage.getUser(userId);
-      if (!user) return res.status(404).json({ message: "User not found" });
-
+      const actorUserId = req.user?.claims?.sub ?? req.user?.id;
+      if (!actorUserId) return res.status(401).json({ message: "Unauthorized" });
+      const orgId = await resolveOrgIdOrThrow(req);
       const methodLabel = method === "cash" ? "Cash" : method === "venmo" ? "Venmo" : "Stripe";
       const description = `Manual payment (${methodLabel})`;
-      const tx = await storage.creditWallet(userId, amountCents, description);
-
-      // ── Revenue recognition: record payment received ─────────────────────────
-      {
-        const coachUserId = req.user.claims.sub;
-        const coachProf = await storage.getCoachProfile(coachUserId);
-        onPaymentReceived({
-          orgId: coachProf?.organizationId || null,
-          clientId: userId,
-          amountCents,
-          walletTxId: tx.id,
-          isSubscriptionPayment: false,
-          createdBy: coachUserId,
-        }).catch(() => {});
-      }
-
-      if (user.email) {
-        const newBalance = await storage.getUserBalance(userId);
-        const coachUserId = req.user.claims.sub;
-        const coachProf = await storage.getCoachProfile(coachUserId);
-        const orgB = await getOrgBranding(coachProf?.organizationId);
-        sendPaymentConfirmationEmail(user.email, user.firstName || "Client", amountCents, description, newBalance, orgB).catch(() => {});
-      }
+      const tx = await executeManualPaymentForOrganization({ amountCents, description }, {
+        credit: () => storage.creditWalletForOrganization(orgId, userId, amountCents, description, actorUserId),
+        getUser: () => storage.getUser(userId),
+        getBalance: () => storage.getUserBalance(userId),
+        getBranding: () => getOrgBranding(orgId),
+        sendConfirmation: ({ email, firstName, amountCents: creditedAmount, description: creditedDescription, balanceCents, branding }) =>
+          sendPaymentConfirmationEmail(email, firstName, creditedAmount, creditedDescription, balanceCents, branding as OrgBranding | undefined),
+      });
+      if (!tx) return res.status(404).json({ message: "User not found" });
 
       res.json(tx);
-    } catch (error) {
+    } catch (error: any) {
+      if (handleOrgError(error, res)) return;
       console.error("Error recording manual payment:", error);
       res.status(500).json({ message: "Failed to record payment" });
     }

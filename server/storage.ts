@@ -260,6 +260,7 @@ export interface IStorage {
 
   getUserBalance(userId: string): Promise<number>;
   creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string, livemode?: boolean): Promise<WalletTransaction>;
+  creditWalletForOrganization(orgId: string, userId: string, amountCents: number, description: string, createdBy: string): Promise<WalletTransaction | undefined>;
   debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
   createCreditLedgerEvent(data: InsertCreditLedgerEvent): Promise<CreditLedgerEvent>;
@@ -1340,6 +1341,58 @@ export class DatabaseStorage implements IStorage {
       await trx.update(users).set({
         balanceCents: sql`COALESCE(${users.balanceCents}, 0) + ${amountCents}`,
       }).where(eq(users.id, userId));
+
+      return tx;
+    });
+  }
+
+  async creditWalletForOrganization(
+    orgId: string,
+    userId: string,
+    amountCents: number,
+    description: string,
+    createdBy: string,
+  ): Promise<WalletTransaction | undefined> {
+    if (amountCents <= 0) {
+      throw new Error(`creditWalletForOrganization: amountCents must be positive (got ${amountCents})`);
+    }
+
+    return db.transaction(async (trx) => {
+      const [membership] = await trx
+        .select({ userId: userProfiles.userId })
+        .from(userProfiles)
+        .where(and(eq(userProfiles.userId, userId), eq(userProfiles.organizationId, orgId)))
+        .for("update")
+        .limit(1);
+      if (!membership) return undefined;
+
+      const [tx] = await trx.insert(walletTransactions).values({
+        userId,
+        type: "CREDIT" as const,
+        amountCents,
+        description,
+        sourceType: "manual_payment",
+        currency: "usd",
+        paymentStatus: "succeeded",
+        livemode: false,
+      }).returning();
+      if (!tx) throw new Error("Organization-scoped wallet transaction was not created");
+
+      const [updatedUser] = await trx.update(users).set({
+        balanceCents: sql`COALESCE(${users.balanceCents}, 0) + ${amountCents}`,
+      }).where(eq(users.id, userId)).returning({ id: users.id });
+      if (!updatedUser) throw new Error("Organization-scoped wallet target no longer exists");
+
+      await trx.insert(revenueLedgerEvents).values({
+        orgId,
+        clientId: userId,
+        eventType: "payment_received",
+        amountCents,
+        reason: "Client payment received",
+        sourceAction: "wallet_deposit",
+        createdBy,
+        idempotencyKey: `payment_received:${tx.id}`,
+      });
 
       return tx;
     });
