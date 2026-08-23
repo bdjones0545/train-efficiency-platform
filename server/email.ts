@@ -411,9 +411,8 @@ async function sendEmail(to: string, subject: string, html: string, senderName?:
       }
 
       try {
-        const token = await storage.ensureUnsubscribeToken(logCtx.recipientUserId);
-        const orgParam = logCtx.orgId ? `?orgId=${encodeURIComponent(logCtx.orgId)}` : '';
-        const unsubUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${token}${orgParam}`;
+        const token = await storage.ensureUnsubscribeToken(logCtx.recipientUserId, logCtx.orgId);
+        const unsubUrl = `${UNSUBSCRIBE_BASE_URL}/unsubscribe/${token}`;
         finalHtml = html + `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid #333;"><p style="font-size:12px;color:#666;margin:0;font-family:Arial,sans-serif;"><a href="${unsubUrl}" style="color:#888;text-decoration:underline;">Manage email preferences</a></p></div>`;
       } catch (tokenErr) {
         console.error('[Email] Failed to generate unsubscribe token:', tokenErr);

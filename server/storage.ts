@@ -459,7 +459,14 @@ export interface IStorage {
   getCommunicationsByBooking(bookingId: string): Promise<CommunicationLog[]>;
 
   getUserByUnsubscribeToken(token: string): Promise<User | undefined>;
-  ensureUnsubscribeToken(userId: string): Promise<string>;
+  getUnsubscribePreferenceScope(token: string): Promise<{
+    user: User;
+    orgId: string | null;
+    preferenceId: string | null;
+    notificationPreferences: Record<string, any> | null;
+    smsOptIn: boolean;
+  } | undefined>;
+  ensureUnsubscribeToken(userId: string, orgId?: string | null): Promise<string>;
   updateNotificationPreferences(userId: string, prefs: Record<string, any>): Promise<User | undefined>;
   updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
 
@@ -2611,7 +2618,73 @@ export class DatabaseStorage implements IStorage {
     return user || undefined;
   }
 
-  async ensureUnsubscribeToken(userId: string): Promise<string> {
+  async getUnsubscribePreferenceScope(token: string): Promise<{
+    user: User;
+    orgId: string | null;
+    preferenceId: string | null;
+    notificationPreferences: Record<string, any> | null;
+    smsOptIn: boolean;
+  } | undefined> {
+    const [orgScope] = await db
+      .select({ user: users, preference: userOrgPreferences })
+      .from(userOrgPreferences)
+      .innerJoin(users, eq(users.id, userOrgPreferences.userId))
+      .where(eq(userOrgPreferences.unsubscribeToken, token))
+      .limit(1);
+    if (orgScope) {
+      return {
+        user: orgScope.user,
+        orgId: orgScope.preference.orgId,
+        preferenceId: orgScope.preference.id,
+        notificationPreferences: orgScope.preference.notificationPreferences as Record<string, any> | null,
+        smsOptIn: orgScope.preference.smsOptIn,
+      };
+    }
+
+    const user = await this.getUserByUnsubscribeToken(token);
+    if (!user) return undefined;
+    return {
+      user,
+      orgId: null,
+      preferenceId: null,
+      notificationPreferences: user.notificationPreferences as Record<string, any> | null,
+      smsOptIn: user.smsOptIn,
+    };
+  }
+
+  async ensureUnsubscribeToken(userId: string, orgId?: string | null): Promise<string> {
+    if (orgId) {
+      const user = await this.getUser(userId);
+      if (!user) throw new Error("Cannot create unsubscribe token for unknown user");
+      const [profile, existingPreference] = await Promise.all([
+        this.getUserProfile(userId),
+        this.getUserOrgPreferences(userId, orgId),
+      ]);
+      if (profile?.organizationId !== orgId && !existingPreference) {
+        throw new Error("Cannot create unsubscribe token outside the user's organization scope");
+      }
+      const candidate = randomUUID();
+      const [preference] = await db
+        .insert(userOrgPreferences)
+        .values({
+          userId,
+          orgId,
+          smsOptIn: user.smsOptIn,
+          notificationPreferences: user.notificationPreferences as Record<string, any> | null,
+          unsubscribeToken: candidate,
+        })
+        .onConflictDoUpdate({
+          target: [userOrgPreferences.userId, userOrgPreferences.orgId],
+          set: {
+            unsubscribeToken: sql`COALESCE(${userOrgPreferences.unsubscribeToken}, ${candidate})`,
+            updatedAt: new Date(),
+          },
+        })
+        .returning({ unsubscribeToken: userOrgPreferences.unsubscribeToken });
+      if (!preference?.unsubscribeToken) throw new Error("Failed to create organization unsubscribe token");
+      return preference.unsubscribeToken;
+    }
+
     const [user] = await db.select().from(users).where(eq(users.id, userId));
     if (user?.unsubscribeToken) return user.unsubscribeToken;
     const token = randomUUID();

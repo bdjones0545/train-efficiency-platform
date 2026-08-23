@@ -10493,37 +10493,41 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     marketing: false,
   };
 
+  const mergeUnsubscribePreferences = (
+    rawPrefs: any,
+    incoming?: any,
+  ): { email: Record<string, boolean>; sms: Record<string, boolean> } => {
+    const existingEmail = rawPrefs?.email || (rawPrefs && !rawPrefs.sms ? rawPrefs : {});
+    const existingSms = rawPrefs?.sms || {};
+    const incomingEmail = incoming?.email || (incoming && !incoming.sms ? incoming : {});
+    const incomingSms = incoming?.sms || {};
+    const mergeKnown = (defaults: Record<string, boolean>, existing: any, updates: any) =>
+      Object.fromEntries(Object.keys(defaults).map(key => [
+        key,
+        typeof updates?.[key] === "boolean"
+          ? updates[key]
+          : typeof existing?.[key] === "boolean"
+            ? existing[key]
+            : defaults[key],
+      ]));
+    return {
+      email: mergeKnown(DEFAULT_NOTIFICATION_PREFS, existingEmail, incomingEmail),
+      sms: mergeKnown(DEFAULT_SMS_PREFS_ROUTE, existingSms, incomingSms),
+    };
+  };
+
   app.get("/api/unsubscribe/:token", async (req: any, res) => {
     try {
-      const user = await storage.getUserByUnsubscribeToken(req.params.token);
-      if (!user) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
-      const orgId = typeof req.query.orgId === "string" ? req.query.orgId : undefined;
-
-      // Phase 7: Read org-level prefs if orgId provided, fallback to user-level
-      let rawPrefs = user.notificationPreferences as any;
-      let smsOptIn = user.smsOptIn;
-      if (orgId) {
-        try {
-          const orgPrefs = await storage.getUserOrgPreferences(user.id, orgId);
-          if (orgPrefs) {
-            if (orgPrefs.notificationPreferences) rawPrefs = orgPrefs.notificationPreferences;
-            smsOptIn = orgPrefs.smsOptIn;
-          }
-        } catch (err) {
-          console.error('[Unsubscribe] Failed to load org prefs:', err);
-        }
-      }
-
-      let emailPrefs: Record<string, boolean>;
-      let smsPrefs: Record<string, boolean>;
-      if (rawPrefs?.email || rawPrefs?.sms) {
-        emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(rawPrefs.email || {}) };
-        smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE, ...(rawPrefs.sms || {}) };
-      } else {
-        emailPrefs = { ...DEFAULT_NOTIFICATION_PREFS, ...(rawPrefs || {}) };
-        smsPrefs = { ...DEFAULT_SMS_PREFS_ROUTE };
-      }
-      res.json({ email: user.email, preferences: { email: emailPrefs, sms: smsPrefs }, phone: user.phone, smsOptIn, orgId });
+      const scope = await storage.getUnsubscribePreferenceScope(req.params.token);
+      if (!scope) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
+      const preferences = mergeUnsubscribePreferences(scope.notificationPreferences);
+      res.json({
+        email: scope.user.email,
+        preferences,
+        phone: scope.user.phone,
+        smsOptIn: scope.smsOptIn,
+        orgId: scope.orgId,
+      });
     } catch (err: any) {
       res.status(500).json({ message: err.message });
     }
@@ -10531,33 +10535,16 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
   app.patch("/api/unsubscribe/:token", async (req: any, res) => {
     try {
-      const user = await storage.getUserByUnsubscribeToken(req.params.token);
-      if (!user) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
-      const orgId = typeof req.query.orgId === "string" ? req.query.orgId : undefined;
+      const scope = await storage.getUnsubscribePreferenceScope(req.params.token);
+      if (!scope) return res.status(404).json({ message: "Invalid or expired unsubscribe link" });
       const incoming = req.body.preferences;
       if (!incoming || typeof incoming !== "object") return res.status(400).json({ message: "preferences object required" });
-      const rawPrefs = user.notificationPreferences as any;
-      let existingEmail: Record<string, boolean>;
-      let existingSms: Record<string, boolean>;
-      if (rawPrefs?.email || rawPrefs?.sms) {
-        existingEmail = rawPrefs.email || {};
-        existingSms = rawPrefs.sms || {};
-      } else {
-        existingEmail = rawPrefs || {};
-        existingSms = {};
-      }
-      const mergedEmail = { ...DEFAULT_NOTIFICATION_PREFS, ...existingEmail, ...(incoming.email || incoming) };
-      const mergedSms = { ...DEFAULT_SMS_PREFS_ROUTE, ...existingSms, ...(incoming.sms || {}) };
-      const merged = { email: mergedEmail, sms: mergedSms };
+      const merged = mergeUnsubscribePreferences(scope.notificationPreferences, incoming);
 
-      // Phase 7: Write to org-level if orgId present, also write to user-level (backward compat)
-      await storage.updateNotificationPreferences(user.id, merged);
-      if (orgId) {
-        try {
-          await storage.upsertUserOrgPreferences(user.id, orgId, { notificationPreferences: merged });
-        } catch (err) {
-          console.error('[Unsubscribe] Failed to write org prefs:', err);
-        }
+      if (scope.orgId) {
+        await storage.upsertUserOrgPreferences(scope.user.id, scope.orgId, { notificationPreferences: merged });
+      } else {
+        await storage.updateNotificationPreferences(scope.user.id, merged);
       }
       res.json({ success: true, preferences: merged });
     } catch (err: any) {
@@ -10578,7 +10565,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const orgId = profile?.organizationId || null;
       console.log(`[Preferences] orgId=${orgId ?? 'none'}`);
 
-      const token = await storage.ensureUnsubscribeToken(userId);
+      const token = await storage.ensureUnsubscribeToken(userId, orgId);
 
       // Org-level prefs: auto-create row if missing, then read
       let rawPrefs = user.notificationPreferences as any;

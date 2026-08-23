@@ -1011,6 +1011,7 @@ export const userOrgPreferences = pgTable("user_org_preferences", {
   smsOptInAt: timestamp("sms_opt_in_at"),
   smsOptOutAt: timestamp("sms_opt_out_at"),
   notificationPreferences: jsonb("notification_preferences"),
+  unsubscribeToken: varchar("unsubscribe_token").unique(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (t) => ({
