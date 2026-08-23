@@ -192,6 +192,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  const { runApplicationMigrations } = await import("./application-migrations");
+  await runApplicationMigrations();
+
   const { initializeRequiredSchema } = await import("./schema-bootstrap");
   await initializeRequiredSchema();
 
