@@ -96,7 +96,7 @@ export async function getRecentAuditEvents(
   }
 }
 
-export async function getAuditStats(): Promise<{
+export async function getAuditStats(orgId: string): Promise<{
   totalInteractions: number;
   successRate: number;
   blockedCount: number;
@@ -111,6 +111,7 @@ export async function getAuditStats(): Promise<{
         SUM(CASE WHEN authorization_result = 'denied' THEN 1 ELSE 0 END)::int AS blocked,
         SUM(CASE WHEN created_at > NOW() - INTERVAL '24 hours' THEN 1 ELSE 0 END)::int AS last24h
       FROM kevin_slack_action_audit
+      WHERE org_id = ${orgId}
     `);
     const arr = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
     const r = arr[0] ?? {};

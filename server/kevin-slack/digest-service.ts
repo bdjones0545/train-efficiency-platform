@@ -12,9 +12,10 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-import { isDigestsEnabled, getSlackBotToken } from "./config";
+import { isDigestsEnabled } from "./config";
 import { buildDailyDigest, type DigestInput } from "./block-kit";
 import { storage } from "../storage";
+import { getKevinSlackTargetForOrganization } from "./target-service";
 
 /**
  * @deprecated Tables are created by migrations/0002_kevin_slack_tables.sql
@@ -130,19 +131,19 @@ async function buildDigestData(orgId: string): Promise<DigestInput> {
 
 // ─── Send digest ──────────────────────────────────────────────────────────────
 
-export async function sendDailyDigest(
+export async function sendDailyDigestForOrganization(
   orgId: string,
-  channel: string,
   timezone = "America/New_York",
 ): Promise<{ ok: boolean; skipped?: boolean; error?: string }> {
   if (!isDigestsEnabled()) return { ok: false, error: "Digests not enabled" };
 
+  const target = await getKevinSlackTargetForOrganization(orgId);
+  if (!target) return { ok: false, error: "Slack integration not configured for organization" };
+  const { channel, botToken } = target;
+
   const periodKey = dailyPeriodKey();
   const alreadySent = await hasSentDigest(orgId, "daily", periodKey);
   if (alreadySent) return { ok: true, skipped: true };
-
-  const botToken = getSlackBotToken();
-  if (!botToken) return { ok: false, error: "Slack bot token not configured" };
 
   try {
     const data = await buildDigestData(orgId);
@@ -177,12 +178,13 @@ export async function sendDailyDigest(
 
 // ─── Notification dedup check ─────────────────────────────────────────────────
 
-export async function hasRecentNotification(dedupKey: string, windowMinutes = 60): Promise<boolean> {
+export async function hasRecentNotification(orgId: string, dedupKey: string, windowMinutes = 60): Promise<boolean> {
   await ensureDigestTables();
   try {
     const rows = await db.execute(sql`
       SELECT id FROM kevin_slack_notification_log
-      WHERE dedup_key = ${dedupKey}
+      WHERE org_id = ${orgId}
+        AND dedup_key = ${dedupKey}
         AND sent_at > NOW() - (${windowMinutes} || ' minutes')::interval
       LIMIT 1
     `);
@@ -214,7 +216,7 @@ export async function recordNotificationSent(
   }
 }
 
-export async function getDigestStats(): Promise<{
+export async function getDigestStats(orgId: string): Promise<{
   totalSent: number;
   last7Days: number;
   failedCount: number;
@@ -227,6 +229,7 @@ export async function getDigestStats(): Promise<{
         SUM(CASE WHEN sent_at > NOW() - INTERVAL '7 days' THEN 1 ELSE 0 END)::int AS last7,
         SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END)::int AS failed
       FROM kevin_slack_digest_runs
+      WHERE org_id = ${orgId}
     `);
     const arr = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
     const r = arr[0] ?? {};

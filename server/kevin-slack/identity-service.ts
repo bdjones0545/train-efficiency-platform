@@ -142,6 +142,42 @@ export async function createOrUpdateMapping(input: CreateMappingInput): Promise<
   }
 }
 
+export async function createOrUpdateMappingForOrganization(
+  orgId: string,
+  input: Omit<CreateMappingInput, "orgId">,
+): Promise<SlackIdentityMapping | null> {
+  await ensureIdentityTables();
+  try {
+    const status = input.status ?? "pending";
+    const rows = await db.execute(sql`
+      INSERT INTO kevin_slack_identity_mappings
+        (slack_team_id, slack_enterprise_id, slack_user_id, trainefficiency_user_id, org_id, mapping_status, linked_by, linked_at, last_verified_at)
+      SELECT
+        ${input.slackTeamId}, ${input.slackEnterpriseId ?? null}, ${input.slackUserId},
+        ${input.trainefficiencyUserId}, ${orgId}, ${status}, ${input.linkedBy},
+        NOW(), ${status === "verified" ? sql`NOW()` : sql`NULL`}
+      WHERE EXISTS (
+        SELECT 1 FROM user_profiles
+        WHERE user_id = ${input.trainefficiencyUserId}
+          AND organization_id = ${orgId}
+      )
+      ON CONFLICT (slack_team_id, slack_user_id)
+      DO UPDATE SET
+        trainefficiency_user_id = EXCLUDED.trainefficiency_user_id,
+        mapping_status = EXCLUDED.mapping_status,
+        linked_by = EXCLUDED.linked_by,
+        last_verified_at = CASE WHEN EXCLUDED.mapping_status = 'verified' THEN NOW() ELSE kevin_slack_identity_mappings.last_verified_at END
+      WHERE kevin_slack_identity_mappings.org_id = ${orgId}
+      RETURNING *
+    `);
+    const arr = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+    return arr[0] ? rowToMapping(arr[0]) : null;
+  } catch (err: any) {
+    console.error("[Kevin Slack] createOrUpdateMappingForOrganization error:", err?.message);
+    return null;
+  }
+}
+
 export async function verifyMapping(id: string, verifiedBy: string): Promise<boolean> {
   await ensureIdentityTables();
   try {
@@ -170,6 +206,28 @@ export async function revokeMapping(id: string, revokedBy: string): Promise<bool
     console.error("[Kevin Slack] revokeMapping error:", err?.message);
     return false;
   }
+}
+
+export async function verifyMappingForOrganization(orgId: string, id: string, verifiedBy: string): Promise<boolean> {
+  const rows = await db.execute(sql`
+    UPDATE kevin_slack_identity_mappings
+    SET mapping_status = 'verified', last_verified_at = NOW(), linked_by = ${verifiedBy}
+    WHERE id = ${id} AND org_id = ${orgId}
+    RETURNING id
+  `);
+  const arr = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+  return arr.length === 1;
+}
+
+export async function revokeMappingForOrganization(orgId: string, id: string, revokedBy: string): Promise<boolean> {
+  const rows = await db.execute(sql`
+    UPDATE kevin_slack_identity_mappings
+    SET mapping_status = 'revoked', revoked_at = NOW(), linked_by = ${revokedBy}
+    WHERE id = ${id} AND org_id = ${orgId}
+    RETURNING id
+  `);
+  const arr = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+  return arr.length === 1;
 }
 
 export async function listMappingsForOrg(orgId: string): Promise<SlackIdentityMapping[]> {

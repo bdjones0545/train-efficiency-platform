@@ -23,6 +23,7 @@
 import type { Express, Request, Response } from "express";
 import { isAuthenticated } from "./replit_integrations/auth";
 import { requireRole } from "./lib/require-role";
+import { handleOrgError, resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 
 import { rawBodyCapture, verifySlackSignatureMiddleware } from "./kevin-slack/verifier";
 import {
@@ -40,11 +41,10 @@ import {
   ensureIdentityTables,
   findMapping,
   resolveIdentity,
-  createOrUpdateMapping,
-  verifyMapping,
-  revokeMapping,
+  createOrUpdateMappingForOrganization,
+  verifyMappingForOrganization,
+  revokeMappingForOrganization,
   listMappingsForOrg,
-  listAllMappings,
 } from "./kevin-slack/identity-service";
 
 import {
@@ -63,7 +63,7 @@ import { routeCommand } from "./kevin-slack/command-router";
 import { handleSlackAction, type ActionPayload } from "./kevin-slack/approval-handler";
 import {
   ensureDigestTables,
-  sendDailyDigest,
+  sendDailyDigestForOrganization,
   getDigestStats,
   hasRecentNotification,
   recordNotificationSent,
@@ -73,9 +73,20 @@ import { buildCriticalAlert, buildImportantAlert } from "./kevin-slack/block-kit
 
 import { getSlackBotToken } from "./kevin-slack/config";
 import { startTokenCleanupCron } from "./kevin-slack/action-token-service";
+import { getKevinSlackTargetForOrganization } from "./kevin-slack/target-service";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import crypto from "crypto";
+
+async function requireKevinSlackAdminOrganization(req: any, res: Response, next: () => void): Promise<void> {
+  try {
+    req.kevinSlackOrgId = await resolveOrgIdOrThrow(req);
+    next();
+  } catch (error: any) {
+    if (handleOrgError(error, res)) return;
+    res.status(500).json({ error: "Failed to resolve organization" });
+  }
+}
 
 // ─── Migration runner ─────────────────────────────────────────────────────────
 //
@@ -475,8 +486,10 @@ export function registerKevinSlackRoutes(app: Express): void {
     "/api/admin/kevin-slack/config",
     isAuthenticated,
     requireRole("ADMIN"),
-    (_req: any, res: Response) => {
+    requireKevinSlackAdminOrganization,
+    async (req: any, res: Response) => {
       const cfg = getKevinSlackConfig();
+      const target = await getKevinSlackTargetForOrganization(req.kevinSlackOrgId);
       // Never expose secrets
       res.json({
         enabled: cfg.enabled,
@@ -489,7 +502,7 @@ export function registerKevinSlackRoutes(app: Express): void {
         approvalsEnabled: cfg.approvalsEnabled,
         obsidianMemoryEnabled: cfg.obsidianMemoryEnabled,
         appIdConfigured: !!cfg.appId,
-        botTokenConfigured: !!getSlackBotToken(),
+        botTokenConfigured: !!target,
         signingSecretConfigured: !!(process.env.SLACK_SIGNING_SECRET),
         clientIdConfigured: !!(process.env.SLACK_CLIENT_ID),
         // Staged activation guide
@@ -511,19 +524,22 @@ export function registerKevinSlackRoutes(app: Express): void {
     "/api/admin/kevin-slack/diagnostics",
     isAuthenticated,
     requireRole("ADMIN"),
-    async (_req: any, res: Response) => {
+    requireKevinSlackAdminOrganization,
+    async (req: any, res: Response) => {
       try {
+        const orgId = req.kevinSlackOrgId as string;
         const [auditStats, digestStats] = await Promise.all([
-          getAuditStats(),
-          getDigestStats(),
+          getAuditStats(orgId),
+          getDigestStats(orgId),
         ]);
 
         const cfg = getKevinSlackConfig();
+        const target = await getKevinSlackTargetForOrganization(orgId);
 
         res.json({
           integration: {
             enabled: cfg.enabled,
-            botTokenConfigured: !!getSlackBotToken(),
+            botTokenConfigured: !!target,
             signingSecretConfigured: !!(process.env.SLACK_SIGNING_SECRET),
             eventsEnabled: cfg.eventsEnabled,
             commandsEnabled: cfg.commandsEnabled,
@@ -548,12 +564,10 @@ export function registerKevinSlackRoutes(app: Express): void {
     "/api/admin/kevin-slack/mappings",
     isAuthenticated,
     requireRole("ADMIN"),
+    requireKevinSlackAdminOrganization,
     async (req: any, res: Response) => {
-      const orgId = req.query.orgId as string | undefined;
       try {
-        const mappings = orgId
-          ? await listMappingsForOrg(orgId)
-          : await listAllMappings();
+        const mappings = await listMappingsForOrg(req.kevinSlackOrgId);
         res.json({ mappings });
       } catch (err: any) {
         res.status(500).json({ error: err?.message });
@@ -566,19 +580,20 @@ export function registerKevinSlackRoutes(app: Express): void {
     "/api/admin/kevin-slack/mappings",
     isAuthenticated,
     requireRole("ADMIN"),
+    requireKevinSlackAdminOrganization,
     async (req: any, res: Response) => {
-      const { slackTeamId, slackUserId, trainefficiencyUserId, orgId, status } = req.body ?? {};
-      if (!slackTeamId || !slackUserId || !trainefficiencyUserId || !orgId) {
-        return res.status(400).json({ error: "slackTeamId, slackUserId, trainefficiencyUserId, orgId are required" });
+      const { slackTeamId, slackUserId, trainefficiencyUserId, status } = req.body ?? {};
+      if (!slackTeamId || !slackUserId || !trainefficiencyUserId) {
+        return res.status(400).json({ error: "slackTeamId, slackUserId, and trainefficiencyUserId are required" });
       }
 
-      const adminUserId = req.user?.claims?.sub ?? req.user?.id ?? "admin";
+      const adminUserId = req.user?.claims?.sub ?? req.user?.id;
+      if (!adminUserId) return res.status(401).json({ error: "Unauthorized" });
       try {
-        const mapping = await createOrUpdateMapping({
+        const mapping = await createOrUpdateMappingForOrganization(req.kevinSlackOrgId, {
           slackTeamId,
           slackUserId,
           trainefficiencyUserId,
-          orgId,
           linkedBy: adminUserId,
           status: status ?? "verified",
         });
@@ -595,10 +610,13 @@ export function registerKevinSlackRoutes(app: Express): void {
     "/api/admin/kevin-slack/mappings/:id/verify",
     isAuthenticated,
     requireRole("ADMIN"),
+    requireKevinSlackAdminOrganization,
     async (req: any, res: Response) => {
       const { id } = req.params;
-      const adminUserId = req.user?.claims?.sub ?? req.user?.id ?? "admin";
-      const ok = await verifyMapping(id, adminUserId);
+      const adminUserId = req.user?.claims?.sub ?? req.user?.id;
+      if (!adminUserId) return res.status(401).json({ error: "Unauthorized" });
+      const ok = await verifyMappingForOrganization(req.kevinSlackOrgId, id, adminUserId);
+      if (!ok) return res.status(404).json({ error: "Mapping not found" });
       res.json({ ok });
     },
   );
@@ -608,10 +626,13 @@ export function registerKevinSlackRoutes(app: Express): void {
     "/api/admin/kevin-slack/mappings/:id/revoke",
     isAuthenticated,
     requireRole("ADMIN"),
+    requireKevinSlackAdminOrganization,
     async (req: any, res: Response) => {
       const { id } = req.params;
-      const adminUserId = req.user?.claims?.sub ?? req.user?.id ?? "admin";
-      const ok = await revokeMapping(id, adminUserId);
+      const adminUserId = req.user?.claims?.sub ?? req.user?.id;
+      if (!adminUserId) return res.status(401).json({ error: "Unauthorized" });
+      const ok = await revokeMappingForOrganization(req.kevinSlackOrgId, id, adminUserId);
+      if (!ok) return res.status(404).json({ error: "Mapping not found" });
       res.json({ ok });
     },
   );
@@ -621,12 +642,11 @@ export function registerKevinSlackRoutes(app: Express): void {
     "/api/admin/kevin-slack/audit",
     isAuthenticated,
     requireRole("ADMIN"),
+    requireKevinSlackAdminOrganization,
     async (req: any, res: Response) => {
-      const orgId = req.query.orgId as string | undefined;
       const limit = parseInt(req.query.limit as string ?? "50", 10);
-      if (!orgId) return res.status(400).json({ error: "orgId required" });
       try {
-        const events = await getRecentAuditEvents(orgId, limit);
+        const events = await getRecentAuditEvents(req.kevinSlackOrgId, limit);
         res.json({ events });
       } catch (err: any) {
         res.status(500).json({ error: err?.message });
@@ -639,10 +659,9 @@ export function registerKevinSlackRoutes(app: Express): void {
     "/api/admin/kevin-slack/digest/send",
     isAuthenticated,
     requireRole("ADMIN"),
+    requireKevinSlackAdminOrganization,
     async (req: any, res: Response) => {
-      const { orgId, channel } = req.body ?? {};
-      if (!orgId || !channel) return res.status(400).json({ error: "orgId and channel required" });
-      const result = await sendDailyDigest(orgId, channel);
+      const result = await sendDailyDigestForOrganization(req.kevinSlackOrgId);
       res.json(result);
     },
   );
@@ -653,15 +672,13 @@ export function registerKevinSlackRoutes(app: Express): void {
     "/api/internal/kevin-slack/notify",
     isAuthenticated,
     requireRole("ADMIN"),
+    requireKevinSlackAdminOrganization,
     async (req: any, res: Response) => {
       if (!isNotificationsEnabled()) {
         return res.status(200).json({ ok: false, reason: "notifications_disabled" });
       }
 
       const {
-        orgId,
-        teamId,
-        channel,
         eventType,
         what,
         why,
@@ -677,9 +694,13 @@ export function registerKevinSlackRoutes(app: Express): void {
         dedupKey,
       } = req.body ?? {};
 
-      if (!teamId || !channel || !eventType) {
-        return res.status(400).json({ error: "teamId, channel, eventType required" });
+      if (!eventType) {
+        return res.status(400).json({ error: "eventType required" });
       }
+
+      const orgId = req.kevinSlackOrgId as string;
+      const target = await getKevinSlackTargetForOrganization(orgId);
+      if (!target) return res.status(404).json({ error: "Slack integration not configured" });
 
       // Classify
       const classification = classifyNotification({
@@ -692,15 +713,12 @@ export function registerKevinSlackRoutes(app: Express): void {
         securityImpact,
         confidence: 0.8,
         timeSensitivity,
-        hasOpenAlert: dedupKey ? await hasRecentNotification(dedupKey) : false,
+        hasOpenAlert: dedupKey ? await hasRecentNotification(orgId, dedupKey) : false,
       });
 
       if (!shouldSendImmediately(classification.priority)) {
         return res.json({ ok: true, priority: classification.priority, sent: false });
       }
-
-      const botToken = getSlackBotToken();
-      if (!botToken) return res.status(500).json({ error: "Bot token not configured" });
 
       const blocks =
         classification.priority === "CRITICAL" || classification.priority === "EXECUTIVE_BRIEF"
@@ -712,13 +730,14 @@ export function registerKevinSlackRoutes(app: Express): void {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${botToken}`,
+            Authorization: `Bearer ${target.botToken}`,
           },
-          body: JSON.stringify({ channel, blocks }),
+          body: JSON.stringify({ channel: target.channel, blocks }),
         });
         const result = await response.json() as any;
 
-        await recordNotificationSent(teamId, channel, classification.priority, eventType, orgId ?? null, dedupKey);
+        if (!result.ok) return res.status(502).json({ ok: false, error: result.error ?? "Slack send failed" });
+        await recordNotificationSent(target.teamId, target.channel, classification.priority, eventType, orgId, dedupKey);
 
         return res.json({ ok: result.ok, priority: classification.priority, sent: true, slackTs: result.ts });
       } catch (err: any) {
