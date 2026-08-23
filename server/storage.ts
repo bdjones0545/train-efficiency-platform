@@ -1346,20 +1346,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction> {
-    const [tx] = await db.insert(walletTransactions).values({
-      userId,
-      type: "DEBIT" as const,
-      amountCents,
-      description,
-      sourceType: sourceType || "redemption",
-      sourceId: sourceId || null,
-    }).returning();
+    if (!Number.isInteger(amountCents) || amountCents <= 0) {
+      throw new Error(`debitWallet: amountCents must be a positive integer (got ${amountCents})`);
+    }
 
-    await db.update(users).set({
-      balanceCents: sql`COALESCE(${users.balanceCents}, 0) - ${amountCents}`,
-    }).where(eq(users.id, userId));
+    // Keep the audit entry and denormalized user balance in one transaction.
+    // A redemption must never leave only one of these two records updated.
+    return db.transaction(async (trx) => {
+      const [tx] = await trx.insert(walletTransactions).values({
+        userId,
+        type: "DEBIT" as const,
+        amountCents,
+        description,
+        sourceType: sourceType || "redemption",
+        sourceId: sourceId || null,
+      }).returning();
 
-    return tx;
+      const [updatedUser] = await trx.update(users).set({
+        balanceCents: sql`COALESCE(${users.balanceCents}, 0) - ${amountCents}`,
+      }).where(eq(users.id, userId)).returning({ id: users.id });
+
+      if (!updatedUser) {
+        throw new Error(`debitWallet: user ${userId} was not found`);
+      }
+
+      return tx;
+    });
   }
 
   async getWalletTransactions(userId: string): Promise<WalletTransaction[]> {

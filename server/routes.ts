@@ -5648,6 +5648,12 @@ export async function registerRoutes(
 
     const orgFilter = sqlFn`AND org_id = ${orgId}`;
     const dateFilter = sqlFn`AND created_at >= ${start} AND created_at <= ${end}`;
+    const resultRows = (result: unknown): any[] =>
+      Array.isArray(result)
+        ? result
+        : Array.isArray((result as { rows?: unknown })?.rows)
+          ? (result as { rows: any[] }).rows
+          : [];
 
     // 1. Revenue ledger aggregates
     const [ledgerTotals, ledgerEvents, coachBreakdown, failuresSummary, creditDebits, staleFailures, failedFailures] = await Promise.all([
@@ -5695,7 +5701,8 @@ export async function registerRoutes(
         .where(andFn(eqFn(fefT.orgId, orgId), eqFn(fefT.status, "failed"))),
     ]);
 
-    const t = ledgerTotals.rows[0] as any;
+    const t = resultRows(ledgerTotals)[0] as any;
+    const creditDebitRows = resultRows(creditDebits);
     const summary = {
       collectedCents: t?.collected ?? 0,
       recognizedCents: t?.recognized ?? 0,
@@ -5708,8 +5715,8 @@ export async function registerRoutes(
       pendingFailures: Number(failuresSummary[0]?.n ?? 0),
       failedFailures: Number(failedFailures[0]?.n ?? 0),
       staleFailures: Number(staleFailures[0]?.n ?? 0),
-      creditDebitsCount: (creditDebits.rows[0] as any)?.debit_count ?? 0,
-      sessionsDebited: (creditDebits.rows[0] as any)?.sessions_debited ?? 0,
+      creditDebitsCount: creditDebitRows[0]?.debit_count ?? 0,
+      sessionsDebited: creditDebitRows[0]?.sessions_debited ?? 0,
       totalLedgerEvents: t?.total_events ?? 0,
     };
 
@@ -5748,13 +5755,18 @@ export async function registerRoutes(
     const deferredNet = (t?.deferred_created ?? 0) - (t?.deferred_released ?? 0);
 
     const mismatches: Array<{ key: string; severity: "critical" | "warning" | "info"; label: string; count: number; rows?: any[] }> = [];
-    if (dupRecognition.rows.length > 0) mismatches.push({ key: "dup_recognition", severity: "critical", label: "Duplicate revenue_recognized events", count: dupRecognition.rows.length, rows: dupRecognition.rows });
-    if (dupAccruals.rows.length > 0) mismatches.push({ key: "dup_accruals", severity: "critical", label: "Duplicate coach_compensation_accrued events", count: dupAccruals.rows.length, rows: dupAccruals.rows });
+    const duplicateRecognitionRows = resultRows(dupRecognition);
+    const duplicateAccrualRows = resultRows(dupAccruals);
+    const orphanedEventRows = resultRows(orphanedEvents);
+    const redemptionWithoutLedgerRows = resultRows(redemptionsNoLedger);
+
+    if (duplicateRecognitionRows.length > 0) mismatches.push({ key: "dup_recognition", severity: "critical", label: "Duplicate revenue_recognized events", count: duplicateRecognitionRows.length, rows: duplicateRecognitionRows });
+    if (duplicateAccrualRows.length > 0) mismatches.push({ key: "dup_accruals", severity: "critical", label: "Duplicate coach_compensation_accrued events", count: duplicateAccrualRows.length, rows: duplicateAccrualRows });
     if (deferredNet < 0) mismatches.push({ key: "negative_deferred", severity: "critical", label: "Net deferred revenue is negative (released > created)", count: 1 });
     if (Number(failedFailures[0]?.n ?? 0) > 0) mismatches.push({ key: "failed_queue", severity: "critical", label: "Financial event failures reached max attempts", count: Number(failedFailures[0]?.n ?? 0) });
     if (Number(staleFailures[0]?.n ?? 0) > 0) mismatches.push({ key: "stale_failures", severity: "critical", label: "Financial event failures unresolved >24 hours", count: Number(staleFailures[0]?.n ?? 0) });
-    if (orphanedEvents.rows.length > 0) mismatches.push({ key: "orphaned_events", severity: "warning", label: "Revenue ledger events referencing deleted bookings", count: orphanedEvents.rows.length, rows: orphanedEvents.rows });
-    if (redemptionsNoLedger.rows.length > 0) mismatches.push({ key: "redemptions_no_ledger", severity: "info", label: "Redemptions with no revenue recognition event", count: redemptionsNoLedger.rows.length, rows: redemptionsNoLedger.rows });
+    if (orphanedEventRows.length > 0) mismatches.push({ key: "orphaned_events", severity: "warning", label: "Revenue ledger events referencing deleted bookings", count: orphanedEventRows.length, rows: orphanedEventRows });
+    if (redemptionWithoutLedgerRows.length > 0) mismatches.push({ key: "redemptions_no_ledger", severity: "info", label: "Redemptions with no revenue recognition event", count: redemptionWithoutLedgerRows.length, rows: redemptionWithoutLedgerRows });
     if (Number(failuresSummary[0]?.n ?? 0) > 0) mismatches.push({ key: "pending_failures", severity: "warning", label: "Financial event writes queued for retry", count: Number(failuresSummary[0]?.n ?? 0) });
 
     const criticalCount = mismatches.filter(m => m.severity === "critical").length;
@@ -5765,7 +5777,7 @@ export async function registerRoutes(
       eventStream: ledgerEvents,
       mismatches,
       criticalCount,
-      coachPayouts: (coachBreakdown.rows as any[]).map(r => ({
+      coachPayouts: resultRows(coachBreakdown).map(r => ({
         coachId: r.coach_id,
         coachName: [r.first_name, r.last_name].filter(Boolean).join(" ") || "Unknown",
         accruedCents: r.accrued_cents,
