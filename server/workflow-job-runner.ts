@@ -29,6 +29,7 @@ import { db } from "./db";
 import { workflowJobs, workflowRuns } from "@shared/schema";
 import { eq, and, inArray } from "drizzle-orm";
 import { isShuttingDown, registerShutdownStop, trackBackgroundTask } from "./services/runtime-shutdown";
+import { normalizeWorkflowPayload } from "./services/durable-payload-versioning";
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 
@@ -53,6 +54,9 @@ export async function executeWorkflowJob(job: typeof workflowJobs.$inferSelect):
   const { id: jobId, orgId, jobType, payload } = job;
 
   try {
+    const normalizedPayload = normalizeWorkflowPayload({
+      workType: jobType, version: job.payloadVersion, payload, authoritativeOrgId: orgId,
+    });
     // Check emergency pause before executing
     const gov = await getGovernanceSettings(orgId);
     if (gov.emergencyPause) {
@@ -75,19 +79,19 @@ export async function executeWorkflowJob(job: typeof workflowJobs.$inferSelect):
       let result: Record<string, any>;
       switch (jobType) {
       case "memory_lifecycle":
-        result = await executeMemoryLifecycleJob(orgId, payload as any);
+        result = await executeMemoryLifecycleJob(orgId, normalizedPayload as any);
         break;
 
       case "approval_timeout":
-        result = await executeApprovalTimeoutJob(orgId, payload as any);
+        result = await executeApprovalTimeoutJob(orgId, normalizedPayload as any);
         break;
 
       case "business_brain_run":
-        result = await executeBusinessBrainJob(orgId, payload as any);
+        result = await executeBusinessBrainJob(orgId, normalizedPayload);
         break;
 
       case "notification":
-        result = await executeNotificationJob(orgId, payload as any);
+        result = await executeNotificationJob(orgId, normalizedPayload as any);
         break;
 
       case "workflow_step":
@@ -100,7 +104,7 @@ export async function executeWorkflowJob(job: typeof workflowJobs.$inferSelect):
         break;
 
       default:
-        result = { skipped: true, message: `Unknown job type: ${jobType}` };
+        throw new Error(`Invalid durable payload: unsupported work type ${jobType}`);
       }
       return result;
     });

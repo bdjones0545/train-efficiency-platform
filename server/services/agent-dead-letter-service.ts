@@ -10,6 +10,7 @@ import { db, pool } from "../db";
 import { sql } from "drizzle-orm";
 import { CircuitOpenError, executeWithCircuitBreaker, jitteredDelayMs, type RetryRandom } from "./retry-reliability";
 import { isShuttingDown, registerShutdownStop, trackBackgroundTask } from "./runtime-shutdown";
+import { CURRENT_DURABLE_PAYLOAD_VERSION, normalizeDeadLetterPayload } from "./durable-payload-versioning";
 
 let tableReady = false;
 
@@ -39,6 +40,7 @@ export async function ensureAgentDeadLetterSchema(): Promise<void> {
     await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`);
     await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS execution_generation INTEGER NOT NULL DEFAULT 0`);
     await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS replayed_by TEXT`);
+    await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS payload_version INTEGER NOT NULL DEFAULT 0`);
     await db.execute(sql`CREATE INDEX IF NOT EXISTS agent_dlq_due_idx ON agent_dead_letter_queue(status, next_retry_at, created_at)`);
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS agent_dead_letter_effects (
@@ -77,6 +79,7 @@ export interface DeadLetterJob {
   finalFailedAt: Date | null;
   status: "pending" | "processing" | "retrying" | "final_failed" | "resolved";
   payload: unknown;
+  payloadVersion: number;
   createdAt: Date;
   updatedAt: Date;
   lockedBy: string | null;
@@ -106,10 +109,10 @@ export async function pushToDeadLetter(opts: {
     const maxRetries = opts.maxRetries ?? 3;
     const rows = await db.execute(sql`
       INSERT INTO agent_dead_letter_queue
-        (job_name, org_id, error_message, error_stack, max_retries, next_retry_at, payload, status)
+        (job_name, org_id, error_message, error_stack, max_retries, next_retry_at, payload_version, payload, status)
       VALUES
         (${opts.jobName}, ${opts.orgId}, ${errorMessage}, ${errorStack},
-         ${maxRetries}, NOW() + (${jitteredDelayMs(300_000, opts.retryRandom)} * INTERVAL '1 millisecond'),
+         ${maxRetries}, NOW() + (${jitteredDelayMs(300_000, opts.retryRandom)} * INTERVAL '1 millisecond'), ${CURRENT_DURABLE_PAYLOAD_VERSION},
          ${JSON.stringify(opts.payload ?? null)}::jsonb, 'pending')
       RETURNING id
     `);
@@ -178,6 +181,7 @@ export async function getDeadLetterJobs(opts?: {
       finalFailedAt: r.final_failed_at ? new Date(r.final_failed_at) : null,
       status: r.status,
       payload: r.payload,
+      payloadVersion: r.payload_version ?? 0,
       createdAt: new Date(r.created_at),
       updatedAt: new Date(r.updated_at),
       lockedBy: r.locked_by,
@@ -267,7 +271,7 @@ function mapJob(r: any): ClaimedDeadLetterJob {
     errorStack: r.error_stack, retryCount: r.retry_count, maxRetries: r.max_retries,
     nextRetryAt: r.next_retry_at ? new Date(r.next_retry_at) : null,
     finalFailedAt: r.final_failed_at ? new Date(r.final_failed_at) : null,
-    status: r.status, payload: r.payload, createdAt: new Date(r.created_at),
+    status: r.status, payload: r.payload, payloadVersion: r.payload_version ?? 0, createdAt: new Date(r.created_at),
     updatedAt: new Date(r.updated_at), lockedBy: r.locked_by,
     lockedAt: r.locked_at ? new Date(r.locked_at) : null,
     completedAt: r.completed_at ? new Date(r.completed_at) : null,
@@ -386,11 +390,17 @@ export async function processOneDeadLetterJob(workerId: string, orgId?: string):
     return true;
   }
   try {
+    job.payload = normalizeDeadLetterPayload({ workType: job.jobName, version: job.payloadVersion,
+      payload: job.payload, authoritativeOrgId: job.orgId });
     const dependencyKey = handlerDependencies.get(job.jobName);
     if (dependencyKey) await executeWithCircuitBreaker(dependencyKey, () => handler(job), pool);
     else await handler(job);
     await completeDeadLetterJob(job);
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Invalid durable payload:")) {
+      await failDeadLetterJob(job, error, true);
+      return true;
+    }
     if (error instanceof CircuitOpenError) {
       await deferDeadLetterJob(job, error.retryAfterMs);
       return true;

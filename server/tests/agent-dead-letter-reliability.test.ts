@@ -168,7 +168,9 @@ test("payload tenant identity cannot override durable ownership", async () => {
   await pool.query(`INSERT INTO agent_dead_letter_queue(id,job_name,org_id,error_message,next_retry_at,payload)
     VALUES('spoof','test_work','org-a','x',NOW(),'{"orgId":"org-b"}')`);
   await queue.processOneDeadLetterJob("worker", "org-a");
-  assert.equal((await pool.query(`SELECT org_id FROM test_effects`)).rows[0].org_id, "org-a");
+  assert.equal((await pool.query(`SELECT count(*)::int n FROM test_effects`)).rows[0].n, 0);
+  const saved = await row("spoof"); assert.equal(saved.status, "final_failed");
+  assert.match(saved.error_message, /does not match durable row owner/);
 });
 
 test("unknown work type becomes terminal without a crash loop", async () => {

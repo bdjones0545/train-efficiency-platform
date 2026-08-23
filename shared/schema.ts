@@ -3450,6 +3450,7 @@ export const workflowJobs = pgTable("workflow_jobs", {
   errorType: text("error_type"), // transient | blocked | fatal | governance | timeout | rate_limited
 
   // Data
+  payloadVersion: integer("payload_version").notNull().default(0),
   payload: jsonb("payload"),
   result: jsonb("result"),
 

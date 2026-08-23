@@ -48,7 +48,8 @@ after(async () => { await pool.end(); });
 
 test("Org A first enqueue creates one tenant-owned job", async () => {
   const result = await queue.enqueueWorkflowJob(input("org-a", "same-business-action-123"));
-  assert.equal(result.duplicate, undefined); assert.equal((await job(result.jobId)).org_id, "org-a");
+  assert.equal(result.duplicate, undefined); const saved = await job(result.jobId);
+  assert.equal(saved.org_id, "org-a"); assert.equal(saved.payload_version, 1);
   assert.equal(await count(), 1);
 });
 

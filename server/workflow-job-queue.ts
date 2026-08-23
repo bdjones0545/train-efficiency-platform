@@ -24,6 +24,7 @@ import { eq, and, lte, lt, isNull, or, sql, desc, inArray } from "drizzle-orm";
 import { logUnifiedAction } from "./unified-action-logger";
 import { getGovernanceSettings } from "./capability-enforcement-engine";
 import { jitteredDelayMs } from "./services/retry-reliability";
+import { CURRENT_DURABLE_PAYLOAD_VERSION } from "./services/durable-payload-versioning";
 
 // Replace the legacy global key constraint with tenant-scoped uniqueness.
 // PostgreSQL permits multiple NULL values, preserving non-idempotent enqueue.
@@ -126,6 +127,8 @@ export async function ensureWorkflowJobReliabilitySchema(): Promise<void> {
   reliabilitySchemaInitialization = (async () => {
     await pool.query(`ALTER TABLE workflow_jobs
       ADD COLUMN IF NOT EXISTS execution_generation INTEGER NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE workflow_jobs
+      ADD COLUMN IF NOT EXISTS payload_version INTEGER NOT NULL DEFAULT 0`);
     await pool.query(`CREATE TABLE IF NOT EXISTS workflow_job_effects (
       id TEXT PRIMARY KEY,
       org_id TEXT NOT NULL,
@@ -155,7 +158,7 @@ export async function ensureWorkflowJobReliabilitySchema(): Promise<void> {
  * idempotencyKey already exists and is not failed/cancelled, return it.
  */
 export async function enqueueWorkflowJob(input: EnqueueJobInput): Promise<JobExecutionResult> {
-  await ensureWorkflowJobIdempotencySchema();
+  await Promise.all([ensureWorkflowJobIdempotencySchema(), ensureWorkflowJobReliabilitySchema()]);
   // Idempotency check — never create duplicate jobs
   if (input.idempotencyKey) {
     const [existing] = await db
@@ -197,6 +200,7 @@ export async function enqueueWorkflowJob(input: EnqueueJobInput): Promise<JobExe
       attempts: 0,
       maxAttempts,
       retryBackoffMs: BACKOFF_SCHEDULE[0],
+      payloadVersion: CURRENT_DURABLE_PAYLOAD_VERSION,
       payload: input.payload,
       idempotencyKey: input.idempotencyKey ?? null,
     }).returning();
@@ -811,6 +815,7 @@ export async function checkAndIncrementRateLimit(
 
 export function classifyJobFailure(error: string): ErrorType {
   const e = error.toLowerCase();
+  if (e.includes("invalid durable payload")) return "fatal";
   if (e.includes("governance") || e.includes("emergency pause") || e.includes("governance_blocked") || e.includes("capability_denied")) return "governance";
   if (e.includes("rate limit") || e.includes("429") || e.includes("too many requests") || e.includes("quota")) return "rate_limited";
   if (e.includes("timeout") || e.includes("econnreset") || e.includes("enotfound") || e.includes("econnrefused")) return "timeout";
