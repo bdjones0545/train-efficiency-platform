@@ -260,10 +260,12 @@ export interface IStorage {
   getUserBalancesByOrganization(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
 
   getUserBalance(userId: string): Promise<number>;
+  getUserBalanceForOrganization(orgId: string, userId: string): Promise<number | undefined>;
   creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string, livemode?: boolean): Promise<WalletTransaction>;
   creditWalletForOrganization(orgId: string, userId: string, amountCents: number, description: string, createdBy: string): Promise<WalletTransaction | undefined>;
   debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
+  getWalletTransactionsForOrganization(orgId: string, userId?: string): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
   createCreditLedgerEvent(data: InsertCreditLedgerEvent): Promise<CreditLedgerEvent>;
   getCreditLedgerEvents(clientId: string, limit?: number): Promise<CreditLedgerEvent[]>;
   createRevenueLedgerEvent(data: InsertRevenueLedgerEvent): Promise<RevenueLedgerEvent>;
@@ -1335,6 +1337,19 @@ export class DatabaseStorage implements IStorage {
     return user?.balanceCents || 0;
   }
 
+  async getUserBalanceForOrganization(orgId: string, userId: string): Promise<number | undefined> {
+    const [user] = await db
+      .select({ balanceCents: users.balanceCents })
+      .from(users)
+      .innerJoin(userProfiles, and(
+        eq(userProfiles.userId, users.id),
+        eq(userProfiles.organizationId, orgId),
+      ))
+      .where(eq(users.id, userId))
+      .limit(1);
+    return user?.balanceCents ?? undefined;
+  }
+
   async creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string, livemode?: boolean): Promise<WalletTransaction> {
     if (amountCents <= 0) {
       throw new Error(`creditWallet: amountCents must be positive (got ${amountCents})`);
@@ -1456,6 +1471,68 @@ export class DatabaseStorage implements IStorage {
 
   async getWalletTransactions(userId: string): Promise<WalletTransaction[]> {
     return db.select().from(walletTransactions).where(eq(walletTransactions.userId, userId)).orderBy(desc(walletTransactions.createdAt));
+  }
+
+  async getWalletTransactionsForOrganization(
+    orgId: string,
+    userId?: string,
+  ): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]> {
+    const predicates = [eq(userProfiles.organizationId, orgId)];
+    if (userId) predicates.push(eq(walletTransactions.userId, userId));
+    const scopedRows = await db
+      .select({ transaction: walletTransactions })
+      .from(walletTransactions)
+      .innerJoin(userProfiles, eq(userProfiles.userId, walletTransactions.userId))
+      .where(and(...predicates))
+      .orderBy(desc(walletTransactions.createdAt));
+    const scopedTransactions = scopedRows.map(row => row.transaction);
+    if (scopedTransactions.length === 0) return [];
+
+    const scopedUserIds = [...new Set(scopedTransactions.map(tx => tx.userId))];
+    const scopedUsers = await db.select().from(users).where(inArray(users.id, scopedUserIds));
+    const userMap = new Map(scopedUsers.map(user => [user.id, user]));
+
+    const sourceIds = [...new Set(scopedTransactions
+      .filter(tx => tx.sourceType === "redemption" && tx.sourceId)
+      .map(tx => tx.sourceId as string))];
+    const scopedBookings = sourceIds.length > 0
+      ? await db.select().from(bookings).where(and(
+          inArray(bookings.id, sourceIds),
+          eq(bookings.organizationId, orgId),
+        ))
+      : [];
+    const bookingMap = new Map(scopedBookings.map(booking => [booking.id, booking]));
+    const scopedBookingIds = scopedBookings.map(booking => booking.id);
+    const scopedRedemptions = scopedBookingIds.length > 0
+      ? await db.select().from(redemptions).where(inArray(redemptions.bookingId, scopedBookingIds))
+      : [];
+    const redemptionByBookingId = new Map(scopedRedemptions.map(redemption => [redemption.bookingId, redemption]));
+    const coachIds = [...new Set(scopedRedemptions.map(redemption => redemption.coachId))];
+    const scopedCoaches = coachIds.length > 0
+      ? await db.select().from(coachProfiles).where(and(
+          inArray(coachProfiles.id, coachIds),
+          eq(coachProfiles.organizationId, orgId),
+        ))
+      : [];
+    const coachMap = new Map(scopedCoaches.map(coach => [coach.id, coach]));
+    const coachUserIds = [...new Set(scopedCoaches.map(coach => coach.userId))];
+    const coachUsers = coachUserIds.length > 0
+      ? await db.select().from(users).where(inArray(users.id, coachUserIds))
+      : [];
+    const coachUserMap = new Map(coachUsers.map(user => [user.id, user]));
+
+    return scopedTransactions.map(tx => {
+      let redemptionCoachName: string | undefined;
+      let bookingLocation: string | undefined;
+      if (tx.sourceType === "redemption" && tx.sourceId) {
+        bookingLocation = bookingMap.get(tx.sourceId)?.location ?? undefined;
+        const redemption = redemptionByBookingId.get(tx.sourceId);
+        const coach = redemption ? coachMap.get(redemption.coachId) : undefined;
+        const coachUser = coach ? coachUserMap.get(coach.userId) : undefined;
+        if (coachUser) redemptionCoachName = `${coachUser.firstName || ""} ${coachUser.lastName || ""}`.trim();
+      }
+      return { ...tx, user: userMap.get(tx.userId), redemptionCoachName, bookingLocation };
+    });
   }
 
   async createCreditLedgerEvent(data: InsertCreditLedgerEvent): Promise<CreditLedgerEvent> {
@@ -1856,17 +1933,19 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserBalancesByOrganization(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]> {
-    const orgUserIds = await this.getUserIdsByOrganization(orgId);
-    if (orgUserIds.length === 0) return [];
-    const allBalances = await db.select({
+    return db.select({
       id: users.id,
       firstName: users.firstName,
       lastName: users.lastName,
       email: users.email,
       balanceCents: users.balanceCents,
-    }).from(users).orderBy(desc(users.balanceCents));
-    const orgSet = new Set(orgUserIds);
-    return allBalances.filter(b => orgSet.has(b.id));
+    })
+      .from(users)
+      .innerJoin(userProfiles, and(
+        eq(userProfiles.userId, users.id),
+        eq(userProfiles.organizationId, orgId),
+      ))
+      .orderBy(desc(users.balanceCents));
   }
 
   async updateLastSignIn(userId: string): Promise<void> {

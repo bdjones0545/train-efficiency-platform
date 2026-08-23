@@ -4379,18 +4379,11 @@ export async function registerRoutes(
 
   app.get("/api/coach/transactions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId || null;
-      const transactions = await storage.getAllWalletTransactions();
-      if (orgId) {
-        const orgUserIds = await storage.getUserIdsByOrganization(orgId);
-        const orgSet = new Set(orgUserIds);
-        res.json(transactions.filter(tx => orgSet.has(tx.userId)));
-      } else {
-        res.json(transactions);
-      }
-    } catch (error) {
+      const orgId = await resolveOrgIdOrThrow(req);
+      const transactions = await storage.getWalletTransactionsForOrganization(orgId);
+      res.json(transactions);
+    } catch (error: any) {
+      if (handleOrgError(error, res)) return;
       console.error("Error fetching transactions:", error);
       res.status(500).json({ message: "Failed to fetch transactions" });
     }
@@ -4450,17 +4443,11 @@ export async function registerRoutes(
 
   app.get("/api/coach/user-balances", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId || null;
-      if (orgId) {
-        const balances = await storage.getUserBalancesByOrganization(orgId);
-        res.json(balances);
-      } else {
-        const balances = await storage.getAllUserBalances();
-        res.json(balances);
-      }
-    } catch (error) {
+      const orgId = await resolveOrgIdOrThrow(req);
+      const balances = await storage.getUserBalancesByOrganization(orgId);
+      res.json(balances);
+    } catch (error: any) {
+      if (handleOrgError(error, res)) return;
       console.error("Error fetching user balances:", error);
       res.status(500).json({ message: "Failed to fetch user balances" });
     }
@@ -7644,10 +7631,13 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
   app.get("/api/wallet", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const balance = await storage.getUserBalance(userId);
-      const transactions = await storage.getWalletTransactions(userId);
+      const orgId = await resolveOrgIdOrThrow(req);
+      const balance = await storage.getUserBalanceForOrganization(orgId, userId);
+      if (balance === undefined) return res.status(404).json({ message: "Wallet not found" });
+      const transactions = await storage.getWalletTransactionsForOrganization(orgId, userId);
       res.json({ balanceCents: balance, transactions });
-    } catch (error) {
+    } catch (error: any) {
+      if (handleOrgError(error, res)) return;
       console.error("Error fetching wallet:", error);
       res.status(500).json({ message: "Failed to fetch wallet" });
     }
@@ -8148,10 +8138,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
   app.get("/api/coach/business-plan/:coachId", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const requestingUserId = req.user?.claims?.sub ?? req.user?.id;
-      const requestingProfile = await storage.getUserProfile(requestingUserId);
-      const sessionOrgId = requestingProfile?.organizationId || null;
-      if (!sessionOrgId) return res.status(403).json({ message: "Organization not found for session" });
+      const sessionOrgId = await resolveOrgIdOrThrow(req);
 
       const { coachId } = req.params;
       const coach = await storage.getCoachProfile(coachId);
@@ -8166,7 +8153,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const coachUserIds = new Set(orgCoachProfiles.map(cp => cp.userId));
       const thisCoachUserId = coach.userId;
 
-      const allWalletTx = await storage.getAllWalletTransactions();
+      const allWalletTx = await storage.getWalletTransactionsForOrganization(sessionOrgId);
       const bookingChargeMap = new Map<string, number>();
       for (const tx of allWalletTx) {
         if (tx.type === "DEBIT" && tx.sourceType === "redemption" && tx.sourceId) {
@@ -8592,6 +8579,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         },
       });
     } catch (error: any) {
+      if (handleOrgError(error, res)) return;
       console.error("Business plan error:", error);
       res.status(500).json({ message: "Failed to load business plan" });
     }
