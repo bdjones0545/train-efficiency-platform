@@ -13,6 +13,7 @@ import { db } from "../db";
 import { sql, eq, and, lt, gt } from "drizzle-orm";
 import { gmailConversations, gmailAgentActions, teamTrainingProspects, workflowRuns } from "@shared/schema";
 import { writeTimeline } from "./ceo-heartbeat-service";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -25,51 +26,11 @@ let tablesEnsured = false;
 export async function ensureHermesTables(): Promise<void> {
   if (tablesEnsured) return;
   try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS hermes_recommendations (
-        id                      TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        org_id                  TEXT NOT NULL,
-        run_id                  TEXT,
-        type                    TEXT NOT NULL,
-        title                   TEXT NOT NULL,
-        reason                  TEXT NOT NULL,
-        confidence              NUMERIC(5,2) DEFAULT 0,
-        source_system           TEXT,
-        source_conversation_id  TEXT,
-        source_record_id        TEXT,
-        gmail_thread_id         TEXT,
-        recommended_action      TEXT,
-        action_queue_id         TEXT,
-        status                  TEXT DEFAULT 'generated',
-        metadata                JSONB,
-        created_at              TIMESTAMPTZ DEFAULT NOW(),
-        updated_at              TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hrec_org ON hermes_recommendations (org_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hrec_run ON hermes_recommendations (run_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hrec_status ON hermes_recommendations (status)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hrec_created ON hermes_recommendations (created_at DESC)`);
-
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS hermes_recommendation_feedback (
-        id                    TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        recommendation_id     TEXT NOT NULL,
-        action_queue_id       TEXT,
-        outcome               TEXT NOT NULL,
-        editor_id             TEXT,
-        edit_notes            TEXT,
-        original_confidence   NUMERIC(5,2),
-        final_outcome         TEXT,
-        created_at            TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hfb_rec ON hermes_recommendation_feedback (recommendation_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hfb_queue ON hermes_recommendation_feedback (action_queue_id)`);
-
+    await validateFeatureSchema("hermes");
     tablesEnsured = true;
   } catch (e: any) {
-    console.warn("[HermesEngine] Table setup warning:", e?.message);
+    console.warn("[HermesEngine] Schema validation warning:", e?.message);
+    throw e;
   }
 }
 

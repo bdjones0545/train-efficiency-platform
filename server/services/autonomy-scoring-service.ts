@@ -7,6 +7,7 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -94,67 +95,7 @@ export function modeLabel(mode: ExecutionMode): string {
 // ─── Table creation ───────────────────────────────────────────────────────────
 
 export async function createAutonomyTables(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS decision_trust_registry (
-      id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id              TEXT NOT NULL,
-      decision_type       TEXT NOT NULL,
-      label               TEXT NOT NULL,
-      autonomy_score      INTEGER DEFAULT 0,
-      success_rate        INTEGER DEFAULT 0,
-      revenue_influenced  INTEGER DEFAULT 0,
-      executions          INTEGER DEFAULT 0,
-      human_approvals     INTEGER DEFAULT 0,
-      human_overrides     INTEGER DEFAULT 0,
-      risk_level          TEXT DEFAULT 'medium',
-      recommended_mode    TEXT DEFAULT 'observe',
-      ceo_override_mode   TEXT,
-      last_evaluated      TIMESTAMPTZ DEFAULT NOW(),
-      created_at          TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (org_id, decision_type)
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS autonomous_action_queue (
-      id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id          TEXT NOT NULL,
-      decision_type   TEXT NOT NULL,
-      agent_type      TEXT NOT NULL,
-      action          TEXT NOT NULL,
-      description     TEXT,
-      confidence      INTEGER DEFAULT 0,
-      autonomy_score  INTEGER DEFAULT 0,
-      risk_level      TEXT DEFAULT 'medium',
-      status          TEXT DEFAULT 'pending',
-      approved_by     TEXT,
-      rejected_by     TEXT,
-      rejection_reason TEXT,
-      outcome         TEXT,
-      revenue_cents   INTEGER DEFAULT 0,
-      meetings_gen    INTEGER DEFAULT 0,
-      executed_at     TIMESTAMPTZ,
-      created_at      TIMESTAMPTZ DEFAULT NOW(),
-      updated_at      TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS autonomy_overrides (
-      id                    TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id                TEXT NOT NULL,
-      queue_action_id       TEXT,
-      decision_type         TEXT NOT NULL,
-      original_recommendation TEXT NOT NULL,
-      override_type         TEXT NOT NULL,   -- 'approved','rejected','modified'
-      reason                TEXT,
-      modified_action       TEXT,
-      outcome               TEXT,
-      success_score         INTEGER,
-      overridden_by         TEXT,
-      created_at            TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
+  await validateFeatureSchema("autonomous");
 }
 
 // ─── Seed / upsert trust registry defaults ────────────────────────────────────

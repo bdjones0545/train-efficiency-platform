@@ -60,6 +60,7 @@ test("empty database reaches the complete ordered formal schema and ledger", asy
     "0004_kevin_org_settings.sql",
     "0005_unsubscribe_token_scope.sql",
     "0006_agentmail_reply_uniqueness.sql",
+    "0007_autonomous_hermes_opportunity_schema.sql",
   ]);
   assert.equal(rows[0].execution_kind, "executed");
   const column = await pool.query(`SELECT is_nullable FROM information_schema.columns
@@ -96,7 +97,7 @@ test("compatible populated database adopts baseline without rewriting rows", asy
   assert.equal(rows[0].execution_kind, "adopted");
   assert.equal((await pool.query(`SELECT count(*)::int AS n FROM user_org_preferences WHERE id='existing-pref'`)).rows[0].n, 1);
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  assert.equal((await ledger(pool)).length, 7);
+  assert.equal((await ledger(pool)).length, 8);
   await pool.end();
 });
 
@@ -206,7 +207,7 @@ test("failed middle migration is not recorded, blocks later files, and retry con
   ]);
   assert.equal(migrations.getApplicationMigrationReadiness().state, "failed");
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  assert.equal((await ledger(pool)).length, 7);
+  assert.equal((await ledger(pool)).length, 8);
   assert.equal(migrations.getApplicationMigrationReadiness().state, "ready");
   await pool.end();
 });
@@ -220,8 +221,8 @@ test("three independent migrators serialize and converge on one ledger", async (
   ]);
   await Promise.all(pools.map((pool) => migrations.runApplicationMigrations(pool, { migrationsDirectory })));
   const rows = await ledger(pools[0]);
-  assert.equal(rows.length, 7);
-  assert.equal(new Set(rows.map((row) => row.migration_id)).size, 7);
+  assert.equal(rows.length, 8);
+  assert.equal(new Set(rows.map((row) => row.migration_id)).size, 8);
   assert.ok(rows.every((row) => row.execution_kind === "executed"));
   await Promise.all(pools.map((pool) => pool.end()));
 });
@@ -239,7 +240,7 @@ test("startup orders formal migrations before bootstrap, workers, routes, and li
 test("migration readiness exposes only expected/applied identifiers and state", async () => {
   const state = migrations.getApplicationMigrationReadiness();
   assert.equal(state.state, "ready");
-  assert.equal(state.latestExpected, "0006_agentmail_reply_uniqueness.sql");
-  assert.equal(state.latestApplied, "0006_agentmail_reply_uniqueness.sql");
+  assert.equal(state.latestExpected, "0007_autonomous_hermes_opportunity_schema.sql");
+  assert.equal(state.latestApplied, "0007_autonomous_hermes_opportunity_schema.sql");
   assert.equal("databaseUrl" in state, false);
 });

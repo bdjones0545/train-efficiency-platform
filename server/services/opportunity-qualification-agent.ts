@@ -6,6 +6,7 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -316,18 +317,7 @@ export async function qualifyOpportunity(orgId: string, opportunityId: string): 
   };
 
   // ── Persist assessment (upsert by opportunity_id + org_id)
-  await db.execute(sql`
-    ALTER TABLE opportunity_qualification_assessments
-      ADD COLUMN IF NOT EXISTS fit_score             INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS ai_fulfillment_score  INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS revenue_potential_score INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS risk_score            INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS confidence_score      INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS reasoning             TEXT NOT NULL DEFAULT '',
-      ADD COLUMN IF NOT EXISTS red_flags             JSONB NOT NULL DEFAULT '[]',
-      ADD COLUMN IF NOT EXISTS next_steps            JSONB NOT NULL DEFAULT '[]',
-      ADD COLUMN IF NOT EXISTS updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  `);
+  await validateFeatureSchema("opportunity");
 
   await db.execute(sql`
     INSERT INTO opportunity_qualification_assessments

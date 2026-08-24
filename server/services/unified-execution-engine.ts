@@ -9,6 +9,7 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { orchestrator } from "../workflow-orchestrator";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 export interface ExecutionResult {
   success: boolean;
@@ -38,31 +39,7 @@ export interface ActionPayload {
 
 // ─── Ensure execution_events table exists ─────────────────────────────────────
 export async function ensureExecutionTables(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS execution_events (
-      id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id            TEXT NOT NULL,
-      action_id         TEXT,
-      source_system     TEXT,
-      source_agent      TEXT,
-      execution_type    TEXT NOT NULL,
-      status            TEXT NOT NULL DEFAULT 'running',
-      started_at        TIMESTAMPTZ DEFAULT NOW(),
-      completed_at      TIMESTAMPTZ,
-      latency_ms        INTEGER,
-      input             JSONB,
-      output            JSONB,
-      error             TEXT,
-      workflow_run_id   TEXT,
-      gmail_thread_id   TEXT,
-      prospect_id       TEXT,
-      created_at        TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_exec_events_org    ON execution_events (org_id)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_exec_events_action ON execution_events (action_id)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_exec_events_status ON execution_events (status)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_exec_events_type   ON execution_events (execution_type)`);
+  await validateFeatureSchema("autonomous");
 }
 
 // ─── Record execution start ────────────────────────────────────────────────────

@@ -18,6 +18,7 @@
 import { createHash } from "crypto";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 // ─── Table bootstrap ──────────────────────────────────────────────────────────
 
@@ -26,49 +27,11 @@ let _tableReady = false;
 export async function ensureHermesLearningsTable(): Promise<void> {
   if (_tableReady) return;
   try {
-    // Base table (idempotent)
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS hermes_auto_learnings (
-        id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        org_id              TEXT NOT NULL,
-        domain              TEXT NOT NULL DEFAULT 'general',
-        metric              TEXT,
-        delta               TEXT,
-        outcome             TEXT NOT NULL,
-        observation         TEXT NOT NULL,
-        learning            TEXT NOT NULL,
-        source              TEXT NOT NULL DEFAULT 'system',
-        memory_type         TEXT NOT NULL DEFAULT 'lesson',
-        department          TEXT NOT NULL DEFAULT 'Operations',
-        category            TEXT NOT NULL DEFAULT 'System',
-        confidence_score    INTEGER NOT NULL DEFAULT 80,
-        impact_score        INTEGER NOT NULL DEFAULT 70,
-        related_entity_type TEXT,
-        related_entity_id   TEXT,
-        created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-
-    // Phase 2 columns — safe to run repeatedly
-    await db.execute(sql`ALTER TABLE hermes_auto_learnings ADD COLUMN IF NOT EXISTS content_hash      TEXT`);
-    await db.execute(sql`ALTER TABLE hermes_auto_learnings ADD COLUMN IF NOT EXISTS occurrence_count  INTEGER NOT NULL DEFAULT 1`);
-    await db.execute(sql`ALTER TABLE hermes_auto_learnings ADD COLUMN IF NOT EXISTS last_seen_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()`);
-    await db.execute(sql`ALTER TABLE hermes_auto_learnings ADD COLUMN IF NOT EXISTS retrieved_count   INTEGER NOT NULL DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE hermes_auto_learnings ADD COLUMN IF NOT EXISTS last_retrieved_at TIMESTAMPTZ`);
-
-    // Indexes
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hal_org         ON hermes_auto_learnings (org_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hal_domain      ON hermes_auto_learnings (domain)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hal_source      ON hermes_auto_learnings (source)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hal_created     ON hermes_auto_learnings (created_at DESC)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hal_mtype       ON hermes_auto_learnings (memory_type)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_hal_last_seen   ON hermes_auto_learnings (last_seen_at DESC)`);
-    await db.execute(sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_hal_content_hash ON hermes_auto_learnings (content_hash) WHERE content_hash IS NOT NULL`);
-
+    await validateFeatureSchema("hermes");
     _tableReady = true;
   } catch (e: any) {
-    console.warn("[HermesLearning] Table setup warning:", e?.message);
+    console.warn("[HermesLearning] Schema validation warning:", e?.message);
+    throw e;
   }
 }
 

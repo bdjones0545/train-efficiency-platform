@@ -17,7 +17,9 @@ async function getAdminOrgId(req: any): Promise<string | null> {
 }
 
 export async function registerAutonomyTrustRoutes(app: Express) {
-  await createAutonomyTables();
+  await createAutonomyTables().catch((error) => {
+    console.error("[autonomy-trust] formal schema unavailable; routes remain degraded:", error);
+  });
 
   // ─── Dashboard overview ───────────────────────────────────────────────────
   app.get("/api/autonomy-trust/dashboard", isAuthenticated, async (req: any, res) => {

@@ -17,6 +17,7 @@
 
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { validateFeatureSchema } from "./feature-schema-validation";
 
 // ─── Event schema ─────────────────────────────────────────────────────────────
 
@@ -41,29 +42,7 @@ export interface ComposioHermesEventRecord extends ComposioHermesEvent {
 // ─── Ensure table ─────────────────────────────────────────────────────────────
 
 export async function ensureHermesEventTable(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS composio_hermes_events (
-      id                   TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id               TEXT,
-      agent                TEXT NOT NULL,
-      tool                 TEXT NOT NULL,
-      action               TEXT NOT NULL,
-      result               TEXT NOT NULL,
-      outcome              TEXT NOT NULL,
-      metadata             JSONB,
-      hermes_processed     BOOLEAN NOT NULL DEFAULT false,
-      hermes_processed_at  TIMESTAMP WITH TIME ZONE,
-      created_at           TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS composio_hermes_events_org_idx
-      ON composio_hermes_events (org_id)
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS composio_hermes_events_processed_idx
-      ON composio_hermes_events (hermes_processed, created_at)
-  `);
+  await validateFeatureSchema("hermes");
 }
 
 // ─── Emit ──────────────────────────────────────────────────────────────────────

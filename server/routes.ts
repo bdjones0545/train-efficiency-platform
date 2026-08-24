@@ -3,6 +3,7 @@ import { createServer, type Server } from "http";
 import { buildPublicAppUrl } from "./utils/url";
 import { publicRateLimiter } from "./middleware/public-rate-limiter";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
+import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
@@ -26787,63 +26788,9 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // AUTONOMOUS MANAGEMENT SYSTEM — Phase 5
   // ═══════════════════════════════════════════════════════════════
 
-  // Lazy table creation — idempotent
+  // Optional feature schema is migration-owned; feature use only validates it.
   async function ensureAutonomousTables() {
-    try {
-      const { sql } = await import("drizzle-orm");
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS business_objectives (
-          id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-          org_id TEXT NOT NULL,
-          title TEXT NOT NULL,
-          description TEXT,
-          target_value NUMERIC,
-          target_unit TEXT,
-          current_value NUMERIC DEFAULT 0,
-          deadline TIMESTAMPTZ,
-          priority TEXT DEFAULT 'medium',
-          status TEXT DEFAULT 'active',
-          progress INTEGER DEFAULT 0,
-          confidence INTEGER DEFAULT 50,
-          assigned_agents JSONB DEFAULT '[]'::jsonb,
-          execution_plan JSONB,
-          notes TEXT,
-          created_at TIMESTAMPTZ DEFAULT now(),
-          updated_at TIMESTAMPTZ DEFAULT now()
-        )
-      `);
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS autonomous_initiatives (
-          id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-          org_id TEXT NOT NULL,
-          name TEXT NOT NULL,
-          description TEXT,
-          initiative_type TEXT DEFAULT 'custom',
-          status TEXT DEFAULT 'running',
-          agents_assigned JSONB DEFAULT '[]'::jsonb,
-          progress INTEGER DEFAULT 0,
-          results_summary TEXT,
-          automation_mode TEXT DEFAULT 'manual',
-          started_at TIMESTAMPTZ DEFAULT now(),
-          created_at TIMESTAMPTZ DEFAULT now(),
-          updated_at TIMESTAMPTZ DEFAULT now()
-        )
-      `);
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS business_memory (
-          id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-          org_id TEXT NOT NULL,
-          memory_type TEXT NOT NULL,
-          title TEXT NOT NULL,
-          description TEXT,
-          outcome TEXT,
-          outcome_value NUMERIC,
-          tags JSONB DEFAULT '[]'::jsonb,
-          metadata JSONB DEFAULT '{}'::jsonb,
-          created_at TIMESTAMPTZ DEFAULT now()
-        )
-      `);
-    } catch {}
+    await validateFeatureSchema("autonomous");
   }
 
   // GET /api/autonomous/dashboard — combined stats
@@ -27198,48 +27145,7 @@ Your role: Coordinate strategy, prioritize actions, interpret data, surface oppo
   // ═══════════════════════════════════════════════════════════════
 
   async function ensureTrustTables() {
-    try {
-      const { sql } = await import("drizzle-orm");
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS autonomous_actions (
-          id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-          org_id TEXT NOT NULL,
-          action_type TEXT NOT NULL,
-          source_agent TEXT,
-          source_workflow TEXT,
-          initiated_by TEXT DEFAULT 'system',
-          approval_status TEXT DEFAULT 'auto_approved',
-          before_state JSONB DEFAULT '{}'::jsonb,
-          after_state JSONB DEFAULT '{}'::jsonb,
-          expected_outcome TEXT,
-          actual_outcome TEXT,
-          revenue_impact NUMERIC DEFAULT 0,
-          category TEXT DEFAULT 'automation',
-          risk_level TEXT DEFAULT 'low',
-          is_reversible BOOLEAN DEFAULT true,
-          rolled_back BOOLEAN DEFAULT false,
-          created_at TIMESTAMPTZ DEFAULT now(),
-          completed_at TIMESTAMPTZ
-        )
-      `);
-      await db.execute(sql`
-        CREATE TABLE IF NOT EXISTS recommendation_tracking (
-          id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-          org_id TEXT NOT NULL,
-          recommendation_id TEXT,
-          title TEXT NOT NULL,
-          expected_impact TEXT,
-          expected_metric TEXT,
-          actual_impact TEXT,
-          status TEXT DEFAULT 'approved',
-          outcome TEXT,
-          revenue_impact NUMERIC DEFAULT 0,
-          approved_at TIMESTAMPTZ DEFAULT now(),
-          measured_at TIMESTAMPTZ,
-          created_at TIMESTAMPTZ DEFAULT now()
-        )
-      `);
-    } catch {}
+    await validateFeatureSchema("autonomous");
   }
 
   // GET /api/autonomy/oversight — executive oversight dashboard

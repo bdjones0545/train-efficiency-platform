@@ -116,7 +116,7 @@ test("fresh database creates the formal reply schema and records migration", asy
   assert.equal((await pool.query(`SELECT to_regclass('agent_mail_reply_queue') AS queue`)).rows[0].queue, "agent_mail_reply_queue");
   assert.equal((await pool.query(`SELECT to_regclass('agent_mail_reply_outcomes') AS outcomes`)).rows[0].outcomes, "agent_mail_reply_outcomes");
   assert.equal(await hasTenantUniqueIndex(pool), true);
-  assert.equal((await ledger(pool)).at(-1)?.migration_id, "0006_agentmail_reply_uniqueness.sql");
+  assert.ok((await ledger(pool)).some((row) => row.migration_id === "0006_agentmail_reply_uniqueness.sql"));
   await pool.end();
 });
 
@@ -189,7 +189,7 @@ test("failed divergent migration can be repaired explicitly and rerun", async ()
   }), /divergent/);
   await pool.query(`DELETE FROM agent_mail_reply_queue WHERE id='reply-b'`);
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  assert.equal((await ledger(pool)).at(-1)?.migration_id, "0006_agentmail_reply_uniqueness.sql");
+  assert.ok((await ledger(pool)).some((row) => row.migration_id === "0006_agentmail_reply_uniqueness.sql"));
   assert.equal(await hasTenantUniqueIndex(pool), true);
   await pool.end();
 });

@@ -7,6 +7,7 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import OpenAI from "openai";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -35,17 +36,7 @@ function row0(result: unknown): any {
 // ─── Table migration ──────────────────────────────────────────────────────────
 
 async function ensureOutreachDraftColumns(): Promise<void> {
-  await db.execute(sql`
-    ALTER TABLE opportunity_outreach_drafts
-      ADD COLUMN IF NOT EXISTS channel            TEXT NOT NULL DEFAULT 'email',
-      ADD COLUMN IF NOT EXISTS confidence_score   INTEGER NOT NULL DEFAULT 0,
-      ADD COLUMN IF NOT EXISTS created_by_agent   BOOLEAN NOT NULL DEFAULT true,
-      ADD COLUMN IF NOT EXISTS approved_by_user_id TEXT,
-      ADD COLUMN IF NOT EXISTS sent_at            TIMESTAMPTZ,
-      ADD COLUMN IF NOT EXISTS call_to_action     TEXT NOT NULL DEFAULT '',
-      ADD COLUMN IF NOT EXISTS positioning_angle  TEXT NOT NULL DEFAULT '',
-      ADD COLUMN IF NOT EXISTS updated_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-  `);
+  await validateFeatureSchema("opportunity");
 }
 
 // ─── Main export ──────────────────────────────────────────────────────────────

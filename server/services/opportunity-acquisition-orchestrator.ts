@@ -10,6 +10,7 @@ import { sql } from "drizzle-orm";
 import { runOpportunityDiscovery }  from "./opportunity-discovery-agent";
 import { qualifyOpportunity }       from "./opportunity-qualification-agent";
 import { generateOutreachDraft }    from "./opportunity-outreach-agent";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -42,24 +43,7 @@ function n(v: unknown): number {
 // ─── Table bootstrap ──────────────────────────────────────────────────────────
 
 export async function ensureCyclesTable(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_acquisition_cycles (
-      id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id              TEXT NOT NULL,
-      started_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      completed_at        TIMESTAMPTZ,
-      status              TEXT NOT NULL DEFAULT 'running',
-      scanned_count       INTEGER NOT NULL DEFAULT 0,
-      discovered_count    INTEGER NOT NULL DEFAULT 0,
-      duplicates_skipped  INTEGER NOT NULL DEFAULT 0,
-      rejected_count      INTEGER NOT NULL DEFAULT 0,
-      qualified_count     INTEGER NOT NULL DEFAULT 0,
-      drafts_created      INTEGER NOT NULL DEFAULT 0,
-      errors              JSONB NOT NULL DEFAULT '[]',
-      notes               TEXT,
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
+  await validateFeatureSchema("opportunity");
 }
 
 // ─── Agent event helper ───────────────────────────────────────────────────────

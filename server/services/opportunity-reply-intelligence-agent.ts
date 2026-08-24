@@ -8,6 +8,7 @@
 import OpenAI from "openai";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -76,30 +77,7 @@ async function logEvent(orgId: string, action: string, eventType = "reply"): Pro
 // ─── Table bootstrap ──────────────────────────────────────────────────────────
 
 export async function ensureReplyEventsTable(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_reply_events (
-      id                   TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id               TEXT NOT NULL,
-      opportunity_id       TEXT NOT NULL,
-      execution_id         TEXT NOT NULL,
-      sender_name          TEXT NOT NULL DEFAULT '',
-      sender_email         TEXT NOT NULL DEFAULT '',
-      subject              TEXT NOT NULL DEFAULT '',
-      body                 TEXT NOT NULL DEFAULT '',
-      snippet              TEXT NOT NULL DEFAULT '',
-      classification       TEXT,
-      confidence_score     NUMERIC(4,3) DEFAULT 0,
-      suggested_next_action TEXT,
-      reasoning            TEXT,
-      key_points           TEXT[] DEFAULT '{}',
-      urgency              TEXT DEFAULT 'low',
-      pipeline_status      TEXT,
-      followup_draft_id    TEXT,
-      received_at          TIMESTAMPTZ,
-      processed_at         TIMESTAMPTZ,
-      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
+  await validateFeatureSchema("opportunity");
 }
 
 // ─── Core classification ──────────────────────────────────────────────────────

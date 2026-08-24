@@ -3,6 +3,7 @@ import type { Express } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { storage } from "./storage";
+import { validateFeatureSchema } from "./feature-schema-validation";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -24,116 +25,7 @@ function resolveUserId(req: any): string {
 // ─── Table Bootstrap ─────────────────────────────────────────────────────────
 
 async function createTables() {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_acquisition_opportunities (
-      id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id            TEXT NOT NULL,
-      title             TEXT NOT NULL,
-      source            TEXT NOT NULL DEFAULT 'Manual',
-      company           TEXT NOT NULL DEFAULT '',
-      type              TEXT NOT NULL DEFAULT 'coaching',
-      location          TEXT NOT NULL DEFAULT 'Remote',
-      estimated_value   INTEGER NOT NULL DEFAULT 0,
-      status            TEXT NOT NULL DEFAULT 'new',
-      fit_score         INTEGER NOT NULL DEFAULT 0,
-      notes             TEXT,
-      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_agent_events (
-      id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id      TEXT NOT NULL,
-      agent_name  TEXT NOT NULL,
-      action      TEXT NOT NULL,
-      event_type  TEXT NOT NULL DEFAULT 'info',
-      created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_qualification_assessments (
-      id                      TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id                  TEXT NOT NULL,
-      opportunity_id          TEXT NOT NULL UNIQUE,
-      ai_can_fulfill          JSONB NOT NULL DEFAULT '[]',
-      human_required          JSONB NOT NULL DEFAULT '[]',
-      revenue_potential       TEXT NOT NULL DEFAULT 'medium',
-      risk_level              TEXT NOT NULL DEFAULT 'medium',
-      recommended_action      TEXT NOT NULL DEFAULT 'Review manually',
-      fit_score               INTEGER NOT NULL DEFAULT 0,
-      ai_fulfillment_score    INTEGER NOT NULL DEFAULT 0,
-      revenue_potential_score INTEGER NOT NULL DEFAULT 0,
-      risk_score              INTEGER NOT NULL DEFAULT 0,
-      confidence_score        INTEGER NOT NULL DEFAULT 0,
-      reasoning               TEXT NOT NULL DEFAULT '',
-      red_flags               JSONB NOT NULL DEFAULT '[]',
-      next_steps              JSONB NOT NULL DEFAULT '[]',
-      created_at              TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at              TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_outreach_drafts (
-      id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id              TEXT NOT NULL,
-      opportunity_id      TEXT NOT NULL UNIQUE,
-      subject             TEXT NOT NULL DEFAULT '',
-      body                TEXT NOT NULL DEFAULT '',
-      status              TEXT NOT NULL DEFAULT 'draft',
-      channel             TEXT NOT NULL DEFAULT 'email',
-      confidence_score    INTEGER NOT NULL DEFAULT 0,
-      created_by_agent    BOOLEAN NOT NULL DEFAULT true,
-      approved_by_user_id TEXT,
-      sent_at             TIMESTAMPTZ,
-      call_to_action      TEXT NOT NULL DEFAULT '',
-      positioning_angle   TEXT NOT NULL DEFAULT '',
-      created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_source_settings (
-      id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id          TEXT NOT NULL UNIQUE,
-      sources         JSONB NOT NULL DEFAULT '{}',
-      qual_rules      JSONB NOT NULL DEFAULT '{}',
-      outreach_rules  JSONB NOT NULL DEFAULT '{}',
-      agent_perms     JSONB NOT NULL DEFAULT '{}',
-      discovery_filters JSONB NOT NULL DEFAULT '{}',
-      updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    ALTER TABLE opportunity_source_settings
-      ADD COLUMN IF NOT EXISTS discovery_filters JSONB NOT NULL DEFAULT '{}'
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_discovery_runs (
-      id                     TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id                 TEXT NOT NULL,
-      started_at             TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      completed_at           TIMESTAMPTZ,
-      status                 TEXT NOT NULL DEFAULT 'running',
-      opportunities_scanned  INTEGER NOT NULL DEFAULT 0,
-      opportunities_created  INTEGER NOT NULL DEFAULT 0,
-      opportunities_rejected INTEGER NOT NULL DEFAULT 0,
-      duplicates_skipped     INTEGER NOT NULL DEFAULT 0,
-      notes                  TEXT,
-      created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    ALTER TABLE opportunity_acquisition_opportunities
-      ADD COLUMN IF NOT EXISTS fingerprint TEXT
-  `);
+  await validateFeatureSchema("opportunity");
 }
 
 // ─── Route Registration ───────────────────────────────────────────────────────
@@ -143,7 +35,9 @@ export async function registerOpportunityAcquisitionRoutes(
   isAuthenticated: any,
   requireRole: any,
 ) {
-  await createTables();
+  await createTables().catch((error) => {
+    console.error("[opportunity-acquisition] formal schema unavailable; routes remain degraded:", error);
+  });
 
   const auth = [isAuthenticated, requireRole("COACH", "ADMIN")];
 

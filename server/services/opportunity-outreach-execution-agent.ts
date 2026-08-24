@@ -14,6 +14,7 @@ import {
   sendAgentEmail,
   isAgentMailConfigured,
 } from "./agentmail-service";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -47,37 +48,7 @@ async function logEvent(orgId: string, action: string, eventType = "scan"): Prom
 // ─── Table bootstrap ──────────────────────────────────────────────────────────
 
 export async function ensureExecutionsTable(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_outreach_executions (
-      id                   TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id               TEXT NOT NULL,
-      opportunity_id       TEXT NOT NULL,
-      draft_id             TEXT NOT NULL,
-      recipient_name       TEXT NOT NULL DEFAULT '',
-      recipient_email      TEXT NOT NULL,
-      subject              TEXT NOT NULL,
-      body                 TEXT NOT NULL,
-      agentmail_message_id TEXT,
-      status               TEXT NOT NULL DEFAULT 'pending',
-      delivery_status      TEXT NOT NULL DEFAULT 'unknown',
-      reply_detected       BOOLEAN NOT NULL DEFAULT FALSE,
-      sent_at              TIMESTAMPTZ,
-      delivered_at         TIMESTAMPTZ,
-      replied_at           TIMESTAMPTZ,
-      error_message        TEXT,
-      created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  // Add recipient_email column to outreach drafts for persistence
-  await db.execute(sql`
-    ALTER TABLE opportunity_outreach_drafts
-      ADD COLUMN IF NOT EXISTS recipient_name  TEXT NOT NULL DEFAULT ''
-  `);
-  await db.execute(sql`
-    ALTER TABLE opportunity_outreach_drafts
-      ADD COLUMN IF NOT EXISTS recipient_email TEXT NOT NULL DEFAULT ''
-  `);
+  await validateFeatureSchema("opportunity");
 }
 
 // ─── Execute an approved outreach draft ───────────────────────────────────────

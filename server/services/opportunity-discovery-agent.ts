@@ -7,6 +7,7 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -340,27 +341,7 @@ const ALL_ADAPTERS: Record<string, () => OpportunitySourceAdapter> = {
 // ─── DB bootstrap ─────────────────────────────────────────────────────────────
 
 async function ensureDiscoveryRunsTable(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_discovery_runs (
-      id                    TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id                TEXT NOT NULL,
-      started_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      completed_at          TIMESTAMPTZ,
-      status                TEXT NOT NULL DEFAULT 'running',
-      opportunities_scanned INTEGER NOT NULL DEFAULT 0,
-      opportunities_created INTEGER NOT NULL DEFAULT 0,
-      opportunities_rejected INTEGER NOT NULL DEFAULT 0,
-      duplicates_skipped    INTEGER NOT NULL DEFAULT 0,
-      notes                 TEXT,
-      created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  // Add fingerprint column to opportunities table for dedup
-  await db.execute(sql`
-    ALTER TABLE opportunity_acquisition_opportunities
-      ADD COLUMN IF NOT EXISTS fingerprint TEXT
-  `);
+  await validateFeatureSchema("opportunity");
 }
 
 // ─── Main Discovery Function ──────────────────────────────────────────────────

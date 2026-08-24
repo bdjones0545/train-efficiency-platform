@@ -9,6 +9,7 @@
 import OpenAI from "openai";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -34,35 +35,7 @@ async function logEvent(orgId: string, action: string): Promise<void> {
 // ─── Table bootstrap ──────────────────────────────────────────────────────────
 
 export async function ensureExecutiveTables(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_executive_briefs (
-      id                 TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id             TEXT NOT NULL,
-      summary            TEXT NOT NULL DEFAULT '',
-      best_action_today  TEXT NOT NULL DEFAULT '',
-      key_wins           JSONB NOT NULL DEFAULT '[]',
-      key_risks          JSONB NOT NULL DEFAULT '[]',
-      key_opportunities  JSONB NOT NULL DEFAULT '[]',
-      supporting_metrics JSONB NOT NULL DEFAULT '{}',
-      generated_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      created_at         TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_recommendations (
-      id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id           TEXT NOT NULL,
-      category         TEXT NOT NULL DEFAULT 'general',
-      recommendation   TEXT NOT NULL,
-      reasoning        TEXT NOT NULL DEFAULT '',
-      confidence_score NUMERIC(5,2) NOT NULL DEFAULT 50,
-      supporting_data  JSONB NOT NULL DEFAULT '{}',
-      status           TEXT NOT NULL DEFAULT 'pending',
-      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      reviewed_at      TIMESTAMPTZ
-    )
-  `);
+  await validateFeatureSchema("opportunity");
 }
 
 // ─── Data gathering ───────────────────────────────────────────────────────────

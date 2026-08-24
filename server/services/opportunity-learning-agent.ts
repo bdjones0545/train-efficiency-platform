@@ -9,6 +9,7 @@
 import OpenAI from "openai";
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -36,47 +37,7 @@ async function logEvent(orgId: string, action: string): Promise<void> {
 // ─── Table bootstrap ──────────────────────────────────────────────────────────
 
 export async function ensureLearningTables(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_learning_signals (
-      id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id           TEXT NOT NULL,
-      opportunity_id   TEXT NOT NULL,
-      source           TEXT NOT NULL DEFAULT '',
-      industry         TEXT NOT NULL DEFAULT '',
-      company_size     TEXT NOT NULL DEFAULT '',
-      opportunity_type TEXT NOT NULL DEFAULT '',
-      fit_score        INTEGER NOT NULL DEFAULT 0,
-      positioning_angle TEXT NOT NULL DEFAULT '',
-      outreach_subject TEXT NOT NULL DEFAULT '',
-      reply_received   BOOLEAN NOT NULL DEFAULT FALSE,
-      interested       BOOLEAN NOT NULL DEFAULT FALSE,
-      meeting_requested BOOLEAN NOT NULL DEFAULT FALSE,
-      referral_received BOOLEAN NOT NULL DEFAULT FALSE,
-      won              BOOLEAN NOT NULL DEFAULT FALSE,
-      lost             BOOLEAN NOT NULL DEFAULT FALSE,
-      ghosted          BOOLEAN NOT NULL DEFAULT FALSE,
-      final_outcome    TEXT NOT NULL DEFAULT 'in_progress',
-      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_learning_insights (
-      id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id           TEXT NOT NULL,
-      insight          TEXT NOT NULL,
-      category         TEXT NOT NULL DEFAULT 'general',
-      confidence_score NUMERIC(4,3) NOT NULL DEFAULT 0.5,
-      supporting_data  JSONB NOT NULL DEFAULT '{}',
-      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    )
-  `);
-
-  // Add outcome column to opportunities if missing
-  await db.execute(sql`
-    ALTER TABLE opportunity_acquisition_opportunities
-      ADD COLUMN IF NOT EXISTS final_outcome TEXT NOT NULL DEFAULT 'in_progress'
-  `).catch(() => {});
+  await validateFeatureSchema("opportunity");
 }
 
 // ─── Core metrics calculation ─────────────────────────────────────────────────
