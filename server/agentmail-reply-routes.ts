@@ -42,92 +42,32 @@ export const DRAFTABLE_CLASSIFICATIONS = new Set([
   "general_question",
 ]);
 
-// ─── Table setup ─────────────────────────────────────────────────────────────
+// ─── Schema validation ────────────────────────────────────────────────────────
 
-async function ensureReplyTables(): Promise<void> {
-  // Reply queue
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS agent_mail_reply_queue (
-        id                   TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        organization_id      TEXT NOT NULL,
-        inbound_message_id   TEXT NOT NULL,
-        inbox                TEXT NOT NULL,
-        agent_name           TEXT NOT NULL,
-        classification       TEXT NOT NULL,
-        recipient_email      TEXT NOT NULL,
-        recipient_name       TEXT,
-        subject              TEXT NOT NULL,
-        draft_body           TEXT NOT NULL,
-        edited_body          TEXT,
-        final_body           TEXT,
-        status               TEXT NOT NULL DEFAULT 'drafted',
-        approval_status      TEXT NOT NULL DEFAULT 'pending_review',
-        approved_by          TEXT,
-        approved_at          TIMESTAMPTZ,
-        sent_at              TIMESTAMPTZ,
-        provider_message_id  TEXT,
-        provider_inbound_message_id TEXT,
-        thread_id            TEXT,
-        delivery_status      TEXT,
-        rejection_reason     TEXT,
-        confidence           DOUBLE PRECISION DEFAULT 0,
-        created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_org         ON agent_mail_reply_queue (organization_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_status      ON agent_mail_reply_queue (status)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_approval    ON agent_mail_reply_queue (approval_status)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_inbox       ON agent_mail_reply_queue (inbox)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_queue_inbound     ON agent_mail_reply_queue (inbound_message_id)`);
-    await db.execute(sql`ALTER TABLE agent_mail_reply_queue ADD COLUMN IF NOT EXISTS provider_inbound_message_id TEXT`);
-    // Dedup migration: remove duplicate rows before creating the unique index.
-    // Keeps the oldest record per (organization_id, inbound_message_id) pair so
-    // the UNIQUE INDEX creation never fails on deployments with pre-existing dups.
-    await db.execute(sql`
-      DELETE FROM agent_mail_reply_queue
-      WHERE id NOT IN (
-        SELECT id FROM (
-          SELECT DISTINCT ON (organization_id, inbound_message_id) id
-          FROM agent_mail_reply_queue
-          ORDER BY organization_id, inbound_message_id, created_at ASC
-        ) dedup_set
-      )
-    `).catch(() => {});
-    // Unique constraint: one reply draft per inbound message per org.
-    // Prevents the same inbound email from spawning multiple simultaneous drafts
-    // on webhook replay or concurrent worker pickup.
-    await db.execute(sql`
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_reply_queue_inbound_unique
-      ON agent_mail_reply_queue (organization_id, inbound_message_id)
-    `);
-  } catch (e: any) {
-    console.error("[AgentMail Reply] Queue table error:", e?.message);
-  }
-
-  // Outcome tracking
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS agent_mail_reply_outcomes (
-        id                     TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        reply_queue_id         TEXT NOT NULL,
-        organization_id        TEXT NOT NULL,
-        agent_name             TEXT NOT NULL,
-        inbox                  TEXT NOT NULL,
-        classification         TEXT NOT NULL,
-        outcome_type           TEXT NOT NULL,
-        response_time_minutes  DOUBLE PRECISION,
-        actor                  TEXT,
-        notes                  TEXT,
-        created_at             TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_outcome_org    ON agent_mail_reply_outcomes (organization_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_outcome_agent  ON agent_mail_reply_outcomes (agent_name)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_reply_outcome_type   ON agent_mail_reply_outcomes (outcome_type)`);
-  } catch (e: any) {
-    console.error("[AgentMail Reply] Outcomes table error:", e?.message);
+export async function validateAgentMailReplySchema(): Promise<void> {
+  const result = rows(await db.execute(sql`
+    SELECT
+      to_regclass('agent_mail_reply_queue') IS NOT NULL AS queue_present,
+      to_regclass('agent_mail_reply_outcomes') IS NOT NULL AS outcomes_present,
+      EXISTS (
+        SELECT 1
+        FROM pg_index index_definition
+        JOIN pg_class table_definition ON table_definition.oid = index_definition.indrelid
+        JOIN pg_namespace table_namespace ON table_namespace.oid = table_definition.relnamespace
+        WHERE table_namespace.nspname = current_schema()
+          AND table_definition.relname = 'agent_mail_reply_queue'
+          AND index_definition.indisunique
+          AND (
+            SELECT array_agg(attribute.attname ORDER BY key.ordinality)
+            FROM unnest(index_definition.indkey) WITH ORDINALITY key(attribute_number, ordinality)
+            JOIN pg_attribute attribute
+              ON attribute.attrelid = index_definition.indrelid
+             AND attribute.attnum = key.attribute_number
+          ) = ARRAY['organization_id', 'inbound_message_id']::name[]
+      ) AS tenant_identity_unique
+  `))[0];
+  if (!result?.queue_present || !result?.outcomes_present || !result?.tenant_identity_unique) {
+    throw new Error("formal AgentMail reply schema migration is not ready");
   }
 }
 
@@ -330,7 +270,9 @@ export async function registerAgentMailReplyRoutes(
   isAuthenticated: (req: any, res: any, next: any) => void,
   requireRole: (...roles: string[]) => (req: any, res: any, next: any) => void,
 ): Promise<void> {
-  await ensureReplyTables();
+  await validateAgentMailReplySchema().catch((error) => {
+    console.error(`[AgentMail Reply] schema unavailable; feature degraded: ${error instanceof Error ? error.message : String(error)}`);
+  });
 
   // ── GET /api/agentmail/replies ─────────────────────────────────────────────
   app.get("/api/agentmail/replies", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {

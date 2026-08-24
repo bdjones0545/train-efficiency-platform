@@ -125,14 +125,14 @@ describe("Phase 2 — Heartbeat concurrency protection", () => {
 
 describe("Phase 3 — Email outreach idempotency", () => {
   test("agent_mail_reply_queue has unique index on (organization_id, inbound_message_id)", () => {
-    const routes = src("server/agentmail-reply-routes.ts");
+    const migration = src("migrations/0006_agentmail_reply_uniqueness.sql");
     assert.ok(
-      routes.includes("idx_reply_queue_inbound_unique"),
+      migration.includes("idx_reply_queue_inbound_unique"),
       "reply queue must have a UNIQUE index on (organization_id, inbound_message_id) to prevent same inbound message spawning multiple drafts"
     );
     assert.ok(
-      routes.includes("CREATE UNIQUE INDEX IF NOT EXISTS idx_reply_queue_inbound_unique"),
-      "unique index DDL must be present in the table creation block"
+      migration.includes("CREATE UNIQUE INDEX IF NOT EXISTS idx_reply_queue_inbound_unique"),
+      "unique index DDL must be owned by the formal migration"
     );
   });
 
@@ -427,13 +427,13 @@ describe("Phase 8 — Concurrency stress safety", () => {
   });
 
   test("agent_mail_reply_queue has UNIQUE index on (organization_id, inbound_message_id)", () => {
-    const routes = src("server/agentmail-reply-routes.ts");
+    const migration = src("migrations/0006_agentmail_reply_uniqueness.sql");
     assert.ok(
-      routes.includes("CREATE UNIQUE INDEX IF NOT EXISTS idx_reply_queue_inbound_unique"),
+      migration.includes("CREATE UNIQUE INDEX IF NOT EXISTS idx_reply_queue_inbound_unique"),
       "reply queue must have a unique index to prevent same inbound message producing multiple concurrent drafts"
     );
     assert.ok(
-      routes.includes("organization_id, inbound_message_id"),
+      migration.includes("organization_id, inbound_message_id"),
       "unique index must be scoped per organization (not just inbound_message_id globally)"
     );
   });
