@@ -1,6 +1,7 @@
 import type { Pool, PoolClient } from "pg";
 import { pool } from "../db";
 import { executeWithCircuitBreaker, jitteredDelayMs } from "../services/retry-reliability";
+import { isRequiredFeatureSchemaReady } from "../required-feature-readiness-state";
 
 export const FOLLOW_UP_LEASE_MS = 5 * 60 * 1000;
 export const FOLLOW_UP_MAX_ATTEMPTS = 3;
@@ -10,6 +11,7 @@ type Queryable = Pick<Pool, "query"> | Pick<PoolClient, "query">;
 let schemaInitialization: Promise<void> | null = null;
 
 export async function ensureFollowUpReliabilitySchema(db: Queryable = pool): Promise<void> {
+  if (db === pool && isRequiredFeatureSchemaReady()) return;
   if (db === pool && schemaInitialization) return schemaInitialization;
   const initialize = async () => {
   for (const value of ["processing", "retrying", "failed"]) {

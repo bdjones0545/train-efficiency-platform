@@ -11,14 +11,16 @@ import { sql } from "drizzle-orm";
 import { CircuitOpenError, executeWithCircuitBreaker, jitteredDelayMs, type RetryRandom } from "./retry-reliability";
 import { isShuttingDown, registerShutdownStop, trackBackgroundTask } from "./runtime-shutdown";
 import { CURRENT_DURABLE_PAYLOAD_VERSION, normalizeDeadLetterPayload } from "./durable-payload-versioning";
+import type { Pool, PoolClient } from "pg";
+import { isRequiredFeatureSchemaReady } from "../required-feature-readiness-state";
 
 let tableReady = false;
+type SchemaExecutor = Pick<Pool, "query"> | Pick<PoolClient, "query">;
 
-export async function ensureAgentDeadLetterSchema(): Promise<void> {
-  if (tableReady) return;
+export async function ensureAgentDeadLetterSchema(executor: SchemaExecutor = pool): Promise<void> {
+  if (executor === pool && (tableReady || isRequiredFeatureSchemaReady())) return;
   try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS agent_dead_letter_queue (
+    await executor.query(`CREATE TABLE IF NOT EXISTS agent_dead_letter_queue (
         id          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
         job_name    TEXT NOT NULL,
         org_id      TEXT,
@@ -32,18 +34,16 @@ export async function ensureAgentDeadLetterSchema(): Promise<void> {
         payload     JSONB,
         created_at  TIMESTAMPTZ DEFAULT NOW(),
         updated_at  TIMESTAMPTZ DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`ALTER TABLE agent_dead_letter_queue ALTER COLUMN org_id SET NOT NULL`);
-    await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS locked_by TEXT`);
-    await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ`);
-    await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`);
-    await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS execution_generation INTEGER NOT NULL DEFAULT 0`);
-    await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS replayed_by TEXT`);
-    await db.execute(sql`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS payload_version INTEGER NOT NULL DEFAULT 0`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS agent_dlq_due_idx ON agent_dead_letter_queue(status, next_retry_at, created_at)`);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS agent_dead_letter_effects (
+      )`);
+    await executor.query(`ALTER TABLE agent_dead_letter_queue ALTER COLUMN org_id SET NOT NULL`);
+    await executor.query(`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS locked_by TEXT`);
+    await executor.query(`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS locked_at TIMESTAMPTZ`);
+    await executor.query(`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`);
+    await executor.query(`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS execution_generation INTEGER NOT NULL DEFAULT 0`);
+    await executor.query(`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS replayed_by TEXT`);
+    await executor.query(`ALTER TABLE agent_dead_letter_queue ADD COLUMN IF NOT EXISTS payload_version INTEGER NOT NULL DEFAULT 0`);
+    await executor.query(`CREATE INDEX IF NOT EXISTS agent_dlq_due_idx ON agent_dead_letter_queue(status, next_retry_at, created_at)`);
+    await executor.query(`CREATE TABLE IF NOT EXISTS agent_dead_letter_effects (
         dead_letter_id TEXT NOT NULL REFERENCES agent_dead_letter_queue(id),
         org_id TEXT NOT NULL,
         execution_generation INTEGER NOT NULL,
@@ -54,9 +54,8 @@ export async function ensureAgentDeadLetterSchema(): Promise<void> {
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
         completed_at TIMESTAMPTZ,
         PRIMARY KEY(dead_letter_id, execution_generation, effect_key)
-      )
-    `);
-    tableReady = true;
+      )`);
+    if (executor === pool) tableReady = true;
   } catch (err: any) {
     console.error("[DeadLetter] Table init failed:", err.message);
     throw err;

@@ -198,6 +198,9 @@ app.use((req, res, next) => {
   const { initializeRequiredSchema } = await import("./schema-bootstrap");
   await initializeRequiredSchema();
 
+  const { initializeRequiredFeatureSchemas } = await import("./required-feature-schemas");
+  await initializeRequiredFeatureSchemas();
+
   // Dev-data seed: only runs outside production.
   // The seed is already idempotent (checks before inserting), but we add
   // this guard so a fresh production DB never receives dev fixture data.

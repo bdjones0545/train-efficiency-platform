@@ -17,7 +17,7 @@
  */
 
 import { db, pool } from "./db";
-import type { PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { sql as sqlRaw } from "drizzle-orm";
 import { workflowJobs, agentExecutionLocks, orgExecutionRateLimits } from "@shared/schema";
 import { eq, and, lte, lt, isNull, or, sql, desc, inArray } from "drizzle-orm";
@@ -25,24 +25,32 @@ import { logUnifiedAction } from "./unified-action-logger";
 import { getGovernanceSettings } from "./capability-enforcement-engine";
 import { jitteredDelayMs } from "./services/retry-reliability";
 import { CURRENT_DURABLE_PAYLOAD_VERSION } from "./services/durable-payload-versioning";
+import { isRequiredFeatureSchemaReady } from "./required-feature-readiness-state";
+
+type SchemaExecutor = Pick<Pool, "query"> | Pick<PoolClient, "query">;
 
 // Replace the legacy global key constraint with tenant-scoped uniqueness.
 // PostgreSQL permits multiple NULL values, preserving non-idempotent enqueue.
 let idempotencySchemaInitialization: Promise<void> | null = null;
-export async function ensureWorkflowJobIdempotencySchema(): Promise<void> {
+export async function ensureWorkflowJobIdempotencySchema(executor: SchemaExecutor = pool): Promise<void> {
+  if (executor === pool && isRequiredFeatureSchemaReady()) return;
+  const initialize = async (client: SchemaExecutor) => {
+    await client.query(`ALTER TABLE workflow_jobs
+      DROP CONSTRAINT IF EXISTS workflow_jobs_idempotency_key_unique`);
+    await client.query(`ALTER TABLE workflow_jobs
+      DROP CONSTRAINT IF EXISTS workflow_jobs_idempotency_key_key`);
+    await client.query("DROP INDEX IF EXISTS workflow_jobs_idempotency_key_unique");
+    await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS workflow_jobs_org_idempotency_key_unique
+      ON workflow_jobs (org_id, idempotency_key)
+      WHERE idempotency_key IS NOT NULL`);
+  };
+  if (executor !== pool) return initialize(executor);
   if (idempotencySchemaInitialization) return idempotencySchemaInitialization;
   idempotencySchemaInitialization = (async () => {
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
-      await client.query(`ALTER TABLE workflow_jobs
-        DROP CONSTRAINT IF EXISTS workflow_jobs_idempotency_key_unique`);
-      await client.query(`ALTER TABLE workflow_jobs
-        DROP CONSTRAINT IF EXISTS workflow_jobs_idempotency_key_key`);
-      await client.query("DROP INDEX IF EXISTS workflow_jobs_idempotency_key_unique");
-      await client.query(`CREATE UNIQUE INDEX IF NOT EXISTS workflow_jobs_org_idempotency_key_unique
-        ON workflow_jobs (org_id, idempotency_key)
-        WHERE idempotency_key IS NOT NULL`);
+      await initialize(client);
       await client.query("COMMIT");
     } catch (error) {
       await client.query("ROLLBACK").catch(() => {});
@@ -122,14 +130,14 @@ export type JobExecutionResult = {
 
 let reliabilitySchemaInitialization: Promise<void> | null = null;
 
-export async function ensureWorkflowJobReliabilitySchema(): Promise<void> {
-  if (reliabilitySchemaInitialization) return reliabilitySchemaInitialization;
-  reliabilitySchemaInitialization = (async () => {
-    await pool.query(`ALTER TABLE workflow_jobs
+export async function ensureWorkflowJobReliabilitySchema(executor: SchemaExecutor = pool): Promise<void> {
+  if (executor === pool && isRequiredFeatureSchemaReady()) return;
+  const initialize = async () => {
+    await executor.query(`ALTER TABLE workflow_jobs
       ADD COLUMN IF NOT EXISTS execution_generation INTEGER NOT NULL DEFAULT 0`);
-    await pool.query(`ALTER TABLE workflow_jobs
+    await executor.query(`ALTER TABLE workflow_jobs
       ADD COLUMN IF NOT EXISTS payload_version INTEGER NOT NULL DEFAULT 0`);
-    await pool.query(`CREATE TABLE IF NOT EXISTS workflow_job_effects (
+    await executor.query(`CREATE TABLE IF NOT EXISTS workflow_job_effects (
       id TEXT PRIMARY KEY,
       org_id TEXT NOT NULL,
       workflow_job_id TEXT NOT NULL,
@@ -144,7 +152,10 @@ export async function ensureWorkflowJobReliabilitySchema(): Promise<void> {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       UNIQUE (org_id, workflow_job_id, effect_key, execution_generation)
     )`);
-  })().catch((error) => {
+  };
+  if (executor !== pool) return initialize();
+  if (reliabilitySchemaInitialization) return reliabilitySchemaInitialization;
+  reliabilitySchemaInitialization = initialize().catch((error) => {
     reliabilitySchemaInitialization = null;
     throw error;
   });

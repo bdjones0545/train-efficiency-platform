@@ -4,6 +4,7 @@ import { isAuthenticated } from "./replit_integrations/auth";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { getSchemaReadiness } from "./schema-bootstrap";
+import { getRequiredFeatureSchemaReadiness } from "./required-feature-readiness-state";
 
 // ─── Drizzle result normalisers ─────────────────────────────────────────────
 function toArr(r: any): any[] {
@@ -917,13 +918,15 @@ export async function registerReliabilityRoutes(app: Express) {
       tablesStatus = "degraded";
     }
     const schema = getSchemaReadiness();
-    const healthy = dbStatus === "ok" && schema.state === "ready";
+    const featureSchema = getRequiredFeatureSchemaReadiness();
+    const healthy = dbStatus === "ok" && schema.state === "ready" && featureSchema.state === "ready";
     res.status(healthy ? 200 : 503).json({
       status: healthy ? "healthy" : "unhealthy",
       timestamp: new Date().toISOString(),
       database: dbStatus,
       schema: schema.state,
       schemaVersion: schema.version,
+      requiredFeatureSchema: featureSchema.state,
       tables: tablesStatus,
       version: process.env.npm_package_version ?? "1.0.0",
       responseTimeMs: Date.now() - t0,

@@ -1,5 +1,6 @@
 import type { Pool, PoolClient } from "pg";
 import { pool } from "../db";
+import { isRequiredFeatureSchemaReady } from "../required-feature-readiness-state";
 
 export type RetryRandom = () => number;
 
@@ -18,6 +19,7 @@ const DEFAULT_COOLDOWN_MS = 60_000;
 let schemaPromise: Promise<void> | null = null;
 
 export async function ensureProviderCircuitSchema(db: Pick<Pool, "query"> = pool): Promise<void> {
+  if (db === pool && isRequiredFeatureSchemaReady()) return;
   if (db === pool && schemaPromise) return schemaPromise;
   const initialize = () => db.query(`CREATE TABLE IF NOT EXISTS provider_circuit_breakers (
     dependency_key TEXT PRIMARY KEY,
