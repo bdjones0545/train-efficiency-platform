@@ -2,23 +2,15 @@ import type { Express } from "express";
 import { storage } from "./storage";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { validateSchedulingSchema } from "./scheduling-schema-validation";
 
 function rows(r: any): any[] {
   return Array.isArray(r) ? r : (r?.rows ?? []);
 }
 
-async function initPhase2Tables() {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS athlete_scheduling_profiles (
-      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-      user_id VARCHAR NOT NULL REFERENCES users(id) UNIQUE,
-      sport VARCHAR DEFAULT '',
-      training_level VARCHAR DEFAULT '',
-      birth_year INTEGER,
-      updated_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
+// Attendance remains a separate deferred schema family. Do not add Scheduling
+// objects here; migration 0010 is their sole structural owner.
+async function initAttendanceTable() {
   await db.execute(sql`
     CREATE TABLE IF NOT EXISTS session_attendance (
       id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -33,47 +25,6 @@ async function initPhase2Tables() {
     )
   `);
 
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS session_recurrence_rules (
-      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-      booking_id VARCHAR REFERENCES bookings(id) ON DELETE CASCADE,
-      recurring_group_id VARCHAR,
-      organization_id VARCHAR,
-      frequency VARCHAR NOT NULL DEFAULT 'weekly',
-      days_of_week INTEGER[] DEFAULT '{}',
-      end_date DATE,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS waitlist_holds (
-      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-      booking_id VARCHAR NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
-      user_id VARCHAR NOT NULL REFERENCES users(id),
-      hold_expires_at TIMESTAMP NOT NULL,
-      created_at TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS session_waitlists (
-      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-      booking_id VARCHAR NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
-      user_id VARCHAR NOT NULL REFERENCES users(id),
-      participant_name VARCHAR,
-      created_at TIMESTAMP DEFAULT NOW(),
-      UNIQUE(booking_id, user_id)
-    )
-  `);
-}
-
-let tablesInitialized = false;
-async function ensureTables() {
-  if (!tablesInitialized) {
-    await initPhase2Tables();
-    tablesInitialized = true;
-  }
 }
 
 function requireRole(...roles: string[]) {
@@ -84,7 +35,16 @@ function requireRole(...roles: string[]) {
 }
 
 export async function registerSchedulingPhase2Routes(app: Express, isAuthenticated: any) {
-  await ensureTables();
+  let schemaUnavailable = false;
+  await validateSchedulingSchema().catch((error) => {
+    schemaUnavailable = true;
+    console.error("[scheduling] formal schema unavailable; phase 2 routes remain degraded:", error);
+  });
+  if (schemaUnavailable) {
+    app.use("/api/scheduling", isAuthenticated, (_req, res) =>
+      res.status(503).json({ message: "Scheduling schema unavailable" }));
+  }
+  await initAttendanceTable();
 
   // ── Athlete Scheduling Profile ────────────────────────────────────────────
 

@@ -4146,24 +4146,10 @@ export async function registerRoutes(
   });
 
   // ===== SESSION WAITLIST (group sessions) =====
-  const initSessionWaitlistsTable = async () => {
-    const { db: dbRef } = await import("./db");
-    const { sql: sqlRef } = await import("drizzle-orm");
-    await dbRef.execute(sqlRef`
-      CREATE TABLE IF NOT EXISTS session_waitlists (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        booking_id VARCHAR NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
-        user_id VARCHAR NOT NULL REFERENCES users(id),
-        participant_name VARCHAR,
-        created_at TIMESTAMP DEFAULT NOW(),
-        UNIQUE(booking_id, user_id)
-      )
-    `);
-  };
-
   app.get("/api/bookings/:id/waitlist", async (req: any, res) => {
     try {
-      await initSessionWaitlistsTable();
+      const { validateSchedulingSchema } = await import("./scheduling-schema-validation");
+      await validateSchedulingSchema();
       const { db: dbRef } = await import("./db");
       const { sql: sqlRef } = await import("drizzle-orm");
       const result = await dbRef.execute(sqlRef`
@@ -4177,13 +4163,16 @@ export async function registerRoutes(
       res.json(rows);
     } catch (error) {
       console.error("Error fetching session waitlist:", error);
+      const { sendSchedulingSchemaUnavailable } = await import("./scheduling-schema-validation");
+      if (sendSchedulingSchemaUnavailable(error, res)) return;
       res.status(500).json({ message: "Failed to fetch waitlist" });
     }
   });
 
   app.post("/api/bookings/:id/waitlist", isAuthenticated, async (req: any, res) => {
     try {
-      await initSessionWaitlistsTable();
+      const { validateSchedulingSchema } = await import("./scheduling-schema-validation");
+      await validateSchedulingSchema();
       const userId = req.user.claims?.sub ?? req.user.id;
       const bookingId = req.params.id;
       const { participantName } = req.body;
@@ -4214,13 +4203,16 @@ export async function registerRoutes(
       res.json(rows[0] || { success: true });
     } catch (error) {
       console.error("Error joining session waitlist:", error);
+      const { sendSchedulingSchemaUnavailable } = await import("./scheduling-schema-validation");
+      if (sendSchedulingSchemaUnavailable(error, res)) return;
       res.status(500).json({ message: "Failed to join waitlist" });
     }
   });
 
   app.delete("/api/bookings/:id/waitlist", isAuthenticated, async (req: any, res) => {
     try {
-      await initSessionWaitlistsTable();
+      const { validateSchedulingSchema } = await import("./scheduling-schema-validation");
+      await validateSchedulingSchema();
       const userId = req.user.claims?.sub ?? req.user.id;
       const bookingId = req.params.id;
 
@@ -4233,6 +4225,8 @@ export async function registerRoutes(
       res.json({ success: true });
     } catch (error) {
       console.error("Error leaving session waitlist:", error);
+      const { sendSchedulingSchemaUnavailable } = await import("./scheduling-schema-validation");
+      if (sendSchedulingSchemaUnavailable(error, res)) return;
       res.status(500).json({ message: "Failed to leave waitlist" });
     }
   });
