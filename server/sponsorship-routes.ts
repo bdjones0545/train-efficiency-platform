@@ -1,7 +1,7 @@
 /**
  * Sponsorship Routes — Department OS v2
  * 14 endpoints for the Sponsorship Department.
- * Tables created on startup. Coordinator registered with Department Registry.
+ * Schema is migration-owned. Coordinator registered with Department Registry.
  */
 
 import type { Express } from "express";
@@ -10,129 +10,28 @@ import { sql }          from "drizzle-orm";
 import { createSponsorshipsCoordinator } from "./services/sponsorship-department-coordinator";
 import { departmentRegistry }            from "./services/department-registry";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
+import { validateFeatureSchema } from "./feature-schema-validation";
 
 function rows(r: any): any[] { return Array.isArray(r) ? r : (r?.rows ?? []); }
 
 // ─── Table creation ──────────────────────────────────────────────────────────
 
-async function createTables() {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS sponsorship_opportunities (
-      id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      org_id            TEXT NOT NULL,
-      organization_name TEXT NOT NULL,
-      contact_name      TEXT,
-      contact_email     TEXT,
-      contact_phone     TEXT,
-      website           TEXT,
-      industry          TEXT,
-      location          TEXT,
-      sponsorship_type  TEXT DEFAULT 'general',
-      source            TEXT DEFAULT 'manual',
-      estimated_value   INTEGER DEFAULT 0,
-      notes             TEXT,
-      status            TEXT DEFAULT 'new',
-      fit_score         INTEGER DEFAULT 0,
-      created_at        TIMESTAMPTZ DEFAULT NOW(),
-      updated_at        TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS sponsorship_assessments (
-      id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      org_id                TEXT NOT NULL,
-      sponsorship_id        UUID REFERENCES sponsorship_opportunities(id) ON DELETE CASCADE,
-      fit_score             INTEGER DEFAULT 0,
-      brand_alignment_score INTEGER DEFAULT 0,
-      financial_value_score INTEGER DEFAULT 0,
-      confidence_score      INTEGER DEFAULT 0,
-      recommended_action    TEXT,
-      reasoning             TEXT,
-      strengths             JSONB DEFAULT '[]',
-      concerns              JSONB DEFAULT '[]',
-      next_steps            JSONB DEFAULT '[]',
-      created_at            TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS sponsorship_outreach_drafts (
-      id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      org_id            TEXT NOT NULL,
-      sponsorship_id    UUID REFERENCES sponsorship_opportunities(id) ON DELETE CASCADE,
-      subject           TEXT,
-      body              TEXT,
-      status            TEXT DEFAULT 'draft',
-      positioning_angle TEXT,
-      confidence_score  INTEGER DEFAULT 0,
-      created_at        TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS sponsorship_relationships (
-      id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      org_id            TEXT NOT NULL,
-      sponsorship_id    UUID REFERENCES sponsorship_opportunities(id) ON DELETE CASCADE,
-      stage             TEXT DEFAULT 'initial',
-      last_contacted_at TIMESTAMPTZ,
-      notes             TEXT,
-      created_at        TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS sponsorship_learning_signals (
-      id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      org_id             TEXT NOT NULL,
-      sponsorship_id     UUID REFERENCES sponsorship_opportunities(id) ON DELETE CASCADE,
-      source             TEXT,
-      industry           TEXT,
-      sponsorship_type   TEXT,
-      fit_score          INTEGER DEFAULT 0,
-      responded          BOOLEAN DEFAULT FALSE,
-      meeting_requested  BOOLEAN DEFAULT FALSE,
-      proposal_requested BOOLEAN DEFAULT FALSE,
-      sponsored          BOOLEAN DEFAULT FALSE,
-      declined           BOOLEAN DEFAULT FALSE,
-      created_at         TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS sponsorship_executive_briefs (
-      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      org_id          TEXT NOT NULL,
-      summary         TEXT,
-      best_action     TEXT,
-      recommendations JSONB DEFAULT '[]',
-      metrics         JSONB DEFAULT '{}',
-      generated_at    TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS sponsorship_recommendations (
-      id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      org_id           TEXT NOT NULL,
-      category         TEXT,
-      recommendation   TEXT,
-      reasoning        TEXT,
-      confidence_score INTEGER DEFAULT 0,
-      created_at       TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-}
-
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
-export function registerSponsorshipRoutes(
+export async function registerSponsorshipRoutes(
   app: Express,
   isAuthenticated: any,
   requireRole: any,
-): void {
-  createTables().catch(err => console.error("[sponsorships] table creation error:", err));
+): Promise<void> {
+  let schemaError: string | null = null;
+  await validateFeatureSchema("sponsorship").catch((error) => {
+    schemaError = error instanceof Error ? error.message : String(error);
+    console.error("[sponsorships] formal schema unavailable; routes remain degraded:", error);
+  });
+  if (schemaError) {
+    app.use("/api/sponsorships", isAuthenticated, (_req, res) =>
+      res.status(503).json({ message: "Sponsorship schema unavailable" }));
+  }
 
   try {
     departmentRegistry.register(createSponsorshipsCoordinator(), {

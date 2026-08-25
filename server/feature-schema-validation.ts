@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { db } from "./db";
 
-export type FeatureSchema = "autonomous" | "hermes" | "opportunity";
+export type FeatureSchema = "autonomous" | "hermes" | "opportunity" | "sponsorship" | "partnership";
 
 const REQUIRED_COLUMNS: Record<FeatureSchema, Record<string, readonly string[]>> = {
   autonomous: {
@@ -36,6 +36,24 @@ const REQUIRED_COLUMNS: Record<FeatureSchema, Record<string, readonly string[]>>
     opportunity_executive_briefs: ["id", "org_id", "summary", "supporting_metrics"],
     opportunity_recommendations: ["id", "org_id", "recommendation", "status"],
   },
+  sponsorship: {
+    sponsorship_opportunities: ["id", "org_id", "organization_name", "status", "created_at", "updated_at"],
+    sponsorship_assessments: ["id", "org_id", "sponsorship_id", "fit_score", "created_at"],
+    sponsorship_outreach_drafts: ["id", "org_id", "sponsorship_id", "subject", "body", "status"],
+    sponsorship_relationships: ["id", "org_id", "sponsorship_id", "stage"],
+    sponsorship_learning_signals: ["id", "org_id", "sponsorship_id", "fit_score"],
+    sponsorship_executive_briefs: ["id", "org_id", "summary", "generated_at"],
+    sponsorship_recommendations: ["id", "org_id", "recommendation", "created_at"],
+  },
+  partnership: {
+    partnership_opportunities: ["id", "org_id", "organization_name", "status", "created_at", "updated_at"],
+    partnership_assessments: ["id", "org_id", "partnership_id", "fit_score", "created_at"],
+    partnership_outreach_drafts: ["id", "org_id", "partnership_id", "subject", "body", "status"],
+    partnership_relationships: ["id", "org_id", "partnership_id", "stage"],
+    partnership_learning_signals: ["id", "org_id", "partnership_id", "fit_score"],
+    partnership_executive_briefs: ["id", "org_id", "summary", "generated_at"],
+    partnership_recommendations: ["id", "org_id", "recommendation", "created_at"],
+  },
 };
 
 const REQUIRED_UNIQUES: Partial<Record<FeatureSchema, Array<{ table: string; columns: string[] }>>> = {
@@ -48,6 +66,13 @@ const REQUIRED_UNIQUES: Partial<Record<FeatureSchema, Array<{ table: string; col
   ],
 };
 
+const REQUIRED_INDEXES: Partial<Record<FeatureSchema, Array<{ table: string; columns: string[] }>>> = {
+  sponsorship: [{ table: "sponsorship_opportunities", columns: ["org_id", "created_at"] }],
+  partnership: [{ table: "partnership_opportunities", columns: ["org_id", "created_at"] }],
+};
+
+const STRICT_TENANT_FEATURES = new Set<FeatureSchema>(["sponsorship", "partnership"]);
+
 function rows(result: unknown): any[] {
   if (Array.isArray(result)) return result;
   return Array.isArray((result as any)?.rows) ? (result as any).rows : [];
@@ -59,7 +84,7 @@ export async function validateFeatureSchema(feature: FeatureSchema): Promise<voi
   const tableNames = Object.keys(expected);
   const tableList = sql.join(tableNames.map((table) => sql`${table}`), sql`, `);
   const actualRows = rows(await db.execute(sql`
-    SELECT table_name, column_name
+    SELECT table_name, column_name, data_type, is_nullable
     FROM information_schema.columns
     WHERE table_schema = current_schema()
       AND table_name IN (${tableList})
@@ -90,6 +115,38 @@ export async function validateFeatureSchema(feature: FeatureSchema): Promise<voi
       && row.columns.length === requirement.columns.length
       && row.columns.every((column: string, index: number) => column === requirement.columns[index]));
     if (!present) missing.push(`${requirement.table} UNIQUE(${requirement.columns.join(",")})`);
+  }
+
+  if (STRICT_TENANT_FEATURES.has(feature)) {
+    for (const table of tableNames) {
+      const tenant = actualRows.find((row) => row.table_name === table && row.column_name === "org_id");
+      if (tenant && (tenant.data_type !== "text" || tenant.is_nullable !== "NO")) {
+        missing.push(`${table}.org_id TEXT NOT NULL`);
+      }
+    }
+  }
+
+  const indexRows = rows(await db.execute(sql`
+    SELECT table_definition.relname AS table_name,
+      array_agg(attribute.attname ORDER BY key.ordinality)::text[] AS columns
+    FROM pg_index index_definition
+    JOIN pg_class table_definition ON table_definition.oid = index_definition.indrelid
+    JOIN pg_namespace table_namespace ON table_namespace.oid = table_definition.relnamespace
+    JOIN unnest(index_definition.indkey) WITH ORDINALITY key(attribute_number, ordinality) ON true
+    JOIN pg_attribute attribute
+      ON attribute.attrelid = index_definition.indrelid
+     AND attribute.attnum = key.attribute_number
+    WHERE table_namespace.nspname = current_schema()
+      AND index_definition.indisvalid
+      AND table_definition.relname IN (${tableList})
+    GROUP BY table_definition.relname, index_definition.indexrelid
+  `));
+  for (const requirement of REQUIRED_INDEXES[feature] ?? []) {
+    const present = indexRows.some((row) => row.table_name === requirement.table
+      && Array.isArray(row.columns)
+      && row.columns.length === requirement.columns.length
+      && row.columns.every((column: string, index: number) => column === requirement.columns[index]));
+    if (!present) missing.push(`${requirement.table} INDEX(${requirement.columns.join(",")})`);
   }
 
   if (missing.length) {

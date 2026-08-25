@@ -33163,10 +33163,10 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   registerHiringRoutes(app, isAuthenticated, requireRole);
 
   const { registerPartnershipRoutes } = await import("./partnership-routes");
-  registerPartnershipRoutes(app, isAuthenticated, requireRole);
+  await registerPartnershipRoutes(app, isAuthenticated, requireRole);
 
   const { registerSponsorshipRoutes } = await import("./sponsorship-routes");
-  registerSponsorshipRoutes(app, isAuthenticated, requireRole);
+  await registerSponsorshipRoutes(app, isAuthenticated, requireRole);
 
   const { registerDepartmentCommandCenterRoutes } = await import("./department-command-center-routes");
   registerDepartmentCommandCenterRoutes(app, isAuthenticated);
