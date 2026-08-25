@@ -7,125 +7,14 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { validateFeatureSchema } from "../feature-schema-validation";
 
 // ─── Table creation ───────────────────────────────────────────────────────────
 
-export async function createForecastTables(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS business_forecasts (
-      id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id           TEXT NOT NULL,
-      horizon_days     INTEGER NOT NULL,
-      metric           TEXT NOT NULL,
-      current_value    NUMERIC(14,2) DEFAULT 0,
-      projected_value  NUMERIC(14,2) DEFAULT 0,
-      change_pct       NUMERIC(8,2) DEFAULT 0,
-      confidence       INTEGER DEFAULT 0,
-      variance_low     NUMERIC(14,2) DEFAULT 0,
-      variance_high    NUMERIC(14,2) DEFAULT 0,
-      supporting_factors JSONB DEFAULT '[]',
-      generated_at     TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
+export async function validateForecastSchema(): Promise<void> {
+  await validateFeatureSchema("forecasting");
 
 
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS risk_signals (
-      id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id       TEXT NOT NULL,
-      category     TEXT NOT NULL,
-      title        TEXT NOT NULL,
-      description  TEXT,
-      risk_level   TEXT DEFAULT 'medium',
-      metric_name  TEXT,
-      metric_value NUMERIC(14,2),
-      threshold    NUMERIC(14,2),
-      trend_pct    NUMERIC(8,2),
-      status       TEXT DEFAULT 'active',
-      detected_at  TIMESTAMPTZ DEFAULT NOW(),
-      resolved_at  TIMESTAMPTZ
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS opportunity_signals (
-      id           TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id       TEXT NOT NULL,
-      category     TEXT NOT NULL,
-      title        TEXT NOT NULL,
-      description  TEXT,
-      impact_level TEXT DEFAULT 'medium',
-      metric_name  TEXT,
-      metric_value NUMERIC(14,2),
-      trend_pct    NUMERIC(8,2),
-      recommended_action TEXT,
-      status       TEXT DEFAULT 'active',
-      detected_at  TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS scenario_simulations (
-      id              TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id          TEXT NOT NULL,
-      name            TEXT NOT NULL,
-      scenario_type   TEXT NOT NULL,
-      parameters      JSONB DEFAULT '{}',
-      baseline        JSONB DEFAULT '{}',
-      projected       JSONB DEFAULT '{}',
-      impact_summary  JSONB DEFAULT '{}',
-      created_by      TEXT,
-      created_at      TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS strategic_plans (
-      id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id           TEXT NOT NULL,
-      horizon_days     INTEGER NOT NULL,
-      title            TEXT NOT NULL,
-      objectives       JSONB DEFAULT '[]',
-      risks            JSONB DEFAULT '[]',
-      opportunities    JSONB DEFAULT '[]',
-      actions          JSONB DEFAULT '[]',
-      expected_outcomes JSONB DEFAULT '[]',
-      obsidian_path    TEXT,
-      generated_at     TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS forecast_accuracy (
-      id             TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id         TEXT NOT NULL,
-      metric         TEXT NOT NULL,
-      horizon_days   INTEGER NOT NULL,
-      predicted_value NUMERIC(14,2),
-      actual_value    NUMERIC(14,2),
-      variance_pct    NUMERIC(8,2),
-      accuracy_score  INTEGER,
-      recorded_at     TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS business_twin_state (
-      id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id              TEXT NOT NULL UNIQUE,
-      monthly_revenue     NUMERIC(14,2) DEFAULT 0,
-      active_clients      INTEGER DEFAULT 0,
-      active_coaches      INTEGER DEFAULT 0,
-      sessions_per_week   NUMERIC(8,2) DEFAULT 0,
-      lead_volume_30d     INTEGER DEFAULT 0,
-      conversion_rate     NUMERIC(8,4) DEFAULT 0,
-      retention_rate      NUMERIC(8,4) DEFAULT 0,
-      capacity_utilization NUMERIC(8,4) DEFAULT 0,
-      revenue_trend_pct   NUMERIC(8,2) DEFAULT 0,
-      lead_trend_pct      NUMERIC(8,2) DEFAULT 0,
-      last_updated        TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
 }
 
 // ─── Pull real data from existing tables ──────────────────────────────────────
@@ -382,7 +271,7 @@ export async function generateForecasts(orgId: string) {
              ${Math.round((projected - variance) * 100) / 100},
              ${Math.round((projected + variance) * 100) / 100},
              ${JSON.stringify(m.factors)}::jsonb)
-          ON CONFLICT (org_id, horizon_days, metric, DATE(generated_at)) DO UPDATE SET
+          ON CONFLICT (org_id, horizon_days, metric, forecast_date) DO UPDATE SET
             projected_value   = EXCLUDED.projected_value,
             current_value     = EXCLUDED.current_value,
             change_pct        = EXCLUDED.change_pct,

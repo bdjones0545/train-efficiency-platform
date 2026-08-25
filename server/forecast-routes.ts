@@ -6,7 +6,7 @@
 
 import type { Express } from "express";
 import { isAuthenticated } from "./replit_integrations/auth";
-import { createForecastTables } from "./services/forecast-engine";
+import { validateForecastSchema } from "./services/forecast-engine";
 
 async function getOrgId(req: any): Promise<string | null> {
   const userId = req.user?.claims?.sub ?? req.user?.id;
@@ -17,7 +17,15 @@ async function getOrgId(req: any): Promise<string | null> {
 }
 
 export async function registerForecastRoutes(app: Express) {
-  await createForecastTables();
+  let schemaError: string | null = null;
+  await validateForecastSchema().catch((error) => {
+    schemaError = error instanceof Error ? error.message : String(error);
+    console.error("[forecast] formal schema unavailable; routes remain degraded:", error);
+  });
+  if (schemaError) {
+    app.use("/api/forecast", isAuthenticated, (_req, res) =>
+      res.status(503).json({ message: "Forecasting schema unavailable" }));
+  }
 
   // GET /api/forecast/dashboard — combined overview + OS score
   app.get("/api/forecast/dashboard", isAuthenticated, async (req: any, res) => {
