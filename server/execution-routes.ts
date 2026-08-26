@@ -26,8 +26,12 @@ import {
   getOpenConflicts,
   getConflictStats,
   resolveConflict,
-  ensureConflictTables,
 } from "./services/action-resolution-engine";
+import {
+  ConflictReviewNotFoundError,
+  sendConflictReviewUnavailable,
+  validateConflictReviewSchema,
+} from "./conflict-review-schema-validation";
 import {
   ensureHermesTables,
   getHermesStats,
@@ -373,14 +377,15 @@ export function registerExecutionRoutes(app: Express): void {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
-      await ensureConflictTables();
       const [conflicts, stats] = await Promise.all([
         getOpenConflicts(orgId),
         getConflictStats(orgId),
       ]);
       res.json({ conflicts, stats, generatedAt: new Date().toISOString() });
     } catch (e: any) {
-      res.status(500).json({ message: e?.message ?? "Failed to load conflicts" });
+      if (!sendConflictReviewUnavailable(e, res)) {
+        res.status(500).json({ message: "Failed to load conflicts" });
+      }
     }
   });
 
@@ -388,12 +393,17 @@ export function registerExecutionRoutes(app: Express): void {
   app.post("/api/conflicts/:id/resolve", async (req: any, res) => {
     if (!requireAdmin(req, res)) return;
     try {
+      const orgId = await getOrgId(req);
       const { resolution = "Resolved by admin" } = req.body;
       const userId = req.user?.id ?? "admin";
-      await resolveConflict(req.params.id, resolution, userId);
-      res.json({ success: true, resolvedAt: new Date().toISOString() });
+      const resolved = await resolveConflict(orgId, req.params.id, resolution, userId);
+      res.json({ success: true, resolvedAt: resolved.resolvedAt });
     } catch (e: any) {
-      res.status(500).json({ message: e?.message ?? "Failed to resolve conflict" });
+      if (e instanceof ConflictReviewNotFoundError) {
+        res.status(404).json({ message: "Conflict not found" });
+      } else if (!sendConflictReviewUnavailable(e, res)) {
+        res.status(500).json({ message: "Failed to resolve conflict" });
+      }
     }
   });
 
@@ -405,7 +415,7 @@ export function registerExecutionRoutes(app: Express): void {
       const orgId = await getOrgId(req);
       await Promise.all([
         ensureExecutionTables(),
-        ensureConflictTables(),
+        validateConflictReviewSchema(),
         ensureCoordinationTables(),
         ensureHermesTables(),
       ]);
@@ -467,7 +477,9 @@ export function registerExecutionRoutes(app: Express): void {
         generatedAt: new Date().toISOString(),
       });
     } catch (e: any) {
-      res.status(500).json({ message: e?.message ?? "Failed to load action center summary" });
+      if (!sendConflictReviewUnavailable(e, res)) {
+        res.status(500).json({ message: "Failed to load action center summary" });
+      }
     }
   });
 

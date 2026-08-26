@@ -8,6 +8,12 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import {
+  assertConflictReviewTenant,
+  ConflictReviewNotFoundError,
+  ConflictReviewTenantUnavailableError,
+  validateConflictReviewSchema,
+} from "../conflict-review-schema-validation";
 
 export interface AgentAction {
   id: string;
@@ -75,28 +81,6 @@ const CONFLICT_RULES: Array<{
   },
 ];
 
-// ─── Ensure tables ─────────────────────────────────────────────────────────────
-export async function ensureConflictTables(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS conflict_alerts (
-      id               TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id           TEXT NOT NULL,
-      conflict_type    TEXT NOT NULL,
-      severity         TEXT NOT NULL DEFAULT 'medium',
-      entities         TEXT[] DEFAULT ARRAY[]::TEXT[],
-      agent_actions    JSONB DEFAULT '[]'::jsonb,
-      status           TEXT NOT NULL DEFAULT 'open',
-      resolution       TEXT,
-      resolved_by      TEXT,
-      resolved_at      TIMESTAMPTZ,
-      created_at       TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_conflict_org    ON conflict_alerts (org_id)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_conflict_status ON conflict_alerts (status)`);
-  await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_conflict_type   ON conflict_alerts (conflict_type)`);
-}
-
 // ─── Check for conflicts between two proposed actions ─────────────────────────
 function detectConflicts(
   a: AgentAction,
@@ -127,8 +111,12 @@ export async function checkAndRecordConflict(
   orgId: string,
   actions: AgentAction[]
 ): Promise<ConflictAlert | null> {
+  assertConflictReviewTenant(orgId);
   if (actions.length < 2) return null;
-  await ensureConflictTables();
+  if (actions.some(action => action.orgId !== orgId)) {
+    throw new ConflictReviewTenantUnavailableError();
+  }
+  await validateConflictReviewSchema();
 
   const [a, b] = actions;
   const conflicts = detectConflicts(a, b);
@@ -170,24 +158,39 @@ export async function checkAndRecordConflict(
  * Resolve a conflict alert (human override). Human override always wins.
  */
 export async function resolveConflict(
+  orgId: string,
   conflictId: string,
   resolution: string,
   resolvedBy: string
-): Promise<void> {
-  await ensureConflictTables();
-  await db.execute(sql`
+): Promise<{ id: string; status: string; resolution: string; resolvedBy: string; resolvedAt: string }> {
+  assertConflictReviewTenant(orgId);
+  if (!resolvedBy.trim()) throw new Error("resolving actor is required");
+  await validateConflictReviewSchema();
+  const result = await db.execute(sql`
     UPDATE conflict_alerts
     SET status = 'overridden', resolution = ${resolution},
         resolved_by = ${resolvedBy}, resolved_at = NOW()
-    WHERE id = ${conflictId}
+    WHERE id = ${conflictId} AND org_id = ${orgId}
+    RETURNING id, status, resolution, resolved_by, resolved_at
   `);
+  const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
+  const row = rows[0];
+  if (!row) throw new ConflictReviewNotFoundError();
+  return {
+    id: row.id,
+    status: row.status,
+    resolution: row.resolution,
+    resolvedBy: row.resolved_by,
+    resolvedAt: row.resolved_at instanceof Date ? row.resolved_at.toISOString() : String(row.resolved_at),
+  };
 }
 
 /**
  * Get all open conflicts for an org
  */
 export async function getOpenConflicts(orgId: string): Promise<ConflictAlert[]> {
-  await ensureConflictTables();
+  assertConflictReviewTenant(orgId);
+  await validateConflictReviewSchema();
   const rows = await db.execute(sql`
     SELECT * FROM conflict_alerts
     WHERE org_id = ${orgId} AND status = 'open'
@@ -222,7 +225,8 @@ export async function getConflictStats(orgId: string): Promise<{
   bySeverity: Record<string, number>;
   byType: Record<string, number>;
 }> {
-  await ensureConflictTables();
+  assertConflictReviewTenant(orgId);
+  await validateConflictReviewSchema();
 
   const rows = await db.execute(sql`
     SELECT
