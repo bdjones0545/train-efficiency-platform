@@ -20,8 +20,11 @@ import {
 } from "./services/unified-execution-engine";
 import {
   getCoordinationStats,
-  ensureCoordinationTables,
 } from "./services/cross-agent-coordination-service";
+import {
+  sendCrossAgentCoordinationUnavailable,
+  validateCrossAgentCoordinationSchema,
+} from "./cross-agent-coordination-schema-validation";
 import {
   getOpenConflicts,
   getConflictStats,
@@ -363,11 +366,12 @@ export function registerExecutionRoutes(app: Express): void {
     if (!requireAdmin(req, res)) return;
     try {
       const orgId = await getOrgId(req);
-      await ensureCoordinationTables();
       const stats = await getCoordinationStats(orgId);
       res.json({ ...stats, generatedAt: new Date().toISOString() });
     } catch (e: any) {
-      res.status(500).json({ message: e?.message ?? "Failed to load coordination stats" });
+      if (!sendCrossAgentCoordinationUnavailable(e, res)) {
+        res.status(500).json({ message: "Failed to load coordination stats" });
+      }
     }
   });
 
@@ -416,7 +420,7 @@ export function registerExecutionRoutes(app: Express): void {
       await Promise.all([
         ensureExecutionTables(),
         validateConflictReviewSchema(),
-        ensureCoordinationTables(),
+        validateCrossAgentCoordinationSchema(),
         ensureHermesTables(),
       ]);
 
@@ -477,7 +481,7 @@ export function registerExecutionRoutes(app: Express): void {
         generatedAt: new Date().toISOString(),
       });
     } catch (e: any) {
-      if (!sendConflictReviewUnavailable(e, res)) {
+      if (!sendConflictReviewUnavailable(e, res) && !sendCrossAgentCoordinationUnavailable(e, res)) {
         res.status(500).json({ message: "Failed to load action center summary" });
       }
     }
