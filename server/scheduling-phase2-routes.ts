@@ -3,28 +3,10 @@ import { storage } from "./storage";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { validateSchedulingSchema } from "./scheduling-schema-validation";
+import { requireAttendanceSchema } from "./attendance-schema-validation";
 
 function rows(r: any): any[] {
   return Array.isArray(r) ? r : (r?.rows ?? []);
-}
-
-// Attendance remains a separate deferred schema family. Do not add Scheduling
-// objects here; migration 0010 is their sole structural owner.
-async function initAttendanceTable() {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS session_attendance (
-      id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-      booking_id VARCHAR NOT NULL REFERENCES bookings(id) ON DELETE CASCADE,
-      user_id VARCHAR REFERENCES users(id),
-      participant_name VARCHAR,
-      status VARCHAR NOT NULL DEFAULT 'present',
-      marked_by VARCHAR,
-      marked_at TIMESTAMP DEFAULT NOW(),
-      notes TEXT DEFAULT '',
-      organization_id VARCHAR
-    )
-  `);
-
 }
 
 function requireRole(...roles: string[]) {
@@ -44,8 +26,6 @@ export async function registerSchedulingPhase2Routes(app: Express, isAuthenticat
     app.use("/api/scheduling", isAuthenticated, (_req, res) =>
       res.status(503).json({ message: "Scheduling schema unavailable" }));
   }
-  await initAttendanceTable();
-
   // ── Athlete Scheduling Profile ────────────────────────────────────────────
 
   app.get("/api/scheduling/athlete-profile", isAuthenticated, async (req: any, res) => {
@@ -83,7 +63,7 @@ export async function registerSchedulingPhase2Routes(app: Express, isAuthenticat
 
   // ── Session Attendance ────────────────────────────────────────────────────
 
-  app.get("/api/scheduling/attendance/:bookingId", isAuthenticated, async (req: any, res) => {
+  app.get("/api/scheduling/attendance/:bookingId", isAuthenticated, requireAttendanceSchema, async (req: any, res) => {
     try {
       const result = await db.execute(sql`
         SELECT sa.*, u.first_name, u.last_name, u.profile_image_url
@@ -98,7 +78,7 @@ export async function registerSchedulingPhase2Routes(app: Express, isAuthenticat
     }
   });
 
-  app.post("/api/scheduling/attendance/:bookingId", isAuthenticated, async (req: any, res) => {
+  app.post("/api/scheduling/attendance/:bookingId", isAuthenticated, requireAttendanceSchema, async (req: any, res) => {
     try {
       const userId = req.user.claims?.sub ?? req.user.id;
       const { attendanceRecords } = req.body as {
@@ -123,23 +103,14 @@ export async function registerSchedulingPhase2Routes(app: Express, isAuthenticat
             ON CONFLICT (booking_id, user_id) WHERE user_id IS NOT NULL
             DO UPDATE SET status = EXCLUDED.status, marked_by = EXCLUDED.marked_by,
               notes = EXCLUDED.notes, marked_at = NOW()
-          `).catch(async () => {
-            // Fallback if partial unique index not supported
-            await db.execute(sql`
-              DELETE FROM session_attendance WHERE booking_id = ${bookingId} AND user_id = ${rec.userId}
-            `);
-            await db.execute(sql`
-              INSERT INTO session_attendance (booking_id, user_id, status, marked_by, notes, organization_id)
-              VALUES (${bookingId}, ${rec.userId}, ${rec.status}, ${userId}, ${rec.notes || ""}, ${booking.organizationId || null})
-            `);
-          });
-        } else if (rec.participantName) {
-          await db.execute(sql`
-            DELETE FROM session_attendance WHERE booking_id = ${bookingId} AND participant_name = ${rec.participantName}
           `);
+        } else if (rec.participantName) {
           await db.execute(sql`
             INSERT INTO session_attendance (booking_id, participant_name, status, marked_by, notes, organization_id)
             VALUES (${bookingId}, ${rec.participantName}, ${rec.status}, ${userId}, ${rec.notes || ""}, ${booking.organizationId || null})
+            ON CONFLICT (booking_id, participant_name) WHERE user_id IS NULL AND participant_name IS NOT NULL
+            DO UPDATE SET status = EXCLUDED.status, marked_by = EXCLUDED.marked_by,
+              notes = EXCLUDED.notes, marked_at = NOW(), organization_id = EXCLUDED.organization_id
           `);
         }
         saved.push(rec);
@@ -153,7 +124,7 @@ export async function registerSchedulingPhase2Routes(app: Express, isAuthenticat
 
   // ── Attendance Stats (per user) ───────────────────────────────────────────
 
-  app.get("/api/scheduling/attendance-stats/:userId", isAuthenticated, async (req: any, res) => {
+  app.get("/api/scheduling/attendance-stats/:userId", isAuthenticated, requireAttendanceSchema, async (req: any, res) => {
     try {
       const callerId = req.user.claims?.sub ?? req.user.id;
       const callerProfile = await storage.getUserProfile(callerId);
@@ -209,7 +180,7 @@ export async function registerSchedulingPhase2Routes(app: Express, isAuthenticat
 
   // ── Organization-wide attendance stats ───────────────────────────────────
 
-  app.get("/api/scheduling/attendance-org-stats", isAuthenticated, async (req: any, res) => {
+  app.get("/api/scheduling/attendance-org-stats", isAuthenticated, requireAttendanceSchema, async (req: any, res) => {
     try {
       const userId = req.user.claims?.sub ?? req.user.id;
       const profile = await storage.getUserProfile(userId);

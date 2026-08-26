@@ -1,5 +1,6 @@
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { validateAttendanceSchema } from "./attendance-schema-validation";
 
 function rows(result: unknown): any[] {
   if (Array.isArray(result)) return result;
@@ -330,20 +331,6 @@ interface SendResult {
   error?: string;
 }
 
-async function ensureHistoryStatusCodeColumn(): Promise<void> {
-  try {
-    await db.execute(sql`
-      ALTER TABLE attendance_report_email_history
-      ADD COLUMN IF NOT EXISTS sendgrid_status_code INTEGER
-    `);
-  } catch (e: any) {
-    console.error("[AttendanceReportCron] Failed to add sendgrid_status_code column:", e?.message);
-  }
-}
-
-// Run migration on first import
-ensureHistoryStatusCodeColumn().catch(() => {});
-
 async function sendOneReport(opts: {
   sg: { sgMail: any; fromEmail: string };
   orgId: string;
@@ -404,6 +391,7 @@ async function sendOneReport(opts: {
 
 export async function sendDailyReports(dateStr: string): Promise<void> {
   console.log(`[AttendanceReportCron] sendDailyReports — date=${dateStr} tz=America/New_York`);
+  await validateAttendanceSchema();
   const sg = await getSendGridSettings();
   if (!sg) {
     console.warn("[AttendanceReportCron] SendGrid not configured — daily reports skipped");
@@ -446,6 +434,7 @@ export async function sendDailyReports(dateStr: string): Promise<void> {
 }
 
 export async function sendWeeklyReports(fridayDateStr: string): Promise<void> {
+  await validateAttendanceSchema();
   console.log(`[AttendanceReportCron] sendWeeklyReports — friday=${fridayDateStr} tz=America/New_York`);
   const sg = await getSendGridSettings();
   if (!sg) {
@@ -496,6 +485,7 @@ export async function sendTestReportToAll(
   programId: string,
   reportType: "daily" | "weekly",
 ): Promise<{ success: boolean; sendgridConfigured: boolean; recipients: SendResult[]; error?: string }> {
+  await validateAttendanceSchema();
   const sgCheck = await checkSendGridConfigured();
   if (!sgCheck.configured) {
     return { success: false, sendgridConfigured: false, recipients: [], error: "SendGrid is not configured in this environment." };
@@ -568,6 +558,7 @@ export async function sendTestReport(
   recipientEmail: string,
   reportType: "daily" | "weekly",
 ): Promise<{ ok: boolean; sendgridMessageId?: string; error?: string }> {
+  await validateAttendanceSchema();
   const sgCheck = await checkSendGridConfigured();
   if (!sgCheck.configured) {
     return { ok: false, error: "SendGrid is not configured in this environment." };
@@ -617,13 +608,13 @@ export async function sendTestReport(
 
 export function startAttendanceReportCron(): void {
   // Log SendGrid status on startup
-  checkSendGridConfigured().then(({ configured, fromEmail }) => {
+  validateAttendanceSchema().then(() => checkSendGridConfigured()).then(({ configured, fromEmail }) => {
     if (configured) {
       console.log(`[AttendanceReportCron] SendGrid configured — from: ${fromEmail}`);
     } else {
       console.warn("[AttendanceReportCron] SendGrid NOT configured — reports will be skipped until configured");
     }
-  }).catch(() => {});
+  }).catch((error) => console.error("[AttendanceReportCron] Attendance schema unavailable; reports remain degraded:", error));
 
   setInterval(() => {
     try {

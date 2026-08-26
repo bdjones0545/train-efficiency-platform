@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { isAuthenticated } from "./replit_integrations/auth";
 import { requireRole } from "./lib/require-role";
 import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
+import { requireAttendanceSchema } from "./attendance-schema-validation";
 
 function rows(result: unknown): any[] {
   if (Array.isArray(result)) return result;
@@ -22,144 +23,6 @@ async function getOrgBrandingForAttendance(orgId: string) {
     return { name: org.name || "Training Center", color: org.primaryColor || "#16a34a" };
   } catch {
     return { name: "Training Center", color: "#16a34a" };
-  }
-}
-
-async function createTables() {
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS attendance_programs (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id VARCHAR NOT NULL,
-        program_id VARCHAR NOT NULL UNIQUE,
-        description TEXT,
-        location VARCHAR,
-        start_date VARCHAR,
-        end_date VARCHAR,
-        active BOOLEAN NOT NULL DEFAULT true,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS attendance_program_fields (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id VARCHAR NOT NULL,
-        program_id VARCHAR NOT NULL,
-        field_name VARCHAR NOT NULL,
-        label VARCHAR NOT NULL,
-        field_type VARCHAR NOT NULL DEFAULT 'text',
-        visibility VARCHAR NOT NULL DEFAULT 'required',
-        display_order INTEGER NOT NULL DEFAULT 0,
-        options JSONB DEFAULT '[]'::jsonb,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS attendance_reward_tiers (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id VARCHAR NOT NULL,
-        program_id VARCHAR NOT NULL,
-        visit_count INTEGER NOT NULL,
-        reward_name VARCHAR NOT NULL,
-        reward_description TEXT,
-        active BOOLEAN NOT NULL DEFAULT true,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS attendance_qr_codes (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id VARCHAR NOT NULL,
-        program_id VARCHAR NOT NULL UNIQUE,
-        public_slug VARCHAR NOT NULL UNIQUE,
-        qr_code_url TEXT,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS attendance_records (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id VARCHAR NOT NULL,
-        program_id VARCHAR NOT NULL,
-        athlete_email VARCHAR NOT NULL,
-        athlete_first_name VARCHAR,
-        athlete_last_name VARCHAR,
-        phone VARCHAR,
-        sport VARCHAR,
-        position VARCHAR,
-        school VARCHAR,
-        grad_year VARCHAR,
-        team VARCHAR,
-        age VARCHAR,
-        extra_fields JSONB DEFAULT '{}'::jsonb,
-        visit_number INTEGER NOT NULL DEFAULT 1,
-        lead_id VARCHAR,
-        ip_address VARCHAR,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS attendance_rewards_earned (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id VARCHAR NOT NULL,
-        program_id VARCHAR NOT NULL,
-        tier_id VARCHAR NOT NULL,
-        athlete_email VARCHAR NOT NULL,
-        visit_count_at_earned INTEGER NOT NULL,
-        notification_sent_at TIMESTAMP,
-        redeemed_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS attendance_email_history (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        organization_id VARCHAR NOT NULL,
-        program_id VARCHAR NOT NULL,
-        athlete_email VARCHAR NOT NULL,
-        email_type VARCHAR NOT NULL,
-        subject VARCHAR,
-        status VARCHAR NOT NULL DEFAULT 'sent',
-        error_message TEXT,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS attendance_report_recipients (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        org_id VARCHAR NOT NULL,
-        attendance_program_id VARCHAR NOT NULL,
-        coach_id VARCHAR,
-        email VARCHAR NOT NULL,
-        name VARCHAR NOT NULL,
-        receive_daily BOOLEAN NOT NULL DEFAULT true,
-        receive_weekly BOOLEAN NOT NULL DEFAULT true,
-        active BOOLEAN NOT NULL DEFAULT true,
-        created_at TIMESTAMP DEFAULT NOW(),
-        updated_at TIMESTAMP DEFAULT NOW(),
-        UNIQUE(attendance_program_id, email)
-      )
-    `);
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS attendance_report_email_history (
-        id VARCHAR PRIMARY KEY DEFAULT gen_random_uuid(),
-        org_id VARCHAR NOT NULL,
-        attendance_program_id VARCHAR NOT NULL,
-        recipient_email VARCHAR NOT NULL,
-        report_type VARCHAR NOT NULL,
-        period_start DATE,
-        period_end DATE,
-        sent_at TIMESTAMP,
-        status VARCHAR NOT NULL DEFAULT 'sent',
-        sendgrid_message_id VARCHAR,
-        error_message TEXT,
-        created_at TIMESTAMP DEFAULT NOW()
-      )
-    `);
-    console.log("[Attendance] Tables ready");
-  } catch (e) {
-    console.error("[Attendance] Table creation error:", e);
   }
 }
 
@@ -289,10 +152,8 @@ async function sendAttendanceEmail(params: {
 }
 
 export async function registerAttendanceRoutes(app: Express) {
-  await createTables();
-
   // ─── Get program config by programId ─────────────────────────────────────
-  app.get("/api/attendance-programs/:programId/config", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.get("/api/attendance-programs/:programId/config", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const { programId } = req.params;
       const config = row0(await db.execute(sql`
@@ -318,7 +179,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Upsert attendance program config ────────────────────────────────────
-  app.post("/api/attendance-programs/:programId/config", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.post("/api/attendance-programs/:programId/config", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const { programId } = req.params;
       const { description, location, startDate, endDate, active, organizationId } = req.body;
@@ -370,7 +231,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Update fields ────────────────────────────────────────────────────────
-  app.put("/api/attendance-programs/:programId/fields", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.put("/api/attendance-programs/:programId/fields", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const { programId } = req.params;
       const { fields } = req.body;
@@ -403,7 +264,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Update reward tiers ──────────────────────────────────────────────────
-  app.put("/api/attendance-programs/:programId/rewards", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.put("/api/attendance-programs/:programId/rewards", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const { programId } = req.params;
       const { tiers } = req.body;
@@ -435,7 +296,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Public: get check-in page data by slug (no auth required) ───────────
-  app.get("/api/attendance/checkin/:slug", async (req, res) => {
+  app.get("/api/attendance/checkin/:slug", requireAttendanceSchema, async (req, res) => {
     try {
       const { slug } = req.params;
       const qr = row0(await db.execute(sql`
@@ -480,7 +341,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Public: submit attendance (no auth required) ─────────────────────────
-  app.post("/api/attendance/checkin/:slug", async (req, res) => {
+  app.post("/api/attendance/checkin/:slug", requireAttendanceSchema, async (req, res) => {
     try {
       const { slug } = req.params;
       const qr = row0(await db.execute(sql`
@@ -592,7 +453,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Admin: list attendance records with filters ──────────────────────────
-  app.get("/api/attendance/dashboard", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.get("/api/attendance/dashboard", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
       const { programId, sport, view = "all" } = req.query as Record<string, string>;
@@ -684,7 +545,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Admin: analytics ─────────────────────────────────────────────────────
-  app.get("/api/attendance/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.get("/api/attendance/analytics", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
       const { programId } = req.query as Record<string, string>;
@@ -807,7 +668,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Admin: athlete visit history ─────────────────────────────────────────
-  app.get("/api/attendance/athlete-history", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.get("/api/attendance/athlete-history", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
       const { email } = req.query as Record<string, string>;
@@ -837,7 +698,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Admin: list programs for org ─────────────────────────────────────────
-  app.get("/api/attendance/programs", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.get("/api/attendance/programs", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
 
@@ -867,7 +728,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Coach report recipients: GET ────────────────────────────────────────
-  app.get("/api/attendance-programs/:programId/report-recipients", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.get("/api/attendance-programs/:programId/report-recipients", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const { programId } = req.params;
       const recipients = rows(await db.execute(sql`
@@ -903,7 +764,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Coach report recipients: PUT (full replace) ──────────────────────────
-  app.put("/api/attendance-programs/:programId/report-recipients", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.put("/api/attendance-programs/:programId/report-recipients", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const { programId } = req.params;
       // Org scope from the authenticated session — never the client body.
@@ -964,7 +825,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Send test report (per-recipient) ────────────────────────────────────
-  app.post("/api/attendance-programs/:programId/report-recipients/send-test", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.post("/api/attendance-programs/:programId/report-recipients/send-test", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const { programId } = req.params;
       const { recipientEmail, reportType = "daily" } = req.body;
@@ -978,7 +839,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── SendGrid status check ────────────────────────────────────────────────
-  app.get("/api/attendance-programs/:programId/reports/sendgrid-status", isAuthenticated, requireRole("COACH", "ADMIN"), async (_req, res) => {
+  app.get("/api/attendance-programs/:programId/reports/sendgrid-status", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (_req, res) => {
     try {
       const { checkSendGridConfigured } = await import("./attendance-report-cron");
       const status = await checkSendGridConfigured();
@@ -989,7 +850,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Send test daily report → all active recipients ───────────────────────
-  app.post("/api/attendance-programs/:programId/reports/send-test-daily", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.post("/api/attendance-programs/:programId/reports/send-test-daily", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const { programId } = req.params;
       const { sendTestReportToAll } = await import("./attendance-report-cron");
@@ -1001,7 +862,7 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Send test weekly report → all active recipients ──────────────────────
-  app.post("/api/attendance-programs/:programId/reports/send-test-weekly", isAuthenticated, requireRole("COACH", "ADMIN"), async (req, res) => {
+  app.post("/api/attendance-programs/:programId/reports/send-test-weekly", isAuthenticated, requireRole("COACH", "ADMIN"), requireAttendanceSchema, async (req, res) => {
     try {
       const { programId } = req.params;
       const { sendTestReportToAll } = await import("./attendance-report-cron");
