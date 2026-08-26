@@ -12294,7 +12294,7 @@ Refine this email following the instruction above. Preserve the core message and
             prospectId: req.params.id,
             classification,
           });
-        } catch (_) {}
+        } catch (error: any) { console.warn("[DecisionJournal] reply classification persistence unavailable:", error?.message ?? error); }
       }
 
       res.json({ ok: true, classification, dealCreated });
@@ -14469,7 +14469,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
             status: "approved",
             editedDraft: !!(editedSubject || editedBody),
           });
-        } catch (_) {}
+        } catch (error: any) { console.warn("[DecisionJournal] workflow approval persistence unavailable:", error?.message ?? error); }
       }
 
       res.json(result);
@@ -14538,7 +14538,7 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
             status: "rejected",
             feedback: feedback ?? undefined,
           });
-        } catch (_) {}
+        } catch (error: any) { console.warn("[DecisionJournal] workflow rejection persistence unavailable:", error?.message ?? error); }
       }
 
       res.json(result);
@@ -19153,7 +19153,7 @@ Respond with this exact JSON structure:
           source: "recommendation",
           agentType: "system_agent",
         });
-      } catch (_) {}
+      } catch (error: any) { console.warn("[DecisionJournal] recommendation persistence unavailable:", error?.message ?? error); }
       res.json({ success: true });
     } catch (e: any) {
       res.json({ success: true });
@@ -21374,7 +21374,7 @@ Respond with this exact JSON structure:
           communicationDomain: updated.communicationDomain ?? undefined,
           subject: updated.subject ?? undefined,
         });
-      } catch (_) {}
+      } catch (error: any) { console.warn("[DecisionJournal] Gmail approval persistence unavailable:", error?.message ?? error); }
       res.json({ success: true, action: updated });
     } catch (err: any) {
       console.error("[gmail/actions/approve] error:", err);
@@ -21436,7 +21436,7 @@ Respond with this exact JSON structure:
           reason: reason ?? undefined,
           subject: updated.subject ?? undefined,
         });
-      } catch (_) {}
+      } catch (error: any) { console.warn("[DecisionJournal] Gmail rejection persistence unavailable:", error?.message ?? error); }
       res.json({ success: true, action: updated });
     } catch (err: any) {
       console.error("[gmail/actions/reject] error:", err);
@@ -21507,7 +21507,7 @@ Respond with this exact JSON structure:
           communicationDomain: updated.communicationDomain ?? undefined,
           subject: updated.subject ?? undefined,
         });
-      } catch (_) {}
+      } catch (error: any) { console.warn("[DecisionJournal] Gmail edit approval persistence unavailable:", error?.message ?? error); }
       res.json({ success: true, action: updated });
     } catch (err: any) {
       console.error("[gmail/actions/edit-approve] error:", err);
@@ -24263,7 +24263,7 @@ Respond with this exact JSON structure:
           source: "executive_agent",
           agentType: "executive_agent",
         });
-      } catch (_) {}
+      } catch (error: any) { console.warn("[DecisionJournal] executive recommendation persistence unavailable:", error?.message ?? error); }
       res.json({ success: true, recommendationId: id, action, message: action === "approve" ? "Recommendation approved and queued for execution." : action === "schedule" ? `Recommendation scheduled for ${scheduledFor ?? "later"}.` : "Recommendation rejected." });
     } catch (e: any) {
       console.error("[executive/recommendations/action] error:", e);
@@ -31983,11 +31983,14 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId).catch(() => null);
-      const orgId = profile?.organizationId ?? "default";
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "Organization membership required" });
+      const { validateDecisionJournalSchema } = await import("./decision-journal-schema-validation");
+      await validateDecisionJournalSchema();
 
       const [hermes, decisions, softwareKb, heartbeat] = await Promise.all([
         db.execute(sql`SELECT COUNT(*) as cnt, MAX(created_at) as last FROM hermes_auto_learnings WHERE org_id = ${orgId}`).catch(() => []),
-        db.execute(sql`SELECT COUNT(*) as cnt, MAX(created_at) as last FROM decision_journal_entries WHERE org_id = ${orgId}`).catch(() => []),
+        db.execute(sql`SELECT COUNT(*) as cnt, MAX(created_at) as last FROM decision_journal_entries WHERE org_id = ${orgId}`),
         db.execute(sql`SELECT COUNT(*) as cnt, MAX(created_at) as last FROM software_kb_entries WHERE (org_id = ${orgId} OR org_id = 'default')`).catch(() => []),
         db.execute(sql`SELECT COUNT(*) as cnt, MAX(started_at) as last FROM ceo_heartbeat_runs`).catch(() => []),
       ]);
@@ -32010,7 +32013,10 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
         { source: "Weekly Reports",          count: 0,             lastUpdated: null, icon: "file"        },
       ];
       res.json({ sources, generatedAt: new Date().toISOString() });
-    } catch (e: any) { res.status(500).json({ message: "Failed to load auto-capture stats" }); }
+    } catch (e: any) {
+      const { sendDecisionJournalUnavailable } = await import("./decision-journal-schema-validation");
+      if (!sendDecisionJournalUnavailable(e, res)) res.status(500).json({ message: "Failed to load auto-capture stats" });
+    }
   });
 
   // GET /api/organizational-memory/overview
@@ -32036,6 +32042,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId).catch(() => null);
       const orgId = profile?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "Organization membership required" });
       const q = ((req.query.q as string) ?? "").toLowerCase().trim();
       if (!q) return res.json({ results: [], query: q, total: 0 });
       const seedResults = ORG_MEMORIES.filter(m => m.title.toLowerCase().includes(q) || m.content.toLowerCase().includes(q) || m.category.toLowerCase().includes(q) || m.memoryType.toLowerCase().includes(q) || m.department.toLowerCase().includes(q)).map(m => ({ ...m, sourceKind: "human" as const, sourceLabel: "Knowledge Base" }));
@@ -32051,7 +32058,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
         sourceKind: "ai" as const, sourceLabel: "Hermes Learnings",
       }));
       // Search decision journal
-      const djRows = await db.execute(sql`SELECT id, decision_type, decision_description, reasoning, outcome, confidence, source_type, created_at FROM decision_journal_entries WHERE org_id = ${orgId} AND (decision_description ILIKE ${'%' + q + '%'} OR reasoning ILIKE ${'%' + q + '%'} OR outcome ILIKE ${'%' + q + '%'}) LIMIT 5`).catch(() => []);
+      const { validateDecisionJournalSchema } = await import("./decision-journal-schema-validation");
+      await validateDecisionJournalSchema();
+      const djRows = await db.execute(sql`SELECT id, decision_type, decision AS decision_description, reasoning, outcome, confidence, source_type, created_at FROM decision_journal_entries WHERE org_id = ${orgId} AND (decision ILIKE ${'%' + q + '%'} OR reasoning ILIKE ${'%' + q + '%'} OR outcome ILIKE ${'%' + q + '%'}) LIMIT 5`);
       const djArr = Array.isArray(djRows) ? djRows : (djRows as any)?.rows ?? [];
       const djResults = djArr.map((r: any) => ({ id: r.id, title: `[Decision] ${r.decision_description?.slice(0,60) ?? ""}`, memoryType: "decision", category: r.decision_type ?? "decision", department: "Decisions", content: [r.decision_description, r.reasoning, r.outcome].filter(Boolean).join("  \n"), source: r.source_type ?? "decision_journal", createdByAgent: "Decision Journal", confidenceScore: Math.round((r.confidence ?? 0.8) * 100), impactScore: 70, usageCount: 0, createdAt: r.created_at, updatedAt: r.created_at, isAutoLearning: true, sourceKind: "ai" as const, sourceLabel: "Decision Journal" }));
       // Search software KB
@@ -32060,7 +32069,10 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const skResults = skArr.map((r: any) => ({ id: r.id, title: `[Software KB] ${r.issue?.slice(0,60) ?? ""}`, memoryType: "software_fix", category: r.severity ?? "fix", department: "Engineering", content: [r.issue, r.root_cause, r.fix_applied, r.outcome].filter(Boolean).join("  \n"), source: r.source_type ?? "software_kb", createdByAgent: "Software KB", confidenceScore: 90, impactScore: 80, usageCount: 0, createdAt: r.created_at, updatedAt: r.created_at, isAutoLearning: true, sourceKind: "ai" as const, sourceLabel: "Software KB" }));
       const results = [...seedResults, ...dbResults, ...djResults, ...skResults].slice(0, 25);
       res.json({ results, query: q, total: results.length, generatedAt: new Date().toISOString() });
-    } catch (e: any) { res.status(500).json({ message: "Failed to search memories" }); }
+    } catch (e: any) {
+      const { sendDecisionJournalUnavailable } = await import("./decision-journal-schema-validation");
+      if (!sendDecisionJournalUnavailable(e, res)) res.status(500).json({ message: "Failed to search memories" });
+    }
   });
 
   // GET /api/organizational-memory/memories
@@ -32167,11 +32179,15 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId).catch(() => null);
       const orgId = profile?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "No organization" });
       const { sourceType, agent, decisionType, limit = 100, offset = 0 } = req.query as Record<string, any>;
       const { getDecisions } = await import("./services/decision-journal-service");
       const dbDecisions = await getDecisions({ orgId, sourceType, agent, decisionType, limit: Number(limit), offset: Number(offset) });
       res.json({ decisions: dbDecisions, total: dbDecisions.length, generatedAt: new Date().toISOString() });
-    } catch (e: any) { res.status(500).json({ message: "Failed to load decisions" }); }
+    } catch (e: any) {
+      const { sendDecisionJournalUnavailable } = await import("./decision-journal-schema-validation");
+      if (!sendDecisionJournalUnavailable(e, res)) res.status(500).json({ message: "Failed to load decisions" });
+    }
   });
 
   // GET /api/organizational-memory/decisions/stats — KPI stats for decision journal
@@ -32180,10 +32196,14 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId).catch(() => null);
       const orgId = profile?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "No organization" });
       const { getDecisionStats } = await import("./services/decision-journal-service");
       const stats = await getDecisionStats(orgId);
       res.json({ ...stats, generatedAt: new Date().toISOString() });
-    } catch (e: any) { res.status(500).json({ message: "Failed to load decision stats" }); }
+    } catch (e: any) {
+      const { sendDecisionJournalUnavailable } = await import("./decision-journal-schema-validation");
+      if (!sendDecisionJournalUnavailable(e, res)) res.status(500).json({ message: "Failed to load decision stats" });
+    }
   });
 
   // GET /api/organizational-memory/decisions/search — search decisions
@@ -32192,12 +32212,16 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId).catch(() => null);
       const orgId = profile?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "No organization" });
       const q = ((req.query.q as string) ?? "").trim();
       if (!q) return res.json({ results: [], query: q, total: 0 });
       const { searchDecisions } = await import("./services/decision-journal-service");
       const results = await searchDecisions(q, orgId, 30);
       res.json({ results, query: q, total: results.length, generatedAt: new Date().toISOString() });
-    } catch (e: any) { res.status(500).json({ message: "Failed to search decisions" }); }
+    } catch (e: any) {
+      const { sendDecisionJournalUnavailable } = await import("./decision-journal-schema-validation");
+      if (!sendDecisionJournalUnavailable(e, res)) res.status(500).json({ message: "Failed to search decisions" });
+    }
   });
 
   // POST /api/organizational-memory/decisions/record — manual decision entry
@@ -32205,7 +32229,8 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     try {
       const userId = req.user?.claims?.sub ?? req.user?.id;
       const profile = await storage.getUserProfile(userId).catch(() => null);
-      const orgId = profile?.organizationId ?? "default";
+      const orgId = profile?.organizationId;
+      if (!orgId) return res.status(403).json({ message: "No organization" });
       const { agent, decision, reasoning, outcome, followUp, confidence, decisionType, department, relatedEntityType, relatedEntityId } = req.body;
       if (!decision) return res.status(400).json({ message: "decision is required" });
       const { recordDecision } = await import("./services/decision-journal-service");
@@ -32225,7 +32250,10 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
         relatedEntityId: relatedEntityId ?? undefined,
       });
       res.json({ success: true, id });
-    } catch (e: any) { res.status(500).json({ message: "Failed to record decision" }); }
+    } catch (e: any) {
+      const { sendDecisionJournalUnavailable } = await import("./decision-journal-schema-validation");
+      if (!sendDecisionJournalUnavailable(e, res)) res.status(500).json({ message: "Failed to record decision" });
+    }
   });
 
   // ── Software KB routes ──────────────────────────────────────────────────────

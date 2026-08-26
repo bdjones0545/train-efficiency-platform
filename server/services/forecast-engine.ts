@@ -8,6 +8,7 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { validateFeatureSchema } from "../feature-schema-validation";
+import { DecisionJournalSchemaUnavailableError, validateDecisionJournalSchema } from "../decision-journal-schema-validation";
 
 // ─── Table creation ───────────────────────────────────────────────────────────
 
@@ -719,14 +720,21 @@ export async function getBusinessOSScore(orgId: string): Promise<{
   // Obsidian removed — use hermes learnings + decisions count as memory proxy
   if (obsidianNotes === 0) {
     try {
-      const memRes = await db.execute(sql`
-        SELECT
-          (SELECT COUNT(*) FROM hermes_auto_learnings WHERE org_id = ${orgId})::int +
-          (SELECT COUNT(*) FROM decision_journal_entries WHERE org_id = ${orgId})::int AS total_memory
-      `).catch(() => [{ total_memory: 0 }]);
-      const memRows: any[] = Array.isArray(memRes) ? memRes : (memRes as any)?.rows ?? [];
-      obsidianNotes = Number(memRows[0]?.total_memory ?? 0);
-    } catch (_) {}
+      const hermesResult = await db.execute(sql`SELECT COUNT(*)::int AS total_memory FROM hermes_auto_learnings WHERE org_id = ${orgId}`);
+      const hermesRows: any[] = Array.isArray(hermesResult) ? hermesResult : (hermesResult as any)?.rows ?? [];
+      obsidianNotes = Number(hermesRows[0]?.total_memory ?? 0);
+      try {
+        await validateDecisionJournalSchema();
+        const journalResult = await db.execute(sql`SELECT COUNT(*)::int AS total_memory FROM decision_journal_entries WHERE org_id = ${orgId}`);
+        const journalRows: any[] = Array.isArray(journalResult) ? journalResult : (journalResult as any)?.rows ?? [];
+        obsidianNotes += Number(journalRows[0]?.total_memory ?? 0);
+      } catch (error) {
+        if (!(error instanceof DecisionJournalSchemaUnavailableError)) throw error;
+        console.warn("[ForecastEngine] Decision Journal memory signal unavailable");
+      }
+    } catch (error) {
+      console.warn("[ForecastEngine] Memory score signal unavailable", error);
+    }
   }
 
   const ta = (await toArr(trustRows))[0] ?? {};

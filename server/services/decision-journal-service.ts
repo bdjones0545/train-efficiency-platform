@@ -3,47 +3,15 @@
  * Automatically captures every major decision across the platform into a
  * persistent, searchable, org-scoped `decision_journal_entries` table.
  *
- * Table is created lazily on first use — survives deploys and restarts.
+ * Schema is formally migration-owned and validated read-only before use.
  */
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-
-// ─── Ensure table exists ───────────────────────────────────────────────────────
-
-let _tableReady = false;
-
-export async function ensureDecisionJournalTable(): Promise<void> {
-  if (_tableReady) return;
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS decision_journal_entries (
-      id              TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id          TEXT        NOT NULL,
-      agent           TEXT        NOT NULL,
-      source_type     TEXT        NOT NULL,
-      source          TEXT        NOT NULL,
-      decision        TEXT        NOT NULL,
-      reasoning       TEXT        NOT NULL DEFAULT '',
-      outcome         TEXT        NOT NULL DEFAULT '',
-      follow_up       TEXT        NOT NULL DEFAULT '',
-      confidence      INTEGER     NOT NULL DEFAULT 75,
-      decision_type   TEXT        NOT NULL DEFAULT 'action',
-      department      TEXT        NOT NULL DEFAULT 'Operations',
-      related_entity_type TEXT    DEFAULT NULL,
-      related_entity_id   TEXT    DEFAULT NULL,
-      metadata        JSONB       DEFAULT '{}',
-      created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS idx_decision_journal_org_id    ON decision_journal_entries(org_id);
-    CREATE INDEX IF NOT EXISTS idx_decision_journal_source_type ON decision_journal_entries(source_type);
-    CREATE INDEX IF NOT EXISTS idx_decision_journal_agent     ON decision_journal_entries(agent);
-    CREATE INDEX IF NOT EXISTS idx_decision_journal_created_at ON decision_journal_entries(created_at DESC);
-  `).catch(() => {});
-  _tableReady = true;
-}
+import {
+  assertDecisionJournalTenant,
+  validateDecisionJournalSchema,
+} from "../decision-journal-schema-validation";
 
 // ─── Core types ────────────────────────────────────────────────────────────────
 
@@ -86,11 +54,11 @@ export interface RecordDecisionInput {
 
 // ─── Core write ────────────────────────────────────────────────────────────────
 
-export async function recordDecision(input: RecordDecisionInput): Promise<string | null> {
-  try {
-    await ensureDecisionJournalTable();
-    const id = `dj-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    await db.execute(sql`
+export async function recordDecision(input: RecordDecisionInput): Promise<string> {
+  assertDecisionJournalTenant(input.orgId);
+  await validateDecisionJournalSchema();
+  const id = crypto.randomUUID();
+  await db.execute(sql`
       INSERT INTO decision_journal_entries (
         id, org_id, agent, source_type, source, decision, reasoning, outcome,
         follow_up, confidence, decision_type, department,
@@ -112,13 +80,13 @@ export async function recordDecision(input: RecordDecisionInput): Promise<string
         ${input.relatedEntityId ?? null},
         ${JSON.stringify(input.metadata ?? {})}
       )
-    `);
+  `);
 
     // Kevin event wire-in (Phase 3) — non-blocking, fail-open
-    void (async () => {
-      try {
-        const { enqueueKevinEvent } = await import("./kevin-event-service");
-        await enqueueKevinEvent({
+  void (async () => {
+    try {
+      const { enqueueKevinEvent } = await import("./kevin-event-service");
+      await enqueueKevinEvent({
           orgId: input.orgId,
           eventType: "te.decision.recorded",
           entityType: "decision_journal_entry",
@@ -133,15 +101,12 @@ export async function recordDecision(input: RecordDecisionInput): Promise<string
             decision: (input.decision ?? "").slice(0, 200),
           },
           source: "decision_journal",
-        });
-      } catch {}
-    })();
-
-    return id;
-  } catch (err) {
-    console.error("[decision-journal] recordDecision error:", err);
-    return null;
-  }
+      });
+    } catch (error) {
+      console.error("[decision-journal] downstream Kevin event failed:", error);
+    }
+  })();
+  return id;
 }
 
 // ─── Reads ─────────────────────────────────────────────────────────────────────
@@ -154,10 +119,10 @@ export async function getDecisions(opts: {
   limit?: number;
   offset?: number;
 }): Promise<DecisionEntry[]> {
-  try {
-    await ensureDecisionJournalTable();
-    const { orgId, sourceType, agent, decisionType, limit = 100, offset = 0 } = opts;
-    const rows = await db.execute(sql`
+  assertDecisionJournalTenant(opts.orgId);
+  await validateDecisionJournalSchema();
+  const { orgId, sourceType, agent, decisionType, limit = 100, offset = 0 } = opts;
+  const result = await db.execute(sql`
       SELECT * FROM decision_journal_entries
       WHERE 1=1
         ${orgId ? sql`AND org_id = ${orgId}` : sql``}
@@ -166,19 +131,16 @@ export async function getDecisions(opts: {
         ${decisionType ? sql`AND decision_type = ${decisionType}` : sql``}
       ORDER BY created_at DESC
       LIMIT ${limit} OFFSET ${offset}
-    `);
-    const rawRows = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
-    return rawRows.map(mapRow);
-  } catch {
-    return [];
-  }
+  `);
+  const rawRows = Array.isArray(result) ? result : (result as any).rows ?? [];
+  return rawRows.map(mapRow);
 }
 
 export async function searchDecisions(q: string, orgId?: string, limit = 30): Promise<DecisionEntry[]> {
-  try {
-    await ensureDecisionJournalTable();
-    const pattern = `%${q.toLowerCase()}%`;
-    const rows = await db.execute(sql`
+  assertDecisionJournalTenant(orgId);
+  await validateDecisionJournalSchema();
+  const pattern = `%${q.toLowerCase()}%`;
+  const result = await db.execute(sql`
       SELECT * FROM decision_journal_entries
       WHERE 1=1
         ${orgId ? sql`AND org_id = ${orgId}` : sql``}
@@ -193,26 +155,20 @@ export async function searchDecisions(q: string, orgId?: string, limit = 30): Pr
         )
       ORDER BY created_at DESC
       LIMIT ${limit}
-    `);
-    const rawRows = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
-    return rawRows.map(mapRow);
-  } catch {
-    return [];
-  }
+  `);
+  const rawRows = Array.isArray(result) ? result : (result as any).rows ?? [];
+  return rawRows.map(mapRow);
 }
 
 export async function countDecisions(orgId?: string): Promise<number> {
-  try {
-    await ensureDecisionJournalTable();
-    const rows = await db.execute(sql`
+  assertDecisionJournalTenant(orgId);
+  await validateDecisionJournalSchema();
+  const result = await db.execute(sql`
       SELECT COUNT(*)::integer AS cnt FROM decision_journal_entries
       ${orgId ? sql`WHERE org_id = ${orgId}` : sql``}
-    `);
-    const rawRows = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
-    return Number(rawRows[0]?.cnt ?? 0);
-  } catch {
-    return 0;
-  }
+  `);
+  const rawRows = Array.isArray(result) ? result : (result as any).rows ?? [];
+  return Number(rawRows[0]?.cnt ?? 0);
 }
 
 export async function getDecisionStats(orgId?: string): Promise<{
@@ -227,9 +183,9 @@ export async function getDecisionStats(orgId?: string): Promise<{
   avgConfidence: number;
   last7DaysCount: number;
 }> {
-  try {
-    await ensureDecisionJournalTable();
-    const rows = await db.execute(sql`
+  assertDecisionJournalTenant(orgId);
+  await validateDecisionJournalSchema();
+  const result = await db.execute(sql`
       SELECT
         COUNT(*)::integer                                              AS total,
         COUNT(*) FILTER (WHERE source_type != 'human_admin')::integer AS agent_decisions,
@@ -240,8 +196,8 @@ export async function getDecisionStats(orgId?: string): Promise<{
         COUNT(*) FILTER (WHERE created_at > now() - interval '7 days')::integer AS last7
       FROM decision_journal_entries
       ${orgId ? sql`WHERE org_id = ${orgId}` : sql``}
-    `);
-    const rawRows = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+  `);
+  const rawRows = Array.isArray(result) ? result : (result as any).rows ?? [];
     const r = rawRows[0] ?? {};
 
     // bySourceType
@@ -277,7 +233,7 @@ export async function getDecisionStats(orgId?: string): Promise<{
     const byDecisionType: Record<string, number> = {};
     dtRaw.forEach((d: any) => { byDecisionType[d.decision_type] = Number(d.cnt); });
 
-    return {
+  return {
       total: Number(r.total ?? 0),
       agentDecisions: Number(r.agent_decisions ?? 0),
       humanDecisions: Number(r.human_decisions ?? 0),
@@ -288,10 +244,7 @@ export async function getDecisionStats(orgId?: string): Promise<{
       bySourceType,
       byAgent,
       byDecisionType,
-    };
-  } catch {
-    return { total: 0, agentDecisions: 0, humanDecisions: 0, approvalCount: 0, rejectionCount: 0, avgConfidence: 75, last7DaysCount: 0, bySourceType: {}, byAgent: {}, byDecisionType: {} };
-  }
+  };
 }
 
 // ─── Row mapper ────────────────────────────────────────────────────────────────

@@ -1506,7 +1506,9 @@ export async function runHeartbeatCycle(opts: {
       durationMs: Date.now() - startTime,
       runId: heartbeatId,
       topPriority,
-    }).catch(() => {});
+    }).catch((error) => {
+      console.warn("[CEO Heartbeat] Decision Journal persistence unavailable:", error?.message ?? error);
+    });
   }).catch(() => {});
 
   return { success: allErrors.length === 0, runId: heartbeatId, priorities, errors: allErrors };
