@@ -23,6 +23,13 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { normalizeProviderFamily } from "../composio-action-identity";
+import {
+  listComposioConnectionAuthorities,
+  listAuthorizedComposioConnections,
+  resolveComposioConnectionAuthority,
+  selectAuthorizedProviderAccount,
+} from "./composio-connected-account-resolver";
 
 // ─── Composio API config ──────────────────────────────────────────────────────
 
@@ -297,20 +304,25 @@ export async function discoverComposioActions(appId: string, limit = 20): Promis
   }
 }
 
-// ─── Connected account lookup by toolkit ─────────────────────────────────────
+export async function getAuthorizedConnectedAccounts(orgId: string): Promise<ComposioConnectedAccount[]> {
+  const authorityRows = await listComposioConnectionAuthorities({ orgId });
+  if (!authorityRows.length) return [];
+  const providerAccounts = await listConnectedAccounts();
+  return listAuthorizedComposioConnections({ orgId, providerAccounts });
+}
 
-/**
- * Returns the first ACTIVE connected account for the given toolkit slug (lowercase).
- * Returns both the connected_account_id and entity (user_id) — v3.1 requires both.
- */
-export async function getConnectedAccountByToolkit(
-  toolkitSlug: string,
-): Promise<{ id: string; entity: string } | null> {
-  const accounts = await listConnectedAccounts();
-  const slug = toolkitSlug.toLowerCase();
-  const match = accounts.find(a => a.toolkit_slug.toLowerCase() === slug && a.status === "ACTIVE");
-  if (!match) return null;
-  return { id: match.id, entity: match.entity };
+export async function resolveExecutionConnectedAccount(
+  input: { orgId: string; toolkit: string; requestedAccountId?: string },
+  dependencies: {
+    resolveAuthority?: typeof resolveComposioConnectionAuthority;
+    listProviderAccounts?: typeof listConnectedAccounts;
+  } = {},
+) {
+  const resolveAuthority = dependencies.resolveAuthority ?? resolveComposioConnectionAuthority;
+  const listProviderAccounts = dependencies.listProviderAccounts ?? listConnectedAccounts;
+  const authority = await resolveAuthority(input);
+  const providerAccounts = await listProviderAccounts();
+  return selectAuthorizedProviderAccount({ ...input, authorityRows: [authority], providerAccounts });
 }
 
 // ─── Core execution ───────────────────────────────────────────────────────────
@@ -323,21 +335,17 @@ export async function executeComposioAction(
   const resolvedLogId = logId ?? crypto.randomUUID();
 
   try {
-    // Composio v3.1 requires BOTH connected_account_id AND entity_id (user_id) on every execute.
-    // All connected accounts live under a custom entity (Composio user_id), not "default".
-    // We auto-discover both from the connected accounts list keyed by toolkit slug.
-    let resolvedAccountId = connectedAccountId;
-    let resolvedEntityId = entityId;
-    if (!resolvedAccountId) {
-      const acct = await getConnectedAccountByToolkit(tool.toLowerCase());
-      if (acct) {
-        resolvedAccountId = acct.id;
-        resolvedEntityId = resolvedEntityId ?? acct.entity;
-        console.log(
-          `[ComposioService] auto-resolved connected_account_id=${resolvedAccountId} entity_id=${resolvedEntityId} for toolkit=${tool}`,
-        );
-      }
+    const toolkit = normalizeProviderFamily(tool);
+    const authorized = await resolveExecutionConnectedAccount({
+      orgId,
+      toolkit,
+      requestedAccountId: connectedAccountId,
+    });
+    if (entityId && entityId !== authorized.entity) {
+      throw new Error("Requested Composio entity is not authorized for the selected connected account");
     }
+    const resolvedAccountId = authorized.id;
+    const resolvedEntityId = authorized.entity;
 
     const body: Record<string, unknown> = {
       arguments: inputParams,

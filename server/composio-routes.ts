@@ -21,7 +21,7 @@ import {
   discoverComposioTools,
   discoverComposioActions,
   getComposioActionLog,
-  listConnectedAccounts,
+  getAuthorizedConnectedAccounts,
   ensureComposioLogTable,
 } from "./services/composio-service";
 import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
@@ -78,9 +78,10 @@ export async function registerComposioRoutes(
     requireRole("COACH", "ADMIN"),
     async (req: any, res) => {
       try {
+        const orgId = await resolveOrgIdOrThrow(req);
         const [health, connectedAccounts] = await Promise.all([
           checkComposioHealth(),
-          listConnectedAccounts().catch(() => []),
+          getAuthorizedConnectedAccounts(orgId),
         ]);
         const registry = getRegistrySnapshot();
         res.json({
@@ -95,7 +96,7 @@ export async function registerComposioRoutes(
           description: "Composio External Tool Layer — v3.1 API",
         });
       } catch (err: any) {
-        res.status(500).json({ message: err.message });
+        res.status(503).json({ message: "Composio connections temporarily unavailable" });
       }
     },
   );
@@ -277,8 +278,7 @@ export async function registerComposioRoutes(
     requireRole("ADMIN"),
     async (req: any, res) => {
       try {
-        let orgId: string | undefined;
-        try { orgId = await resolveOrgIdOrThrow(req); } catch { orgId = undefined; }
+        const orgId = await resolveOrgIdOrThrow(req);
         const events = await getUnprocessedHermesEvents(orgId);
         res.json({ events, total: events.length });
       } catch (err: any) {

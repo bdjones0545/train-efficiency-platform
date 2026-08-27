@@ -135,21 +135,15 @@ export async function getRecentHermesEvents(
   }
 }
 
-export async function getUnprocessedHermesEvents(orgId?: string, limit = 100): Promise<ComposioHermesEventRecord[]> {
+export async function getUnprocessedHermesEvents(orgId: string, limit = 100): Promise<ComposioHermesEventRecord[]> {
   try {
-    const raw = orgId
-      ? await db.execute(sql`
-          SELECT * FROM composio_hermes_events
-          WHERE hermes_processed = false AND org_id = ${orgId}
-          ORDER BY created_at ASC
-          LIMIT ${limit}
-        `)
-      : await db.execute(sql`
-          SELECT * FROM composio_hermes_events
-          WHERE hermes_processed = false
-          ORDER BY created_at ASC
-          LIMIT ${limit}
-        `);
+    if (!orgId.trim()) return [];
+    const raw = await db.execute(sql`
+      SELECT * FROM composio_hermes_events
+      WHERE hermes_processed = false AND org_id = ${orgId}
+      ORDER BY created_at ASC
+      LIMIT ${limit}
+    `);
     const rows = Array.isArray(raw) ? raw : (raw as any).rows ?? [];
     return rows.map(normaliseRow);
   } catch {

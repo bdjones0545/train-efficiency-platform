@@ -64,7 +64,7 @@ test("fresh formal migration creates the two canonical tables and 0015 ledger en
   const tables = await database.query(`SELECT to_regclass('agentmail_approved_logical_sends') logical,to_regclass('agentmail_approved_send_attempts') attempts`);
   assert.equal(tables.rows[0].logical, "agentmail_approved_logical_sends");
   assert.equal(tables.rows[0].attempts, "agentmail_approved_send_attempts");
-  const ledger = await database.query(`SELECT migration_id FROM train_efficiency_migrations ORDER BY migration_id DESC LIMIT 1`);
+  const ledger = await database.query(`SELECT migration_id FROM train_efficiency_migrations WHERE migration_id='0015_agentmail_approved_send_idempotency.sql'`);
   assert.equal(ledger.rows[0].migration_id, "0015_agentmail_approved_send_idempotency.sql");
 });
 
