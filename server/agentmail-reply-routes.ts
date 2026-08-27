@@ -9,6 +9,13 @@ import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { sendAgentEmail, replyFromAgentInbox, type AgentInbox } from "./services/agentmail-service";
+import {
+  approveAgentMailReplyAuthority,
+  editAgentMailReplyAuthority,
+  executeAgentMailApprovedReply,
+  newAgentMailReplyIdentity,
+} from "./services/agentmail-approved-send-service";
+import { sendAgentMailApprovedSendUnavailable } from "./agentmail-approved-send-schema-validation";
 import { writeTimeline } from "./services/ceo-heartbeat-service";
 import { attentionItems } from "@shared/schema";
 
@@ -202,13 +209,15 @@ export async function createReplyQueueEntry(params: {
   if (!params.draftBody?.trim()) return null;
 
   try {
+    const identity = newAgentMailReplyIdentity();
     const inserted = rows(await db.execute(sql`
       INSERT INTO agent_mail_reply_queue (
-        id, organization_id, inbound_message_id, inbox, agent_name, classification,
+        id, logical_send_id, organization_id, inbound_message_id, inbox, agent_name, classification,
         recipient_email, recipient_name, subject, draft_body,
         status, approval_status, confidence, thread_id, provider_inbound_message_id, created_at, updated_at
       ) VALUES (
-        gen_random_uuid()::text,
+        ${identity.replyQueueId},
+        ${identity.logicalSendId},
         ${params.organizationId},
         ${params.inboundMessageId},
         ${params.inbox},
@@ -363,14 +372,10 @@ export async function registerAgentMailReplyRoutes(
       const { edited_body } = req.body;
       if (!edited_body?.trim()) return res.status(400).json({ message: "edited_body is required" });
 
-      await db.execute(sql`
-        UPDATE agent_mail_reply_queue
-        SET edited_body = ${edited_body}, updated_at = NOW()
-        WHERE id = ${id} AND organization_id = ${orgId}
-          AND status NOT IN ('sent', 'failed')
-      `);
+      const updated = await editAgentMailReplyAuthority(orgId, id, edited_body.trim());
+      if (!updated) return res.status(409).json({ message: "Reply cannot be edited in its current state" });
 
-      res.json({ ok: true, message: "Draft updated" });
+      res.json({ ok: true, message: "Draft updated; approval required" });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to update draft" });
     }
@@ -393,12 +398,7 @@ export async function registerAgentMailReplyRoutes(
       if (reply.status === "sent") return res.status(400).json({ message: "Already sent" });
       if (reply.approval_status === "approved") return res.status(400).json({ message: "Already approved" });
 
-      await db.execute(sql`
-        UPDATE agent_mail_reply_queue
-        SET approval_status = 'approved', approved_by = ${approver},
-            approved_at = NOW(), status = 'approved', updated_at = NOW()
-        WHERE id = ${id} AND organization_id = ${orgId}
-      `);
+      const authority = await approveAgentMailReplyAuthority(orgId, id, approver);
 
       const hasEdits = !!reply.edited_body;
       await logOutcome({
@@ -473,7 +473,13 @@ export async function registerAgentMailReplyRoutes(
         } catch {}
       })();
 
-      res.json({ ok: true, approvedBy: approver, approvedAt: new Date().toISOString() });
+      res.json({
+        ok: true,
+        approvedBy: approver,
+        approvedAt: new Date().toISOString(),
+        logicalSendId: authority.logicalSendId,
+        approvedPayloadVersion: authority.approvedPayloadVersion,
+      });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to approve reply" });
     }
@@ -597,48 +603,55 @@ export async function registerAgentMailReplyRoutes(
         WHERE id = ${id} AND organization_id = ${orgId}
       `).catch(() => []));
       if (!reply) return res.status(404).json({ message: "Reply not found" });
-      if (reply.status === "sent") return res.status(400).json({ message: "Already sent — idempotent guard" });
-      if (reply.approval_status !== "approved") {
-        return res.status(400).json({ message: "Reply must be approved before sending" });
-      }
+      const sendResult = await executeAgentMailApprovedReply({
+        orgId,
+        replyQueueId: id,
+        preflight: async (authority) => {
+          const { preflightAgentMailApprovedSend } = await import("./services/agentmail-service");
+          return preflightAgentMailApprovedSend({
+            organizationId: orgId,
+            agentName: authority.agentName,
+            fromInbox: authority.inbox as AgentInbox,
+            to: authority.recipientEmail,
+            subject: authority.subject,
+            body: authority.body,
+            replyQueueId: id,
+          });
+        },
+        invokeProvider: async (authority) => {
+          const common = {
+            organizationId: orgId,
+            agentName: authority.agentName,
+            fromInbox: authority.inbox as AgentInbox,
+            to: authority.recipientEmail,
+            subject: authority.subject,
+            body: authority.body,
+            humanApproved: true,
+            actionQueueId: id,
+            durableApprovedSend: true,
+          };
+          return authority.providerInboundMessageId
+            ? replyFromAgentInbox({
+                ...common,
+                replyToMessageId: authority.providerInboundMessageId,
+                threadId: authority.threadId ?? undefined,
+              })
+            : sendAgentEmail(common);
+        },
+      });
 
       const bodyToSend: string = reply.edited_body?.trim() || reply.draft_body;
 
-      // Send via AgentMail
-      let sendResult: { ok: boolean; messageId?: string; error?: string; blocked?: boolean };
-      if (reply.provider_inbound_message_id) {
-        sendResult = await replyFromAgentInbox({
-          organizationId: orgId,
-          agentName: reply.agent_name,
-          fromInbox: reply.inbox as AgentInbox,
-          replyToMessageId: reply.provider_inbound_message_id,
-          threadId: reply.thread_id ?? undefined,
-          to: reply.recipient_email,
-          subject: reply.subject,
-          body: bodyToSend,
-          humanApproved: true,
-        });
-      } else {
-        sendResult = await sendAgentEmail({
-          organizationId: orgId,
-          agentName: reply.agent_name,
-          fromInbox: reply.inbox as AgentInbox,
-          to: reply.recipient_email,
-          subject: reply.subject,
-          body: bodyToSend,
-          humanApproved: true,
+      if (sendResult.ok && sendResult.duplicate) {
+        return res.json({
+          ok: true,
+          alreadySent: true,
+          logicalSendId: sendResult.logicalSendId,
+          messageId: sendResult.messageId,
         });
       }
 
       if (sendResult.ok) {
-        await db.execute(sql`
-          UPDATE agent_mail_reply_queue
-          SET status = 'sent', final_body = ${bodyToSend},
-              sent_at = NOW(), provider_message_id = ${sendResult.messageId ?? null},
-              delivery_status = 'delivered', updated_at = NOW()
-          WHERE id = ${id}
-        `);
-
         await logOutcome({
           replyQueueId: id,
           organizationId: orgId,
@@ -690,14 +703,7 @@ export async function registerAgentMailReplyRoutes(
         }
 
         res.json({ ok: true, messageId: sendResult.messageId, sentAt: new Date().toISOString() });
-      } else {
-        await db.execute(sql`
-          UPDATE agent_mail_reply_queue
-          SET status = 'failed', delivery_status = 'failed',
-              rejection_reason = ${sendResult.error ?? "Send failed"}, updated_at = NOW()
-          WHERE id = ${id}
-        `);
-
+      } else if (sendResult.state === "confirmed_failure") {
         await logOutcome({
           replyQueueId: id,
           organizationId: orgId,
@@ -710,9 +716,21 @@ export async function registerAgentMailReplyRoutes(
           notes: sendResult.error,
         });
 
-        res.status(502).json({ ok: false, error: sendResult.error ?? "Send failed" });
+        res.status(502).json({ ok: false, state: sendResult.state, error: sendResult.error ?? "Send failed" });
+      } else if (sendResult.state === "suppressed") {
+        res.status(403).json({ ok: false, state: sendResult.state, error: sendResult.error ?? "Send blocked" });
+      } else {
+        res.status(409).json({
+          ok: false,
+          state: sendResult.state,
+          logicalSendId: sendResult.logicalSendId,
+          message: sendResult.state === "in_progress"
+            ? "AgentMail reply send already in progress"
+            : "AgentMail provider outcome requires reconciliation before retry",
+        });
       }
     } catch (e: any) {
+      if (sendAgentMailApprovedSendUnavailable(e, res)) return;
       res.status(500).json({ message: e?.message ?? "Failed to send reply" });
     }
   });

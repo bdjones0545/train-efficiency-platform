@@ -40,6 +40,14 @@ export const AGENT_INBOXES = [
 
 export type AgentInbox = typeof AGENT_INBOXES[number]["inbox"];
 
+type AgentMailSendResult = {
+  ok: boolean;
+  messageId?: string;
+  error?: string;
+  blocked?: boolean;
+  outcomeCertain?: boolean;
+};
+
 // ─── HTTP helper ─────────────────────────────────────────────────────────────
 
 async function agentMailRequest(
@@ -261,12 +269,8 @@ export async function sendAgentEmail(params: {
   humanApproved?: boolean;
   actionQueueId?: string;
   gmailThreadId?: string;
-}): Promise<{
-  ok: boolean;
-  messageId?: string;
-  error?: string;
-  blocked?: boolean;
-}> {
+  durableApprovedSend?: boolean;
+}): Promise<AgentMailSendResult> {
   // ── 1. Ownership check — must run before the send guard so a non-provisioned
   //       org fails closed immediately rather than hitting policy evaluation.
   const { getActiveOwnershipRow } = await import("./agentmail-ownership-service");
@@ -303,6 +307,7 @@ export async function sendAgentEmail(params: {
     sourceSystem: params.agentName,
     actionQueueId: params.actionQueueId,
     gmailThreadId: params.gmailThreadId,
+    durableApprovedSend: params.durableApprovedSend,
   });
 
   if (!guardResult.allowed) {
@@ -343,7 +348,7 @@ export async function sendAgentEmail(params: {
     errorMessage: res.ok ? undefined : (res.error ?? `HTTP ${res.status}`),
   });
 
-  if (res.ok) {
+  if (res.ok && !params.durableApprovedSend) {
     await writeOutboundAuditLog({
       orgId: params.organizationId,
       channel: "agentmail",
@@ -364,8 +369,8 @@ export async function sendAgentEmail(params: {
     }).catch(() => {});
   }
 
-  if (!res.ok) return { ok: false, error: res.error ?? `HTTP ${res.status}` };
-  return { ok: true, messageId };
+  if (!res.ok) return { ok: false, error: res.error ?? `HTTP ${res.status}`, outcomeCertain: res.status !== 0 };
+  return { ok: true, messageId, outcomeCertain: true };
 }
 
 /**
@@ -392,12 +397,8 @@ export async function replyFromAgentInbox(params: {
   humanApproved?: boolean;
   actionQueueId?: string;
   gmailThreadId?: string;
-}): Promise<{
-  ok: boolean;
-  messageId?: string;
-  error?: string;
-  blocked?: boolean;
-}> {
+  durableApprovedSend?: boolean;
+}): Promise<AgentMailSendResult> {
   // ── 1. Ownership check
   const { getActiveOwnershipRow } = await import("./agentmail-ownership-service");
   const ownership = await getActiveOwnershipRow(params.organizationId, params.fromInbox);
@@ -434,6 +435,7 @@ export async function replyFromAgentInbox(params: {
     sourceSystem: params.agentName,
     actionQueueId: params.actionQueueId,
     gmailThreadId: params.gmailThreadId ?? legacyThreadId,
+    durableApprovedSend: params.durableApprovedSend,
   });
 
   if (!guardResult.allowed) {
@@ -467,7 +469,7 @@ export async function replyFromAgentInbox(params: {
     errorMessage: res.ok ? undefined : (res.error ?? `HTTP ${res.status}`),
   });
 
-  if (res.ok) {
+  if (res.ok && !params.durableApprovedSend) {
     await writeOutboundAuditLog({
       orgId: params.organizationId,
       channel: "agentmail",
@@ -488,8 +490,37 @@ export async function replyFromAgentInbox(params: {
     }).catch(() => {});
   }
 
-  if (!res.ok) return { ok: false, error: res.error ?? `HTTP ${res.status}` };
-  return { ok: true, messageId };
+  if (!res.ok) return { ok: false, error: res.error ?? `HTTP ${res.status}`, outcomeCertain: res.status !== 0 };
+  return { ok: true, messageId, outcomeCertain: true };
+}
+
+/** Read-only ownership and policy verification for the durable approved path. */
+export async function preflightAgentMailApprovedSend(params: {
+  organizationId: string;
+  agentName: string;
+  fromInbox: AgentInbox;
+  to: string;
+  subject: string;
+  body: string;
+  replyQueueId: string;
+}): Promise<{ allowed: boolean; error?: string }> {
+  const { getActiveOwnershipRow } = await import("./agentmail-ownership-service");
+  const ownership = await getActiveOwnershipRow(params.organizationId, params.fromInbox);
+  if (!ownership) return { allowed: false, error: "AgentMail inbox not provisioned for this organization" };
+  const guard = await checkAgentMailSendPolicy({
+    orgId: params.organizationId,
+    agentName: params.agentName,
+    fromInbox: params.fromInbox,
+    toEmail: params.to,
+    subject: params.subject,
+    bodyPreview: params.body.slice(0, 200),
+    humanApproved: true,
+    sourceSystem: params.agentName,
+    sourceRecordId: params.replyQueueId,
+    actionQueueId: params.replyQueueId,
+    durableApprovedSend: true,
+  });
+  return guard.allowed ? { allowed: true } : { allowed: false, error: guard.reason ?? "AgentMail send blocked" };
 }
 
 /**

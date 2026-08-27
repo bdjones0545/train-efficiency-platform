@@ -6,6 +6,7 @@
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
+import { newAgentMailReplyIdentity } from "./agentmail-approved-send-service";
 import { agentOperatingTimeline, attentionItems, employmentApplicants, teamTrainingProspects } from "@shared/schema";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -657,15 +658,16 @@ export async function processInboundAgentMail(
 
     // 7b. Reply queue entry — idempotent via effect log
     if (result.suggestedReply) {
+      const replyIdentity = newAgentMailReplyIdentity();
       await tryEffect(inboundId, "reply_queue", async (tx) => {
         await tx.execute(sql`
           INSERT INTO agent_mail_reply_queue (
-            id, organization_id, inbound_message_id, inbox, agent_name, classification,
+            id, logical_send_id, organization_id, inbound_message_id, inbox, agent_name, classification,
             recipient_email, recipient_name, subject, draft_body, status,
             approval_status, confidence, thread_id, provider_inbound_message_id,
             created_at, updated_at
           ) VALUES (
-            gen_random_uuid()::text, ${orgId}, ${inboundId}, ${payload.inbox},
+            ${replyIdentity.replyQueueId}, ${replyIdentity.logicalSendId}, ${orgId}, ${inboundId}, ${payload.inbox},
             ${result.routedAgent}, ${result.classification}, ${payload.fromEmail},
             ${payload.fromName ?? null}, ${`Re: ${payload.subject}`}, ${result.suggestedReply},
             'pending_review', 'pending_review', ${result.confidence},

@@ -39,6 +39,7 @@ import {
   ensureHermesTables,
   getHermesStats,
 } from "./services/hermes-recommendation-engine";
+import { approveAgentMailReplyAuthority } from "./services/agentmail-approved-send-service";
 
 async function getOrgId(req: any): Promise<string> {
   // Trusted server-side org resolution — never req.user.orgId (never populated) or client input.
@@ -159,16 +160,17 @@ async function approveAutoQueue(orgId: string, actionId: string, userId: string)
 
 // ─── Approve agentmail reply ──────────────────────────────────────────────────
 async function approveAgentMail(orgId: string, actionId: string, userId: string) {
-  await db.execute(sql`
-    UPDATE agent_mail_reply_queue
-    SET approval_status = 'approved', status = 'approved'
-    WHERE id = ${actionId} AND organization_id = ${orgId}
-  `).catch(() => {});
+  const authority = await approveAgentMailReplyAuthority(orgId, actionId, userId);
   return {
     success: true,
     executionId: `agentmail-${actionId}`,
     executionType: "follow_up",
-    output: { status: "approved", message: "AgentMail reply approved for send" },
+    output: {
+      status: "approved",
+      message: "AgentMail reply approved for send",
+      logicalSendId: authority.logicalSendId,
+      approvedPayloadVersion: authority.approvedPayloadVersion,
+    },
     errors: [],
   };
 }
@@ -214,7 +216,7 @@ async function rejectAction(orgId: string, actionId: string, sourceSystem: strin
       await db.execute(sql`
         UPDATE agent_mail_reply_queue
         SET status = 'rejected', approval_status = 'rejected'
-        WHERE id = ${actionId}
+        WHERE id = ${actionId} AND organization_id = ${orgId}
       `).catch(() => {});
       break;
     case "gmail_agent":

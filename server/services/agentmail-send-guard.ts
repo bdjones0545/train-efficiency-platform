@@ -30,6 +30,8 @@ export interface SendGuardContext {
   sourceRecordId?: string;
   actionQueueId?: string;
   gmailThreadId?: string;
+  /** Canonical attempt rows replace the legacy runtime-DDL audit for this path. */
+  durableApprovedSend?: boolean;
 }
 
 export interface SendGuardResult {
@@ -42,24 +44,24 @@ export async function checkAgentMailSendPolicy(
   ctx: SendGuardContext,
 ): Promise<SendGuardResult> {
   try {
-    const [gov] = await db
+    const governanceQuery = db
       .select({
         emergencyPauseEnabled: orgAiGovernanceSettings.emergencyPauseEnabled,
         emergencyPauseReason: orgAiGovernanceSettings.emergencyPauseReason,
         allowAutonomousCommunication: orgAiGovernanceSettings.allowAutonomousCommunication,
       })
       .from(orgAiGovernanceSettings)
-      .where(eq(orgAiGovernanceSettings.orgId, ctx.orgId))
-      .catch(() => []);
+      .where(eq(orgAiGovernanceSettings.orgId, ctx.orgId));
+    const [gov] = ctx.durableApprovedSend ? await governanceQuery : await governanceQuery.catch(() => []);
 
-    const [auto] = await db
+    const automationQuery = db
       .select({
         neverAutoSend: orgAutomationSettings.neverAutoSend,
         autoSendFirstResponse: orgAutomationSettings.autoSendFirstResponse,
       })
       .from(orgAutomationSettings)
-      .where(eq(orgAutomationSettings.orgId, ctx.orgId))
-      .catch(() => []);
+      .where(eq(orgAutomationSettings.orgId, ctx.orgId));
+    const [auto] = ctx.durableApprovedSend ? await automationQuery : await automationQuery.catch(() => []);
 
     const isHumanApproved = ctx.humanApproved === true;
 
@@ -102,6 +104,7 @@ async function logBlocked(
   policyDecision: string,
   reason: string,
 ): Promise<void> {
+  if (ctx.durableApprovedSend) return;
   try {
     await writeOutboundAuditLog({
       orgId: ctx.orgId,
