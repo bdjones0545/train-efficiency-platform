@@ -634,14 +634,14 @@ export async function queueEventCreation(
       id, org_id, agent_id, action_type,
       title, description, location,
       start_datetime, end_datetime, timezone,
-      attendees, calendar_id, purpose, risk_level, status,
+      attendees, calendar_id, purpose, risk_level, status, provider_action_version,
       payload, metadata, created_at, updated_at
     ) VALUES (
       ${requestId}, ${orgId}, ${agentId}, ${'create_event'},
       ${opts.title}, ${opts.description ?? null}, ${opts.location ?? null},
       ${opts.start}, ${opts.end ?? null}, ${opts.timezone ?? null},
       ${opts.attendees ? JSON.stringify(opts.attendees) : null}::jsonb,
-      ${'primary'}, ${opts.purpose}, ${riskLevel}, ${'pending_request'},
+      ${'primary'}, ${opts.purpose}, ${riskLevel}, ${'pending_request'}, 1,
       ${JSON.stringify(composioParams)}::jsonb,
       ${JSON.stringify({ source: "scheduling_intelligence_service" })}::jsonb,
       NOW(), NOW()
@@ -739,13 +739,13 @@ export async function queueEventUpdate(
     INSERT INTO composio_calendar_requests (
       id, org_id, agent_id, action_type,
       title, start_datetime, end_datetime, timezone,
-      attendees, calendar_id, event_id, purpose, risk_level, status,
+      attendees, calendar_id, event_id, purpose, risk_level, status, provider_action_version,
       payload, metadata, created_at, updated_at
     ) VALUES (
       ${requestId}, ${orgId}, ${agentId}, ${'update_event'},
       ${opts.title ?? null}, ${opts.start}, ${opts.end ?? null}, ${opts.timezone ?? null},
       ${opts.attendees ? JSON.stringify(opts.attendees) : null}::jsonb,
-      ${'primary'}, ${opts.eventId}, ${opts.purpose}, ${riskLevel}, ${'pending_request'},
+      ${'primary'}, ${opts.eventId}, ${opts.purpose}, ${riskLevel}, ${'pending_request'}, 1,
       ${JSON.stringify(composioParams)}::jsonb,
       ${JSON.stringify({ source: "scheduling_intelligence_service" })}::jsonb,
       NOW(), NOW()
@@ -819,10 +819,10 @@ export async function queueEventDeletion(
   await db.execute(sql`
     INSERT INTO composio_calendar_requests (
       id, org_id, agent_id, action_type, calendar_id, event_id,
-      purpose, risk_level, status, payload, metadata, created_at, updated_at
+      purpose, risk_level, status, provider_action_version, payload, metadata, created_at, updated_at
     ) VALUES (
       ${requestId}, ${orgId}, ${agentId}, ${'delete_event'}, ${calendarId}, ${opts.eventId},
-      ${opts.purpose}, ${riskLevel}, ${'pending_request'},
+      ${opts.purpose}, ${riskLevel}, ${'pending_request'}, 1,
       ${JSON.stringify(composioParams)}::jsonb,
       ${JSON.stringify({ source: "scheduling_intelligence_service" })}::jsonb,
       NOW(), NOW()

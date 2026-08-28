@@ -26,7 +26,9 @@ import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { agentOperatingTimeline, communicationLogs } from "@shared/schema";
 import { requestComposioAction } from "./composio-action-adapter";
-import { executeComposioAction } from "./services/composio-service";
+import { executeComposioAction, resolveExecutionConnectedAccount } from "./services/composio-service";
+import { validateComposioSpecializedVersionSchema } from "./composio-specialized-version-schema-validation";
+import { assertSpecializedExecutionAuthority } from "./composio-specialized-version-authority";
 import { emitComposioHermesEvent } from "./composio-hermes-emitter";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 import { z } from "zod";
@@ -77,27 +79,7 @@ export const ALL_ALERT_TYPES = [
 // ─── Table setup ──────────────────────────────────────────────────────────────
 
 export async function ensureSlackAlertTable(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS composio_slack_alert_requests (
-      id                VARCHAR(128)  PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id            VARCHAR(256)  NOT NULL,
-      agent_id          VARCHAR(128)  NOT NULL,
-      channel           VARCHAR(256)  NOT NULL,
-      alert_type        VARCHAR(128)  NOT NULL,
-      severity          VARCHAR(32)   NOT NULL DEFAULT 'high',
-      message           TEXT          NOT NULL,
-      purpose           TEXT          NOT NULL,
-      risk_level        VARCHAR(32)   NOT NULL DEFAULT 'high',
-      approval_queue_id VARCHAR(128),
-      slack_message_id  TEXT,
-      slack_channel_id  TEXT,
-      status            VARCHAR(64)   NOT NULL DEFAULT 'alert_queued',
-      error_message     TEXT,
-      metadata          JSONB,
-      created_at        TIMESTAMP     DEFAULT NOW(),
-      updated_at        TIMESTAMP     DEFAULT NOW()
-    )
-  `);
+  await validateComposioSpecializedVersionSchema();
 }
 
 // ─── Request validation ───────────────────────────────────────────────────────
@@ -217,7 +199,7 @@ export async function registerComposioSlackAlertRoutes(
         await db.execute(sql`
           INSERT INTO composio_slack_alert_requests (
             id, org_id, agent_id, channel, alert_type, severity, message,
-            purpose, risk_level, approval_queue_id, status, metadata,
+            purpose, risk_level, approval_queue_id, status, provider_action_version, metadata,
             created_at, updated_at
           ) VALUES (
             ${requestId},
@@ -230,7 +212,7 @@ export async function registerComposioSlackAlertRoutes(
             ${purpose},
             ${riskLevel},
             ${adapterResult.approvalQueueId ?? null},
-            ${'alert_queued'},
+            ${'alert_queued'}, 1,
             ${JSON.stringify({
               requestedBy: req.user?.id ?? null,
               approvalQueueId: adapterResult.approvalQueueId,
@@ -398,7 +380,26 @@ export async function registerComposioSlackAlertRoutes(
           });
         }
 
-        // Execute via Composio service directly — ADMIN is the explicit human gate.
+        const authorizedAccount = await resolveExecutionConnectedAccount({ orgId, toolkit: "slack" });
+        const approved = await db.execute(sql`
+          UPDATE composio_slack_alert_requests SET
+            approved_provider_action_version=provider_action_version,
+            approved_by=${req.user?.id ?? null}, approved_at=NOW(),
+            approved_connected_account_id=${authorizedAccount.id}, status='execution_in_progress', updated_at=NOW()
+          WHERE id=${request.id} AND org_id=${orgId} AND status='alert_queued'
+            AND provider_action_version IS NOT NULL
+          RETURNING provider_action_version, approved_provider_action_version, approved_connected_account_id, status
+        `);
+        const approvalRows: any[] = Array.isArray(approved) ? approved : (approved as any).rows ?? [];
+        if (approvalRows.length !== 1) {
+          return res.status(409).json({ message: "Alert approval is stale or unavailable." });
+        }
+        assertSpecializedExecutionAuthority({ currentVersion: approvalRows[0].provider_action_version,
+          approvedVersion: approvalRows[0].approved_provider_action_version,
+          approvedConnectedAccountId: approvalRows[0].approved_connected_account_id,
+          resolvedConnectedAccountId: authorizedAccount.id, executionClaimed: approvalRows[0].status === "execution_in_progress" });
+
+        // Execute only the exact durably approved version/account.
         const execResult = await executeComposioAction({
           orgId,
           agentId: request.agent_id,
@@ -408,6 +409,7 @@ export async function registerComposioSlackAlertRoutes(
             channel: request.channel,
             markdown_text: request.message,
           },
+          connectedAccountId: authorizedAccount.id,
         });
 
         // Extract Slack identifiers — only available on success
@@ -424,8 +426,8 @@ export async function registerComposioSlackAlertRoutes(
           // Store error but keep status alert_queued — retryable
           await db.execute(sql`
             UPDATE composio_slack_alert_requests
-            SET error_message = ${execResult.error ?? "Composio execution failed"}, updated_at = NOW()
-            WHERE id = ${request.id}
+            SET status='alert_queued', error_message = ${execResult.error ?? "Composio execution failed"}, updated_at = NOW()
+            WHERE id = ${request.id} AND org_id=${orgId} AND status='execution_in_progress'
           `).catch(() => {});
 
           await db.insert(agentOperatingTimeline).values({
@@ -482,7 +484,7 @@ export async function registerComposioSlackAlertRoutes(
             slack_channel_id = ${slackChannelId},
             error_message    = NULL,
             updated_at       = NOW()
-          WHERE id = ${request.id}
+          WHERE id = ${request.id} AND org_id=${orgId} AND status='execution_in_progress'
         `);
 
         // Update communication_logs

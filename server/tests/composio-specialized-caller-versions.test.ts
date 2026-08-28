@@ -103,16 +103,20 @@ test("Slack production caller executes only stored channel and message", () => {
   assert.match(source, /channel: request\.channel,[\s\S]*markdown_text: request\.message/);
   assert.doesNotMatch(source, /app\.(?:patch|put)\([\s\S]{0,120}slack-alert/);
 });
-test("Calendar production caller stores exact queued payload but reconstructs approval arguments", () => {
+test("Calendar production caller executes the exact queued payload including duration", () => {
   const source = readFileSync(new URL("../composio-calendar-routes.ts", import.meta.url), "utf8");
   assert.match(source, /payload, metadata[\s\S]*JSON\.stringify\(payload\)/);
   const approval = source.slice(source.indexOf('app.post(\n    "/api/composio/calendar/approve/:id"'));
-  assert.match(approval, /Rebuild the Composio params from stored columns/);
-  assert.doesNotMatch(approval.slice(0, approval.indexOf("const execResult")), /event_duration_hour|event_duration_minutes/);
+  assert.match(approval, /const inputParams = request\.payload/);
+  assert.doesNotMatch(approval, /Rebuild the Composio params from stored columns/);
+  assert.match(source, /event_duration_hour/);
+  assert.match(source, /event_duration_minutes/);
 });
 test("GitHub production caller executes the persisted draft snapshot and blocks after creation", () => {
   const source = readFileSync(new URL("../software-improvement-routes.ts", import.meta.url), "utf8");
   assert.match(source, /github_issue_draft = .*JSON\.stringify\(draft\)/);
-  assert.match(source, /const draft: any = .*githubIssueDraft \?\? buildGitHubIssueDraft\(task\)/);
+  assert.match(source, /const draft: any = .*githubIssueDraft;/);
+  const approval = source.slice(source.indexOf('app.post(\n    "/api/software-improvement/tasks/:id/approve-github-issue"'));
+  assert.doesNotMatch(approval, /githubIssueDraft \?\? buildGitHubIssueDraft/);
   assert.match(source, /task\.status as string\) === "github_issue_created"/);
 });

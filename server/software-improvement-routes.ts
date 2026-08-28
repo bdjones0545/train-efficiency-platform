@@ -22,7 +22,9 @@ import {
   canRunSoftwareImprovementAgent,
 } from "./services/software-improvement-agent";
 import { requestComposioAction } from "./composio-action-adapter";
-import { executeComposioAction } from "./services/composio-service";
+import { executeComposioAction, resolveExecutionConnectedAccount } from "./services/composio-service";
+import { validateComposioSpecializedVersionSchema } from "./composio-specialized-version-schema-validation";
+import { assertSpecializedExecutionAuthority } from "./composio-specialized-version-authority";
 import { emitComposioHermesEvent } from "./composio-hermes-emitter";
 
 async function getOrgId(req: any): Promise<string> {
@@ -35,13 +37,7 @@ async function getOrgId(req: any): Promise<string> {
 // ─── GitHub Issue column bootstrap ───────────────────────────────────────────
 
 async function ensureGitHubIssueColumns(): Promise<void> {
-  try {
-    await db.execute(sql`ALTER TABLE software_improvement_tasks ADD COLUMN IF NOT EXISTS github_issue_url VARCHAR(512)`);
-    await db.execute(sql`ALTER TABLE software_improvement_tasks ADD COLUMN IF NOT EXISTS github_approval_queue_id VARCHAR(256)`);
-    await db.execute(sql`ALTER TABLE software_improvement_tasks ADD COLUMN IF NOT EXISTS github_issue_draft JSONB`);
-  } catch {
-    // Columns may already exist
-  }
+  await validateComposioSpecializedVersionSchema();
 }
 
 // ─── GitHub issue draft builder ───────────────────────────────────────────────
@@ -557,6 +553,11 @@ export async function registerSoftwareImprovementRoutes(
             status = 'github_issue_draft_requested',
             github_issue_draft = ${JSON.stringify(draft)}::jsonb,
             github_approval_queue_id = ${adapterResult.approvalQueueId ?? null},
+            github_provider_action_version = 1,
+            github_approved_provider_action_version = NULL,
+            github_approved_by = NULL,
+            github_approved_at = NULL,
+            github_approved_connected_account_id = NULL,
             updated_at = NOW()
           WHERE id = ${task.id} AND organization_id = ${orgId}
         `);
@@ -641,7 +642,35 @@ export async function registerSoftwareImprovementRoutes(
           });
         }
 
-        const draft: any = (task as any).githubIssueDraft ?? buildGitHubIssueDraft(task);
+        const draft: any = (task as any).githubIssueDraft;
+        const version = (task as any).githubProviderActionVersion;
+        if (!draft || !Number.isSafeInteger(version) || version < 1 ||
+            typeof draft.title !== "string" || !draft.title.trim() ||
+            typeof draft.body !== "string" || !Array.isArray(draft.labels)) {
+          return res.status(409).json({ message: "An immutable canonical GitHub draft/version is required before approval." });
+        }
+        const authorizedAccount = await resolveExecutionConnectedAccount({ orgId, toolkit: "github" });
+        const approved = await db.execute(sql`
+          UPDATE software_improvement_tasks SET
+            github_approved_provider_action_version=github_provider_action_version,
+            github_approved_by=${req.user?.id ?? null}, github_approved_at=NOW(),
+            github_approved_connected_account_id=${authorizedAccount.id},
+            status='github_issue_execution_in_progress', updated_at=NOW()
+          WHERE id=${task.id} AND organization_id=${orgId}
+            AND status='github_issue_draft_requested'
+            AND github_provider_action_version=${version}
+          RETURNING github_provider_action_version, github_approved_provider_action_version,
+            github_approved_connected_account_id, status
+        `);
+        const approvalRows: any[] = Array.isArray(approved) ? approved : (approved as any).rows ?? [];
+        if (approvalRows.length !== 1) {
+          return res.status(409).json({ message: "GitHub approval is stale or unavailable." });
+        }
+        assertSpecializedExecutionAuthority({ currentVersion: approvalRows[0].github_provider_action_version,
+          approvedVersion: approvalRows[0].github_approved_provider_action_version,
+          approvedConnectedAccountId: approvalRows[0].github_approved_connected_account_id,
+          resolvedConnectedAccountId: authorizedAccount.id,
+          executionClaimed: approvalRows[0].status === "github_issue_execution_in_progress" });
 
         // Execute via Composio service directly (admin has explicitly approved)
         const execResult = await executeComposioAction({
@@ -654,6 +683,7 @@ export async function registerSoftwareImprovementRoutes(
             body: draft.body,
             labels: draft.labels,
           },
+          connectedAccountId: authorizedAccount.id,
         });
 
         // Extract the GitHub issue URL — only possible on success
@@ -708,7 +738,11 @@ export async function registerSoftwareImprovementRoutes(
             },
           });
 
-          // Status remains github_issue_draft_requested — retryable
+          await db.execute(sql`
+            UPDATE software_improvement_tasks SET status='github_issue_draft_requested', updated_at=NOW()
+            WHERE id=${task.id} AND organization_id=${orgId} AND status='github_issue_execution_in_progress'
+          `);
+          // A synchronous confirmed failure is retryable under the same version.
           return res.status(502).json({
             success: false,
             message: `Composio execution failed: ${execResult.error}`,
@@ -725,6 +759,7 @@ export async function registerSoftwareImprovementRoutes(
             github_issue_url = ${githubIssueUrl},
             updated_at = NOW()
           WHERE id = ${task.id} AND organization_id = ${orgId}
+            AND status='github_issue_execution_in_progress'
         `);
 
         // Log successful creation

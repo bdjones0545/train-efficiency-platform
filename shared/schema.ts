@@ -1,5 +1,5 @@
 import { sql, relations } from "drizzle-orm";
-import { pgTable, text, varchar, integer, boolean, timestamp, time, pgEnum, uniqueIndex, index, jsonb, doublePrecision, uuid } from "drizzle-orm/pg-core";
+import { pgTable, text, varchar, integer, bigint, boolean, timestamp, time, pgEnum, uniqueIndex, index, jsonb, doublePrecision, uuid } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -5353,6 +5353,11 @@ export const softwareImprovementTasks = pgTable("software_improvement_tasks", {
   githubIssueUrl: varchar("github_issue_url", { length: 512 }),
   githubApprovalQueueId: varchar("github_approval_queue_id", { length: 256 }),
   githubIssueDraft: jsonb("github_issue_draft"),
+  githubProviderActionVersion: bigint("github_provider_action_version", { mode: "number" }),
+  githubApprovedProviderActionVersion: bigint("github_approved_provider_action_version", { mode: "number" }),
+  githubApprovedBy: text("github_approved_by"),
+  githubApprovedAt: timestamp("github_approved_at"),
+  githubApprovedConnectedAccountId: text("github_approved_connected_account_id"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
   completedAt: timestamp("completed_at"),

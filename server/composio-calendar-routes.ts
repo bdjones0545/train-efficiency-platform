@@ -39,7 +39,9 @@ import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { agentOperatingTimeline } from "@shared/schema";
 import { requestComposioAction } from "./composio-action-adapter";
-import { executeComposioAction } from "./services/composio-service";
+import { executeComposioAction, resolveExecutionConnectedAccount } from "./services/composio-service";
+import { validateComposioSpecializedVersionSchema } from "./composio-specialized-version-schema-validation";
+import { assertSpecializedExecutionAuthority } from "./composio-specialized-version-authority";
 import { emitComposioHermesEvent } from "./composio-hermes-emitter";
 import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { z } from "zod";
@@ -76,37 +78,7 @@ const COMPLETED_STATUS: Record<CalendarActionType, string> = {
 // ─── Table setup ──────────────────────────────────────────────────────────────
 
 export async function ensureCalendarTable(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS composio_calendar_requests (
-      id                VARCHAR(128)  PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id            VARCHAR(256)  NOT NULL,
-      agent_id          VARCHAR(128)  NOT NULL,
-      action_type       VARCHAR(64)   NOT NULL,
-      title             TEXT,
-      description       TEXT,
-      location          TEXT,
-      start_datetime    TEXT,
-      end_datetime      TEXT,
-      timezone          VARCHAR(128),
-      attendees         JSONB,
-      calendar_id       VARCHAR(256)  DEFAULT 'primary',
-      event_id          TEXT,
-      google_event_id   TEXT,
-      purpose           TEXT          NOT NULL,
-      risk_level        VARCHAR(32)   NOT NULL DEFAULT 'medium',
-      approval_queue_id VARCHAR(128),
-      status            VARCHAR(64)   NOT NULL DEFAULT 'event_queued',
-      approved_by       TEXT,
-      approved_at       TIMESTAMP,
-      executed_at       TIMESTAMP,
-      rejected_reason   TEXT,
-      error_message     TEXT,
-      payload           JSONB,
-      metadata          JSONB,
-      created_at        TIMESTAMP     DEFAULT NOW(),
-      updated_at        TIMESTAMP     DEFAULT NOW()
-    )
-  `);
+  await validateComposioSpecializedVersionSchema();
 }
 
 // ─── Validation schemas ───────────────────────────────────────────────────────
@@ -470,7 +442,7 @@ export async function registerComposioCalendarRoutes(
         title, description, location,
         start_datetime, end_datetime, timezone,
         attendees, calendar_id, event_id,
-        purpose, risk_level, status,
+        purpose, risk_level, status, provider_action_version,
         payload, metadata, created_at, updated_at
       ) VALUES (
         ${requestId}, ${orgId}, ${agentId}, ${actionType},
@@ -483,7 +455,7 @@ export async function registerComposioCalendarRoutes(
         ${extraCols.attendees ? JSON.stringify(extraCols.attendees) : null}::jsonb,
         ${(extraCols.calendar_id as string) ?? 'primary'},
         ${(extraCols.event_id as string) ?? null},
-        ${purpose}, ${riskLevel}, ${'pending_request'},
+        ${purpose}, ${riskLevel}, ${'pending_request'}, 1,
         ${JSON.stringify(payload)}::jsonb,
         ${JSON.stringify({ requestedBy })}::jsonb,
         NOW(), NOW()
@@ -807,39 +779,28 @@ export async function registerComposioCalendarRoutes(
           return res.status(400).json({ message: `Unknown action_type: ${actionType}` });
         }
 
-        // Rebuild the Composio params from stored columns
-        let inputParams: Record<string, unknown>;
-        if (actionType === "create_event") {
-          inputParams = {
-            summary: request.title,
-            start_datetime: request.start_datetime,
-            calendar_id: request.calendar_id ?? "primary",
-            create_meeting_room: false,
-          };
-          if (request.end_datetime)  inputParams.end_datetime = request.end_datetime;
-          if (request.location)      inputParams.location     = request.location;
-          if (request.description)   inputParams.description  = request.description;
-          if (request.timezone)      inputParams.timezone     = request.timezone;
-          if (request.attendees)     inputParams.attendees    = request.attendees;
-        } else if (actionType === "update_event") {
-          inputParams = {
-            event_id: request.event_id,
-            start_datetime: request.start_datetime,
-            calendar_id: request.calendar_id ?? "primary",
-          };
-          if (request.title)         inputParams.summary      = request.title;
-          if (request.end_datetime)  inputParams.end_datetime = request.end_datetime;
-          if (request.location)      inputParams.location     = request.location;
-          if (request.description)   inputParams.description  = request.description;
-          if (request.timezone)      inputParams.timezone     = request.timezone;
-          if (request.attendees)     inputParams.attendees    = request.attendees;
-        } else {
-          // delete_event
-          inputParams = {
-            event_id: request.event_id,
-            calendar_id: request.calendar_id ?? "primary",
-          };
+        if (!request.payload || !request.provider_action_version) {
+          return res.status(409).json({ message: "Calendar request has no canonical approved payload version." });
         }
+        const inputParams = request.payload as Record<string, unknown>;
+        const authorizedAccount = await resolveExecutionConnectedAccount({ orgId, toolkit: "googlecalendar" });
+        const approved = await db.execute(sql`
+          UPDATE composio_calendar_requests SET
+            approved_provider_action_version=provider_action_version,
+            approved_by=${req.user?.id ?? null}, approved_at=NOW(),
+            approved_connected_account_id=${authorizedAccount.id}, status='execution_in_progress', updated_at=NOW()
+          WHERE id=${request.id} AND org_id=${orgId} AND status='event_queued'
+            AND provider_action_version=${request.provider_action_version}
+          RETURNING provider_action_version, approved_provider_action_version, approved_connected_account_id, status
+        `);
+        const approvalRows: any[] = Array.isArray(approved) ? approved : (approved as any).rows ?? [];
+        if (approvalRows.length !== 1) {
+          return res.status(409).json({ message: "Calendar approval is stale or unavailable." });
+        }
+        assertSpecializedExecutionAuthority({ currentVersion: approvalRows[0].provider_action_version,
+          approvedVersion: approvalRows[0].approved_provider_action_version,
+          approvedConnectedAccountId: approvalRows[0].approved_connected_account_id,
+          resolvedConnectedAccountId: authorizedAccount.id, executionClaimed: approvalRows[0].status === "execution_in_progress" });
 
         const execResult = await executeComposioAction({
           orgId,
@@ -847,6 +808,7 @@ export async function registerComposioCalendarRoutes(
           tool: "GOOGLECALENDAR",
           action: composioAction,
           inputParams,
+          connectedAccountId: authorizedAccount.id,
         });
 
         const googleEventId = execResult.success ? extractGoogleEventId(execResult.data) : null;
@@ -854,8 +816,8 @@ export async function registerComposioCalendarRoutes(
         if (!execResult.success) {
           await db.execute(sql`
             UPDATE composio_calendar_requests
-            SET error_message = ${execResult.error ?? "Composio execution failed"}, updated_at = NOW()
-            WHERE id = ${request.id}
+            SET status='event_queued', error_message = ${execResult.error ?? "Composio execution failed"}, updated_at = NOW()
+            WHERE id = ${request.id} AND org_id=${orgId} AND status='execution_in_progress'
           `).catch(() => {});
 
           await db.insert(agentOperatingTimeline).values({
@@ -902,12 +864,10 @@ export async function registerComposioCalendarRoutes(
           SET
             status          = ${completedStatus},
             google_event_id = ${googleEventId},
-            approved_by     = ${req.user?.id ?? null},
-            approved_at     = NOW(),
             executed_at     = NOW(),
             error_message   = NULL,
             updated_at      = NOW()
-          WHERE id = ${request.id}
+          WHERE id = ${request.id} AND org_id=${orgId} AND status='execution_in_progress'
         `);
 
         await db.insert(agentOperatingTimeline).values({

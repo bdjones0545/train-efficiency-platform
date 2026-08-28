@@ -70,6 +70,7 @@ test("empty database reaches the complete ordered formal schema and ledger", asy
     "0014_cross_agent_coordination_schema.sql",
     "0015_agentmail_approved_send_idempotency.sql",
     "0016_composio_connected_account_ownership.sql",
+    "0017_composio_specialized_caller_versions.sql",
   ]);
   assert.equal(rows[0].execution_kind, "executed");
   const column = await pool.query(`SELECT is_nullable FROM information_schema.columns
@@ -106,7 +107,7 @@ test("compatible populated database adopts baseline without rewriting rows", asy
   assert.equal(rows[0].execution_kind, "adopted");
   assert.equal((await pool.query(`SELECT count(*)::int AS n FROM user_org_preferences WHERE id='existing-pref'`)).rows[0].n, 1);
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  assert.equal((await ledger(pool)).length, 17);
+  assert.equal((await ledger(pool)).length, 18);
   await pool.end();
 });
 
@@ -216,7 +217,7 @@ test("failed middle migration is not recorded, blocks later files, and retry con
   ]);
   assert.equal(migrations.getApplicationMigrationReadiness().state, "failed");
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  assert.equal((await ledger(pool)).length, 17);
+  assert.equal((await ledger(pool)).length, 18);
   assert.equal(migrations.getApplicationMigrationReadiness().state, "ready");
   await pool.end();
 });
@@ -230,8 +231,8 @@ test("three independent migrators serialize and converge on one ledger", async (
   ]);
   await Promise.all(pools.map((pool) => migrations.runApplicationMigrations(pool, { migrationsDirectory })));
   const rows = await ledger(pools[0]);
-  assert.equal(rows.length, 17);
-  assert.equal(new Set(rows.map((row) => row.migration_id)).size, 17);
+  assert.equal(rows.length, 18);
+  assert.equal(new Set(rows.map((row) => row.migration_id)).size, 18);
   assert.ok(rows.every((row) => row.execution_kind === "executed"));
   await Promise.all(pools.map((pool) => pool.end()));
 });
@@ -249,7 +250,7 @@ test("startup orders formal migrations before bootstrap, workers, routes, and li
 test("migration readiness exposes only expected/applied identifiers and state", async () => {
   const state = migrations.getApplicationMigrationReadiness();
   assert.equal(state.state, "ready");
-  assert.equal(state.latestExpected, "0016_composio_connected_account_ownership.sql");
-  assert.equal(state.latestApplied, "0016_composio_connected_account_ownership.sql");
+  assert.equal(state.latestExpected, "0017_composio_specialized_caller_versions.sql");
+  assert.equal(state.latestApplied, "0017_composio_specialized_caller_versions.sql");
   assert.equal("databaseUrl" in state, false);
 });

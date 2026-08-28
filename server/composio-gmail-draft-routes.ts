@@ -23,7 +23,9 @@ import { sql } from "drizzle-orm";
 import { db } from "./db";
 import { agentOperatingTimeline, communicationLogs } from "@shared/schema";
 import { requestComposioAction } from "./composio-action-adapter";
-import { executeComposioAction } from "./services/composio-service";
+import { executeComposioAction, resolveExecutionConnectedAccount } from "./services/composio-service";
+import { validateComposioSpecializedVersionSchema } from "./composio-specialized-version-schema-validation";
+import { assertSpecializedExecutionAuthority } from "./composio-specialized-version-authority";
 import { emitComposioHermesEvent } from "./composio-hermes-emitter";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 import { z } from "zod";
@@ -42,25 +44,7 @@ export type GmailDraftPermittedAgent = typeof GMAIL_DRAFT_PERMITTED_AGENTS[numbe
 // ─── Table setup ──────────────────────────────────────────────────────────────
 
 export async function ensureGmailDraftTable(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS composio_gmail_draft_requests (
-      id            VARCHAR(128)  PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id        VARCHAR(256)  NOT NULL,
-      agent_id      VARCHAR(128)  NOT NULL,
-      recipient_email TEXT        NOT NULL,
-      subject       TEXT          NOT NULL,
-      body          TEXT          NOT NULL,
-      purpose       TEXT          NOT NULL,
-      risk_level    VARCHAR(32)   NOT NULL DEFAULT 'medium',
-      approval_queue_id VARCHAR(128),
-      gmail_draft_id TEXT,
-      status        VARCHAR(64)   NOT NULL DEFAULT 'draft_queued',
-      error_message TEXT,
-      metadata      JSONB,
-      created_at    TIMESTAMP     DEFAULT NOW(),
-      updated_at    TIMESTAMP     DEFAULT NOW()
-    )
-  `);
+  await validateComposioSpecializedVersionSchema();
 }
 
 // ─── Request validation ───────────────────────────────────────────────────────
@@ -134,7 +118,7 @@ export async function registerComposioGmailDraftRoutes(
         await db.execute(sql`
           INSERT INTO composio_gmail_draft_requests (
             id, org_id, agent_id, recipient_email, subject, body,
-            purpose, risk_level, status, metadata, created_at, updated_at
+            purpose, risk_level, status, provider_action_version, metadata, created_at, updated_at
           ) VALUES (
             ${requestId},
             ${orgId},
@@ -144,7 +128,7 @@ export async function registerComposioGmailDraftRoutes(
             ${body},
             ${purpose},
             ${riskLevel},
-            ${'pending_request'},
+            ${'pending_request'}, 1,
             ${JSON.stringify({ requestedBy: req.user?.id ?? null })}::jsonb,
             NOW(),
             NOW()
@@ -359,7 +343,26 @@ export async function registerComposioGmailDraftRoutes(
           });
         }
 
-        // Execute via Composio service directly — ADMIN has explicitly approved.
+        const authorizedAccount = await resolveExecutionConnectedAccount({ orgId, toolkit: "gmail" });
+        const approved = await db.execute(sql`
+          UPDATE composio_gmail_draft_requests SET
+            approved_provider_action_version=provider_action_version,
+            approved_by=${req.user?.id ?? null}, approved_at=NOW(),
+            approved_connected_account_id=${authorizedAccount.id}, status='execution_in_progress', updated_at=NOW()
+          WHERE id=${request.id} AND org_id=${orgId} AND status='draft_queued'
+            AND provider_action_version IS NOT NULL
+          RETURNING provider_action_version, approved_provider_action_version, approved_connected_account_id, status
+        `);
+        const approvalRows: any[] = Array.isArray(approved) ? approved : (approved as any).rows ?? [];
+        if (approvalRows.length !== 1) {
+          return res.status(409).json({ message: "Draft approval is stale or unavailable." });
+        }
+        assertSpecializedExecutionAuthority({ currentVersion: approvalRows[0].provider_action_version,
+          approvedVersion: approvalRows[0].approved_provider_action_version,
+          approvedConnectedAccountId: approvalRows[0].approved_connected_account_id,
+          resolvedConnectedAccountId: authorizedAccount.id, executionClaimed: approvalRows[0].status === "execution_in_progress" });
+
+        // Execute only the exact durably approved version/account.
         // No adapter permission/policy checks at execution time: the human gate
         // is enforced by requireRole("ADMIN") on this endpoint.
         const execResult = await executeComposioAction({
@@ -372,6 +375,7 @@ export async function registerComposioGmailDraftRoutes(
             subject: request.subject,
             body: request.body,
           },
+          connectedAccountId: authorizedAccount.id,
         });
 
         // Extract the Gmail draft ID — only available on success
@@ -385,8 +389,8 @@ export async function registerComposioGmailDraftRoutes(
           // Log the failure attempt — keep status draft_queued for retry
           await db.execute(sql`
             UPDATE composio_gmail_draft_requests
-            SET error_message = ${execResult.error ?? "Composio execution failed"}, updated_at = NOW()
-            WHERE id = ${request.id}
+            SET status='draft_queued', error_message = ${execResult.error ?? "Composio execution failed"}, updated_at = NOW()
+            WHERE id = ${request.id} AND org_id=${orgId} AND status='execution_in_progress'
           `).catch(() => {});
 
           await db.insert(agentOperatingTimeline).values({
@@ -439,7 +443,7 @@ export async function registerComposioGmailDraftRoutes(
             gmail_draft_id  = ${gmailDraftId},
             error_message   = NULL,
             updated_at      = NOW()
-          WHERE id = ${request.id}
+          WHERE id = ${request.id} AND org_id=${orgId} AND status='execution_in_progress'
         `);
 
         // Update communication_logs entry to reflect creation
