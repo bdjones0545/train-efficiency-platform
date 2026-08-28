@@ -28,6 +28,10 @@ async function readRoutes(): Promise<string> {
   return readFile("server/book-funnel-routes.ts", "utf8");
 }
 
+async function readMigration(): Promise<string> {
+  return readFile("migrations/0018_book_funnel_schema.sql", "utf8");
+}
+
 async function readFrontend(): Promise<string> {
   return readFile("client/src/pages/book-redeem.tsx", "utf8");
 }
@@ -208,9 +212,9 @@ describe("Duplicate upload detection", () => {
   });
 
   it("migration drops old unique constraint if it existed", async () => {
-    const src = await readRoutes();
+    const src = await readMigration();
     assert.ok(
-      src.includes("DROP CONSTRAINT IF EXISTS book_receipt_submissions_promo_code_key"),
+      src.includes("DROP CONSTRAINT book_receipt_submissions_promo_code_key"),
       "Must drop old unique constraint for migration safety",
     );
   });
@@ -333,7 +337,7 @@ describe("Receipt confirmation email", () => {
   });
 
   it("confirmation_email_sent_at column is added via migration", async () => {
-    const src = await readRoutes();
+    const src = await readMigration();
     assert.ok(
       src.includes("ADD COLUMN IF NOT EXISTS confirmation_email_sent_at TIMESTAMP"),
       "Must migrate confirmation_email_sent_at column",
@@ -453,7 +457,7 @@ describe("Activation code invariants — TRAINCHAT everywhere", () => {
 
 describe("Attribution fields — UTM + fbp/fbc", () => {
   it("book_receipt_submissions has utm_source column via migration", async () => {
-    const src = await readRoutes();
+    const src = await readMigration();
     assert.ok(
       src.includes("ADD COLUMN IF NOT EXISTS utm_source TEXT"),
       "Must add utm_source column",
@@ -461,17 +465,17 @@ describe("Attribution fields — UTM + fbp/fbc", () => {
   });
 
   it("book_receipt_submissions has utm_medium column via migration", async () => {
-    const src = await readRoutes();
+    const src = await readMigration();
     assert.ok(src.includes("ADD COLUMN IF NOT EXISTS utm_medium TEXT"));
   });
 
   it("book_receipt_submissions has utm_campaign column via migration", async () => {
-    const src = await readRoutes();
+    const src = await readMigration();
     assert.ok(src.includes("ADD COLUMN IF NOT EXISTS utm_campaign TEXT"));
   });
 
   it("book_receipt_submissions has fbp column via migration", async () => {
-    const src = await readRoutes();
+    const src = await readMigration();
     assert.ok(
       src.includes("ADD COLUMN IF NOT EXISTS fbp TEXT"),
       "Must add fbp column for Meta pixel attribution",
@@ -479,7 +483,7 @@ describe("Attribution fields — UTM + fbp/fbc", () => {
   });
 
   it("book_receipt_submissions has fbc column via migration", async () => {
-    const src = await readRoutes();
+    const src = await readMigration();
     assert.ok(
       src.includes("ADD COLUMN IF NOT EXISTS fbc TEXT"),
       "Must add fbc column for Meta click id attribution",
@@ -868,7 +872,7 @@ describe("Frontend upload validation", () => {
 
 describe("Table schema integrity", () => {
   it("book_funnel_leads table has id, email, source, created_at", async () => {
-    const src = await readRoutes();
+    const src = await readMigration();
     for (const col of ["id", "email", "source", "created_at"]) {
       assert.ok(src.includes(col), `book_funnel_leads must have column: ${col}`);
     }
@@ -887,7 +891,7 @@ describe("Table schema integrity", () => {
   });
 
   it("book_funnel_events table exists for audit trail", async () => {
-    const src = await readRoutes();
+    const src = await readMigration();
     assert.ok(
       src.includes("CREATE TABLE IF NOT EXISTS book_funnel_events"),
       "book_funnel_events table must exist",

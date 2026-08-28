@@ -21,6 +21,10 @@ async function readServer(): Promise<string> {
   return readFile("server/book-funnel-routes.ts", "utf8");
 }
 
+async function readMigration(): Promise<string> {
+  return readFile("migrations/0018_book_funnel_schema.sql", "utf8");
+}
+
 async function readSuccessPage(): Promise<string> {
   return readFile("client/src/pages/book-redeem-success.tsx", "utf8");
 }
@@ -65,9 +69,9 @@ describe("Static promo code invariants", () => {
   });
 
   it("migration drops the old unique constraint if it existed", async () => {
-    const src = await readServer();
+    const src = await readMigration();
     assert.ok(
-      src.includes("DROP CONSTRAINT IF EXISTS book_receipt_submissions_promo_code_key"),
+      src.includes("DROP CONSTRAINT book_receipt_submissions_promo_code_key"),
       "Must migrate existing DBs by dropping the old unique constraint",
     );
   });
@@ -101,7 +105,7 @@ describe("Static promo code invariants", () => {
 
 describe("Lead attribution fields are preserved", () => {
   it("book_funnel_leads table preserves id, email, source, created_at", async () => {
-    const src = await readServer();
+    const src = await readMigration();
     for (const col of ["id", "email", "source", "created_at"]) {
       assert.ok(src.includes(col), `book_funnel_leads must retain column: ${col}`);
     }
@@ -126,7 +130,7 @@ describe("Lead attribution fields are preserved", () => {
 
 describe("Redemption tracking by email/lead (not unique code)", () => {
   it("book_receipt_submissions retains lead_id, email, promo_code_redeemed_at", async () => {
-    const src = await readServer();
+    const src = await readMigration();
     for (const col of ["lead_id", "promo_code_redeemed_at", "trainchat_account_email"]) {
       assert.ok(src.includes(col), `book_receipt_submissions must retain column: ${col}`);
     }

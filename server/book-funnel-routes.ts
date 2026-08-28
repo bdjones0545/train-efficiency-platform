@@ -7,6 +7,7 @@ import path from "path";
 import { randomUUID } from "crypto";
 import { Storage } from "@google-cloud/storage";
 import { sendBookCapiEvent } from "./meta-book-capi";
+import { requireBookFunnelSchema, validateBookFunnelSchema } from "./book-funnel-schema-validation";
 
 // ─── GCS client (same credentials pattern as mediaStorage.ts) ───────────────
 const REPLIT_SIDECAR_ENDPOINT = "http://127.0.0.1:1106";
@@ -429,136 +430,15 @@ async function logFunnelEvent(
   }
 }
 
-// ─── Table setup ─────────────────────────────────────────────────────────────
-
-async function ensureBookFunnelTables() {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS book_funnel_leads (
-      id          VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      first_name  TEXT NOT NULL,
-      last_name   TEXT,
-      email       TEXT NOT NULL UNIQUE,
-      source      TEXT DEFAULT 'book_landing',
-      amazon_clicked_at TIMESTAMP,
-      created_at  TIMESTAMP DEFAULT NOW(),
-      updated_at  TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS book_funnel_events (
-      id          VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      lead_id     VARCHAR REFERENCES book_funnel_leads(id) ON DELETE SET NULL,
-      email       TEXT,
-      event_type  TEXT NOT NULL,
-      metadata    JSONB DEFAULT '{}'::jsonb,
-      created_at  TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  // Safe migration: add bonus_email_sent_at if not present
-  await db.execute(sql`
-    ALTER TABLE book_funnel_leads
-    ADD COLUMN IF NOT EXISTS bonus_email_sent_at TIMESTAMP
-  `);
-
-  // ── Receipt submissions table ──────────────────────────────────────────────
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS book_receipt_submissions (
-      id                 VARCHAR PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      lead_id            VARCHAR REFERENCES book_funnel_leads(id) ON DELETE SET NULL,
-      email              TEXT NOT NULL,
-      receipt_file_url   TEXT NOT NULL,
-      original_filename  TEXT NOT NULL,
-      mime_type          TEXT NOT NULL,
-      file_size          INTEGER NOT NULL,
-      status             TEXT NOT NULL DEFAULT 'pending_review',
-      uploaded_at        TIMESTAMP DEFAULT NOW(),
-      created_at         TIMESTAMP DEFAULT NOW(),
-      updated_at         TIMESTAMP DEFAULT NOW()
-    )
-  `);
-
-  // TODO: Add reviewed_at, reviewed_by, reviewer_notes columns when admin approval is built
-  // TODO: Add ai_verification_result JSONB column when AI receipt verification is built
-
-  // Safe migrations: promo code fields
-  // Note: promo_code is NOT unique — all leads receive the same static code TRAINCHAT.
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS promo_code TEXT
-  `);
-  // Drop unique constraint if it was previously applied (migration to static code)
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    DROP CONSTRAINT IF EXISTS book_receipt_submissions_promo_code_key
-  `);
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS promo_code_generated_at TIMESTAMP
-  `);
-  // TODO: Set promo_code_redeemed_at when redemption tracking is built
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS promo_code_redeemed_at TIMESTAMP
-  `);
-  // TODO: Set trainchat_account_email when TrainChat account linking is built
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS trainchat_account_email TEXT
-  `);
-
-  // ── Attribution columns (UTM + Meta pixel) ────────────────────────────────
-  // Added to preserve campaign attribution from Meta ads through the upload step.
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS utm_source TEXT
-  `);
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS utm_medium TEXT
-  `);
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS utm_campaign TEXT
-  `);
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS utm_content TEXT
-  `);
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS utm_term TEXT
-  `);
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS fbp TEXT
-  `);
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS fbc TEXT
-  `);
-
-  // ── Confirmation email tracking ────────────────────────────────────────────
-  // Tracks when the receipt confirmation email (with TRAINCHAT code) was sent
-  // so we can avoid sending it twice.
-  await db.execute(sql`
-    ALTER TABLE book_receipt_submissions
-    ADD COLUMN IF NOT EXISTS confirmation_email_sent_at TIMESTAMP
-  `);
-
-  // TODO: Add trainchat_activated_at when automatic TrainChat activation is built
-
-  console.log("[BookFunnel] Tables ready");
-}
-
 // ─── Route registration ───────────────────────────────────────────────────────
 
 export async function registerBookFunnelRoutes(app: Express) {
-  await ensureBookFunnelTables();
+  await validateBookFunnelSchema().catch(() => {
+    console.warn("[BookFunnel] Schema unavailable; public feature will return 503");
+  });
 
   // ── POST /api/book-funnel/leads ───────────────────────────────────────────
-  app.post("/api/book-funnel/leads", async (req, res) => {
+  app.post("/api/book-funnel/leads", requireBookFunnelSchema, async (req, res) => {
     try {
       // Rate limit: 5 lead submissions per IP per 10 minutes
       const clientIpForLeads = ((req.headers["x-forwarded-for"] as string) ?? "").split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
@@ -673,7 +553,7 @@ export async function registerBookFunnelRoutes(app: Express) {
   });
 
   // ── POST /api/book-funnel/events ──────────────────────────────────────────
-  app.post("/api/book-funnel/events", async (req, res) => {
+  app.post("/api/book-funnel/events", requireBookFunnelSchema, async (req, res) => {
     try {
       const { leadId, email, eventType, metadata } = req.body ?? {};
 
@@ -715,6 +595,7 @@ export async function registerBookFunnelRoutes(app: Express) {
   //   fbc         string    (optional — Meta _fbc cookie)
   app.post(
     "/api/book-funnel/receipt",
+    requireBookFunnelSchema,
     (req, res, next) => {
       // Rate limit: 3 receipt uploads per IP per 15 minutes
       const clientIpRl = ((req.headers["x-forwarded-for"] as string) ?? "").split(",")[0]?.trim() || req.socket?.remoteAddress || "unknown";
@@ -939,7 +820,7 @@ export async function registerBookFunnelRoutes(app: Express) {
 
   // ── GET /api/book-funnel/receipt/:submissionId ────────────────────────────
   // Returns submission details (safe subset — no internal file paths)
-  app.get("/api/book-funnel/receipt/:submissionId", async (req, res) => {
+  app.get("/api/book-funnel/receipt/:submissionId", requireBookFunnelSchema, async (req, res) => {
     try {
       const { submissionId } = req.params;
       if (!submissionId || typeof submissionId !== "string" || !submissionId.trim()) {
@@ -972,7 +853,7 @@ export async function registerBookFunnelRoutes(app: Express) {
   // Called by the client immediately before navigating to Amazon.
   // Sends a server-side InitiateCheckout CAPI event matched to the browser pixel
   // event via event_id so Meta deduplicates them.
-  app.post("/api/book-funnel/initiate-checkout", async (req, res) => {
+  app.post("/api/book-funnel/initiate-checkout", requireBookFunnelSchema, async (req, res) => {
     // Respond immediately — client is about to navigate away and we must not block it.
     res.json({ success: true });
     try {
