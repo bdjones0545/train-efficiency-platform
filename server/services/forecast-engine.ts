@@ -9,6 +9,7 @@ import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { validateFeatureSchema } from "../feature-schema-validation";
 import { DecisionJournalSchemaUnavailableError, validateDecisionJournalSchema } from "../decision-journal-schema-validation";
+import { AgentOutcomeAttributionSchemaUnavailableError, validateAgentOutcomeAttributionSchema } from "../agent-outcome-attribution-schema-validation";
 
 // ─── Table creation ───────────────────────────────────────────────────────────
 
@@ -708,12 +709,21 @@ export async function getForecastAccuracy(orgId: string) {
 export async function getBusinessOSScore(orgId: string): Promise<{
   total: number;
   components: Array<{ name: string; score: number; weight: number; contribution: number; description: string }>;
+  attributionAvailable: boolean;
 }> {
+  const outcomeSignal = validateAgentOutcomeAttributionSchema()
+    .then(() => db.execute(sql`SELECT AVG(success_score) AS avg_score FROM agent_decision_outcomes WHERE org_id = ${orgId}`))
+    .then(result => ({ available: true as const, result }))
+    .catch(error => {
+      if (!(error instanceof AgentOutcomeAttributionSchemaUnavailableError)) throw error;
+      console.warn("[ForecastEngine] Agent Outcome Attribution learning signal unavailable");
+      return { available: false as const, result: [] };
+    });
   const [twin, accuracy, trustRows, outcomeRows] = await Promise.all([
     getDigitalTwin(orgId),
     getForecastAccuracy(orgId),
     db.execute(sql`SELECT AVG(autonomy_score) AS avg, COUNT(*) FILTER (WHERE recommended_mode='execute') AS auto_count, COUNT(*) AS total FROM decision_trust_registry WHERE org_id = ${orgId}`).catch(() => [{}]),
-    db.execute(sql`SELECT AVG(success_score) AS avg_score FROM agent_decision_outcomes WHERE org_id = ${orgId}`).catch(() => [{}]),
+    outcomeSignal,
   ]);
 
   let obsidianNotes = 0;
@@ -738,10 +748,10 @@ export async function getBusinessOSScore(orgId: string): Promise<{
   }
 
   const ta = (await toArr(trustRows))[0] ?? {};
-  const oa = (await toArr(outcomeRows))[0] ?? {};
+  const oa = (await toArr(outcomeRows.result))[0] ?? {};
 
   const memoryScore    = Math.min(100, Math.round((obsidianNotes / 50) * 100));
-  const learningScore  = Math.round(parseFloat(oa.avg_score ?? "60"));
+  const learningScore  = outcomeRows.available ? Math.round(parseFloat(oa.avg_score ?? "0")) : null;
   const trustScore     = Math.round(parseFloat(ta.avg ?? "50"));
   const autoCount      = parseInt(ta.auto_count ?? "0");
   const totalTypes     = parseInt(ta.total ?? "1");
@@ -752,18 +762,23 @@ export async function getBusinessOSScore(orgId: string): Promise<{
   const growthPct      = parseFloat(twin?.revenue_trend_pct ?? "5");
   const growthScore    = Math.min(100, Math.max(0, Math.round(50 + growthPct * 2)));
 
-  const components = [
+  const baseComponents = [
     { name: "Memory",               score: memoryScore,     weight: 0.15, description: `${obsidianNotes} Obsidian notes` },
-    { name: "Learning",             score: learningScore,   weight: 0.20, description: `Avg agent decision score` },
+    ...(learningScore === null ? [] : [{ name: "Learning", score: learningScore, weight: 0.20, description: `Avg agent decision score` }]),
     { name: "Trust",                score: trustScore,      weight: 0.20, description: `Avg autonomy trust score` },
     { name: "Forecast Accuracy",    score: forecastAccScore, weight: 0.15, description: `Prediction vs actual accuracy` },
     { name: "Autonomy",             score: autonomyScore,   weight: 0.15, description: `${autoCount}/${totalTypes} decisions auto-execute` },
     { name: "Operational Efficiency", score: utilScore,    weight: 0.10, description: `${utilScore}% capacity utilization` },
     { name: "Growth Velocity",      score: growthScore,     weight: 0.05, description: `${growthPct >= 0 ? "+" : ""}${growthPct.toFixed(1)}% revenue trend` },
-  ].map((c) => ({ ...c, contribution: Math.round(c.score * c.weight) }));
+  ];
+  const availableWeight = baseComponents.reduce((sum, component) => sum + component.weight, 0);
+  const components = baseComponents.map((component) => {
+    const weight = component.weight / availableWeight;
+    return { ...component, weight, contribution: Math.round(component.score * weight) };
+  });
 
   const total = Math.min(100, components.reduce((acc, c) => acc + c.contribution, 0));
-  return { total, components };
+  return { total, components, attributionAvailable: outcomeRows.available };
 }
 
 // ─── Combined dashboard ────────────────────────────────────────────────────────

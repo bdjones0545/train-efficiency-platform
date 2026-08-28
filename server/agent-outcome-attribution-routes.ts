@@ -8,6 +8,10 @@ import type { Express } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { isAuthenticated } from "./replit_integrations/auth";
+import {
+  requireAgentOutcomeAttributionSchema,
+  validateAgentOutcomeAttributionSchema,
+} from "./agent-outcome-attribution-schema-validation";
 
 async function getAdminOrgId(req: any): Promise<string | null> {
   const userId = req.user?.claims?.sub ?? req.user?.id;
@@ -17,85 +21,13 @@ async function getAdminOrgId(req: any): Promise<string | null> {
   return user?.orgId ?? null;
 }
 
-async function createTables() {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS agent_decision_outcomes (
-      id                  TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id              TEXT NOT NULL,
-      agent_type          TEXT NOT NULL,
-      recommendation      TEXT NOT NULL,
-      action_taken        TEXT,
-      expected_outcome    TEXT,
-      actual_outcome      TEXT,
-      success_score       INTEGER,          -- 0-100, null until outcome recorded
-      domain              TEXT,
-      tags                JSONB DEFAULT '[]',
-      revenue_cents       INTEGER DEFAULT 0,
-      meetings_generated  INTEGER DEFAULT 0,
-      outcome_date        TIMESTAMPTZ,
-      created_at          TIMESTAMPTZ DEFAULT NOW(),
-      updated_at          TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS agent_perf_scores (
-      id                       TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id                   TEXT NOT NULL,
-      agent_type               TEXT NOT NULL,
-      recommendations_issued   INTEGER DEFAULT 0,
-      recommendations_executed INTEGER DEFAULT 0,
-      success_rate             INTEGER DEFAULT 0,   -- avg success score
-      revenue_influenced       INTEGER DEFAULT 0,   -- cents
-      meetings_generated       INTEGER DEFAULT 0,
-      retention_impact         INTEGER DEFAULT 0,   -- clients retained
-      last_calculated_at       TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (org_id, agent_type)
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS ceo_daily_reviews (
-      id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id            TEXT NOT NULL,
-      review_date       DATE NOT NULL,
-      what_worked       TEXT NOT NULL,
-      what_failed       TEXT NOT NULL,
-      what_repeat       TEXT NOT NULL,
-      what_stop         TEXT NOT NULL,
-      outcomes_analyzed INTEGER DEFAULT 0,
-      ai_generated      BOOLEAN DEFAULT true,
-      created_at        TIMESTAMPTZ DEFAULT NOW(),
-      updated_at        TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE (org_id, review_date)
-    )
-  `);
-
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS org_playbooks (
-      id                TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id            TEXT NOT NULL,
-      title             TEXT NOT NULL,
-      description       TEXT,
-      source_learning   TEXT,
-      pattern_type      TEXT,
-      success_rate      INTEGER DEFAULT 0,
-      evidence_count    INTEGER DEFAULT 0,
-      trigger_condition TEXT,
-      actions           TEXT,
-      expected_outcome  TEXT,
-      status            TEXT DEFAULT 'active',
-      promoted_at       TIMESTAMPTZ DEFAULT NOW(),
-      created_at        TIMESTAMPTZ DEFAULT NOW()
-    )
-  `);
-}
-
 export async function registerAgentOutcomeAttributionRoutes(app: Express) {
-  await createTables();
+  await validateAgentOutcomeAttributionSchema().catch(() => {
+    console.warn("[AgentOutcomeAttribution] Schema unavailable; feature routes will return 503");
+  });
 
   // ─── Log a new agent decision/recommendation ─────────────────────────────
-  app.post("/api/agent-outcomes/log", isAuthenticated, async (req: any, res) => {
+  app.post("/api/agent-outcomes/log", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -111,7 +43,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Update decision with actual outcome + success score ─────────────────
-  app.patch("/api/agent-outcomes/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/agent-outcomes/:id", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -119,7 +51,8 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
       const { actualOutcome, successScore, actionTaken, revenueCents, meetingsGenerated } = req.body ?? {};
       if (!actualOutcome || successScore === undefined) return res.status(400).json({ message: "actualOutcome and successScore required" });
       const { updateDecisionOutcome } = await import("./services/agent-outcome-attribution-service");
-      await updateDecisionOutcome({ id, orgId, actualOutcome, successScore, actionTaken, revenueCents, meetingsGenerated });
+      const updated = await updateDecisionOutcome({ id, orgId, actualOutcome, successScore, actionTaken, revenueCents, meetingsGenerated });
+      if (!updated) return res.status(404).json({ message: "Outcome not found" });
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to update outcome" });
@@ -127,7 +60,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── List recent attribution records ─────────────────────────────────────
-  app.get("/api/agent-outcomes", isAuthenticated, async (req: any, res) => {
+  app.get("/api/agent-outcomes", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -141,7 +74,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Agent performance scorecards ────────────────────────────────────────
-  app.get("/api/agent-outcomes/performance", isAuthenticated, async (req: any, res) => {
+  app.get("/api/agent-outcomes/performance", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -154,7 +87,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Trigger performance score recalculation ─────────────────────────────
-  app.post("/api/agent-outcomes/recalculate", isAuthenticated, async (req: any, res) => {
+  app.post("/api/agent-outcomes/recalculate", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -167,7 +100,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Decision effectiveness analysis ─────────────────────────────────────
-  app.get("/api/agent-outcomes/effectiveness", isAuthenticated, async (req: any, res) => {
+  app.get("/api/agent-outcomes/effectiveness", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -180,7 +113,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Self-improving: search similar past decisions ────────────────────────
-  app.post("/api/agent-outcomes/search-context", isAuthenticated, async (req: any, res) => {
+  app.post("/api/agent-outcomes/search-context", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -195,7 +128,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Generate CEO daily review (AI) ──────────────────────────────────────
-  app.post("/api/agent-outcomes/ceo-review/generate", isAuthenticated, async (req: any, res) => {
+  app.post("/api/agent-outcomes/ceo-review/generate", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -210,7 +143,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── List past CEO reviews ────────────────────────────────────────────────
-  app.get("/api/agent-outcomes/ceo-review", isAuthenticated, async (req: any, res) => {
+  app.get("/api/agent-outcomes/ceo-review", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -223,7 +156,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── List playbooks ───────────────────────────────────────────────────────
-  app.get("/api/agent-outcomes/playbooks", isAuthenticated, async (req: any, res) => {
+  app.get("/api/agent-outcomes/playbooks", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -236,7 +169,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Find playbook promotion candidates ──────────────────────────────────
-  app.get("/api/agent-outcomes/playbooks/candidates", isAuthenticated, async (req: any, res) => {
+  app.get("/api/agent-outcomes/playbooks/candidates", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -249,7 +182,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Promote pattern to official playbook ────────────────────────────────
-  app.post("/api/agent-outcomes/playbooks/promote", isAuthenticated, async (req: any, res) => {
+  app.post("/api/agent-outcomes/playbooks/promote", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
@@ -265,18 +198,20 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Update playbook status ───────────────────────────────────────────────
-  app.patch("/api/agent-outcomes/playbooks/:id", isAuthenticated, async (req: any, res) => {
+  app.patch("/api/agent-outcomes/playbooks/:id", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });
       const { id } = req.params;
       const { status, description } = req.body ?? {};
-      await db.execute(sql`
+      const result = await db.execute(sql`
         UPDATE org_playbooks SET
           status      = COALESCE(${status ?? null}, status),
           description = COALESCE(${description ?? null}, description)
         WHERE id = ${id} AND org_id = ${orgId}
+        RETURNING id
       `);
+      if (result.rows.length === 0) return res.status(404).json({ message: "Playbook not found" });
       res.json({ ok: true });
     } catch (e: any) {
       res.status(500).json({ message: "Failed to update playbook" });
@@ -284,7 +219,7 @@ export async function registerAgentOutcomeAttributionRoutes(app: Express) {
   });
 
   // ─── Business flywheel metrics ────────────────────────────────────────────
-  app.get("/api/agent-outcomes/flywheel", isAuthenticated, async (req: any, res) => {
+  app.get("/api/agent-outcomes/flywheel", isAuthenticated, requireAgentOutcomeAttributionSchema, async (req: any, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(403).json({ message: "Not authorized" });

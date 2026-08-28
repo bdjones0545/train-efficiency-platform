@@ -85,8 +85,8 @@ export async function updateDecisionOutcome(opts: {
   actionTaken?: string;
   revenueCents?: number;
   meetingsGenerated?: number;
-}): Promise<void> {
-  await db.execute(sql`
+}): Promise<boolean> {
+  const result = await db.execute(sql`
     UPDATE agent_decision_outcomes SET
       actual_outcome = ${opts.actualOutcome},
       success_score  = ${Math.max(0, Math.min(100, opts.successScore))},
@@ -96,7 +96,10 @@ export async function updateDecisionOutcome(opts: {
       outcome_date   = NOW(),
       updated_at     = NOW()
     WHERE id = ${opts.id} AND org_id = ${opts.orgId}
+    RETURNING id
   `);
+  const updated = (Array.isArray(result) ? result : (result as any).rows ?? []).length > 0;
+  if (!updated) return false;
   recalculatePerfScores(opts.orgId).catch(console.error);
   // Non-blocking: write a Hermes learning note when an outcome is resolved.
   processOutcomeEvent("communication_outcome_recorded", {
@@ -110,6 +113,7 @@ export async function updateDecisionOutcome(opts: {
   }).catch((e: any) =>
     console.error(`[Hermes] updateDecisionOutcome write failed (id ${opts.id}): ${e.message}`),
   );
+  return true;
 }
 
 // ─── Recalculate rolling performance scores ───────────────────────────────────

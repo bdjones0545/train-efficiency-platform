@@ -8,6 +8,7 @@
 import { db } from "../db";
 import { sql } from "drizzle-orm";
 import { validateFeatureSchema } from "../feature-schema-validation";
+import { AgentOutcomeAttributionSchemaUnavailableError, validateAgentOutcomeAttributionSchema } from "../agent-outcome-attribution-schema-validation";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -441,6 +442,17 @@ export async function getAutonomyDashboard(orgId: string) {
 // ─── Trust flywheel metrics ───────────────────────────────────────────────────
 
 export async function getTrustFlywheel(orgId: string) {
+  const outcomeSignal = validateAgentOutcomeAttributionSchema()
+    .then(() => db.execute(sql`
+      SELECT COUNT(*) AS total, COUNT(*) FILTER (WHERE success_score >= 80) AS high_score
+      FROM agent_decision_outcomes WHERE org_id = ${orgId}
+    `))
+    .then(result => ({ available: true as const, result }))
+    .catch(error => {
+      if (!(error instanceof AgentOutcomeAttributionSchemaUnavailableError)) throw error;
+      console.warn("[AutonomyScoring] Agent Outcome Attribution signal unavailable");
+      return { available: false as const, result: [] };
+    });
   const [reg, queue, outcomes] = await Promise.all([
     db.execute(sql`
       SELECT
@@ -457,23 +469,19 @@ export async function getTrustFlywheel(orgId: string) {
         COALESCE(SUM(revenue_cents) FILTER (WHERE status = 'executed'), 0) AS revenue
       FROM autonomous_action_queue WHERE org_id = ${orgId}
     `),
-    db.execute(sql`
-      SELECT
-        COUNT(*) AS total,
-        COUNT(*) FILTER (WHERE success_score >= 80) AS high_score
-      FROM agent_decision_outcomes WHERE org_id = ${orgId}
-    `).catch(() => ([{ total: 0, high_score: 0 }])),
+    outcomeSignal,
   ]);
 
   const toArr = (r: any) => Array.isArray(r) ? r : (r as any).rows ?? [];
   const re = toArr(reg)[0]   ?? {};
   const qu = toArr(queue)[0] ?? {};
-  const ou = toArr(outcomes)[0] ?? {};
+  const ou = toArr(outcomes.result)[0] ?? {};
 
   return {
     memoryCreated:    0,
     betterDecisions:  Math.round(parseFloat(re.avg_score ?? "0")),
-    betterOutcomes:   parseInt(ou.high_score ?? "0"),
+    betterOutcomes:   outcomes.available ? parseInt(ou.high_score ?? "0") : null,
+    attributionAvailable: outcomes.available,
     higherTrust:      Math.round(parseFloat(re.avg_score ?? "0")),
     moreAutonomy:     parseInt(re.auto_execute_types ?? "0"),
     moreExecution:    parseInt(qu.executed ?? "0"),
