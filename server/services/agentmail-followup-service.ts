@@ -5,10 +5,13 @@
  */
 
 import { db } from "../db";
+import { pool } from "../db";
 import { sql } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { attentionItems } from "@shared/schema";
 import { writeTimeline } from "./ceo-heartbeat-service";
 import { sendAgentEmail, replyFromAgentInbox, type AgentInbox } from "./agentmail-service";
+import { validateAgentMailFollowupSchema } from "../agentmail-followup-schema-validation";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -138,6 +141,13 @@ function hoursFromNow(hours: number): Date {
   return new Date(Date.now() + hours * 3600 * 1000);
 }
 
+export function agentMailFollowupPayloadVersion(row: any): string {
+  const body = typeof row.edited_body === "string" && row.edited_body.trim() ? row.edited_body.trim() : row.followup_body;
+  const canonical = JSON.stringify(["agentmail-followup-payload-v1", row.organization_id, row.id,
+    row.recipient_email, row.subject, body, row.inbox, row.agent_name]);
+  return `v1:${createHash("sha256").update(canonical).digest("hex")}`;
+}
+
 // ─── AI Draft Generator ──────────────────────────────────────────────────────
 
 const CLASSIFICATION_DOMAIN_MAP: Record<string, string> = {
@@ -259,7 +269,7 @@ export async function detectStopConditions(params: {
         AND from_email ILIKE ${params.recipientEmail}
         AND id != ${params.sourceInboundMessageId}
       LIMIT 1
-    `).catch(() => []));
+    `));
     if (replyCheck.length > 0) {
       return { shouldStop: true, reason: "recipient_replied" };
     }
@@ -272,7 +282,7 @@ export async function detectStopConditions(params: {
       WHERE organization_id = ${params.organizationId}
         AND status IN ('SCHEDULED','CONFIRMED','ACTIVE')
       LIMIT 1
-    `).catch(() => []));
+    `));
     if (bookingCheck.length > 0) {
       // Can't easily map email to booking without joining — skip for now, just rely on manual cancel
     }
@@ -282,7 +292,7 @@ export async function detectStopConditions(params: {
   if (params.sourceInboundMessageId) {
     const inbound = rows(await db.execute(sql`
       SELECT body_text FROM agent_mail_inbound_messages WHERE id = ${params.sourceInboundMessageId}
-    `).catch(() => []))[0];
+    `))[0];
     if (inbound?.body_text) {
       const lower = inbound.body_text.toLowerCase();
       const stopWords = ["unsubscribe", "stop emailing", "remove me", "do not contact", "don't contact", "opt out", "no longer interested"];
@@ -300,7 +310,7 @@ export async function detectStopConditions(params: {
         AND contact_email ILIKE ${params.recipientEmail}
         AND status IN ('signed','converted','won')
       LIMIT 1
-    `).catch(() => []));
+    `));
     if (convertCheck.length > 0) {
       return { shouldStop: true, reason: "lead_converted" };
     }
@@ -314,7 +324,7 @@ export async function detectStopConditions(params: {
         AND email ILIKE ${params.recipientEmail}
         AND status NOT IN ('applied','reviewing')
       LIMIT 1
-    `).catch(() => []));
+    `));
     if (appCheck.length > 0) {
       return { shouldStop: true, reason: "applicant_stage_advanced" };
     }
@@ -339,12 +349,14 @@ export async function createFollowupSequence(params: {
   firstReplyBody?: string | null;
   baseSentAt?: Date;
 }): Promise<{ created: number; followupIds: string[] }> {
+  await validateAgentMailFollowupSchema();
   const rule = SEQUENCE_RULES[params.classification];
   if (!rule) return { created: 0, followupIds: [] };
 
   const baseTime = params.baseSentAt ?? new Date();
   const followupIds: string[] = [];
 
+  const prepared: Array<{ step: SequenceStep; scheduledFor: Date; followupBody: string; subjectLine: string }> = [];
   for (const step of rule.steps) {
     const scheduledFor = new Date(baseTime.getTime() + step.delayHours * 3600 * 1000);
 
@@ -368,36 +380,32 @@ export async function createFollowupSequence(params: {
       ? `Re: ${params.originalSubject}`
       : `Following up — ${params.originalSubject}`;
 
-    const inserted = rows(await db.execute(sql`
-      INSERT INTO agent_mail_followups (
-        id, organization_id, source_inbound_message_id, source_reply_queue_id,
-        inbox, agent_name, classification, recipient_email, recipient_name,
-        subject, followup_body, sequence_name, sequence_step, scheduled_for,
-        status, approval_status, created_at, updated_at
-      ) VALUES (
-        gen_random_uuid()::text,
-        ${params.organizationId},
-        ${params.sourceInboundMessageId ?? null},
-        ${params.sourceReplyQueueId ?? null},
-        ${params.inbox},
-        ${params.agentName},
-        ${params.classification},
-        ${params.recipientEmail},
-        ${params.recipientName ?? null},
-        ${subjectLine},
-        ${followupBody},
-        ${rule.name},
-        ${step.stepNumber},
-        ${scheduledFor.toISOString()},
-        ${"scheduled"},
-        ${"pending"},
-        NOW(), NOW()
-      )
-      RETURNING id
-    `).catch(() => []));
-
-    const id = inserted[0]?.id;
-    if (id) followupIds.push(id);
+    prepared.push({ step, scheduledFor, followupBody, subjectLine });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    for (const item of prepared) {
+      const inserted = await client.query(
+        `INSERT INTO agent_mail_followups
+          (id,organization_id,source_inbound_message_id,source_reply_queue_id,inbox,agent_name,classification,
+           recipient_email,recipient_name,subject,followup_body,sequence_name,sequence_step,scheduled_for,status,approval_status)
+         VALUES(gen_random_uuid()::text,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'scheduled','pending')
+         ON CONFLICT (organization_id,source_reply_queue_id,sequence_step)
+           WHERE source_reply_queue_id IS NOT NULL AND status IN ('scheduled','pending_review','sending','uncertain_provider_outcome') DO NOTHING
+         RETURNING id`,
+        [params.organizationId,params.sourceInboundMessageId ?? null,params.sourceReplyQueueId ?? null,params.inbox,
+          params.agentName,params.classification,params.recipientEmail,params.recipientName ?? null,item.subjectLine,
+          item.followupBody,rule.name,item.step.stepNumber,item.scheduledFor.toISOString()],
+      );
+      if (inserted.rows[0]?.id) followupIds.push(inserted.rows[0].id);
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
   }
 
   if (followupIds.length > 0) {
@@ -428,11 +436,7 @@ export async function cancelFollowupsForThread(params: {
   cancelledBy?: string;
 }): Promise<number> {
   let cancelled = 0;
-  try {
-    const conditions: string[] = [];
-    const values: any[] = [params.organizationId, params.reason];
-
-    if (params.sourceInboundMessageId) {
+  if (params.sourceInboundMessageId) {
       const result = rows(await db.execute(sql`
         UPDATE agent_mail_followups
         SET status = 'cancelled', skipped_reason = ${params.reason}, updated_at = NOW()
@@ -440,10 +444,10 @@ export async function cancelFollowupsForThread(params: {
           AND source_inbound_message_id = ${params.sourceInboundMessageId}
           AND status IN ('scheduled','pending_review')
         RETURNING id
-      `).catch(() => []));
+      `));
       cancelled += result.length;
-    }
-    if (params.sourceReplyQueueId) {
+  }
+  if (params.sourceReplyQueueId) {
       const result = rows(await db.execute(sql`
         UPDATE agent_mail_followups
         SET status = 'cancelled', skipped_reason = ${params.reason}, updated_at = NOW()
@@ -451,11 +455,8 @@ export async function cancelFollowupsForThread(params: {
           AND source_reply_queue_id = ${params.sourceReplyQueueId}
           AND status IN ('scheduled','pending_review')
         RETURNING id
-      `).catch(() => []));
+      `));
       cancelled += result.length;
-    }
-  } catch (e: any) {
-    console.error("[FollowupService] cancelFollowupsForThread error:", e?.message);
   }
   return cancelled;
 }
@@ -467,12 +468,13 @@ export async function markFollowupSkipped(id: string, reason: string): Promise<v
     UPDATE agent_mail_followups
     SET status = 'skipped', skipped_reason = ${reason}, updated_at = NOW()
     WHERE id = ${id} AND status NOT IN ('sent','failed')
-  `).catch(() => {});
+  `);
 }
 
 // ─── Process due followups (cron job) ────────────────────────────────────────
 
-export async function processDueFollowups(): Promise<{ processed: number; skipped: number; errors: number }> {
+export async function processDueFollowups(organizationId?: string): Promise<{ processed: number; skipped: number; errors: number }> {
+  await validateAgentMailFollowupSchema();
   const now = new Date().toISOString();
   let processed = 0, skipped = 0, errors = 0;
 
@@ -480,9 +482,10 @@ export async function processDueFollowups(): Promise<{ processed: number; skippe
     SELECT * FROM agent_mail_followups
     WHERE status = 'scheduled'
       AND scheduled_for <= ${now}
+      AND (${organizationId ?? null}::text IS NULL OR organization_id = ${organizationId ?? null})
     ORDER BY scheduled_for ASC
     LIMIT 100
-  `).catch(() => []));
+  `));
 
   for (const f of due) {
     try {
@@ -522,11 +525,13 @@ export async function processDueFollowups(): Promise<{ processed: number; skippe
       }
 
       // Move to pending_review
-      await db.execute(sql`
+      const transitioned = rows(await db.execute(sql`
         UPDATE agent_mail_followups
         SET status = 'pending_review', approval_status = 'pending_review', updated_at = NOW()
-        WHERE id = ${f.id}
-      `).catch(() => {});
+        WHERE id = ${f.id} AND organization_id=${f.organization_id} AND status='scheduled'
+        RETURNING id
+      `));
+      if (!transitioned.length) continue;
 
       // Create Attention Inbox item
       const isDue = new Date(f.scheduled_for) < new Date(Date.now() - 2 * 3600 * 1000);
@@ -585,36 +590,51 @@ export async function sendApprovedFollowup(params: {
   followupId: string;
   organizationId: string;
   actor: string;
-}): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+}, options: { invokeProvider?: typeof sendAgentEmail } = {}): Promise<{ ok: boolean; messageId?: string; error?: string }> {
+  await validateAgentMailFollowupSchema();
   const f = rows(await db.execute(sql`
     SELECT * FROM agent_mail_followups
     WHERE id = ${params.followupId} AND organization_id = ${params.organizationId}
-  `).catch(() => []))[0];
+  `))[0];
 
   if (!f) return { ok: false, error: "Followup not found" };
   if (f.status === "sent") return { ok: false, error: "Already sent" };
   if (f.approval_status !== "approved") return { ok: false, error: "Not approved yet" };
 
+  const payloadVersion = agentMailFollowupPayloadVersion(f);
+  if (f.approved_payload_version !== payloadVersion) return { ok: false, error: "Approved payload changed" };
+
+  const claimed = rows(await db.execute(sql`
+    UPDATE agent_mail_followups SET status='sending',send_attempt_count=send_attempt_count+1,
+      send_claimed_at=NOW(),error_message=NULL,updated_at=NOW()
+    WHERE id=${params.followupId} AND organization_id=${params.organizationId}
+      AND status='pending_review' AND approval_status='approved' AND approved_payload_version=${payloadVersion}
+    RETURNING *
+  `));
+  if (!claimed.length) return { ok: false, error: "Already claimed or no longer sendable" };
+
   const bodyToSend: string = f.edited_body?.trim() || f.followup_body;
 
-  const sendResult = await sendAgentEmail({
-    organizationId: params.organizationId,
-    agentName: f.agent_name,
-    fromInbox: f.inbox as AgentInbox,
-    to: f.recipient_email,
-    subject: f.subject,
-    body: bodyToSend,
-    humanApproved: true,
-  });
+  let sendResult: Awaited<ReturnType<typeof sendAgentEmail>>;
+  try {
+    sendResult = await (options.invokeProvider ?? sendAgentEmail)({ organizationId: params.organizationId, agentName: f.agent_name,
+      fromInbox: f.inbox as AgentInbox, to: f.recipient_email, subject: f.subject, body: bodyToSend, humanApproved: true });
+  } catch (_error) {
+    await db.execute(sql`UPDATE agent_mail_followups SET status='uncertain_provider_outcome',updated_at=NOW()
+      WHERE id=${params.followupId} AND organization_id=${params.organizationId} AND status='sending'`).catch(() => {});
+    return { ok: false, error: "Provider outcome uncertain" };
+  }
 
   if (sendResult.ok) {
-    await db.execute(sql`
+    try { await db.execute(sql`
       UPDATE agent_mail_followups
       SET status = 'sent', sent_at = NOW(),
           provider_message_id = ${sendResult.messageId ?? null},
           updated_at = NOW()
-      WHERE id = ${params.followupId}
-    `).catch(() => {});
+      WHERE id = ${params.followupId} AND organization_id=${params.organizationId} AND status='sending'
+    `); } catch (_error) {
+      return { ok: false, error: "Provider result could not be durably recorded" };
+    }
 
     // Dismiss attention item
     await db.execute(sql`
@@ -639,8 +659,8 @@ export async function sendApprovedFollowup(params: {
     await db.execute(sql`
       UPDATE agent_mail_followups
       SET status = 'failed', error_message = ${sendResult.error ?? "Send failed"}, updated_at = NOW()
-      WHERE id = ${params.followupId}
-    `).catch(() => {});
+      WHERE id = ${params.followupId} AND organization_id=${params.organizationId} AND status='sending'
+    `);
   }
 
   return sendResult;

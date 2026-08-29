@@ -652,6 +652,7 @@ export async function registerAgentMailReplyRoutes(
       }
 
       if (sendResult.ok) {
+        let followupScheduling: { scheduled: boolean; created?: number; error?: string } = { scheduled: false };
         await logOutcome({
           replyQueueId: id,
           organizationId: orgId,
@@ -683,7 +684,7 @@ export async function registerAgentMailReplyRoutes(
               `).catch(() => []));
               inboundBody = inboundRow[0]?.body_text ?? null;
             }
-            await createFollowupSequence({
+            const sequence = await createFollowupSequence({
               organizationId: orgId,
               sourceInboundMessageId: reply.inbound_message_id ?? null,
               sourceReplyQueueId: id,
@@ -697,12 +698,14 @@ export async function registerAgentMailReplyRoutes(
               firstReplyBody: bodyToSend,
               baseSentAt: new Date(),
             });
+            followupScheduling = { scheduled: sequence.created > 0, created: sequence.created };
           } catch (e: any) {
             console.error("[AgentMail Reply] Follow-up sequence creation error:", e?.message);
+            followupScheduling = { scheduled: false, error: "Follow-up scheduling unavailable" };
           }
         }
 
-        res.json({ ok: true, messageId: sendResult.messageId, sentAt: new Date().toISOString() });
+        res.json({ ok: true, messageId: sendResult.messageId, sentAt: new Date().toISOString(), followupScheduling });
       } else if (sendResult.state === "confirmed_failure") {
         await logOutcome({
           replyQueueId: id,
