@@ -1,6 +1,5 @@
 import { Express } from "express";
 import {
-  ensureOnboardingStatesTable,
   getAthleteOnboardingSummary,
   getGuardianOnboardingSummary,
   getOnboardingType,
@@ -14,8 +13,6 @@ function getCurrentUserId(req: any): string | null {
 }
 
 export function registerClientOnboardingRoutes(app: Express) {
-  ensureOnboardingStatesTable().catch(console.error);
-
   // GET /api/client/onboarding/check — lightweight first-login check (no full data load)
   app.get("/api/client/onboarding/check", async (req: any, res) => {
     try {

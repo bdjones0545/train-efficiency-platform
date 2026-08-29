@@ -761,7 +761,9 @@ export function registerGuardianRoutes(app: Express) {
   // ══════════════════════════════════════════════════════════════════════════
 
   // Ensure preferences table exists on startup
-  import("./services/guardian-admin-service").then(m => m.ensureGuardianPrefsTable()).catch(() => {});
+  import("./services/guardian-admin-service")
+    .then((module) => module.ensureGuardianPrefsTable())
+    .catch((error) => console.warn("[GuardianAdmin] optional preferences unavailable:", error?.message));
 
   // ── GET /api/admin/guardians ────────────────────────────────────────────────
   app.get("/api/admin/guardians", requireCoach, async (req: any, res) => {

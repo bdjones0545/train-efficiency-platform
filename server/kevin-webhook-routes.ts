@@ -118,6 +118,21 @@ async function releaseNonce(nonce: string | null | undefined): Promise<void> {
 let _nonceTableReady = false;
 let _nonceCleanupStarted = false;
 
+export function startCallbackNonceCleanup(): void {
+  if (_nonceCleanupStarted) return;
+  _nonceCleanupStarted = true;
+  setInterval(async () => {
+    try {
+      await db.execute(sql`
+        DELETE FROM kevin_callback_nonces
+        WHERE received_at < NOW() - INTERVAL '60 minutes'
+      `);
+    } catch {
+      // Non-fatal — old nonces expire naturally; next cleanup will catch them
+    }
+  }, 10 * 60 * 1000);
+}
+
 export async function ensureCallbackNoncesTable(): Promise<void> {
   if (_nonceTableReady) return;
 
@@ -134,20 +149,7 @@ export async function ensureCallbackNoncesTable(): Promise<void> {
 
   _nonceTableReady = true;
 
-  // Start cleanup cron (once per process)
-  if (!_nonceCleanupStarted) {
-    _nonceCleanupStarted = true;
-    setInterval(async () => {
-      try {
-        await db.execute(sql`
-          DELETE FROM kevin_callback_nonces
-          WHERE received_at < NOW() - INTERVAL '60 minutes'
-        `);
-      } catch {
-        // Non-fatal — old nonces expire naturally; next cleanup will catch them
-      }
-    }, 10 * 60 * 1000); // every 10 minutes
-  }
+  startCallbackNonceCleanup();
 }
 
 // ─── Raw body middleware ──────────────────────────────────────────────────────

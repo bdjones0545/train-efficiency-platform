@@ -16,6 +16,7 @@ const migrationsDirectory = new URL("../../migrations", import.meta.url).pathnam
 const migrations = await import("../application-migrations");
 const bootstrap = await import("../schema-bootstrap");
 const features = await import("../required-feature-schemas");
+const startupReadiness = await import("../release1-startup-readiness");
 
 function newSchema(): string {
   const name = `migration_test_${randomUUID().replaceAll("-", "")}`;
@@ -101,6 +102,7 @@ test("empty database reaches the complete ordered formal schema and ledger", asy
     "0018_book_funnel_schema.sql",
     "0019_agent_outcome_attribution_schema.sql",
     "0020_agentmail_followup_schema.sql",
+    "0021_release1_startup_schema.sql",
   ]);
   assert.equal(rows[0].execution_kind, "executed");
   const column = await pool.query(`SELECT is_nullable FROM information_schema.columns
@@ -159,7 +161,8 @@ test("DDL-restricted runtime role completes the read-only startup readiness path
   roles.push(role);
   await adminPool.query(`CREATE ROLE "${role}" LOGIN`);
   await adminPool.query(`GRANT USAGE ON SCHEMA "${schema}" TO "${role}"`);
-  await adminPool.query(`GRANT SELECT ON ALL TABLES IN SCHEMA "${schema}" TO "${role}"`);
+  await adminPool.query(`GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA "${schema}" TO "${role}"`);
+  await adminPool.query(`GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA "${schema}" TO "${role}"`);
   assert.equal((await adminPool.query(`SELECT has_schema_privilege($1,$2,'CREATE') AS allowed`, [role, schema])).rows[0].allowed, false);
   const runtimePool = new Pool({ connectionString, user: role, options: `-c search_path=${schema}` });
   const statements: string[] = [];
@@ -167,19 +170,51 @@ test("DDL-restricted runtime role completes the read-only startup readiness path
   await migrations.verifyApplicationMigrationReadiness(auditedRuntimePool, { migrationsDirectory });
   await bootstrap.verifyRequiredSchemaReadiness(auditedRuntimePool);
   await features.verifyRequiredFeatureSchemaReadiness(auditedRuntimePool);
+  await startupReadiness.verifyStartupRelations("AgentMail", [
+    "agent_mail_inbound_messages", "org_agentmail_inboxes", "agent_mail_messages",
+    "agentmail_effect_log", "agentmail_webhook_deliveries",
+  ], auditedRuntimePool);
+  await startupReadiness.verifyStartupRelations("Kevin core", [
+    "kevin_audit_events", "kevin_runs", "kevin_intents", "kevin_intent_tasks",
+    "kevin_exec_approvals", "agent_jobs", "retention_agent_analyses",
+    "kevin_callback_nonces",
+  ], auditedRuntimePool);
+  await startupReadiness.verifyStartupRelations("Kevin Slack", [
+    "kevin_slack_identity_mappings", "kevin_slack_conversation_state",
+    "kevin_slack_event_dedup", "kevin_slack_action_audit", "kevin_slack_digest_runs",
+    "kevin_slack_notification_log", "kevin_slack_action_tokens",
+  ], auditedRuntimePool);
   assertNoStructuralSql(statements);
   await runtimePool.end();
   await ownerPool.end();
 });
 
+test("missing required Release 1 startup schema fails read-only without repair", async () => {
+  const pool = await poolFor(newSchema());
+  await migrations.runApplicationMigrations(pool, { migrationsDirectory });
+  await pool.query(`DROP TABLE agent_mail_inbound_messages`);
+  const statements: string[] = [];
+  await assert.rejects(
+    startupReadiness.verifyStartupRelations(
+      "AgentMail",
+      ["agent_mail_inbound_messages", "agent_mail_messages"],
+      auditedPool(pool, statements),
+    ),
+    /StartupSchemaUnavailableError|AgentMail schema unavailable/,
+  );
+  assertNoStructuralSql(statements);
+  assert.equal((await pool.query(`SELECT to_regclass('agent_mail_inbound_messages') AS relation`)).rows[0].relation, null);
+  await pool.end();
+});
+
 test("behind runtime readiness reports MIGRATIONS_REQUIRED and issues no structural SQL", async () => {
   const pool = await poolFor(newSchema());
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  await pool.query(`DELETE FROM train_efficiency_migrations WHERE migration_id='0020_agentmail_followup_schema.sql'`);
+  await pool.query(`DELETE FROM train_efficiency_migrations WHERE migration_id='0021_release1_startup_schema.sql'`);
   const statements: string[] = [];
   await assert.rejects(
     migrations.verifyApplicationMigrationReadiness(auditedPool(pool, statements), { migrationsDirectory }),
-    /MIGRATIONS_REQUIRED: pending migrations: 0020_agentmail_followup_schema\.sql/,
+    /MIGRATIONS_REQUIRED: pending migrations: 0021_release1_startup_schema\.sql/,
   );
   assertNoStructuralSql(statements);
   await pool.end();
@@ -200,11 +235,11 @@ test("missing ledger runtime readiness fails closed and issues no structural SQL
 test("checksum-conflicting runtime readiness fails closed and issues no structural SQL", async () => {
   const pool = await poolFor(newSchema());
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  await pool.query(`UPDATE train_efficiency_migrations SET checksum_sha256='invalid' WHERE migration_id='0020_agentmail_followup_schema.sql'`);
+  await pool.query(`UPDATE train_efficiency_migrations SET checksum_sha256='invalid' WHERE migration_id='0021_release1_startup_schema.sql'`);
   const statements: string[] = [];
   await assert.rejects(
     migrations.verifyApplicationMigrationReadiness(auditedPool(pool, statements), { migrationsDirectory }),
-    /MIGRATION_STATE_INVALID: checksum mismatch for 0020_agentmail_followup_schema\.sql/,
+    /MIGRATION_STATE_INVALID: checksum mismatch for 0021_release1_startup_schema\.sql/,
   );
   assertNoStructuralSql(statements);
   await pool.end();
@@ -224,7 +259,7 @@ test("compatible populated database adopts baseline without rewriting rows", asy
   assert.equal(rows[0].execution_kind, "adopted");
   assert.equal((await pool.query(`SELECT count(*)::int AS n FROM user_org_preferences WHERE id='existing-pref'`)).rows[0].n, 1);
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  assert.equal((await ledger(pool)).length, 21);
+  assert.equal((await ledger(pool)).length, 22);
   await pool.end();
 });
 
@@ -334,7 +369,7 @@ test("failed middle migration is not recorded, blocks later files, and retry con
   ]);
   assert.equal(migrations.getApplicationMigrationReadiness().state, "failed");
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  assert.equal((await ledger(pool)).length, 21);
+  assert.equal((await ledger(pool)).length, 22);
   assert.equal(migrations.getApplicationMigrationReadiness().state, "ready");
   await pool.end();
 });
@@ -348,8 +383,8 @@ test("three independent migrators serialize and converge on one ledger", async (
   ]);
   await Promise.all(pools.map((pool) => migrations.runApplicationMigrations(pool, { migrationsDirectory })));
   const rows = await ledger(pools[0]);
-  assert.equal(rows.length, 21);
-  assert.equal(new Set(rows.map((row) => row.migration_id)).size, 21);
+  assert.equal(rows.length, 22);
+  assert.equal(new Set(rows.map((row) => row.migration_id)).size, 22);
   assert.ok(rows.every((row) => row.execution_kind === "executed"));
   await Promise.all(pools.map((pool) => pool.end()));
 });
@@ -368,7 +403,7 @@ test("startup orders formal migrations before bootstrap, workers, routes, and li
 test("migration readiness exposes only expected/applied identifiers and state", async () => {
   const state = migrations.getApplicationMigrationReadiness();
   assert.equal(state.state, "ready");
-  assert.equal(state.latestExpected, "0020_agentmail_followup_schema.sql");
-  assert.equal(state.latestApplied, "0020_agentmail_followup_schema.sql");
+  assert.equal(state.latestExpected, "0021_release1_startup_schema.sql");
+  assert.equal(state.latestApplied, "0021_release1_startup_schema.sql");
   assert.equal("databaseUrl" in state, false);
 });

@@ -65,7 +65,7 @@ import { resolveNavSuggestion } from "./services/kevin-navigation-registry";
 import { recordKevinAuditEvent } from "./services/kevin-audit-service";
 import { recordKevinOutcome } from "./services/kevin-outcome-service";
 import { verifyCapabilityExecution, persistVerificationResult } from "./services/kevin-verifier-service";
-import { recordKevinOutcomeLearning, ensureKevinOutcomesTable } from "./services/kevin-learning-service";
+import { recordKevinOutcomeLearning } from "./services/kevin-learning-service";
 import {
   logKevinIntent,
   logKevinTask,
@@ -78,7 +78,6 @@ import { sql } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
 // Ensure learning tables exist on first use
-void ensureKevinOutcomesTable().catch(() => {});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

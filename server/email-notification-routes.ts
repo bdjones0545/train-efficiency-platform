@@ -22,26 +22,6 @@ function requireRole(...roles: string[]) {
 }
 
 export async function registerEmailNotificationRoutes(app: Express) {
-  // Ensure table exists
-  await db.execute(`
-    CREATE TABLE IF NOT EXISTS org_email_notification_settings (
-      id varchar PRIMARY KEY DEFAULT gen_random_uuid(),
-      org_id varchar NOT NULL UNIQUE,
-      athlete_booking_confirmation boolean NOT NULL DEFAULT true,
-      athlete_recurring_confirmation boolean NOT NULL DEFAULT true,
-      athlete_reschedule boolean NOT NULL DEFAULT true,
-      athlete_cancellation boolean NOT NULL DEFAULT true,
-      athlete_reminder boolean NOT NULL DEFAULT true,
-      admin_new_booking boolean NOT NULL DEFAULT true,
-      admin_recurring_booking boolean NOT NULL DEFAULT false,
-      admin_reschedule boolean NOT NULL DEFAULT true,
-      admin_cancellation boolean NOT NULL DEFAULT true,
-      dedup_window_minutes integer NOT NULL DEFAULT 15,
-      created_at timestamp DEFAULT now(),
-      updated_at timestamp DEFAULT now()
-    )
-  `).catch(() => {});
-
   // GET notification settings for the org
   app.get("/api/admin/email-notification-settings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {

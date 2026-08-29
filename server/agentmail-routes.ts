@@ -36,7 +36,7 @@ import {
   type AgentMailRole,
 } from "./services/agentmail-ownership-service";
 import {
-  runAgentMailMigration,
+  verifyAgentMailSchemaReadiness,
   isAgentMailSchemaReady,
 } from "./services/agentmail-migration";
 
@@ -205,13 +205,11 @@ export async function registerAgentMailRoutes(
   const disableOwnership = ownershipOverrides.disableOrgInbox ?? disableOrgInbox;
   const retireOwnership = ownershipOverrides.retireOrgInbox ?? retireOrgInbox;
   const retireAllOwnership = ownershipOverrides.retireAllOrgInboxes ?? retireAllOrgInboxes;
-  // Deterministic ordered migration — must succeed before any route handles traffic.
-  // Uses the shared runAgentMailMigration() from agentmail-migration.ts; concurrent
-  // calls share the same in-flight promise (idempotent).
+  // Formal migrations own AgentMail schema. Runtime only verifies readiness.
   try {
-    await runAgentMailMigration();
+    await verifyAgentMailSchemaReadiness();
   } catch (e: any) {
-    console.error("[AgentMail] Schema migration failed — AgentMail routes degraded:", e?.message);
+    console.error("[AgentMail] Schema unavailable — AgentMail routes degraded:", e?.message);
     // Don't throw: let the process start so /status can report the problem.
   }
 

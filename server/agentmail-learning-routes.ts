@@ -42,8 +42,6 @@ export function registerAgentmailLearningRoutes(
   isAuthenticated: (req: any, res: any, next: any) => void,
   requireRole: (...roles: string[]) => (req: any, res: any, next: any) => void,
 ): void {
-  ensureTable().catch((e) => console.error("[agentmail-learning] table init error:", e));
-
   // ─── GET summary metrics ────────────────────────────────────────────────────
   app.get("/api/admin/agentmail-learning/summary", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {

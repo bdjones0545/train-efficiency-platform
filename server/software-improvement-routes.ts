@@ -18,7 +18,6 @@ import { eq, and, desc, sql } from "drizzle-orm";
 import { softwareImprovementTasks, agentOperatingTimeline } from "@shared/schema";
 import {
   runSoftwareImprovementAgent,
-  ensureSoftwareImprovementTable,
   canRunSoftwareImprovementAgent,
 } from "./services/software-improvement-agent";
 import { requestComposioAction } from "./composio-action-adapter";
@@ -26,6 +25,7 @@ import { executeComposioAction, resolveExecutionConnectedAccount } from "./servi
 import { validateComposioSpecializedVersionSchema } from "./composio-specialized-version-schema-validation";
 import { assertSpecializedExecutionAuthority } from "./composio-specialized-version-authority";
 import { emitComposioHermesEvent } from "./composio-hermes-emitter";
+import { verifyStartupRelations } from "./release1-startup-readiness";
 
 async function getOrgId(req: any): Promise<string> {
   // Trusted server-side org resolution ONLY — never from client query/body/params.
@@ -110,8 +110,7 @@ export async function registerSoftwareImprovementRoutes(
   isAuthenticated: (req: any, res: any, next: any) => void,
   requireRole: (...roles: string[]) => (req: any, res: any, next: any) => void,
 ): Promise<void> {
-  // Bootstrap tables on startup
-  await ensureSoftwareImprovementTable();
+  await verifyStartupRelations("software improvement", ["software_improvement_tasks"]);
   await ensureGitHubIssueColumns();
 
   // ─── GET /api/software-improvement/tasks ────────────────────────────────────

@@ -93,30 +93,16 @@ let _tableEnsured = false;
 
 export async function ensureGuardianPrefsTable(): Promise<void> {
   if (_tableEnsured) return;
-  try {
-    const { db } = await import("../db");
-    const { sql } = await import("drizzle-orm");
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS guardian_communication_preferences (
-        id            text PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        guardian_user_id text NOT NULL,
-        org_id        text NOT NULL,
-        email_enabled boolean NOT NULL DEFAULT true,
-        sms_enabled   boolean NOT NULL DEFAULT false,
-        marketing_enabled boolean NOT NULL DEFAULT false,
-        evaluation_reminders boolean NOT NULL DEFAULT true,
-        schedule_notifications boolean NOT NULL DEFAULT true,
-        program_updates boolean NOT NULL DEFAULT true,
-        preferred_contact_method text NOT NULL DEFAULT 'email',
-        pail_context  text,
-        updated_at    timestamp DEFAULT now(),
-        UNIQUE(guardian_user_id, org_id)
-      )
-    `);
-    _tableEnsured = true;
-  } catch (err: any) {
-    console.warn("[GuardianAdmin] ensureGuardianPrefsTable:", err.message);
+  const { db } = await import("../db");
+  const { sql } = await import("drizzle-orm");
+  const result = await db.execute(sql`SELECT to_regclass('guardian_communication_preferences') IS NOT NULL AS present`);
+  const row = Array.isArray(result) ? result[0] : (result as any).rows?.[0];
+  if (row?.present !== true) {
+    const error = new Error("guardian communication preferences schema is unavailable");
+    error.name = "GuardianPreferencesSchemaUnavailableError";
+    throw error;
   }
+  _tableEnsured = true;
 }
 
 // ─── Preferences ─────────────────────────────────────────────────────────────

@@ -33163,17 +33163,34 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerForecastRoutes } = await import("./forecast-routes");
   await registerForecastRoutes(app);
 
-  const { registerComposioRoutes } = await import("./composio-routes");
-  await registerComposioRoutes(app, isAuthenticated, requireRole);
-
-  const { registerComposioGmailDraftRoutes } = await import("./composio-gmail-draft-routes");
-  await registerComposioGmailDraftRoutes(app, isAuthenticated, requireRole);
-
-  const { registerComposioSlackAlertRoutes } = await import("./composio-slack-alert-routes");
-  await registerComposioSlackAlertRoutes(app, isAuthenticated, requireRole);
-
-  const { registerComposioCalendarRoutes } = await import("./composio-calendar-routes");
-  await registerComposioCalendarRoutes(app, isAuthenticated, requireRole);
+  // Composio is paused/optional for Release 1. Do not make its schema a global
+  // boot dependency when the provider is unconfigured.
+  if (process.env.COMPOSIO_API_KEY) {
+    const optionalSchemaErrors = new Set([
+      "ComposioSchemaUnavailableError",
+      "FeatureSchemaUnavailableError",
+      "ComposioSpecializedVersionSchemaUnavailableError",
+      "ComposioConnectionSchemaUnavailableError",
+    ]);
+    const registerOptionalComposio = async (label: string, register: () => Promise<void>) => {
+      try {
+        await register();
+      } catch (error: any) {
+        if (!optionalSchemaErrors.has(error?.name)) throw error;
+        console.error(`[${label}] optional integration unavailable:`, error.message);
+      }
+    };
+    const { registerComposioRoutes } = await import("./composio-routes");
+    await registerOptionalComposio("Composio", () => registerComposioRoutes(app, isAuthenticated, requireRole));
+    const { registerComposioGmailDraftRoutes } = await import("./composio-gmail-draft-routes");
+    await registerOptionalComposio("ComposioGmailDraft", () => registerComposioGmailDraftRoutes(app, isAuthenticated, requireRole));
+    const { registerComposioSlackAlertRoutes } = await import("./composio-slack-alert-routes");
+    await registerOptionalComposio("ComposioSlackAlert", () => registerComposioSlackAlertRoutes(app, isAuthenticated, requireRole));
+    const { registerComposioCalendarRoutes } = await import("./composio-calendar-routes");
+    await registerOptionalComposio("ComposioCalendar", () => registerComposioCalendarRoutes(app, isAuthenticated, requireRole));
+  } else {
+    console.log("[Composio] disabled; provider and schema readiness skipped");
+  }
 
   const { registerSchedulingCalendarRoutes } = await import("./scheduling-calendar-routes");
   await registerSchedulingCalendarRoutes(app, isAuthenticated, requireRole);
@@ -33623,8 +33640,18 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   startKevinEventWorker();
 
   // ─── Kevin Slack Executive Operations Hub ──────────────────────────────────
-  const { registerKevinSlackRoutes, bootstrapKevinSlackTables } = await import("./kevin-slack-routes");
-  await bootstrapKevinSlackTables();
+  const { registerKevinSlackRoutes, verifyKevinSlackSchemaReadiness } = await import("./kevin-slack-routes");
+  const { isSlackEnabled } = await import("./kevin-slack/config");
+  if (isSlackEnabled()) {
+    try {
+      await verifyKevinSlackSchemaReadiness();
+    } catch (error: any) {
+      if (error?.name !== "StartupSchemaUnavailableError") throw error;
+      console.error("[Kevin Slack] optional integration unavailable:", error.message);
+    }
+  } else {
+    console.log("[Kevin Slack] disabled; schema readiness skipped");
+  }
   registerKevinSlackRoutes(app);
 
   // ─── Kevin Executive Operations Layer — Phase 2–15 ──────────────────────────
@@ -33635,13 +33662,12 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   const { registerKevinEmergencyRoutes } = await import("./kevin-emergency-routes");
   registerKevinEmergencyRoutes(app);
 
-  // Ensure kevin intent tables exist
-  const { ensureIntentTables } = await import("./services/kevin-intent-service");
-  await ensureIntentTables();
+  const { verifyStartupRelations } = await import("./release1-startup-readiness");
+  await verifyStartupRelations("Kevin intents", ["kevin_intents", "kevin_intent_tasks", "kevin_exec_approvals"]);
 
   // ─── Kevin Agent Integration — Phase 1 (Retention Agent) ─────────────────
-  const { registerKevinAgentRoutes, createAgentTables } = await import("./kevin-agent-routes");
-  await createAgentTables();
+  const { registerKevinAgentRoutes } = await import("./kevin-agent-routes");
+  await verifyStartupRelations("Kevin agent", ["agent_jobs", "retention_agent_analyses"]);
   const { validateKevinAgentConfig } = await import("./services/kevin-agent-config");
   validateKevinAgentConfig();
   registerKevinAgentRoutes(app);
@@ -33650,8 +33676,9 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
   // Registers POST /api/kevin/webhooks/hermes (canonical) +
   //           POST /api/agent-callbacks/kevin (legacy alias).
   // Must be registered AFTER registerKevinAgentRoutes so the job tables exist.
-  const { registerKevinWebhookRoutes, ensureCallbackNoncesTable } = await import("./kevin-webhook-routes");
-  await ensureCallbackNoncesTable();
+  const { registerKevinWebhookRoutes, startCallbackNonceCleanup } = await import("./kevin-webhook-routes");
+  await verifyStartupRelations("Kevin callback replay protection", ["kevin_callback_nonces"]);
+  startCallbackNonceCleanup();
   registerKevinWebhookRoutes(app);
 
   return httpServer;

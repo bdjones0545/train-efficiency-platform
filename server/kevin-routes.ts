@@ -19,10 +19,8 @@ import {
 import {
   recordKevinAuditEvent,
   shouldSampleHealthAudit,
-  ensureKevinAuditTable,
 } from "./services/kevin-audit-service";
 import {
-  ensureKevinRunTables,
   createKevinRun,
   getKevinRunById,
   listKevinRuns,
@@ -44,6 +42,7 @@ import { isInternalServiceTokenConfigured } from "./middleware/require-internal-
 import { db } from "./db";
 import { sql, eq } from "drizzle-orm";
 import { kevinEvents, kevinOutcomes, kevinContextRequests } from "@shared/schema";
+import { verifyStartupRelations } from "./release1-startup-readiness";
 
 function getUserId(req: any): string | null {
   return req.user?.claims?.sub ?? req.user?.id ?? req.user?.userId ?? null;
@@ -87,8 +86,7 @@ function writeSse(res: Response, data: unknown) {
 }
 
 export async function registerKevinRoutes(app: Express): Promise<void> {
-  ensureKevinAuditTable().catch(() => {});
-  ensureKevinRunTables().catch(() => {});
+  await verifyStartupRelations("Kevin core", ["kevin_audit_events", "kevin_runs"]);
 
   // Unauthenticated Kevin→TE webhook (HMAC). Separate module so raw-body verify stays isolated.
   try {
@@ -198,7 +196,6 @@ export async function registerKevinRoutes(app: Express): Promise<void> {
     requireKevinAccess,
     async (req: Request, res: Response) => {
       try {
-        await ensureKevinAuditTable();
         const limit = Math.min(parseInt(String(req.query.limit ?? "50"), 10) || 50, 100);
         const offset = Math.max(parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
         // Org isolation: only this admin's org events (plus org-less system events).

@@ -135,32 +135,13 @@ export interface ComposioConnectedAccount {
 // ─── Ensure table exists ──────────────────────────────────────────────────────
 
 export async function ensureComposioLogTable(): Promise<void> {
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS composio_action_log (
-      id            TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id        TEXT NOT NULL,
-      agent_id      TEXT NOT NULL,
-      tool          TEXT NOT NULL,
-      action        TEXT NOT NULL,
-      entity_id     TEXT,
-      input_summary JSONB,
-      success       BOOLEAN NOT NULL DEFAULT false,
-      result_summary JSONB,
-      error_message TEXT,
-      duration_ms   INTEGER,
-      policy_decision TEXT,
-      approval_required BOOLEAN DEFAULT false,
-      hermes_emitted BOOLEAN DEFAULT false,
-      executed_at   TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-      created_at    TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS composio_action_log_org_idx ON composio_action_log (org_id)
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS composio_action_log_agent_idx ON composio_action_log (agent_id)
-  `);
+  const result = await db.execute(sql`SELECT to_regclass('composio_action_log') IS NOT NULL AS present`);
+  const row = Array.isArray(result) ? result[0] : (result as any).rows?.[0];
+  if (row?.present !== true) {
+    const error = new Error("optional Composio action log schema is unavailable");
+    error.name = "ComposioSchemaUnavailableError";
+    throw error;
+  }
 }
 
 // ─── Logging ──────────────────────────────────────────────────────────────────

@@ -68,7 +68,11 @@ export async function registerComposioRoutes(
     await ensureHermesEventTable();
     console.log("[Composio] Tables ready");
   } catch (err: any) {
-    console.error("[Composio] Table setup failed:", err.message);
+    if (!["ComposioSchemaUnavailableError", "FeatureSchemaUnavailableError"].includes(err?.name)) {
+      throw err;
+    }
+    console.error("[Composio] optional integration unavailable:", err.message);
+    return;
   }
 
   // ── GET /api/composio/status ─────────────────────────────────────────────

@@ -77,6 +77,7 @@ import { getKevinSlackTargetForOrganization } from "./kevin-slack/target-service
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import crypto from "crypto";
+import { verifyStartupRelations } from "./release1-startup-readiness";
 
 async function requireKevinSlackAdminOrganization(req: any, res: Response, next: () => void): Promise<void> {
   try {
@@ -277,6 +278,19 @@ export async function bootstrapKevinSlackTables(): Promise<void> {
     console.error("[Kevin Slack] STARTUP ERROR: Migration failed:", err?.message);
     throw new Error(`Kevin Slack schema migration failed: ${err?.message}`);
   }
+}
+
+export async function verifyKevinSlackSchemaReadiness(): Promise<void> {
+  await verifyStartupRelations("Kevin Slack", [
+    "kevin_slack_identity_mappings",
+    "kevin_slack_conversation_state",
+    "kevin_slack_event_dedup",
+    "kevin_slack_action_audit",
+    "kevin_slack_digest_runs",
+    "kevin_slack_notification_log",
+    "kevin_slack_action_tokens",
+  ]);
+  startTokenCleanupCron();
 }
 
 // ─── Slack API helper ─────────────────────────────────────────────────────────

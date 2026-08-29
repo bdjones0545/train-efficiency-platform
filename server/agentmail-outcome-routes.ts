@@ -48,9 +48,6 @@ export async function registerAgentmailOutcomeRoutes(
   isAuthenticated: (req: any, res: any, next: any) => void,
   requireRole: (...roles: string[]) => (req: any, res: any, next: any) => void,
 ): Promise<void> {
-  // Run table creation on startup
-  await ensureAgentmailOutcomeTable();
-
   const requireAdmin = requireRole("ADMIN");
 
   // ── GET /api/admin/agentmail-outcomes/summary ─────────────────────────────

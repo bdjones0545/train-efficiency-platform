@@ -2,7 +2,6 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
-import { runMigrations } from 'stripe-replit-sync';
 import { getStripeSync } from './stripeClient';
 import { WebhookHandlers } from './webhookHandlers';
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
@@ -33,9 +32,11 @@ async function initStripe() {
   }
 
   try {
-    console.log('Initializing Stripe schema...');
-    await runMigrations({ databaseUrl } as any);
-    console.log('Stripe schema ready');
+    if (!process.env.STRIPE_SECRET_KEY) {
+      console.warn('STRIPE_SECRET_KEY not set, Stripe sync disabled');
+      return;
+    }
+    console.log('Initializing optional Stripe sync without runtime migrations...');
 
     const stripeSync = await getStripeSync();
 

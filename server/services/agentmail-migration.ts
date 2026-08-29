@@ -34,6 +34,31 @@ export function isAgentMailSchemaReady(): boolean {
   return _ready;
 }
 
+export class AgentMailSchemaUnavailableError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AgentMailSchemaUnavailableError";
+  }
+}
+
+/** Runtime-authority readiness check. This function is strictly read-only. */
+export async function verifyAgentMailSchemaReadiness(): Promise<void> {
+  const result = await db.execute(sql`
+    SELECT name, to_regclass(name) IS NOT NULL AS present
+    FROM unnest(ARRAY[
+      'agent_mail_inbound_messages', 'org_agentmail_inboxes',
+      'agent_mail_messages', 'agentmail_effect_log', 'agentmail_webhook_deliveries'
+    ]::text[]) AS expected(name)
+  `);
+  const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
+  const missing = rows.filter((row: any) => row.present !== true).map((row: any) => row.name);
+  if (missing.length) {
+    _ready = false;
+    throw new AgentMailSchemaUnavailableError(`formal AgentMail schema is unavailable: ${missing.join(", ")}`);
+  }
+  _ready = true;
+}
+
 /**
  * Run the migration once per process.  Concurrent callers within the same
  * process share the same in-flight promise.  Cross-process safety is handled
