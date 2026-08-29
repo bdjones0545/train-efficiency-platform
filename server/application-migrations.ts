@@ -16,6 +16,18 @@ export type ApplicationMigrationOptions = {
   beforeMigration?: (migrationId: string, client: PoolClient) => Promise<void> | void;
 };
 
+export type MigrationReadinessCode =
+  | "MIGRATION_INFRASTRUCTURE_MISSING"
+  | "MIGRATIONS_REQUIRED"
+  | "MIGRATION_STATE_INVALID";
+
+export class ApplicationMigrationReadinessError extends Error {
+  constructor(public readonly code: MigrationReadinessCode, message: string) {
+    super(`${code}: ${message}`);
+    this.name = "ApplicationMigrationReadinessError";
+  }
+}
+
 let readiness: MigrationReadiness = "not_started";
 let readinessError: string | null = null;
 let latestExpected: string | null = null;
@@ -335,5 +347,74 @@ export async function runApplicationMigrations(
   } finally {
     await client.query("SELECT pg_advisory_unlock(hashtext($1),hashtext($2))", [LOCK_NAMESPACE, LOCK_NAME]).catch(() => undefined);
     client.release();
+  }
+}
+
+/**
+ * Proves that the database is at the repository's canonical migration state.
+ * This runtime-authority path is deliberately read-only: it never locks,
+ * bootstraps, applies, or repairs migration state.
+ */
+export async function verifyApplicationMigrationReadiness(
+  dbPool: Pick<Pool, "connect"> = pool,
+  options: Pick<ApplicationMigrationOptions, "migrationsDirectory"> = {},
+): Promise<void> {
+  readiness = "migrating";
+  readinessError = null;
+  latestApplied = null;
+  let client: PoolClient | null = null;
+  try {
+    const directory = migrationDirectory(options.migrationsDirectory);
+    const files = await migrationFiles(directory);
+    if (!files.length || files[0] !== "0000_application_baseline.sql") {
+      throw new ApplicationMigrationReadinessError("MIGRATION_STATE_INVALID", "repository migration baseline is missing or not first");
+    }
+    latestExpected = files.at(-1) ?? null;
+    client = await dbPool.connect();
+    if (!await relationExists(client, LEDGER_TABLE)) {
+      throw new ApplicationMigrationReadinessError(
+        "MIGRATION_INFRASTRUCTURE_MISSING",
+        `migration ledger ${LEDGER_TABLE} is missing; run the privileged migration command`,
+      );
+    }
+
+    const result = await client.query(`SELECT migration_id,checksum_sha256 FROM ${LEDGER_TABLE} ORDER BY migration_id`);
+    const rows = result.rows as Array<{ migration_id: string; checksum_sha256: string }>;
+    const appliedIds = rows.map((row) => row.migration_id);
+    const expectedPrefix = files.slice(0, appliedIds.length);
+    const isCanonicalPrefix = appliedIds.every((id, index) => id === expectedPrefix[index]);
+    if (!isCanonicalPrefix || appliedIds.length > files.length) {
+      throw new ApplicationMigrationReadinessError(
+        "MIGRATION_STATE_INVALID",
+        `ledger ordering or contents conflict with repository migrations (applied: ${appliedIds.join(", ") || "none"})`,
+      );
+    }
+
+    for (const row of rows) {
+      const sql = await fs.readFile(path.join(directory, row.migration_id), "utf8");
+      if (row.checksum_sha256 !== checksum(sql)) {
+        throw new ApplicationMigrationReadinessError("MIGRATION_STATE_INVALID", `checksum mismatch for ${row.migration_id}`);
+      }
+      latestApplied = row.migration_id;
+    }
+
+    if (rows.length < files.length) {
+      throw new ApplicationMigrationReadinessError(
+        "MIGRATIONS_REQUIRED",
+        `pending migrations: ${files.slice(rows.length).join(", ")}`,
+      );
+    }
+    if (latestApplied !== latestExpected) {
+      throw new ApplicationMigrationReadinessError("MIGRATION_STATE_INVALID", "ledger latest migration is not canonical");
+    }
+    readiness = "ready";
+    console.log(`[ApplicationMigrations] runtime readiness verified latest=${latestApplied}`);
+  } catch (error) {
+    readiness = "failed";
+    readinessError = error instanceof Error ? error.message : String(error);
+    console.error(`[ApplicationMigrations] runtime readiness failed: ${readinessError}`);
+    throw error;
+  } finally {
+    client?.release();
   }
 }

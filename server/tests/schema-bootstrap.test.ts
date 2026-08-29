@@ -92,12 +92,12 @@ test("partial critical schema is detected non-destructively", async () => {
   assert.equal(stillPresent.rows[0].table_name, "system_logs");
 });
 
-test("current-main startup awaits required schema before seeds, routes, jobs, and listen", async () => {
+test("runtime startup awaits read-only required schema readiness before seeds, routes, jobs, and listen", async () => {
   const source = await readFile(new URL("../index.ts", import.meta.url), "utf8");
-  const bootstrap = source.indexOf("await initializeRequiredSchema()");
+  const bootstrap = source.indexOf("await verifyRequiredSchemaReadiness()");
   assert.ok(bootstrap > 0);
   for (const marker of ["await seedDatabase()", "await registerRoutes(httpServer, app)", "setInterval(", "httpServer.listen("]) {
-    assert.ok(source.indexOf(marker) > bootstrap, `${marker} must remain after required schema bootstrap`);
+    assert.ok(source.indexOf(marker) > bootstrap, `${marker} must remain after required schema readiness`);
   }
   assert.match(source, /process\.once\("SIGTERM"/);
   assert.match(source, /process\.once\("SIGINT"/);

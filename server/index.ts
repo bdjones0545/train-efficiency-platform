@@ -192,14 +192,14 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  const { runApplicationMigrations } = await import("./application-migrations");
-  await runApplicationMigrations();
+  const { verifyApplicationMigrationReadiness } = await import("./application-migrations");
+  await verifyApplicationMigrationReadiness();
 
-  const { initializeRequiredSchema } = await import("./schema-bootstrap");
-  await initializeRequiredSchema();
+  const { verifyRequiredSchemaReadiness } = await import("./schema-bootstrap");
+  await verifyRequiredSchemaReadiness();
 
-  const { initializeRequiredFeatureSchemas } = await import("./required-feature-schemas");
-  await initializeRequiredFeatureSchemas();
+  const { verifyRequiredFeatureSchemaReadiness } = await import("./required-feature-schemas");
+  await verifyRequiredFeatureSchemaReadiness();
 
   // Dev-data seed: only runs outside production.
   // The seed is already idempotent (checks before inserting), but we add

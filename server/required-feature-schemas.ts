@@ -148,4 +148,20 @@ export async function initializeRequiredFeatureSchemas(
   }
 }
 
+export async function verifyRequiredFeatureSchemaReadiness(dbPool: Pick<Pool, "connect"> = pool): Promise<void> {
+  beginRequiredFeatureSchemaInitialization([...REQUIRED_FEATURE_SUBSYSTEMS]);
+  const client = await dbPool.connect();
+  try {
+    await validateRequiredFeatureSchemas(client);
+    for (const subsystem of REQUIRED_FEATURE_SUBSYSTEMS) markRequiredFeatureSubsystem(subsystem, "ready");
+    completeRequiredFeatureSchemaInitialization();
+    console.log("[RequiredFeatureSchemas] runtime readiness verified");
+  } catch (error) {
+    failRequiredFeatureSchemaInitialization(error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export { getRequiredFeatureSchemaReadiness };

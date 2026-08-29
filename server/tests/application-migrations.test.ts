@@ -11,9 +11,11 @@ process.env.DATABASE_URL = connectionString;
 const { Pool } = pg;
 const adminPool = new Pool({ connectionString });
 const schemas: string[] = [];
+const roles: string[] = [];
 const migrationsDirectory = new URL("../../migrations", import.meta.url).pathname;
 const migrations = await import("../application-migrations");
 const bootstrap = await import("../schema-bootstrap");
+const features = await import("../required-feature-schemas");
 
 function newSchema(): string {
   const name = `migration_test_${randomUUID().replaceAll("-", "")}`;
@@ -28,6 +30,30 @@ async function poolFor(schema: string): Promise<pg.Pool> {
 
 async function ledger(pool: pg.Pool) {
   return (await pool.query(`SELECT migration_id,execution_kind FROM train_efficiency_migrations ORDER BY migration_id`)).rows;
+}
+
+function auditedPool(pool: pg.Pool, statements: string[]): Pick<pg.Pool, "connect"> {
+  return {
+    connect: async () => {
+      const client = await pool.connect();
+      return new Proxy(client, {
+        get(target, property, receiver) {
+          if (property === "query") {
+            return async (text: string, values?: unknown[]) => {
+              statements.push(text);
+              return target.query(text, values);
+            };
+          }
+          const value = Reflect.get(target, property, receiver);
+          return typeof value === "function" ? value.bind(target) : value;
+        },
+      });
+    },
+  } as Pick<pg.Pool, "connect">;
+}
+
+function assertNoStructuralSql(statements: string[]): void {
+  assert.equal(statements.some((statement) => /^\s*(CREATE|ALTER|DROP)(?:\s+INDEX)?\b/i.test(statement)), false, statements.join("\n"));
 }
 
 async function populatedExistingPool(): Promise<pg.Pool> {
@@ -45,6 +71,7 @@ async function rejectsAdoption(pool: pg.Pool, pattern: RegExp): Promise<void> {
 
 after(async () => {
   for (const schema of schemas) await adminPool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`);
+  for (const role of roles) await adminPool.query(`DROP ROLE IF EXISTS "${role}"`);
   await adminPool.end();
 });
 
@@ -93,6 +120,93 @@ test("repeat migration is a checksum-verified no-op and bootstrap remains compat
   assert.deepEqual(await ledger(pool), before);
   await bootstrap.initializeRequiredSchema(pool);
   assert.equal(bootstrap.getSchemaReadiness().state, "ready");
+  await pool.end();
+});
+
+test("fully migrated runtime readiness is READY and issues no structural SQL", async () => {
+  const pool = await poolFor(newSchema());
+  await migrations.runApplicationMigrations(pool, { migrationsDirectory });
+  const statements: string[] = [];
+  await migrations.verifyApplicationMigrationReadiness(auditedPool(pool, statements), { migrationsDirectory });
+  assert.equal(migrations.getApplicationMigrationReadiness().state, "ready");
+  assertNoStructuralSql(statements);
+  await pool.end();
+});
+
+test("complete runtime startup readiness path uses read-only validation only", async () => {
+  const pool = await poolFor(newSchema());
+  await migrations.runApplicationMigrations(pool, { migrationsDirectory });
+  await bootstrap.initializeRequiredSchema(pool);
+  await features.initializeRequiredFeatureSchemas(pool);
+  const statements: string[] = [];
+  const runtimePool = auditedPool(pool, statements);
+  await migrations.verifyApplicationMigrationReadiness(runtimePool, { migrationsDirectory });
+  await bootstrap.verifyRequiredSchemaReadiness(runtimePool);
+  await features.verifyRequiredFeatureSchemaReadiness(runtimePool);
+  assert.equal(bootstrap.getSchemaReadiness().state, "ready");
+  assert.equal(features.getRequiredFeatureSchemaReadiness().state, "ready");
+  assertNoStructuralSql(statements);
+  await pool.end();
+});
+
+test("DDL-restricted runtime role completes the read-only startup readiness path", async () => {
+  const schema = newSchema();
+  const ownerPool = await poolFor(schema);
+  await migrations.runApplicationMigrations(ownerPool, { migrationsDirectory });
+  await bootstrap.initializeRequiredSchema(ownerPool);
+  await features.initializeRequiredFeatureSchemas(ownerPool);
+  const role = `migration_runtime_${randomUUID().replaceAll("-", "")}`;
+  roles.push(role);
+  await adminPool.query(`CREATE ROLE "${role}" LOGIN`);
+  await adminPool.query(`GRANT USAGE ON SCHEMA "${schema}" TO "${role}"`);
+  await adminPool.query(`GRANT SELECT ON ALL TABLES IN SCHEMA "${schema}" TO "${role}"`);
+  assert.equal((await adminPool.query(`SELECT has_schema_privilege($1,$2,'CREATE') AS allowed`, [role, schema])).rows[0].allowed, false);
+  const runtimePool = new Pool({ connectionString, user: role, options: `-c search_path=${schema}` });
+  const statements: string[] = [];
+  const auditedRuntimePool = auditedPool(runtimePool, statements);
+  await migrations.verifyApplicationMigrationReadiness(auditedRuntimePool, { migrationsDirectory });
+  await bootstrap.verifyRequiredSchemaReadiness(auditedRuntimePool);
+  await features.verifyRequiredFeatureSchemaReadiness(auditedRuntimePool);
+  assertNoStructuralSql(statements);
+  await runtimePool.end();
+  await ownerPool.end();
+});
+
+test("behind runtime readiness reports MIGRATIONS_REQUIRED and issues no structural SQL", async () => {
+  const pool = await poolFor(newSchema());
+  await migrations.runApplicationMigrations(pool, { migrationsDirectory });
+  await pool.query(`DELETE FROM train_efficiency_migrations WHERE migration_id='0020_agentmail_followup_schema.sql'`);
+  const statements: string[] = [];
+  await assert.rejects(
+    migrations.verifyApplicationMigrationReadiness(auditedPool(pool, statements), { migrationsDirectory }),
+    /MIGRATIONS_REQUIRED: pending migrations: 0020_agentmail_followup_schema\.sql/,
+  );
+  assertNoStructuralSql(statements);
+  await pool.end();
+});
+
+test("missing ledger runtime readiness fails closed and issues no structural SQL", async () => {
+  const pool = await poolFor(newSchema());
+  const statements: string[] = [];
+  await assert.rejects(
+    migrations.verifyApplicationMigrationReadiness(auditedPool(pool, statements), { migrationsDirectory }),
+    /MIGRATION_INFRASTRUCTURE_MISSING.*run the privileged migration command/,
+  );
+  assertNoStructuralSql(statements);
+  assert.equal(await pool.query(`SELECT to_regclass('train_efficiency_migrations') AS ledger`).then((result) => result.rows[0].ledger), null);
+  await pool.end();
+});
+
+test("checksum-conflicting runtime readiness fails closed and issues no structural SQL", async () => {
+  const pool = await poolFor(newSchema());
+  await migrations.runApplicationMigrations(pool, { migrationsDirectory });
+  await pool.query(`UPDATE train_efficiency_migrations SET checksum_sha256='invalid' WHERE migration_id='0020_agentmail_followup_schema.sql'`);
+  const statements: string[] = [];
+  await assert.rejects(
+    migrations.verifyApplicationMigrationReadiness(auditedPool(pool, statements), { migrationsDirectory }),
+    /MIGRATION_STATE_INVALID: checksum mismatch for 0020_agentmail_followup_schema\.sql/,
+  );
+  assertNoStructuralSql(statements);
   await pool.end();
 });
 
@@ -242,12 +356,13 @@ test("three independent migrators serialize and converge on one ledger", async (
 
 test("startup orders formal migrations before bootstrap, workers, routes, and listen", async () => {
   const source = await readFile(new URL("../index.ts", import.meta.url), "utf8");
-  const migration = source.indexOf("await runApplicationMigrations()");
-  const required = source.indexOf("await initializeRequiredSchema()");
+  const migration = source.indexOf("await verifyApplicationMigrationReadiness()");
+  const required = source.indexOf("await verifyRequiredSchemaReadiness()");
+  const features = source.indexOf("await verifyRequiredFeatureSchemaReadiness()");
   const worker = source.indexOf("await startAgentDeadLetterWorker()");
   const routes = source.indexOf("await registerRoutes(httpServer, app)");
   const listen = source.indexOf("httpServer.listen(");
-  assert.ok(migration >= 0 && migration < required && required < worker && worker < routes && routes < listen);
+  assert.ok(migration >= 0 && migration < required && required < features && features < worker && worker < routes && routes < listen);
 });
 
 test("migration readiness exposes only expected/applied identifiers and state", async () => {

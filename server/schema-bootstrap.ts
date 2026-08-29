@@ -112,3 +112,20 @@ export async function initializeRequiredSchema(dbPool: Pick<Pool, "connect"> = p
     client.release();
   }
 }
+
+export async function verifyRequiredSchemaReadiness(dbPool: Pick<Pool, "connect"> = pool): Promise<void> {
+  readiness = "initializing";
+  readinessError = null;
+  const client = await dbPool.connect();
+  try {
+    await validateRequiredSchema(client);
+    readiness = "ready";
+    console.log(`[SchemaBootstrap] runtime readiness verified (${BOOTSTRAP_VERSION})`);
+  } catch (error) {
+    readiness = "failed";
+    readinessError = error instanceof Error ? error.message : String(error);
+    throw error;
+  } finally {
+    client.release();
+  }
+}

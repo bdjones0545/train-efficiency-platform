@@ -157,14 +157,14 @@ test("retry after a deterministic initialization failure succeeds", async () => 
 test("startup and health source gate workers, routes, and listen on feature readiness", async () => {
   const source = await readFile(new URL("../index.ts", import.meta.url), "utf8");
   const reliabilitySource = await readFile(new URL("../reliability-routes.ts", import.meta.url), "utf8");
-  const migration = source.indexOf("await runApplicationMigrations()");
-  const core = source.indexOf("await initializeRequiredSchema()");
-  const feature = source.indexOf("await initializeRequiredFeatureSchemas()");
+  const migration = source.indexOf("await verifyApplicationMigrationReadiness()");
+  const core = source.indexOf("await verifyRequiredSchemaReadiness()");
+  const feature = source.indexOf("await verifyRequiredFeatureSchemaReadiness()");
   const deadLetter = source.indexOf("await startAgentDeadLetterWorker()");
   const workflow = source.indexOf("startWorkflowJobRunner()");
   const routes = source.indexOf("await registerRoutes(httpServer, app)");
   const listen = source.indexOf("httpServer.listen(");
-  assert.ok(migration < core && core < feature && feature < deadLetter && deadLetter < workflow && workflow < routes && routes < listen);
+  assert.ok(migration >= 0 && migration < core && core < feature && feature < deadLetter && deadLetter < workflow && workflow < routes && routes < listen);
   assert.match(reliabilitySource, /featureSchema\.state === "ready"/);
   assert.match(reliabilitySource, /requiredFeatureSchema: featureSchema\.state/);
 });
