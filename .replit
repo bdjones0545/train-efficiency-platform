@@ -9,6 +9,10 @@ modules = ["nodejs-20", "web", "python-3.11", "postgresql-16"]
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 5111
+externalPort = 3000
+
   [env]
   PORT = "5000"
 
