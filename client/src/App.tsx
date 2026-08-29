@@ -466,6 +466,7 @@ function OrgLayout({ orgSlug }: { orgSlug: string }) {
 
 function AuthenticatedLayout() {
   const [location] = useLocation();
+  const perms = usePermissions();
 
   if (location === "/admin/setup") {
     return <AdminSetupPage />;
@@ -481,6 +482,7 @@ function AuthenticatedLayout() {
   }
 
   const isFullscreenPage = location === "/scheduling/agent";
+  const isOrgHomeRoute = location === "/" && perms.canViewRevenue;
 
   const style = {
     "--sidebar-width": "16rem",
@@ -508,8 +510,8 @@ function AuthenticatedLayout() {
             <AttentionBell />
             <ThemeToggle />
           </header>
-          <main className={`flex-1 min-h-0 ${isFullscreenPage ? "overflow-hidden" : "main-scroll overflow-y-auto p-4 md:p-6 pb-safe"}`}>
-            <div className={isFullscreenPage ? "h-full" : "max-w-5xl mx-auto"}>
+          <main className={`flex-1 min-h-0 ${isFullscreenPage || isOrgHomeRoute ? "overflow-hidden" : "main-scroll overflow-y-auto p-4 md:p-6 pb-safe"}`}>
+            <div className={isFullscreenPage || isOrgHomeRoute ? "h-full" : "max-w-5xl mx-auto"}>
               <SubscriptionGate>
                 <PageErrorBoundary>
                 <Switch>
@@ -528,6 +530,8 @@ function AuthenticatedLayout() {
                   <Route path="/admin/forecast" component={AdminForecastPage} />
                   <Route path="/athletic" component={AthleticSchedulingPage} />
                   <Route path="/bookings" component={MyBookingsPage} />
+                  <Route path="/client/onboarding" component={ClientOnboardingPage} />
+                  <Route path="/guardian/onboarding" component={GuardianOnboardingPage} />
                   <Route path="/settings" component={SettingsPage} />
                   <Route path="/wallet" component={WalletPage} />
                   {/* TODO Phase 2 cleanup: /coach redirected to unified Home Screen */}

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, Component } from "react";
 import { createPortal } from "react-dom";
+import { useLocation } from "wouter";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   X, Send, User, Brain, AlertTriangle, CheckCircle2, XCircle,
@@ -696,6 +697,7 @@ const TABS: { id: Tab; label: string; icon: any }[] = [
 // ─── Main Widget — Kevin launcher (Chat + Inbox only) ─────────────────────────
 
 export function ChatWidget() {
+  const [location] = useLocation();
   const [isMounted, setIsMounted] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   // isClosing: true from the moment X is pressed until the panel fully exits.
@@ -750,7 +752,9 @@ export function ChatWidget() {
 
   // Hide entirely for non-admin/coach roles. Wait for profile to load first
   // so there is no flash for regular users. Return null after all hooks.
-  if (profileLoading || !isAllowed) return null;
+  // Home is Kevin's full-page experience for organization users. Do not mount
+  // the floating launcher there and create a duplicate conversation surface.
+  if (profileLoading || !isAllowed || location === "/") return null;
 
   return createPortal(
     <BrainPortalErrorBoundary>
