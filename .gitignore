@@ -6,3 +6,6 @@ vite.config.ts.*
 *.tar.gz
 # Kevin Phase-0 local secrets
 .env.kevin.local
+
+# Temporary certificate worktrees created by authenticated browser tests
+.cert-*/
