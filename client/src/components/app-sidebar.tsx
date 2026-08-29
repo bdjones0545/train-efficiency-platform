@@ -593,7 +593,7 @@ export function AppSidebar() {
         testId: "nav-athlete-leads",
       },
       {
-        title: preset.nav.businessLeads,
+        title: "Team Leads",
         url: "/admin/team-training-leads",
         icon: Building2,
         testId: "nav-business-leads",
@@ -603,12 +603,6 @@ export function AppSidebar() {
         url: "/admin/team-training-deals",
         icon: KanbanSquare,
         testId: "nav-pipeline",
-      },
-      {
-        title: "Opportunities",
-        url: "/admin/opportunity-acquisition",
-        icon: Target,
-        testId: "nav-opportunity-acquisition",
       },
     ],
   };
