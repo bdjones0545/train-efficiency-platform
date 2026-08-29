@@ -627,12 +627,6 @@ export function AppSidebar() {
               icon: BarChart2,
               testId: "nav-revenue-overview",
             },
-            {
-              title: "Forecast",
-              url: "/admin/forecast",
-              icon: TrendingUp,
-              testId: "nav-forecasting",
-            },
           ]
         : []),
       ...(coachTransactionsVisible
