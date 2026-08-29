@@ -471,34 +471,6 @@ export function AppSidebar() {
         icon: LayoutDashboard,
         testId: "nav-scheduling-dashboard",
       },
-      ...(isAdmin
-        ? [
-            {
-              title: "Command Center",
-              url: "/admin/scheduling-command-center",
-              icon: CalendarDays,
-              testId: "nav-scheduling-command-center",
-            },
-            {
-              title: "Scheduling Copilot",
-              url: "/admin/scheduling-copilot",
-              icon: Bot,
-              testId: "nav-scheduling-copilot",
-            },
-            {
-              title: "Opportunity Inbox",
-              url: "/admin/scheduling-opportunity-inbox",
-              icon: Inbox,
-              testId: "nav-scheduling-opportunity-inbox",
-            },
-            {
-              title: "Coach Capacity",
-              url: "/admin/coach-capacity",
-              icon: BarChart2,
-              testId: "nav-coach-capacity",
-            },
-          ]
-        : []),
       {
         title: preset.nav.groupSessions,
         url: "/sessions",
