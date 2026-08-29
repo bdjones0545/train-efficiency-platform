@@ -10,6 +10,10 @@ import { sql } from "drizzle-orm";
 import { attentionItems } from "@shared/schema";
 import { writeTimeline } from "./services/ceo-heartbeat-service";
 import {
+  sendAgentMailFollowupUnavailable,
+  validateAgentMailFollowupSchema,
+} from "./agentmail-followup-schema-validation";
+import {
   processDueFollowups,
   cancelFollowupsForThread,
   markFollowupSkipped,
@@ -30,50 +34,6 @@ async function getOrgId(req: any): Promise<string> {
   // Throws OrgResolutionError (converted to 403 by orgErrorMiddleware) when the
   // org cannot be determined from the authenticated session — fail closed.
   return await resolveOrgIdOrThrow(req);
-}
-
-// ─── Table setup ─────────────────────────────────────────────────────────────
-
-async function ensureFollowupTable(): Promise<void> {
-  try {
-    await db.execute(sql`
-      CREATE TABLE IF NOT EXISTS agent_mail_followups (
-        id                          TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
-        organization_id             TEXT NOT NULL,
-        source_inbound_message_id   TEXT,
-        source_reply_queue_id       TEXT,
-        inbox                       TEXT NOT NULL,
-        agent_name                  TEXT NOT NULL,
-        classification              TEXT NOT NULL,
-        recipient_email             TEXT NOT NULL,
-        recipient_name              TEXT,
-        subject                     TEXT NOT NULL,
-        followup_body               TEXT NOT NULL,
-        edited_body                 TEXT,
-        sequence_name               TEXT NOT NULL,
-        sequence_step               INTEGER NOT NULL DEFAULT 1,
-        scheduled_for               TIMESTAMPTZ NOT NULL,
-        status                      TEXT NOT NULL DEFAULT 'scheduled',
-        approval_status             TEXT NOT NULL DEFAULT 'pending',
-        approved_by                 TEXT,
-        approved_at                 TIMESTAMPTZ,
-        sent_at                     TIMESTAMPTZ,
-        provider_message_id         TEXT,
-        skipped_reason              TEXT,
-        error_message               TEXT,
-        created_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        updated_at                  TIMESTAMPTZ NOT NULL DEFAULT NOW()
-      )
-    `);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_followup_org        ON agent_mail_followups (organization_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_followup_status     ON agent_mail_followups (status)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_followup_scheduled  ON agent_mail_followups (scheduled_for)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_followup_inbox      ON agent_mail_followups (inbox)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_followup_inbound    ON agent_mail_followups (source_inbound_message_id)`);
-    await db.execute(sql`CREATE INDEX IF NOT EXISTS idx_followup_reply      ON agent_mail_followups (source_reply_queue_id)`);
-  } catch (e: any) {
-    console.error("[AgentMail Followup] Table setup error:", e?.message);
-  }
 }
 
 // ─── Cron ────────────────────────────────────────────────────────────────────
@@ -116,8 +76,20 @@ export async function registerAgentMailFollowupRoutes(
   isAuthenticated: (req: any, res: any, next: any) => void,
   requireRole: (...roles: string[]) => (req: any, res: any, next: any) => void,
 ): Promise<void> {
-  await ensureFollowupTable();
-  startFollowupCron();
+  try {
+    await validateAgentMailFollowupSchema();
+    startFollowupCron();
+  } catch (error) {
+    if (!(error instanceof Error) || error.name !== "AgentMailFollowupSchemaUnavailableError") throw error;
+    console.error("[AgentMail Followup] Scheduler unavailable: follow-up schema is not ready");
+  }
+
+  const requireFollowupSchema = async (_req: any, res: any, next: any) => {
+    try { await validateAgentMailFollowupSchema(); next(); }
+    catch (error) { if (!sendAgentMailFollowupUnavailable(error, res)) next(error); }
+  };
+  app.use("/api/agentmail/followups", isAuthenticated, requireFollowupSchema);
+  app.use("/api/agentmail/followup-analytics", isAuthenticated, requireFollowupSchema);
 
   // ── GET /api/agentmail/followups ─────────────────────────────────────────
   app.get("/api/agentmail/followups", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
@@ -148,7 +120,7 @@ export async function registerAgentMailFollowupRoutes(
         ORDER BY f.scheduled_for ASC
         LIMIT ${Math.min(parseInt(limit, 10) || 150, 500)}
         OFFSET ${parseInt(offset, 10) || 0}
-      `).catch(() => []));
+      `));
 
       if (status)          followups = followups.filter((f: any) => f.status === status);
       if (inbox)           followups = followups.filter((f: any) => f.inbox === inbox);
@@ -162,28 +134,28 @@ export async function registerAgentMailFollowupRoutes(
         FROM agent_mail_followups
         WHERE organization_id = ${orgId}
         GROUP BY status
-      `).catch(() => []));
+      `));
       const byStatus: Record<string, number> = {};
       for (const r of statsRows) byStatus[r.status] = r.cnt;
 
       const pendingReview = rows(await db.execute(sql`
         SELECT COUNT(*)::int AS cnt FROM agent_mail_followups
         WHERE organization_id = ${orgId} AND status = 'pending_review'
-      `).catch(() => []))[0]?.cnt ?? 0;
+      `))[0]?.cnt ?? 0;
 
       const overdueCount = rows(await db.execute(sql`
         SELECT COUNT(*)::int AS cnt FROM agent_mail_followups
         WHERE organization_id = ${orgId}
           AND status = 'scheduled'
           AND scheduled_for < ${now}
-      `).catch(() => []))[0]?.cnt ?? 0;
+      `))[0]?.cnt ?? 0;
 
       const dueTodayCount = rows(await db.execute(sql`
         SELECT COUNT(*)::int AS cnt FROM agent_mail_followups
         WHERE organization_id = ${orgId}
           AND status IN ('scheduled','pending_review')
           AND scheduled_for <= ${todayEnd}
-      `).catch(() => []))[0]?.cnt ?? 0;
+      `))[0]?.cnt ?? 0;
 
       res.json({
         followups,
@@ -226,7 +198,7 @@ export async function registerAgentMailFollowupRoutes(
         LEFT JOIN agent_mail_inbound_messages im ON im.id = f.source_inbound_message_id
         LEFT JOIN agent_mail_reply_queue rq ON rq.id = f.source_reply_queue_id
         WHERE f.id = ${id} AND f.organization_id = ${orgId}
-      `).catch(() => []));
+      `));
 
       if (!followup) return res.status(404).json({ message: "Follow-up not found" });
 
@@ -238,7 +210,7 @@ export async function registerAgentMailFollowupRoutes(
           AND source_inbound_message_id = ${followup.source_inbound_message_id}
           AND sequence_step < ${followup.sequence_step}
         ORDER BY sequence_step ASC
-      `).catch(() => []));
+      `));
 
       res.json({ ...followup, priorFollowups });
     } catch (e: any) {
@@ -256,12 +228,15 @@ export async function registerAgentMailFollowupRoutes(
       const { edited_body } = req.body;
       if (!edited_body?.trim()) return res.status(400).json({ message: "edited_body is required" });
 
-      await db.execute(sql`
+      const changed = rows(await db.execute(sql`
         UPDATE agent_mail_followups
-        SET edited_body = ${edited_body}, updated_at = NOW()
+        SET edited_body = ${edited_body}, approval_status = 'pending_review', approved_by = NULL,
+            approved_at = NULL, approved_payload_version = NULL, updated_at = NOW()
         WHERE id = ${id} AND organization_id = ${orgId}
-          AND status NOT IN ('sent','cancelled','failed')
-      `);
+          AND status NOT IN ('sending','sent','cancelled','failed','uncertain_provider_outcome')
+        RETURNING id
+      `));
+      if (!changed.length) return res.status(404).json({ message: "Follow-up not found or no longer editable" });
 
       res.json({ ok: true, message: "Follow-up draft updated" });
     } catch (e: any) {
@@ -280,15 +255,17 @@ export async function registerAgentMailFollowupRoutes(
 
       const f = row0(await db.execute(sql`
         SELECT * FROM agent_mail_followups WHERE id = ${id} AND organization_id = ${orgId}
-      `).catch(() => []));
+      `));
       if (!f) return res.status(404).json({ message: "Follow-up not found" });
       if (f.status === "sent") return res.status(400).json({ message: "Already sent" });
       if (f.approval_status === "approved") return res.status(400).json({ message: "Already approved" });
 
+      const { agentMailFollowupPayloadVersion } = await import("./services/agentmail-followup-service");
+      const payloadVersion = agentMailFollowupPayloadVersion(f);
       await db.execute(sql`
         UPDATE agent_mail_followups
         SET approval_status = 'approved', approved_by = ${approver},
-            approved_at = NOW(), updated_at = NOW()
+            approved_at = NOW(), approved_payload_version = ${payloadVersion}, updated_at = NOW()
         WHERE id = ${id} AND organization_id = ${orgId}
       `);
 
@@ -323,7 +300,7 @@ export async function registerAgentMailFollowupRoutes(
 
       const f = row0(await db.execute(sql`
         SELECT * FROM agent_mail_followups WHERE id = ${id} AND organization_id = ${orgId}
-      `).catch(() => []));
+      `));
       if (!f) return res.status(404).json({ message: "Follow-up not found" });
       if (f.status === "sent") return res.status(400).json({ message: "Already sent" });
 
@@ -419,7 +396,7 @@ export async function registerAgentMailFollowupRoutes(
 
       const f = row0(await db.execute(sql`
         SELECT * FROM agent_mail_followups WHERE id = ${id} AND organization_id = ${orgId}
-      `).catch(() => []));
+      `));
       if (!f) return res.status(404).json({ message: "Follow-up not found" });
 
       if (cancelAll) {
@@ -486,7 +463,7 @@ export async function registerAgentMailFollowupRoutes(
       const orgId = await getOrgId(req);
       if (!orgId) return res.status(400).json({ message: "orgId required" });
 
-      const result = await processDueFollowups();
+      const result = await processDueFollowups(orgId);
       res.json({ ok: true, ...result });
     } catch (e: any) {
       res.status(500).json({ message: e?.message ?? "Failed to process due follow-ups" });
@@ -515,7 +492,7 @@ export async function registerAgentMailFollowupRoutes(
           COUNT(*) FILTER (WHERE sent_at >= NOW() - INTERVAL '24 hours')::int AS sent_today
         FROM agent_mail_followups
         WHERE organization_id = ${orgId}
-      `).catch(() => [])) ?? {};
+      `)) ?? {};
 
       // Most active inbox
       const inboxRows = rows(await db.execute(sql`
@@ -525,7 +502,7 @@ export async function registerAgentMailFollowupRoutes(
         GROUP BY inbox
         ORDER BY cnt DESC
         LIMIT 1
-      `).catch(() => []));
+      `));
       const mostActiveInbox = inboxRows[0]?.inbox ?? null;
 
       // Agent with most pending
@@ -536,7 +513,7 @@ export async function registerAgentMailFollowupRoutes(
         GROUP BY agent_name
         ORDER BY cnt DESC
         LIMIT 1
-      `).catch(() => []));
+      `));
       const mostPendingAgent = agentRows[0]?.agent_name ?? null;
 
       // Most common classification needing follow-up
@@ -547,7 +524,7 @@ export async function registerAgentMailFollowupRoutes(
         GROUP BY classification
         ORDER BY cnt DESC
         LIMIT 1
-      `).catch(() => []));
+      `));
       const mostCommonClassification = classRows[0]?.classification ?? null;
 
       // Per-agent metrics
@@ -563,7 +540,7 @@ export async function registerAgentMailFollowupRoutes(
         WHERE organization_id = ${orgId}
         GROUP BY agent_name
         ORDER BY scheduled DESC
-      `).catch(() => []));
+      `));
 
       // Per-classification metrics
       const classMetrics = rows(await db.execute(sql`
@@ -577,7 +554,7 @@ export async function registerAgentMailFollowupRoutes(
         WHERE organization_id = ${orgId}
         GROUP BY classification
         ORDER BY total DESC
-      `).catch(() => []));
+      `));
 
       res.json({
         summary: { ...summary, mostActiveInbox, mostPendingAgent, mostCommonClassification },
