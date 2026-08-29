@@ -93,4 +93,8 @@ KEVIN_CALLBACK_BASE_URL = "https://trainefficiency.com"
 
 [userenv.development]
 KEVIN_AGENT_INTEGRATION_ENABLED = "true"
+
+[postMerge]
+path = "scripts/post-merge.sh"
+timeoutMs = 180000
   
