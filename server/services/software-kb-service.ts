@@ -3,46 +3,13 @@
  * Automatically captures every platform fix, audit resolution, crash, build error,
  * and deployment issue into a persistent, searchable `software_kb_entries` table.
  *
- * Table is created lazily on first use — survives deploys and restarts.
- * Seeded once with real historical fixes documented across the project.
+ * The optional table is validated read-only on each use. Its structure is never
+ * created or repaired by the runtime process.
  */
 
 import { db } from "../db";
 import { sql } from "drizzle-orm";
-
-// ─── Table bootstrap ───────────────────────────────────────────────────────────
-
-let _tableReady = false;
-
-export async function ensureSoftwareKbTable(): Promise<void> {
-  if (_tableReady) return;
-  await db.execute(sql`
-    CREATE TABLE IF NOT EXISTS software_kb_entries (
-      id                   TEXT        PRIMARY KEY DEFAULT gen_random_uuid()::text,
-      org_id               TEXT        NOT NULL,
-      severity             TEXT        NOT NULL DEFAULT 'medium',
-      issue                TEXT        NOT NULL,
-      root_cause           TEXT        NOT NULL DEFAULT '',
-      fix_applied          TEXT        NOT NULL DEFAULT '',
-      files_modified       TEXT        NOT NULL DEFAULT '',
-      outcome              TEXT        NOT NULL DEFAULT '',
-      source               TEXT        NOT NULL DEFAULT 'Manual Entry',
-      source_type          TEXT        NOT NULL DEFAULT 'human_admin',
-      related_entity_type  TEXT        DEFAULT NULL,
-      related_entity_id    TEXT        DEFAULT NULL,
-      metadata             JSONB       DEFAULT '{}',
-      created_at           TIMESTAMPTZ NOT NULL DEFAULT now(),
-      updated_at           TIMESTAMPTZ NOT NULL DEFAULT now()
-    )
-  `);
-  await db.execute(sql`
-    CREATE INDEX IF NOT EXISTS idx_software_kb_org_id      ON software_kb_entries(org_id);
-    CREATE INDEX IF NOT EXISTS idx_software_kb_severity    ON software_kb_entries(severity);
-    CREATE INDEX IF NOT EXISTS idx_software_kb_source_type ON software_kb_entries(source_type);
-    CREATE INDEX IF NOT EXISTS idx_software_kb_created_at  ON software_kb_entries(created_at DESC);
-  `).catch(() => {});
-  _tableReady = true;
-}
+import { validateSoftwareKbSchema } from "../software-kb-schema-validation";
 
 // ─── Seed control ─────────────────────────────────────────────────────────────
 
@@ -183,17 +150,17 @@ const HISTORICAL_FIXES: Omit<SoftwareKbInput, "orgId">[] = [
 
 export async function seedHistoricalFixes(orgId: string): Promise<void> {
   if (_seeded) return;
-  _seeded = true;
-  await ensureSoftwareKbTable();
+  await validateSoftwareKbSchema();
   try {
     const result = await db.execute(sql`SELECT COUNT(*) as cnt FROM software_kb_entries WHERE source_type NOT IN ('human_admin') LIMIT 1`);
     const rows = Array.isArray(result) ? result : (result as any).rows ?? [];
     const cnt = parseInt(rows[0]?.cnt ?? "0", 10);
-    if (cnt > 0) return;
+    if (cnt > 0) { _seeded = true; return; }
     for (const fix of HISTORICAL_FIXES) {
-      await recordSoftwareKbEntry({ ...fix, orgId }).catch(() => {});
+      await recordSoftwareKbEntry({ ...fix, orgId });
     }
-  } catch { _seeded = false; }
+    _seeded = true;
+  } catch (error) { _seeded = false; throw error; }
 }
 
 // ─── Core types ────────────────────────────────────────────────────────────────
@@ -233,11 +200,10 @@ export interface SoftwareKbInput {
 
 // ─── Core write ────────────────────────────────────────────────────────────────
 
-export async function recordSoftwareKbEntry(input: SoftwareKbInput): Promise<string | null> {
-  try {
-    await ensureSoftwareKbTable();
-    const id = `skb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    await db.execute(sql`
+export async function recordSoftwareKbEntry(input: SoftwareKbInput): Promise<string> {
+  await validateSoftwareKbSchema();
+  const id = `skb-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  await db.execute(sql`
       INSERT INTO software_kb_entries (
         id, org_id, severity, issue, root_cause, fix_applied,
         files_modified, outcome, source, source_type,
@@ -257,12 +223,8 @@ export async function recordSoftwareKbEntry(input: SoftwareKbInput): Promise<str
         ${input.relatedEntityId ?? null},
         ${JSON.stringify(input.metadata ?? {})}
       )
-    `);
-    return id;
-  } catch (e) {
-    console.error("[SoftwareKB] recordSoftwareKbEntry failed:", e);
-    return null;
-  }
+  `);
+  return id;
 }
 
 // ─── Queries ───────────────────────────────────────────────────────────────────
@@ -274,12 +236,11 @@ export async function getSoftwareKbEntries(opts: {
   limit?: number;
   offset?: number;
 } = {}): Promise<SoftwareKbEntry[]> {
-  await ensureSoftwareKbTable();
+  await validateSoftwareKbSchema();
   const { orgId, limit = 100, offset = 0 } = opts;
   const severity  = opts.severity  && opts.severity  !== "all" ? opts.severity  : undefined;
   const sourceType = opts.sourceType && opts.sourceType !== "all" ? opts.sourceType : undefined;
-  try {
-    const rows = await db.execute(sql`
+  const result = await db.execute(sql`
       SELECT * FROM software_kb_entries
       WHERE 1=1
         ${orgId      ? sql`AND org_id      = ${orgId}`      : sql``}
@@ -288,20 +249,15 @@ export async function getSoftwareKbEntries(opts: {
       ORDER BY created_at DESC
       LIMIT ${limit} OFFSET ${offset}
     `);
-    const data = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
-    return data.map(mapRow);
-  } catch (e) {
-    console.error("[SoftwareKB] getSoftwareKbEntries failed:", e);
-    return [];
-  }
+  const data = Array.isArray(result) ? result : (result as any).rows ?? [];
+  return data.map(mapRow);
 }
 
 export async function searchSoftwareKbEntries(q: string, orgId?: string, limit = 30): Promise<SoftwareKbEntry[]> {
-  await ensureSoftwareKbTable();
+  await validateSoftwareKbSchema();
   if (!q.trim()) return [];
-  try {
-    const term = `%${q.toLowerCase()}%`;
-    const rows = await db.execute(sql`
+  const term = `%${q.toLowerCase()}%`;
+  const rows = await db.execute(sql`
       SELECT * FROM software_kb_entries
       WHERE (
         lower(issue)          LIKE ${term} OR
@@ -314,13 +270,9 @@ export async function searchSoftwareKbEntries(q: string, orgId?: string, limit =
       ${orgId ? sql`AND org_id = ${orgId}` : sql``}
       ORDER BY created_at DESC
       LIMIT ${limit}
-    `);
-    const data = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
-    return data.map(mapRow);
-  } catch (e) {
-    console.error("[SoftwareKB] searchSoftwareKbEntries failed:", e);
-    return [];
-  }
+  `);
+  const data = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
+  return data.map(mapRow);
 }
 
 export async function getSoftwareKbStats(orgId?: string): Promise<{
@@ -334,56 +286,51 @@ export async function getSoftwareKbStats(orgId?: string): Promise<{
   bySeverity: Record<string, number>;
   topFilesModified: string[];
 }> {
-  await ensureSoftwareKbTable();
-  try {
-    const totalRes = await db.execute(sql`
+  await validateSoftwareKbSchema();
+  const totalRes = await db.execute(sql`
       SELECT COUNT(*) AS cnt FROM software_kb_entries
       ${orgId ? sql`WHERE org_id = ${orgId}` : sql``}
     `);
-    const totalRows = Array.isArray(totalRes) ? totalRes : (totalRes as any).rows ?? [];
-    const total = parseInt(totalRows[0]?.cnt ?? "0", 10);
+  const totalRows = Array.isArray(totalRes) ? totalRes : (totalRes as any).rows ?? [];
+  const total = parseInt(totalRows[0]?.cnt ?? "0", 10);
 
-    const sevRes = await db.execute(sql`
+  const sevRes = await db.execute(sql`
       SELECT severity, COUNT(*) AS cnt FROM software_kb_entries
       ${orgId ? sql`WHERE org_id = ${orgId}` : sql``}
       GROUP BY severity
     `);
-    const sevRows = Array.isArray(sevRes) ? sevRes : (sevRes as any).rows ?? [];
-    const bySeverity: Record<string, number> = {};
-    for (const r of sevRows) bySeverity[String(r.severity)] = parseInt(String(r.cnt), 10);
+  const sevRows = Array.isArray(sevRes) ? sevRes : (sevRes as any).rows ?? [];
+  const bySeverity: Record<string, number> = {};
+  for (const r of sevRows) bySeverity[String(r.severity)] = parseInt(String(r.cnt), 10);
 
-    const srcRes = await db.execute(sql`
+  const srcRes = await db.execute(sql`
       SELECT source_type, COUNT(*) AS cnt FROM software_kb_entries
       ${orgId ? sql`WHERE org_id = ${orgId}` : sql``}
       GROUP BY source_type
     `);
-    const srcRows = Array.isArray(srcRes) ? srcRes : (srcRes as any).rows ?? [];
-    const bySourceType: Record<string, number> = {};
-    for (const r of srcRows) bySourceType[String(r.source_type)] = parseInt(String(r.cnt), 10);
+  const srcRows = Array.isArray(srcRes) ? srcRes : (srcRes as any).rows ?? [];
+  const bySourceType: Record<string, number> = {};
+  for (const r of srcRows) bySourceType[String(r.source_type)] = parseInt(String(r.cnt), 10);
 
-    const weekRes = await db.execute(sql`
+  const weekRes = await db.execute(sql`
       SELECT COUNT(*) AS cnt FROM software_kb_entries
       WHERE created_at > now() - interval '7 days'
       ${orgId ? sql`AND org_id = ${orgId}` : sql``}
     `);
-    const weekRows = Array.isArray(weekRes) ? weekRes : (weekRes as any).rows ?? [];
-    const last7DaysCount = parseInt(String(weekRows[0]?.cnt ?? "0"), 10);
+  const weekRows = Array.isArray(weekRes) ? weekRes : (weekRes as any).rows ?? [];
+  const last7DaysCount = parseInt(String(weekRows[0]?.cnt ?? "0"), 10);
 
-    return {
-      total,
-      criticalCount: bySeverity["critical"] ?? 0,
-      highCount:     bySeverity["high"]     ?? 0,
-      mediumCount:   bySeverity["medium"]   ?? 0,
-      lowCount:      bySeverity["low"]      ?? 0,
-      last7DaysCount,
-      bySourceType,
-      bySeverity,
-      topFilesModified: [],
-    };
-  } catch (e) {
-    console.error("[SoftwareKB] getSoftwareKbStats failed:", e);
-    return { total: 0, criticalCount: 0, highCount: 0, mediumCount: 0, lowCount: 0, last7DaysCount: 0, bySourceType: {}, bySeverity: {}, topFilesModified: [] };
-  }
+  return {
+    total,
+    criticalCount: bySeverity["critical"] ?? 0,
+    highCount: bySeverity["high"] ?? 0,
+    mediumCount: bySeverity["medium"] ?? 0,
+    lowCount: bySeverity["low"] ?? 0,
+    last7DaysCount,
+    bySourceType,
+    bySeverity,
+    topFilesModified: [],
+  };
 }
 
 // ─── Convenience wrappers ──────────────────────────────────────────────────────

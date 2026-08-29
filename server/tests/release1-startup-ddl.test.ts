@@ -31,8 +31,11 @@ test("reachable production startup registrations no longer invoke structural ini
   const routes = await readFile(new URL("../routes.ts", import.meta.url), "utf8");
   const guardian = await readFile(new URL("../services/guardian-admin-service.ts", import.meta.url), "utf8");
   const composio = await readFile(new URL("../services/composio-service.ts", import.meta.url), "utf8");
+  const softwareKb = await readFile(new URL("../services/software-kb-service.ts", import.meta.url), "utf8");
   assert.doesNotMatch(index, /runMigrations\s*\(/);
   assert.doesNotMatch(routes, /await (?:bootstrapKevinSlackTables|ensureIntentTables|createAgentTables|ensureCallbackNoncesTable)\s*\(/);
   assert.doesNotMatch(guardian, /CREATE TABLE/i);
   assert.doesNotMatch(composio.slice(composio.indexOf("export async function ensureComposioLogTable"), composio.indexOf("// ─── Logging")), /CREATE (?:TABLE|INDEX)/i);
+  assert.doesNotMatch(softwareKb, /\b(?:CREATE|ALTER|DROP)\s+(?:TABLE|INDEX)\b/i);
+  assert.match(softwareKb, /validateSoftwareKbSchema/);
 });

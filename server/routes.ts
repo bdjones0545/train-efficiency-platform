@@ -45,6 +45,7 @@ import { onPaymentReceived, onRedemption } from "./revenue-recognition";
 import { executeManualPaymentForOrganization } from "./services/manual-payment-service";
 import { computeCommandCenter, setMonthlyGoal, buildCommandCenterContextString } from "./business-command-center";
 import { getCommandCenterSummary, getCommandCenterBriefing, getCommandCenterActionQueue, getCommandCenterNotifications, getCommandCenterApprovals } from "./command-center-live-routes";
+import { sendSoftwareKbUnavailable, SoftwareKbSchemaUnavailableError } from "./software-kb-schema-validation";
 
 const OWNER_EMAIL = "bryan.jones@efficiencystrengthtraining.com";
 
@@ -32263,7 +32264,13 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
     try {
       const { seedHistoricalFixes } = await import("./services/software-kb-service");
       await seedHistoricalFixes("default");
-    } catch (_) {}
+    } catch (error) {
+      if (error instanceof SoftwareKbSchemaUnavailableError) {
+        console.warn("[SoftwareKB] optional schema unavailable; startup continuing without Software KB");
+      } else {
+        console.error("[SoftwareKB] optional startup initialization failed:", error);
+      }
+    }
   })();
 
   // GET /api/organizational-memory/software-kb
@@ -32276,7 +32283,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const { getSoftwareKbEntries } = await import("./services/software-kb-service");
       const entries = await getSoftwareKbEntries({ orgId, severity, sourceType, limit: Number(limit), offset: Number(offset) });
       res.json({ entries, total: entries.length, generatedAt: new Date().toISOString() });
-    } catch (e: any) { res.status(500).json({ message: "Failed to load software KB" }); }
+    } catch (e: any) { if (!sendSoftwareKbUnavailable(e, res)) res.status(500).json({ message: "Failed to load software KB" }); }
   });
 
   // GET /api/organizational-memory/software-kb/stats
@@ -32288,7 +32295,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const { getSoftwareKbStats } = await import("./services/software-kb-service");
       const stats = await getSoftwareKbStats(orgId);
       res.json({ ...stats, generatedAt: new Date().toISOString() });
-    } catch (e: any) { res.status(500).json({ message: "Failed to load software KB stats" }); }
+    } catch (e: any) { if (!sendSoftwareKbUnavailable(e, res)) res.status(500).json({ message: "Failed to load software KB stats" }); }
   });
 
   // GET /api/organizational-memory/software-kb/search
@@ -32302,7 +32309,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const { searchSoftwareKbEntries } = await import("./services/software-kb-service");
       const results = await searchSoftwareKbEntries(q, orgId, 30);
       res.json({ results, query: q, total: results.length, generatedAt: new Date().toISOString() });
-    } catch (e: any) { res.status(500).json({ message: "Failed to search software KB" }); }
+    } catch (e: any) { if (!sendSoftwareKbUnavailable(e, res)) res.status(500).json({ message: "Failed to search software KB" }); }
   });
 
   // POST /api/organizational-memory/software-kb/record — manual entry
@@ -32323,7 +32330,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
         relatedEntityId: relatedEntityId ?? undefined,
       });
       res.json({ success: true, id });
-    } catch (e: any) { res.status(500).json({ message: "Failed to record software KB entry" }); }
+    } catch (e: any) { if (!sendSoftwareKbUnavailable(e, res)) res.status(500).json({ message: "Failed to record software KB entry" }); }
   });
 
   // POST /api/organizational-memory/software-kb/error-boundary — frontend error boundary events
@@ -32337,7 +32344,7 @@ Return: { "answer": "...(2-3 sentences direct answer)...", "insights": [{"insigh
       const { recordErrorBoundaryEvent } = await import("./services/software-kb-service");
       await recordErrorBoundaryEvent({ orgId, component, error, url });
       res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ message: "Failed to record error boundary event" }); }
+    } catch (e: any) { if (!sendSoftwareKbUnavailable(e, res)) res.status(500).json({ message: "Failed to record error boundary event" }); }
   });
 
   // GET /api/organizational-memory/lessons
