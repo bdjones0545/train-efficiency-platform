@@ -55,7 +55,15 @@ async function createLegacyDependents(client: PoolClient): Promise<void> {
     notes text, created_at timestamptz NOT NULL DEFAULT now()
   )`);
   await client.query(`CREATE TABLE agent_mail_followups (
-    id text PRIMARY KEY, source_reply_queue_id text
+    id text PRIMARY KEY DEFAULT gen_random_uuid()::text, organization_id text NOT NULL,
+    source_inbound_message_id text, source_reply_queue_id text, inbox text NOT NULL,
+    agent_name text NOT NULL, classification text NOT NULL, recipient_email text NOT NULL,
+    recipient_name text, subject text NOT NULL, followup_body text NOT NULL, edited_body text,
+    sequence_name text NOT NULL, sequence_step integer NOT NULL DEFAULT 1,
+    scheduled_for timestamptz NOT NULL, status text NOT NULL DEFAULT 'scheduled',
+    approval_status text NOT NULL DEFAULT 'pending', approved_by text, approved_at timestamptz,
+    sent_at timestamptz, provider_message_id text, skipped_reason text, error_message text,
+    created_at timestamptz NOT NULL DEFAULT now(), updated_at timestamptz NOT NULL DEFAULT now()
   )`);
 }
 
@@ -149,7 +157,9 @@ test("equivalent duplicates retain the deterministic oldest-id survivor and repo
     await client.query(`INSERT INTO agent_mail_reply_outcomes
       (id,reply_queue_id,organization_id,agent_name,inbox,classification,outcome_type)
       VALUES('outcome-a','reply-b','org-a','agent','general','general_question','sent')`);
-    await client.query(`INSERT INTO agent_mail_followups(id,source_reply_queue_id) VALUES('followup-a','reply-b')`);
+    await client.query(`INSERT INTO agent_mail_followups
+      (id,organization_id,source_reply_queue_id,inbox,agent_name,classification,recipient_email,subject,followup_body,sequence_name,scheduled_for)
+      VALUES('followup-a','org-a','reply-b','general','agent','general_question','person@example.com','Re: subject','body','General Follow-Up',NOW())`);
   });
   assert.deepEqual((await pool.query(`SELECT id FROM agent_mail_reply_queue`)).rows, [{ id: "reply-a" }]);
   assert.equal((await pool.query(`SELECT reply_queue_id FROM agent_mail_reply_outcomes`)).rows[0].reply_queue_id, "reply-a");
