@@ -141,7 +141,7 @@ function NavLink({
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// DirectNavLink — top-level single-destination link (Home, Messages, Approvals)
+// DirectNavLink — top-level single-destination link (Home, Messages, Attention)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function DirectNavLink({
@@ -274,18 +274,6 @@ function AccordionSection({
 // AttentionCountChip — compact badge at top of sidebar
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Sources that represent real business actions the org user should handle.
-// AI-internal sources (brain, approval, outreach, trigger, revenue-agent) are excluded
-// so platform operational noise does not inflate the count.
-const BUSINESS_ATTENTION_SOURCES = new Set([
-  "deal",
-  "financial",
-  "subscriptions",
-  "scheduling",
-  "churn",
-  "revenue",
-]);
-
 function AttentionCountChip({
   role,
   onNavClick,
@@ -295,27 +283,19 @@ function AttentionCountChip({
 }) {
   const isCoachOrAdmin = role === "COACH" || role === "ADMIN";
 
-  const { data: items = [] } = useQuery<any[]>({
-    queryKey: ["/api/attention"],
+  const { data: count } = useQuery<{
+    critical: number;
+    important: number;
+    total: number;
+  }>({
+    queryKey: ["/api/attention/count"],
     enabled: isCoachOrAdmin,
     staleTime: 2 * 60_000,
     refetchInterval: 5 * 60_000,
   });
 
-  // Only surface business-facing items — filter out AI workforce / platform noise
-  const businessItems = items.filter((i: any) =>
-    BUSINESS_ATTENTION_SOURCES.has(i.source)
-  );
-
-  const active = businessItems.filter(
-    (i: any) => i.status === "active" || i.status === "escalated"
-  );
-  const criticalCount = active.filter(
-    (i: any) => i.level === "critical" || i.status === "escalated"
-  ).length;
-  const importantCount = active.filter(
-    (i: any) => i.level === "important"
-  ).length;
+  const criticalCount = count?.critical ?? 0;
+  const importantCount = count?.important ?? 0;
   const badgeCount = criticalCount + importantCount;
 
   if (badgeCount === 0) return null;

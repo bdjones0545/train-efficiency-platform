@@ -46,6 +46,16 @@ interface RevenueSummaryV2 {
     sessionsRedeemed: number;
   }[];
   eventCounts: Record<string, number>;
+  dataQuality: {
+    hasNegativeDeferredRevenue: boolean;
+    hasCoachOverpayment: boolean;
+    hasNegativeNetRevenue: boolean;
+  };
+}
+
+function formatLedgerCents(cents: number): string {
+  const absolute = Math.abs(cents) / 100;
+  return `${cents < 0 ? "−" : ""}$${absolute.toFixed(2)}`;
 }
 
 interface TransactionWithUser {
@@ -442,7 +452,7 @@ export default function CoachTransactionsPage() {
                   <ArrowDownLeft className="h-3 w-3" /> Collected Revenue
                 </p>
                 <p className="text-lg font-bold text-green-600 dark:text-green-400">
-                  ${(revenueSummaryV2.metrics.collectedRevenueCents / 100).toFixed(2)}
+                  {formatLedgerCents(revenueSummaryV2.metrics.collectedRevenueCents)}
                 </p>
                 <p className="text-xs text-muted-foreground">Money received</p>
               </div>
@@ -451,7 +461,7 @@ export default function CoachTransactionsPage() {
                   <CheckCircle2 className="h-3 w-3" /> Recognized Revenue
                 </p>
                 <p className="text-lg font-bold text-blue-600 dark:text-blue-400">
-                  ${(revenueSummaryV2.metrics.recognizedRevenueCents / 100).toFixed(2)}
+                  {formatLedgerCents(revenueSummaryV2.metrics.recognizedRevenueCents)}
                 </p>
                 <p className="text-xs text-muted-foreground">Earned on delivery</p>
               </div>
@@ -460,7 +470,7 @@ export default function CoachTransactionsPage() {
                   <Clock className="h-3 w-3" /> Deferred Revenue
                 </p>
                 <p className="text-lg font-bold text-amber-600 dark:text-amber-400">
-                  ${(revenueSummaryV2.metrics.deferredRevenueCents / 100).toFixed(2)}
+                  {formatLedgerCents(revenueSummaryV2.metrics.deferredRevenueCents)}
                 </p>
                 <p className="text-xs text-muted-foreground">Owed as future sessions</p>
               </div>
@@ -469,7 +479,7 @@ export default function CoachTransactionsPage() {
                   <DollarSign className="h-3 w-3" /> Coach Accrued
                 </p>
                 <p className="text-lg font-bold text-orange-600 dark:text-orange-400">
-                  ${(revenueSummaryV2.metrics.coachAccruedCents / 100).toFixed(2)}
+                  {formatLedgerCents(revenueSummaryV2.metrics.coachAccruedCents)}
                 </p>
                 <p className="text-xs text-muted-foreground">Earned by coaches</p>
               </div>
@@ -478,7 +488,7 @@ export default function CoachTransactionsPage() {
                   <AlertCircle className="h-3 w-3" /> Coach Pending
                 </p>
                 <p className="text-lg font-bold text-red-500 dark:text-red-400">
-                  ${(revenueSummaryV2.metrics.coachPendingCents / 100).toFixed(2)}
+                  {formatLedgerCents(revenueSummaryV2.metrics.coachPendingCents)}
                 </p>
                 <p className="text-xs text-muted-foreground">Unpaid to coaches</p>
               </div>
@@ -486,12 +496,17 @@ export default function CoachTransactionsPage() {
                 <p className="text-xs text-muted-foreground flex items-center gap-1">
                   <TrendingUp className="h-3 w-3" /> Net Org Revenue
                 </p>
-                <p className="text-lg font-bold text-green-700 dark:text-green-300">
-                  ${(revenueSummaryV2.metrics.netOrgRevenueCents / 100).toFixed(2)}
+                <p className={`text-lg font-bold ${revenueSummaryV2.metrics.netOrgRevenueCents < 0 ? "text-red-600 dark:text-red-400" : "text-green-700 dark:text-green-300"}`}>
+                  {formatLedgerCents(revenueSummaryV2.metrics.netOrgRevenueCents)}
                 </p>
                 <p className="text-xs text-muted-foreground">Recognized − accrued</p>
               </div>
             </div>
+            {(revenueSummaryV2.dataQuality.hasNegativeDeferredRevenue || revenueSummaryV2.dataQuality.hasCoachOverpayment || revenueSummaryV2.dataQuality.hasNegativeNetRevenue) && (
+              <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+                Ledger reconciliation needs review. Negative values are shown instead of being hidden so accounting discrepancies can be corrected.
+              </div>
+            )}
             {revenueSummaryV2.coachBreakdown.length > 0 && (
               <div className="pt-2 border-t">
                 <p className="text-xs font-medium text-muted-foreground mb-2">Coach Compensation Breakdown</p>
@@ -507,7 +522,12 @@ export default function CoachTransactionsPage() {
                         <span className="text-muted-foreground">Paid: <span className="font-semibold text-green-600 dark:text-green-400">${(coach.paidCents / 100).toFixed(2)}</span></span>
                         {coach.pendingCents > 0 && (
                           <Badge variant="outline" className="text-red-600 dark:text-red-400 border-red-300">
-                            ${(coach.pendingCents / 100).toFixed(2)} pending
+                            {formatLedgerCents(coach.pendingCents)} pending
+                          </Badge>
+                        )}
+                        {coach.pendingCents < 0 && (
+                          <Badge variant="outline" className="text-amber-700 dark:text-amber-300 border-amber-300">
+                            {formatLedgerCents(Math.abs(coach.pendingCents))} overpaid
                           </Badge>
                         )}
                       </div>

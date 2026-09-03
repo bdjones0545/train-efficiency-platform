@@ -73,8 +73,15 @@
         "server/__tests__/sprint3-idempotency-concurrency.spec.ts",
         "server/tests/book-funnel-promo-code.test.ts",
         "server/tests/book-funnel-receipt-upload.test.ts",
+        "server/tests/booking-management-authorization.test.ts",
+        "server/tests/booking-participant-authorization.test.ts",
+        "server/tests/coach-user-management-authorization.test.ts",
+        "server/tests/manual-payment-authorization.test.ts",
+        "server/tests/wallet-reporting-tenant-isolation.test.ts",
+        "server/tests/availability-authorization.test.ts",
         "server/tests/cron-job-locks-wiring.test.ts",
         "server/tests/hotfix-admin-setup.test.ts",
+        "server/tests/navigation-integrity.test.ts",
         "server/tests/org-isolation-helpers.test.ts",
         "server/tests/outreach-cron-locks-wiring.test.ts",
         "server/tests/phase1b-authz.test.ts",
@@ -85,6 +92,7 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/redemption-tenant-isolation.test.ts",
         "server/tests/reminder-cron-locks-wiring.test.ts",
         "server/tests/write-only-cron-locks-wiring.test.ts"
       ]
@@ -102,8 +110,10 @@
       "suites": ["security", "default"],
       "files": [
         "server/tests/api-request-logger.test.ts",
+        "server/tests/attention-security-performance.test.ts",
         "server/tests/autonomy-trust-authorization.test.ts",
         "server/tests/email-audit-authorization.test.ts",
+        "server/tests/email-notification-authorization.test.ts",
         "server/tests/org-isolation-helpers.test.ts",
         "server/tests/phase1b-authz.test.ts",
         "server/tests/phase1c-org-isolation.test.ts",
@@ -113,6 +123,7 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/revenue-summary-integrity.test.ts",
         "server/tests/secrets-and-token-hash.test.ts"
       ]
     },

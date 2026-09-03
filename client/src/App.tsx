@@ -239,6 +239,14 @@ function PlatformAdminRoute({ component: Component }: { component: React.Compone
   return <Component />;
 }
 
+function RedirectToAttention() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    setLocation("/admin/attention", { replace: true });
+  }, [setLocation]);
+  return null;
+}
+
 function SmartHome() {
   const perms = usePermissions();
   const { user } = useAuth();
@@ -586,6 +594,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/retention-workflows" component={AdminRetentionWorkflowsPage} />
                   <Route path="/admin/outreach-queue" component={AdminOutreachQueuePage} />
                   <Route path="/admin/attention" component={AttentionInboxPage} />
+                  <Route path="/admin/attention-inbox" component={RedirectToAttention} />
                   <Route path="/admin/ai-workforce" component={AdminAiWorkforcePage} />
                   <Route path="/admin/ai-workforce/settings" component={AdminAiWorkforceSettingsPage} />
                   <Route path="/admin/ai-workforce/capabilities" component={AdminAiWorkforceCapabilitiesPage} />
