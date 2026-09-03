@@ -1665,7 +1665,16 @@ async function executeTool(
         if (booking.clientId !== userId && userRole !== "COACH" && userRole !== "ADMIN") {
           return JSON.stringify({ error: "You can only cancel your own bookings." });
         }
-        await storage.updateBookingStatus(args.bookingId, "CANCELLED");
+        if (userRole === "COACH" || userRole === "ADMIN") {
+          const bookingCoach = await storage.getCoachProfile(booking.coachId);
+          if (!bookingCoach || !organizationId || bookingCoach.organizationId !== organizationId) {
+            return JSON.stringify({ error: "Booking not found." });
+          }
+          if (userRole === "COACH" && bookingCoach.userId !== userId) {
+            return JSON.stringify({ error: "You can only cancel your own sessions." });
+          }
+        }
+        await storage.updateBookingStatusForCoach(args.bookingId, booking.coachId, "CANCELLED");
 
         // Send cancellation emails non-blocking
         (async () => {
@@ -1753,6 +1762,14 @@ async function executeTool(
           return JSON.stringify({ error: "Only coaches and admins can set availability." });
         }
         const { coachId, dayOfWeek, startTime, endTime } = args;
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const targetCoach = await storage.getCoachProfile(coachId);
+        if (!targetCoach || targetCoach.organizationId !== organizationId) {
+          return JSON.stringify({ error: "Coach not found." });
+        }
+        if (userRole === "COACH" && targetCoach.userId !== userId) {
+          return JSON.stringify({ error: "You can only manage your own availability." });
+        }
         const block = await storage.createAvailabilityBlock({
           coachId,
           dayOfWeek,
@@ -1771,6 +1788,14 @@ async function executeTool(
         if (userRole !== "COACH" && userRole !== "ADMIN") {
           return JSON.stringify({ error: "Only coaches and admins can view availability settings." });
         }
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const targetCoach = await storage.getCoachProfile(args.coachId);
+        if (!targetCoach || targetCoach.organizationId !== organizationId) {
+          return JSON.stringify({ error: "Coach not found." });
+        }
+        if (userRole === "COACH" && targetCoach.userId !== userId) {
+          return JSON.stringify({ error: "You can only view your own availability." });
+        }
         const blocks = await storage.getAvailabilityBlocks(args.coachId);
         const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
         return JSON.stringify(blocks.map(b => ({
@@ -1785,7 +1810,17 @@ async function executeTool(
         if (userRole !== "COACH" && userRole !== "ADMIN") {
           return JSON.stringify({ error: "Only coaches and admins can delete availability." });
         }
-        await storage.deleteAvailabilityBlock(args.blockId);
+        if (!organizationId) return JSON.stringify({ error: "No organization context." });
+        const deleted = userRole === "ADMIN"
+          ? await storage.deleteAvailabilityBlockForOrganization(args.blockId, organizationId)
+          : userId
+            ? await storage.getCoachProfileByUserId(userId).then((coach) =>
+                coach
+                  ? storage.deleteAvailabilityBlockForCoach(args.blockId, coach.id)
+                  : false,
+              )
+            : false;
+        if (!deleted) return JSON.stringify({ error: "Availability block not found." });
         return JSON.stringify({ success: true, message: "Availability block deleted." });
       }
 
@@ -2262,6 +2297,15 @@ async function executeTool(
         if (!isBookingOwner && userRole !== "COACH" && userRole !== "ADMIN" && userRole !== "STAFF") {
           return JSON.stringify({ error: "You can only reschedule your own bookings." });
         }
+        if (!isBookingOwner) {
+          const bookingCoach = await storage.getCoachProfile(booking.coachId);
+          if (!bookingCoach || !organizationId || bookingCoach.organizationId !== organizationId) {
+            return JSON.stringify({ error: "Booking not found." });
+          }
+          if (userRole === "COACH" && bookingCoach.userId !== userId) {
+            return JSON.stringify({ error: "You can only reschedule your own sessions." });
+          }
+        }
 
         const newStart = new Date(newStartAt);
         const newEnd = new Date(newEndAt);
@@ -2273,8 +2317,8 @@ async function executeTool(
         const oldStartAt = new Date(booking.startAt);
         const oldEndAt = new Date(booking.endAt);
 
-        await storage.updateBooking(bookingId, { startAt: newStart, endAt: newEnd });
-        await storage.updateBookingStatus(bookingId, "RESCHEDULED");
+        await storage.updateBookingForCoach(bookingId, booking.coachId, { startAt: newStart, endAt: newEnd });
+        await storage.updateBookingStatusForCoach(bookingId, booking.coachId, "RESCHEDULED");
 
         // Send reschedule emails non-blocking
         (async () => {

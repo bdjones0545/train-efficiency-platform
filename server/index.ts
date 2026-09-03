@@ -650,6 +650,9 @@ app.use(createApiRequestLogger(log));
   const { registerEmailAuditRoutes } = await import("./email-audit-routes");
   registerEmailAuditRoutes(app);
 
+  const { initializeAttentionInfrastructure } = await import("./attention-engine");
+  await initializeAttentionInfrastructure();
+
   const { registerCommunicationIntelligenceRoutes } = await import("./communication-intelligence-routes");
   registerCommunicationIntelligenceRoutes(app);
 

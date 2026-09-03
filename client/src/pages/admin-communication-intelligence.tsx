@@ -732,7 +732,7 @@ export default function AdminCommunicationIntelligencePage() {
             {[
               { label: "Gmail Conversations", href: "/admin/gmail-conversations", desc: "View Gmail threads, intent classification, and agent actions" },
               { label: "AI Approvals Inbox", href: "/admin/ai-approvals", desc: "Review and approve AI-drafted messages" },
-              { label: "Attention Inbox", href: "/admin/attention-inbox", desc: "High-priority items requiring immediate action" },
+              { label: "Attention Inbox", href: "/admin/attention", desc: "High-priority items requiring immediate action" },
               { label: "CEO Heartbeat", href: "/admin/ceo-heartbeat", desc: "Agent operating timeline and coordination log" },
             ].map(({ label, href, desc }) => (
               <a key={href} href={href} data-testid={`audit-link-${label.toLowerCase().replace(/\s+/g, "-")}`}>

@@ -155,7 +155,7 @@ function NavLink({
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// DirectNavLink — top-level single-destination link (Home, Messages, Approvals)
+// DirectNavLink — top-level single-destination link (Home, Messages, Attention)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 function DirectNavLink({
@@ -297,22 +297,19 @@ function AttentionCountChip({
 }) {
   const isCoachOrAdmin = role === "COACH" || role === "ADMIN";
 
-  const { data: items = [] } = useQuery<any[]>({
-    queryKey: ["/api/attention"],
+  const { data: count } = useQuery<{
+    critical: number;
+    important: number;
+    total: number;
+  }>({
+    queryKey: ["/api/attention/count"],
     enabled: isCoachOrAdmin,
     staleTime: 2 * 60_000,
     refetchInterval: 5 * 60_000,
   });
 
-  const active = items.filter(
-    (i: any) => i.status === "active" || i.status === "escalated"
-  );
-  const criticalCount = active.filter(
-    (i: any) => i.level === "critical" || i.status === "escalated"
-  ).length;
-  const importantCount = active.filter(
-    (i: any) => i.level === "important"
-  ).length;
+  const criticalCount = count?.critical ?? 0;
+  const importantCount = count?.important ?? 0;
   const badgeCount = criticalCount + importantCount;
 
   if (badgeCount === 0) return null;
@@ -412,9 +409,15 @@ export function AppSidebar() {
     enabled: isAuthenticated,
   });
 
-  const { data: attentionItems = [] } = useQuery<any[]>({
-    queryKey: ["/api/attention"],
-    enabled: isAuthenticated,
+  const { data: attentionCount } = useQuery<{
+    critical: number;
+    important: number;
+    total: number;
+  }>({
+    queryKey: ["/api/attention/count"],
+    enabled:
+      isAuthenticated &&
+      (profile?.role === "COACH" || profile?.role === "ADMIN"),
     staleTime: 2 * 60_000,
     refetchInterval: 5 * 60_000,
   });
@@ -500,16 +503,10 @@ export function AppSidebar() {
     if (orgSlug) setLastOrgSlug(orgSlug);
   }, [orgSlug]);
 
-  // Attention badge count for Approvals link
-  const activeAttention = attentionItems.filter(
-    (i: any) => i.status === "active" || i.status === "escalated"
-  );
-  const approvalsCount = activeAttention.filter(
-    (i: any) =>
-      i.level === "critical" ||
-      i.status === "escalated" ||
-      i.level === "important"
-  ).length;
+  // High-priority attention badge count. The aggregate endpoint avoids loading
+  // an arbitrary page of records and remains accurate when the inbox is large.
+  const attentionBadgeCount =
+    (attentionCount?.critical ?? 0) + (attentionCount?.important ?? 0);
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // Section definitions — outcome-based primary nav
@@ -1142,11 +1139,11 @@ export function AppSidebar() {
     testId: "nav-messages",
   };
 
-  const approvalsItem: NavItem = {
-    title: "Approvals",
+  const attentionItem: NavItem = {
+    title: "Attention",
     url: "/admin/attention",
-    icon: CheckSquare,
-    testId: "nav-approvals",
+    icon: Inbox,
+    testId: "nav-attention",
   };
 
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1321,13 +1318,13 @@ export function AppSidebar() {
                 />
               )}
 
-              {/* APPROVALS — direct link with attention badge */}
+              {/* ATTENTION — direct link with high-priority badge */}
               <div className="mb-0.5">
                 <DirectNavLink
-                  item={approvalsItem}
+                  item={attentionItem}
                   location={location}
                   onClick={handleNavClick}
-                  badge={approvalsCount > 0 ? approvalsCount : undefined}
+                  badge={attentionBadgeCount > 0 ? attentionBadgeCount : undefined}
                 />
               </div>
 

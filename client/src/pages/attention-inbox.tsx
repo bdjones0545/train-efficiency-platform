@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useLocation } from "wouter";
 import { useAuth } from "@/hooks/use-auth";
@@ -8,7 +8,7 @@ import {
   RotateCcw, Inbox, Filter, Zap, Brain, GitBranch, BadgeCheck,
   TrendingUp, Activity, Plug, SlidersHorizontal, Sun, Moon,
   DollarSign, Mail, Phone, Calendar, Users, Megaphone,
-  ChevronUp, Flame,
+  ChevronUp, ChevronLeft, ChevronRight, Flame,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { RecentAgentActivity } from "@/components/recent-agent-activity";
 import { formatDistanceToNow } from "date-fns";
+import { resolveAttentionActionRoute } from "@/lib/attention-routes";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 // Config
@@ -107,16 +108,16 @@ const SNOOZE_OPTIONS = [
 
 // CTA metadata → {label, icon, path}
 const CTA_CONFIG: Record<string, { label: string; icon: React.ElementType; path: string }> = {
-  "send-email":              { label: "Email",          icon: Mail,       path: "/admin/leads" },
-  "send-sms":                { label: "SMS",            icon: Phone,      path: "/admin/leads" },
-  "send-follow-up-email":    { label: "Follow Up",      icon: Mail,       path: "/admin/leads" },
+  "send-email":              { label: "Email",          icon: Mail,       path: "/admin/athlete-leads" },
+  "send-sms":                { label: "SMS",            icon: Phone,      path: "/admin/athlete-leads" },
+  "send-follow-up-email":    { label: "Follow Up",      icon: Mail,       path: "/admin/athlete-leads" },
   "send-program-offer":      { label: "Send Offer",     icon: Mail,       path: "/coach/users" },
   "schedule-call":           { label: "Schedule Call",  icon: Calendar,   path: "/scheduling" },
   "schedule-consultation":   { label: "Schedule",       icon: Calendar,   path: "/scheduling" },
   "schedule-followup-call":  { label: "Schedule Call",  icon: Calendar,   path: "/scheduling" },
   "promote-availability":    { label: "Promote",        icon: Megaphone,  path: "/scheduling" },
-  "contact-leads":           { label: "Contact Leads",  icon: Users,      path: "/admin/leads" },
-  "launch-followup-campaign":{ label: "Campaign",       icon: Megaphone,  path: "/admin/leads" },
+  "contact-leads":           { label: "Contact Leads",  icon: Users,      path: "/admin/athlete-leads" },
+  "launch-followup-campaign":{ label: "Campaign",       icon: Megaphone,  path: "/admin/athlete-leads" },
   "generate-recommendation": { label: "Recommend",      icon: Brain,      path: "/coach/users" },
 };
 
@@ -178,6 +179,7 @@ function RevenueCard({
   const meta = item.metadata ?? {};
   const ctaOptions: string[] = meta.ctaOptions ?? [];
   const estimatedValue = meta.estimatedValue ?? meta.estimatedAnnualValue ?? 0;
+  const actionRoute = resolveAttentionActionRoute(item.actionUrl);
 
   // Priority icon + color
   const priorityIcon = item.level === "critical" || item.status === "escalated" ? "🔥" :
@@ -251,7 +253,7 @@ function RevenueCard({
                     size="sm"
                     variant="outline"
                     className={cn("h-7 text-xs gap-1.5", cfg.color)}
-                    onClick={() => navigate(item.actionUrl || cta.path)}
+                    onClick={() => navigate(actionRoute || cta.path)}
                     data-testid={`revenue-cta-${key}-${item.id}`}
                   >
                     <CtaIcon className="h-3 w-3" />
@@ -261,12 +263,12 @@ function RevenueCard({
               })}
 
               {/* View button */}
-              {item.actionUrl && (
+              {actionRoute && (
                 <Button
                   size="sm"
                   variant="ghost"
                   className="h-7 text-xs gap-1 text-muted-foreground"
-                  onClick={() => navigate(item.actionUrl!)}
+                  onClick={() => navigate(actionRoute)}
                   data-testid={`revenue-view-${item.id}`}
                 >
                   View <ArrowRight className="h-3 w-3" />
@@ -425,6 +427,7 @@ function AttentionCard({
   onComplete: (id: string) => void;
 }) {
   const [, navigate] = useLocation();
+  const actionRoute = resolveAttentionActionRoute(item.actionUrl);
   const cfg = getLevelConfig(item.level, item.status);
   const Icon = cfg.icon;
   const CategoryIcon = CATEGORY_ICONS[item.category] ?? Bell;
@@ -520,12 +523,12 @@ function AttentionCard({
 
         {/* Action row */}
         <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/60">
-          {item.actionUrl && (
+          {actionRoute && (
             <Button
               size="sm"
               variant="outline"
               className={cn("h-7 text-xs gap-1", cfg.color)}
-              onClick={() => navigate(item.actionUrl!)}
+              onClick={() => navigate(actionRoute)}
               data-testid={`button-attention-open-${item.id}`}
             >
               {item.actionLabel || "View"} <ArrowRight className="h-3 w-3" />
@@ -632,14 +635,32 @@ function DigestPanel({ digest }: { digest: DigestData }) {
 
 type TabValue = "all" | "critical" | "important" | "suggested" | "informational";
 
+type AttentionCount = {
+  critical: number;
+  important: number;
+  suggested: number;
+  informational: number;
+  total: number;
+};
+
+const ATTENTION_PAGE_SIZE = 100;
+
 export default function AttentionInboxPage() {
   const [tab, setTab] = useState<TabValue>("all");
+  const [page, setPage] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const qc = useQueryClient();
   const { toast } = useToast();
 
+  const levelParam = tab === "all" ? "" : `&level=${tab}`;
+  const attentionPageUrl = `/api/attention?limit=${ATTENTION_PAGE_SIZE}&offset=${page * ATTENTION_PAGE_SIZE}${levelParam}`;
   const { data: items = [], isLoading } = useQuery<AttentionItem[]>({
-    queryKey: ["/api/attention"],
+    queryKey: [attentionPageUrl],
+    refetchInterval: 5 * 60 * 1000,
+  });
+
+  const { data: attentionCount } = useQuery<AttentionCount>({
+    queryKey: ["/api/attention/count"],
     refetchInterval: 5 * 60 * 1000,
   });
 
@@ -647,11 +668,17 @@ export default function AttentionInboxPage() {
     queryKey: ["/api/attention/digest"],
   });
 
+  const invalidateAttention = () => Promise.all([
+    qc.invalidateQueries({ queryKey: [attentionPageUrl] }),
+    qc.invalidateQueries({ queryKey: ["/api/attention/count"] }),
+    qc.invalidateQueries({ queryKey: ["/api/attention/digest"] }),
+  ]);
+
   const snoozeMutation = useMutation({
     mutationFn: ({ id, hours }: { id: string; hours: number }) =>
       apiRequest("PATCH", `/api/attention/${id}/snooze`, { hours }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/attention"] });
+      void invalidateAttention();
       toast({ title: "Item snoozed", description: "We'll surface it again after the snooze period." });
     },
   });
@@ -659,7 +686,7 @@ export default function AttentionInboxPage() {
   const dismissMutation = useMutation({
     mutationFn: (id: string) => apiRequest("PATCH", `/api/attention/${id}/dismiss`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/attention"] });
+      void invalidateAttention();
       toast({ title: "Dismissed", description: "Item removed from your inbox." });
     },
   });
@@ -667,7 +694,7 @@ export default function AttentionInboxPage() {
   const completeMutation = useMutation({
     mutationFn: (id: string) => apiRequest("PATCH", `/api/attention/${id}/complete`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/attention"] });
+      void invalidateAttention();
       toast({ title: "Marked as done", description: "Great work! Item marked complete." });
     },
   });
@@ -676,8 +703,7 @@ export default function AttentionInboxPage() {
     setSyncing(true);
     try {
       await apiRequest("POST", "/api/attention/sync");
-      await qc.invalidateQueries({ queryKey: ["/api/attention"] });
-      await qc.invalidateQueries({ queryKey: ["/api/attention/digest"] });
+      await invalidateAttention();
       toast({ title: "Inbox refreshed", description: "Latest data from all sources pulled in." });
     } catch {
       toast({ title: "Sync failed", variant: "destructive" });
@@ -687,19 +713,24 @@ export default function AttentionInboxPage() {
   };
 
   // ── Filtering ────────────────────────────────────────────────────────────────
-  const filtered = items.filter((item) => {
-    if (tab === "all") return true;
-    if (tab === "critical") return item.level === "critical" || item.status === "escalated";
-    return item.level === tab;
-  });
+  const filtered = items;
 
   const counts = {
-    all: items.length,
-    critical: items.filter((i) => i.level === "critical" || i.status === "escalated").length,
-    important: items.filter((i) => i.level === "important" && i.status !== "escalated").length,
-    suggested: items.filter((i) => i.level === "suggested").length,
-    informational: items.filter((i) => i.level === "informational").length,
+    all: attentionCount?.total ?? items.length,
+    critical: attentionCount?.critical ?? items.filter((i) => i.level === "critical" || i.status === "escalated").length,
+    important: attentionCount?.important ?? items.filter((i) => i.level === "important" && i.status !== "escalated").length,
+    suggested: attentionCount?.suggested ?? items.filter((i) => i.level === "suggested").length,
+    informational: attentionCount?.informational ?? items.filter((i) => i.level === "informational").length,
   };
+
+  const selectedTotal = counts[tab];
+  const totalPages = Math.max(1, Math.ceil(selectedTotal / ATTENTION_PAGE_SIZE));
+  const firstVisible = selectedTotal === 0 ? 0 : page * ATTENTION_PAGE_SIZE + 1;
+  const lastVisible = Math.min((page + 1) * ATTENTION_PAGE_SIZE, selectedTotal);
+
+  useEffect(() => {
+    if (page >= totalPages) setPage(totalPages - 1);
+  }, [page, totalPages]);
 
   const hasCritical = counts.critical > 0;
   const revenueCount = items.filter(
@@ -765,8 +796,14 @@ export default function AttentionInboxPage() {
       {/* Digest */}
       {digest && <DigestPanel digest={digest} />}
 
+      {selectedTotal > ATTENTION_PAGE_SIZE && (
+        <div className="rounded-lg border bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+          Showing {firstVisible.toLocaleString()}–{lastVisible.toLocaleString()} of {selectedTotal.toLocaleString()} {tab === "all" ? "active" : tab} items.
+        </div>
+      )}
+
       {/* Tabs */}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as TabValue)}>
+      <Tabs value={tab} onValueChange={(v) => { setTab(v as TabValue); setPage(0); }}>
         <TabsList className="h-9 gap-1 bg-muted/50">
           {(["all", "critical", "important", "suggested", "informational"] as TabValue[]).map((t) => {
             const count = counts[t];
@@ -842,6 +879,32 @@ export default function AttentionInboxPage() {
           )}
         </div>
       </Tabs>
+
+      {totalPages > 1 && (
+        <nav className="flex items-center justify-between gap-3" aria-label="Attention Inbox pages">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page === 0 || isLoading}
+            onClick={() => setPage((current) => Math.max(0, current - 1))}
+            data-testid="button-attention-previous-page"
+          >
+            <ChevronLeft className="h-4 w-4 mr-1" /> Previous
+          </Button>
+          <span className="text-xs text-muted-foreground">
+            Page {page + 1} of {totalPages}
+          </span>
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={page >= totalPages - 1 || isLoading}
+            onClick={() => setPage((current) => Math.min(totalPages - 1, current + 1))}
+            data-testid="button-attention-next-page"
+          >
+            Next <ChevronRight className="h-4 w-4 ml-1" />
+          </Button>
+        </nav>
+      )}
 
       {/* Legend */}
       {items.length > 0 && (

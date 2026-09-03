@@ -3,23 +3,9 @@ import { db } from "./db";
 import { eq, desc, and, gte } from "drizzle-orm";
 import { orgEmailNotificationSettings, communicationLogs } from "@shared/schema";
 import crypto from "crypto";
-
-function isAuthenticated(req: any, res: any, next: any) {
-  if (!req.isAuthenticated || !req.isAuthenticated()) {
-    return res.status(401).json({ message: "Unauthorized" });
-  }
-  return next();
-}
-
-function requireRole(...roles: string[]) {
-  return (req: any, res: any, next: any) => {
-    const userRole = req.user?.claims?.role;
-    if (!roles.includes(userRole)) {
-      return res.status(403).json({ message: "Forbidden" });
-    }
-    return next();
-  };
-}
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
+import { handleOrgError, resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 
 export async function registerEmailNotificationRoutes(app: Express) {
   // Ensure table exists
@@ -45,11 +31,7 @@ export async function registerEmailNotificationRoutes(app: Express) {
   // GET notification settings for the org
   app.get("/api/admin/email-notification-settings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const { storage } = await import("./storage");
-      const profile = await storage.getCoachProfileByUserId(userId);
-      const orgId = profile?.organizationId;
-      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const [existing] = await db
         .select()
@@ -73,6 +55,7 @@ export async function registerEmailNotificationRoutes(app: Express) {
         dedupWindowMinutes: 15,
       });
     } catch (err) {
+      if (handleOrgError(err, res)) return;
       console.error("[GET /api/admin/email-notification-settings]", err);
       res.status(500).json({ message: "Failed to fetch notification settings" });
     }
@@ -81,11 +64,7 @@ export async function registerEmailNotificationRoutes(app: Express) {
   // PUT (upsert) notification settings
   app.put("/api/admin/email-notification-settings", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const { storage } = await import("./storage");
-      const profile = await storage.getCoachProfileByUserId(userId);
-      const orgId = profile?.organizationId;
-      if (!orgId) return res.status(400).json({ message: "No organization found" });
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const {
         athleteBookingConfirmation,
@@ -138,6 +117,7 @@ export async function registerEmailNotificationRoutes(app: Express) {
 
       res.json(result);
     } catch (err) {
+      if (handleOrgError(err, res)) return;
       console.error("[PUT /api/admin/email-notification-settings]", err);
       res.status(500).json({ message: "Failed to save notification settings" });
     }
@@ -146,11 +126,7 @@ export async function registerEmailNotificationRoutes(app: Express) {
   // GET notification audit log (recent communication_logs with status breakdown)
   app.get("/api/admin/notification-audit", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const { storage } = await import("./storage");
-      const profile = await storage.getCoachProfileByUserId(userId);
-      const orgId = profile?.organizationId;
-      if (!orgId) return res.status(400).json({ message: "No organization found" });
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const limit = Math.min(parseInt(req.query.limit as string || "100"), 500);
       const since = req.query.since
@@ -183,6 +159,7 @@ export async function registerEmailNotificationRoutes(app: Express) {
 
       res.json({ logs, summary });
     } catch (err) {
+      if (handleOrgError(err, res)) return;
       console.error("[GET /api/admin/notification-audit]", err);
       res.status(500).json({ message: "Failed to fetch notification audit" });
     }

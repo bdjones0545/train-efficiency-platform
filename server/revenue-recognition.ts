@@ -11,6 +11,8 @@
  */
 
 import { storage } from "./storage";
+import { db } from "./db";
+import { sql } from "drizzle-orm";
 
 async function writeRevenueEvent(data: {
   orgId?: string | null;
@@ -235,32 +237,30 @@ export interface RevenueLedgerSummary {
   coachPendingCents: number;
   refundedCents: number;
   netOrgRevenueCents: number;
+  eventCounts: Record<string, number>;
+  dataQuality: {
+    hasNegativeDeferredRevenue: boolean;
+    hasCoachOverpayment: boolean;
+    hasNegativeNetRevenue: boolean;
+  };
 }
 
-export async function getRevenueLedgerSummary(
-  orgId: string | null,
-  since?: Date
-): Promise<RevenueLedgerSummary> {
-  const events = await storage.getRevenueLedgerEvents(orgId ?? "", since);
+type RevenueAggregateRow = { event_type: string; total_cents: number; event_count: number };
 
-  let collected = 0, recognized = 0, deferredCreated = 0, deferredReleased = 0;
-  let accrued = 0, paid = 0, refunded = 0;
+export function summarizeRevenueRows(rows: RevenueAggregateRow[]): RevenueLedgerSummary {
+  const totals = new Map(rows.map((row) => [row.event_type, Number(row.total_cents)]));
+  const amount = (eventType: string) => totals.get(eventType) ?? 0;
 
-  for (const e of events) {
-    switch (e.eventType) {
-      case "payment_received":           collected += e.amountCents; break;
-      case "revenue_recognized":         recognized += e.amountCents; break;
-      case "deferred_revenue_created":   deferredCreated += e.amountCents; break;
-      case "deferred_revenue_released":  deferredReleased += e.amountCents; break;
-      case "coach_compensation_accrued": accrued += e.amountCents; break;
-      case "coach_compensation_paid":    paid += e.amountCents; break;
-      case "refund_issued":              refunded += e.amountCents; break;
-    }
-  }
-
-  const deferred = Math.max(0, deferredCreated - deferredReleased);
-  const pending = Math.max(0, accrued - paid);
-  const net = Math.max(0, recognized - accrued);
+  const collected = amount("payment_received");
+  const recognized = amount("revenue_recognized");
+  const deferredCreated = amount("deferred_revenue_created");
+  const deferredReleased = amount("deferred_revenue_released");
+  const accrued = amount("coach_compensation_accrued");
+  const paid = amount("coach_compensation_paid");
+  const refunded = amount("refund_issued");
+  const deferred = deferredCreated - deferredReleased;
+  const pending = accrued - paid;
+  const net = recognized - accrued;
 
   return {
     collectedRevenueCents: collected,
@@ -273,7 +273,29 @@ export async function getRevenueLedgerSummary(
     coachPendingCents: pending,
     refundedCents: refunded,
     netOrgRevenueCents: net,
+    eventCounts: Object.fromEntries(rows.map((row) => [row.event_type, Number(row.event_count)])),
+    dataQuality: {
+      hasNegativeDeferredRevenue: deferred < 0,
+      hasCoachOverpayment: pending < 0,
+      hasNegativeNetRevenue: net < 0,
+    },
   };
+}
+
+export async function getRevenueLedgerSummary(
+  orgId: string,
+  since?: Date
+): Promise<RevenueLedgerSummary> {
+  const sinceFilter = since ? sql`AND created_at >= ${since}` : sql``;
+  const result = await db.execute(sql`
+    SELECT event_type,
+           COALESCE(SUM(amount_cents), 0)::int AS total_cents,
+           COUNT(*)::int AS event_count
+      FROM revenue_ledger_events
+     WHERE org_id = ${orgId} ${sinceFilter}
+     GROUP BY event_type
+  `);
+  return summarizeRevenueRows((result.rows ?? []) as RevenueAggregateRow[]);
 }
 
 export async function onRefundIssued(opts: {

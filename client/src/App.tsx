@@ -234,6 +234,14 @@ function RedirectToHome() {
   return null;
 }
 
+function RedirectToAttention() {
+  const [, setLocation] = useLocation();
+  useEffect(() => {
+    setLocation("/admin/attention", { replace: true });
+  }, [setLocation]);
+  return null;
+}
+
 function SmartHome() {
   const perms = usePermissions();
   if (perms.isHydrating) return null;
@@ -563,6 +571,7 @@ function AuthenticatedLayout() {
                   <Route path="/admin/outreach-queue" component={AdminOutreachQueuePage} />
                   <Route path="/admin/workflow-orchestrator" component={AdminWorkflowOrchestratorPage} />
                   <Route path="/admin/attention" component={AttentionInboxPage} />
+                  <Route path="/admin/attention-inbox" component={RedirectToAttention} />
                   <Route path="/admin/autonomy-controls" component={AdminAutonomyControlsPage} />
                   <Route path="/admin/ai-governance" component={AdminAiGovernancePage} />
                   <Route path="/admin/ai-workforce" component={AdminAiWorkforcePage} />
