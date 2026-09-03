@@ -779,6 +779,20 @@ export function AppSidebar() {
     testId: "nav-home",
   };
 
+  const attentionItem: NavItem = {
+    title: "Attention",
+    url: "/admin/attention",
+    icon: Inbox,
+    testId: "nav-attention",
+  };
+
+  const approvalsItem: NavItem = {
+    title: "Approvals",
+    url: "/admin/ai-approvals",
+    icon: CheckSquare,
+    testId: "nav-ai-approvals",
+  };
+
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   // Auto-expand parent section for the active route
   // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -873,6 +887,13 @@ export function AppSidebar() {
                   location={location}
                   onClick={handleNavClick}
                 />
+              </div>
+
+              <div className="mb-1">
+                <DirectNavLink item={attentionItem} location={location} onClick={handleNavClick} />
+                {isAdmin && (
+                  <DirectNavLink item={approvalsItem} location={location} onClick={handleNavClick} />
+                )}
               </div>
 
               {/* SCHEDULE */}

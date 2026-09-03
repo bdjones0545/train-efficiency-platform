@@ -20,7 +20,7 @@ test("sidebar attention badges use the aggregate count endpoint", () => {
   assert.doesNotMatch(sidebar, /queryKey: \["\/api\/attention"\]/);
   assert.match(
     sidebar,
-    /profile\?\.role === "COACH" \|\| profile\?\.role === "ADMIN"/,
+    /enabled: isCoachOrAdmin/,
   );
 });
 

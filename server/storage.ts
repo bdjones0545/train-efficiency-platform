@@ -276,7 +276,7 @@ export interface IStorage {
   getUserBalance(userId: string): Promise<number>;
   getUserBalanceForOrganization(orgId: string, userId: string): Promise<number | undefined>;
   creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string, livemode?: boolean): Promise<WalletTransaction>;
-  creditWalletForOrganization(orgId: string, userId: string, amountCents: number, description: string, createdBy: string, method: string): Promise<WalletTransaction | undefined>;
+  creditManualPaymentForOrganization(userId: string, orgId: string, amountCents: number, description: string, method: string, createdBy: string): Promise<WalletTransaction | undefined>;
   debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
   getWalletTransactionsForOrganization(orgId: string, userId?: string): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
@@ -1610,13 +1610,13 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async creditWalletForOrganization(
-    orgId: string,
+  async creditManualPaymentForOrganization(
     userId: string,
+    orgId: string,
     amountCents: number,
     description: string,
-    createdBy: string,
     method: string,
+    createdBy: string,
   ): Promise<WalletTransaction | undefined> {
     if (amountCents <= 0) {
       throw new Error(`creditWalletForOrganization: amountCents must be positive (got ${amountCents})`);

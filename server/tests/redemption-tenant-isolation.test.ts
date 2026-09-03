@@ -43,11 +43,11 @@ test("cashout reads and status changes are organization-scoped", () => {
   const getBlock = routeBlock(routes, "get", "/api/admin/cashouts");
   const patchBlock = routeBlock(routes, "patch", "/api/admin/cashouts/:id/status");
   assert.match(getBlock, /getCashoutsByOrganization\(orgId\)/);
-  assert.match(patchBlock, /updateCashoutStatusForOrganization\(id, orgId, status\)/);
+  assert.match(patchBlock, /updateCashoutStatusForOrganization\(orgId, id, status, adminUserId\)/);
 });
 
 test("scoped financial mutations enforce ownership in SQL", () => {
   const storage = read("storage.ts");
   assert.match(storage, /updateRedemptionAmountForOrganization[\s\S]*?cp\.organization_id = \$\{orgId\}/);
-  assert.match(storage, /updateCashoutStatusForOrganization[\s\S]*?cp\.organization_id = \$\{orgId\}/);
+  assert.match(storage, /updateCashoutStatusForOrganization[\s\S]*?eq\(coachProfiles\.organizationId, orgId\)/);
 });

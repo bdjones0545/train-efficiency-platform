@@ -26,8 +26,8 @@ test("manual payment amount must be a positive safe integer", () => {
 
 test("manual wallet credit atomically locks membership and records its real source", () => {
   const storage = read("storage.ts");
-  assert.match(storage, /creditManualPaymentForOrganization[\s\S]*?FOR UPDATE/);
-  assert.match(storage, /organization_id = \$\{orgId\} AND role = 'CLIENT'/);
+  assert.match(storage, /creditManualPaymentForOrganization[\s\S]*?\.for\("update"\)/);
+  assert.match(storage, /eq\(userProfiles\.organizationId, orgId\)[\s\S]*?eq\(userProfiles\.role, "CLIENT"/);
   assert.match(storage, /sourceType: `manual_\$\{method\}`/);
 });
 

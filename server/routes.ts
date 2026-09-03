@@ -4483,10 +4483,17 @@ export async function registerRoutes(
       const actorUserId = req.user?.claims?.sub ?? req.user?.id;
       if (!actorUserId) return res.status(401).json({ message: "Unauthorized" });
       const orgId = await resolveOrgIdOrThrow(req);
+      const [user, userProfile] = await Promise.all([
+        storage.getUser(userId),
+        storage.getUserProfile(userId),
+      ]);
+      if (!user || !userProfile || userProfile.organizationId !== orgId || userProfile.role !== "CLIENT") {
+        return res.status(404).json({ message: "User not found" });
+      }
       const methodLabel = method === "cash" ? "Cash" : method === "venmo" ? "Venmo" : "Stripe";
       const description = `Manual payment (${methodLabel})`;
       const tx = await executeManualPaymentForOrganization({ amountCents, description }, {
-        credit: () => storage.creditWalletForOrganization(orgId, userId, amountCents, description, actorUserId, method),
+        credit: () => storage.creditManualPaymentForOrganization(userId, orgId, amountCents, description, method, actorUserId),
         getUser: () => storage.getUser(userId),
         getBalance: () => storage.getUserBalance(userId),
         getBranding: () => getOrgBranding(orgId),
@@ -4494,6 +4501,15 @@ export async function registerRoutes(
           sendPaymentConfirmationEmail(email, firstName, creditedAmount, creditedDescription, balanceCents, branding as OrgBranding | undefined),
       });
       if (!tx) return res.status(404).json({ message: "User not found" });
+
+      onPaymentReceived({
+        orgId,
+        clientId: userId,
+        amountCents,
+        walletTxId: tx.id,
+        isSubscriptionPayment: false,
+        createdBy: actorUserId,
+      }).catch(() => {});
 
       res.json(tx);
     } catch (error) {
