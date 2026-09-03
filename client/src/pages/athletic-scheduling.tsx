@@ -304,7 +304,14 @@ export default function AthleticSchedulingPage() {
 
   const deleteMutation = useMutation({
     mutationFn: async ({ bookingId, scope }: { bookingId: string; scope: "single" | "series" }) => {
-      const res = await fetch(`/api/athletic/bookings/${bookingId}?scope=${scope}`, { method: "DELETE" });
+      // Cancellation is authorized against the booking's own organization, so
+      // the org session token must be sent the same way booking sends it.
+      const headers: Record<string, string> = {};
+      if (orgToken) headers["X-Org-Auth-Token"] = orgToken;
+      const res = await fetch(`/api/athletic/bookings/${bookingId}?scope=${scope}`, {
+        method: "DELETE",
+        headers,
+      });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.message || "Failed to delete");
@@ -322,6 +329,17 @@ export default function AthleticSchedulingPage() {
       });
     },
     onError: (error: any) => {
+      // Anonymous visitors can no longer cancel — offer to sign in so the
+      // booker can cancel their own session.
+      if (!orgToken) {
+        setDeleteTarget(null);
+        setShowOrgAuth(true);
+        toast({
+          title: "Sign in to cancel",
+          description: "Only the person who booked this session, or a coach, can cancel it.",
+        });
+        return;
+      }
       toast({ title: "Could not delete", description: error.message || "Failed to remove session.", variant: "destructive" });
     },
   });
