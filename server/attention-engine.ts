@@ -44,6 +44,60 @@ export function computeScore(item: Pick<AttentionItem, "severity" | "urgency" | 
   );
 }
 
+const VISIBLE_ATTENTION_STATUSES = ["active", "escalated"] as const;
+const DEFAULT_ATTENTION_LIMIT = 100;
+const MAX_ATTENTION_LIMIT = 200;
+
+/**
+ * Runtime-safe migration for deployments that predate the Drizzle index.
+ * Duplicate live signals are retained for audit history but only the newest
+ * remains actionable before the partial unique index is installed.
+ */
+export async function initializeAttentionInfrastructure(): Promise<void> {
+  await db.execute(sql`
+    WITH ranked AS (
+      SELECT id,
+             row_number() OVER (
+               PARTITION BY org_id, source_id
+               ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+             ) AS duplicate_rank
+      FROM attention_items
+      WHERE source_id IS NOT NULL
+        AND status IN ('active', 'snoozed', 'escalated')
+    )
+    UPDATE attention_items AS item
+       SET status = 'dismissed', updated_at = now()
+      FROM ranked
+     WHERE item.id = ranked.id
+       AND ranked.duplicate_rank > 1
+  `);
+
+  await db.execute(sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS attention_items_active_source_unique
+      ON attention_items (org_id, source_id)
+      WHERE source_id IS NOT NULL
+        AND status IN ('active', 'snoozed', 'escalated')
+  `);
+
+  await db.execute(sql`
+    CREATE INDEX IF NOT EXISTS attention_items_org_status_rank_idx
+      ON attention_items (org_id, status, level, created_at DESC)
+  `);
+}
+
+async function reactivateExpiredSnoozes(orgId: string, now = new Date()): Promise<void> {
+  await db
+    .update(attentionItems)
+    .set({ status: "active", snoozedUntil: null, updatedAt: now })
+    .where(
+      and(
+        eq(attentionItems.orgId, orgId),
+        eq(attentionItems.status, "snoozed"),
+        lte(attentionItems.snoozedUntil, now),
+      ),
+    );
+}
+
 const LEVEL_DEFAULTS: Record<string, { severity: number; urgency: number; businessImpact: number; confidence: number }> = {
   critical:      { severity: 90, urgency: 90, businessImpact: 85, confidence: 0.95 },
   important:     { severity: 65, urgency: 70, businessImpact: 65, confidence: 0.80 },
@@ -1011,7 +1065,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         body: `${name} submitted ${waitStr} ago — no contact has been made yet. Estimated value: $${estValue}.`,
         source: "revenue",
         sourceId: `revenue-lead-new-${lead.id}-d${dayKey}`,
-        actionUrl: "/admin/leads",
+        actionUrl: "/admin/athlete-leads",
         actionLabel: "View Lead",
         status: "active",
         ...d,
@@ -1082,7 +1136,7 @@ export async function syncAttentionItems(orgId: string): Promise<void> {
         body: `${name} last contacted ${daysStr} ago. ${followUpCount} outreach event${followUpCount !== 1 ? "s" : ""} to date — human follow-up overdue.`,
         source: "revenue",
         sourceId: `revenue-lead-followup-${lead.id}-d${dayKey}`,
-        actionUrl: "/admin/leads",
+        actionUrl: "/admin/athlete-leads",
         actionLabel: "Follow Up Now",
         status: "active",
         ...d,
@@ -1350,10 +1404,25 @@ export type AttentionItemWithScore = AttentionItem & { score: number };
 
 export async function getAttentionItems(
   orgId: string,
-  opts: { includeStatus?: string[] } = {}
+  opts: {
+    includeStatus?: string[];
+    level?: "critical" | "important" | "suggested" | "informational";
+    limit?: number;
+    offset?: number;
+  } = {}
 ): Promise<AttentionItemWithScore[]> {
-  const statuses = opts.includeStatus ?? ["active", "snoozed", "escalated"];
+  const statuses = opts.includeStatus ?? [...VISIBLE_ATTENTION_STATUSES];
   const now = new Date();
+  const limit = Math.min(Math.max(Math.trunc(opts.limit ?? DEFAULT_ATTENTION_LIMIT), 1), MAX_ATTENTION_LIMIT);
+  const offset = Math.max(Math.trunc(opts.offset ?? 0), 0);
+
+  await reactivateExpiredSnoozes(orgId, now);
+
+  const levelCondition = opts.level === "critical"
+    ? or(eq(attentionItems.level, "critical"), eq(attentionItems.status, "escalated"))
+    : opts.level
+      ? and(eq(attentionItems.level, opts.level), ne(attentionItems.status, "escalated"))
+      : undefined;
 
   const rows = await db
     .select()
@@ -1361,23 +1430,29 @@ export async function getAttentionItems(
     .where(
       and(
         eq(attentionItems.orgId, orgId),
-        inArray(attentionItems.status, statuses)
+        inArray(attentionItems.status, statuses),
+        or(sql`${attentionItems.expiresAt} IS NULL`, gt(attentionItems.expiresAt, now)),
+        levelCondition,
       )
     )
-    .orderBy(attentionItems.createdAt);
-
-  // Filter snoozed items where snoozedUntil has passed (treat as active)
-  const visible = rows.filter((r) => {
-    if (r.status === "snoozed" && r.snoozedUntil && r.snoozedUntil <= now) return false;
-    if (r.expiresAt && r.expiresAt <= now) return false;
-    return true;
-  });
+    .orderBy(
+      sql`CASE ${attentionItems.level}
+        WHEN 'critical' THEN 0
+        WHEN 'important' THEN 1
+        WHEN 'suggested' THEN 2
+        ELSE 3
+      END`,
+      sql`(${attentionItems.severity} * 0.30 + ${attentionItems.urgency} * 0.40 + ${attentionItems.businessImpact} * 0.20 + ${attentionItems.confidence} * 100 * 0.10) DESC`,
+      sql`${attentionItems.createdAt} DESC`,
+    )
+    .limit(limit)
+    .offset(offset);
 
   const LEVEL_ORDER: Record<string, number> = {
     critical: 0, escalated: 0, important: 1, suggested: 2, informational: 3,
   };
 
-  return visible
+  return rows
     .map((r) => ({ ...r, score: computeScore(r) }))
     .sort((a, b) => {
       const la = LEVEL_ORDER[a.level] ?? 3;
@@ -1391,26 +1466,32 @@ export async function getAttentionItems(
 // Lifecycle actions
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-export async function snoozeAttentionItem(id: string, hours: number): Promise<void> {
+export async function snoozeAttentionItem(orgId: string, id: string, hours: number): Promise<boolean> {
   const until = new Date(Date.now() + hours * 60 * 60 * 1000);
-  await db
+  const updated = await db
     .update(attentionItems)
     .set({ status: "snoozed", snoozedUntil: until, updatedAt: new Date() })
-    .where(eq(attentionItems.id, id));
+    .where(and(eq(attentionItems.id, id), eq(attentionItems.orgId, orgId)))
+    .returning({ id: attentionItems.id });
+  return updated.length > 0;
 }
 
-export async function dismissAttentionItem(id: string): Promise<void> {
-  await db
+export async function dismissAttentionItem(orgId: string, id: string): Promise<boolean> {
+  const updated = await db
     .update(attentionItems)
     .set({ status: "dismissed", updatedAt: new Date() })
-    .where(eq(attentionItems.id, id));
+    .where(and(eq(attentionItems.id, id), eq(attentionItems.orgId, orgId)))
+    .returning({ id: attentionItems.id });
+  return updated.length > 0;
 }
 
-export async function completeAttentionItem(id: string): Promise<void> {
-  await db
+export async function completeAttentionItem(orgId: string, id: string): Promise<boolean> {
+  const updated = await db
     .update(attentionItems)
     .set({ status: "completed", updatedAt: new Date() })
-    .where(eq(attentionItems.id, id));
+    .where(and(eq(attentionItems.id, id), eq(attentionItems.orgId, orgId)))
+    .returning({ id: attentionItems.id });
+  return updated.length > 0;
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1430,16 +1511,57 @@ export type AttentionDigest = {
   summary: string;
 };
 
+type AttentionLevelCounts = {
+  critical: number;
+  important: number;
+  suggested: number;
+  informational: number;
+  total: number;
+};
+
+async function getAttentionLevelCounts(orgId: string, now = new Date()): Promise<AttentionLevelCounts> {
+  await reactivateExpiredSnoozes(orgId, now);
+  const rows = await db
+    .select({
+      level: attentionItems.level,
+      status: attentionItems.status,
+      count: sql<number>`count(*)::int`,
+    })
+    .from(attentionItems)
+    .where(
+      and(
+        eq(attentionItems.orgId, orgId),
+        inArray(attentionItems.status, ["active", "escalated"]),
+        or(sql`${attentionItems.expiresAt} IS NULL`, gt(attentionItems.expiresAt, now)),
+      ),
+    )
+    .groupBy(attentionItems.level, attentionItems.status);
+
+  const result: AttentionLevelCounts = { critical: 0, important: 0, suggested: 0, informational: 0, total: 0 };
+  for (const row of rows) {
+    const count = Number(row.count);
+    result.total += count;
+    if (row.status === "escalated" || row.level === "critical") result.critical += count;
+    else if (row.level === "important") result.important += count;
+    else if (row.level === "suggested") result.suggested += count;
+    else result.informational += count;
+  }
+  return result;
+}
+
 export async function getAttentionDigest(
   orgId: string,
   type: "morning" | "eod" | "weekly" = "morning"
 ): Promise<AttentionDigest> {
-  const active = await getAttentionItems(orgId);
+  const [active, levelCounts] = await Promise.all([
+    getAttentionItems(orgId, { limit: 5 }),
+    getAttentionLevelCounts(orgId),
+  ]);
 
-  const criticalCount = active.filter((i) => i.level === "critical" || i.status === "escalated").length;
-  const importantCount = active.filter((i) => i.level === "important" && i.status !== "escalated").length;
-  const suggestedCount = active.filter((i) => i.level === "suggested").length;
-  const informationalCount = active.filter((i) => i.level === "informational").length;
+  const criticalCount = levelCounts.critical;
+  const importantCount = levelCounts.important;
+  const suggestedCount = levelCounts.suggested;
+  const informationalCount = levelCounts.informational;
 
   // Count recently resolved
   const windowStart = type === "weekly"
@@ -1481,7 +1603,7 @@ export async function getAttentionDigest(
     importantCount,
     suggestedCount,
     informationalCount,
-    totalActive: active.length,
+    totalActive: levelCounts.total,
     topItems,
     recentlyResolved: resolved.length,
     summary: summary.trim(),
@@ -1492,22 +1614,8 @@ export async function getAttentionDigest(
 // Count (fast, for bell badge)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-export async function getAttentionCount(orgId: string): Promise<{ critical: number; important: number; total: number }> {
-  const now = new Date();
-  const rows = await db
-    .select({ level: attentionItems.level, status: attentionItems.status, snoozedUntil: attentionItems.snoozedUntil })
-    .from(attentionItems)
-    .where(
-      and(
-        eq(attentionItems.orgId, orgId),
-        inArray(attentionItems.status, ["active", "escalated"])
-      )
-    );
-
-  const active = rows.filter((r) => !(r.status === "snoozed" && r.snoozedUntil && r.snoozedUntil <= now));
-  const critical = active.filter((r) => r.level === "critical" || r.status === "escalated").length;
-  const important = active.filter((r) => r.level === "important").length;
-  return { critical, important, total: active.length };
+export async function getAttentionCount(orgId: string): Promise<AttentionLevelCounts> {
+  return getAttentionLevelCounts(orgId);
 }
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

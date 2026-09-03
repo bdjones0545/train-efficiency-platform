@@ -1523,7 +1523,11 @@ export const attentionItems = pgTable("attention_items", {
   metadata: jsonb("metadata").default({}),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  activeSourceUnique: uniqueIndex("attention_items_active_source_unique")
+    .on(t.orgId, t.sourceId)
+    .where(sql`${t.sourceId} IS NOT NULL AND ${t.status} IN ('active', 'snoozed', 'escalated')`),
+}));
 
 export const insertAttentionItemSchema = createInsertSchema(attentionItems).omit({ id: true, createdAt: true, updatedAt: true });
 export type AttentionItem = typeof attentionItems.$inferSelect;

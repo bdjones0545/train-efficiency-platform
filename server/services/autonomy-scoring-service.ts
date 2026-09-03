@@ -278,7 +278,10 @@ export async function approveAction(orgId: string, actionId: string, approvedBy:
     WHERE id = ${actionId} AND org_id = ${orgId} AND status = 'pending'
   `);
   // Record override learning
-  const row = (await db.execute(sql`SELECT * FROM autonomous_action_queue WHERE id = ${actionId}`));
+  const row = (await db.execute(sql`
+    SELECT * FROM autonomous_action_queue
+    WHERE id = ${actionId} AND org_id = ${orgId}
+  `));
   const r = (Array.isArray(row) ? row : (row as any).rows ?? [])[0];
   if (r) await recordOverride(orgId, { queueActionId: actionId, decisionType: r.decision_type, originalRecommendation: r.action, overrideType: "approved", overriddenBy: approvedBy });
 }
@@ -290,7 +293,10 @@ export async function rejectAction(orgId: string, actionId: string, rejectedBy: 
       rejection_reason = ${reason ?? null}, updated_at = NOW()
     WHERE id = ${actionId} AND org_id = ${orgId} AND status = 'pending'
   `);
-  const row = await db.execute(sql`SELECT * FROM autonomous_action_queue WHERE id = ${actionId}`);
+  const row = await db.execute(sql`
+    SELECT * FROM autonomous_action_queue
+    WHERE id = ${actionId} AND org_id = ${orgId}
+  `);
   const r = (Array.isArray(row) ? row : (row as any).rows ?? [])[0];
   if (r) {
     await recordOverride(orgId, { queueActionId: actionId, decisionType: r.decision_type, originalRecommendation: r.action, overrideType: "rejected", reason, overriddenBy: rejectedBy });
@@ -314,7 +320,10 @@ export async function executeQueuedAction(orgId: string, actionId: string, execu
     WHERE id = ${actionId} AND org_id = ${orgId}
   `);
   // Update registry execution count
-  const row = await db.execute(sql`SELECT * FROM autonomous_action_queue WHERE id = ${actionId}`);
+  const row = await db.execute(sql`
+    SELECT * FROM autonomous_action_queue
+    WHERE id = ${actionId} AND org_id = ${orgId}
+  `);
   const r = (Array.isArray(row) ? row : (row as any).rows ?? [])[0];
   if (r) {
     await db.execute(sql`

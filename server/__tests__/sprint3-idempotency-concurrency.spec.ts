@@ -338,8 +338,12 @@ describe("Phase 7 — Webhook and event replay protection", () => {
 
   test("AgentMail webhook verifies HMAC signature (anti-spoofing)", () => {
     const routes = src("server/agentmail-routes.ts");
+    const verifier = src("server/services/agentmail-svix.ts");
     assert.ok(
-      routes.includes("x-agentmail-signature") || routes.includes("hmac") || routes.includes("HMAC"),
+      routes.includes("verifyAgentMailWebhook") &&
+        verifier.includes("createHmac") &&
+        verifier.includes("timingSafeEqual") &&
+        verifier.includes("svix-signature"),
       "AgentMail webhook must verify HMAC signature to prevent spoofed inbound email injection"
     );
   });

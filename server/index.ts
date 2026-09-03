@@ -12,6 +12,7 @@ import { runStartupOrgAudit } from "./lib/startup-org-audit";
 import { assertRequiredSecrets } from "./lib/secrets";
 import { pool } from "./db";
 import { shutdownRuntime } from "./services/runtime-shutdown";
+import { createApiRequestLogger } from "./middleware/api-request-logger";
 
 const app = express();
 const httpServer = createServer(app);
@@ -165,31 +166,7 @@ export function log(message: string, source = "express") {
   console.log(`${formattedTime} [${source}] ${message}`);
 }
 
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-
-      log(logLine);
-    }
-  });
-
-  next();
-});
+app.use(createApiRequestLogger(log));
 
 (async () => {
   const { runApplicationMigrations } = await import("./application-migrations");
@@ -677,6 +654,9 @@ app.use((req, res, next) => {
 
   const { registerEmailAuditRoutes } = await import("./email-audit-routes");
   registerEmailAuditRoutes(app);
+
+  const { initializeAttentionInfrastructure } = await import("./attention-engine");
+  await initializeAttentionInfrastructure();
 
   const { registerCommunicationIntelligenceRoutes } = await import("./communication-intelligence-routes");
   registerCommunicationIntelligenceRoutes(app);

@@ -171,9 +171,12 @@ export interface IStorage {
   upsertUserProfile(profile: InsertUserProfile): Promise<UserProfile>;
   getAllUsersWithProfiles(): Promise<(User & { profile?: UserProfile })[]>;
   updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null; phone?: string | null; smsOptIn?: boolean; smsOptInAt?: Date | null; smsOptOutAt?: Date | null; smsConsentSource?: string | null }): Promise<User | undefined>;
+  updateClientForOrganization(id: string, orgId: string, data: { firstName?: string; lastName?: string; email?: string | null }): Promise<User | undefined>;
   updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
   deleteUser(id: string): Promise<boolean>;
+  deleteClientForOrganization(id: string, orgId: string): Promise<boolean>;
   getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; redemption?: Redemption })[]>;
+  getBookingsForUserInOrganization(userId: string, orgId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; redemption?: Redemption })[]>;
 
   getCoachProfiles(): Promise<(CoachProfile & { user: User })[]>;
   getCoachProfile(id: string): Promise<(CoachProfile & { user: User }) | undefined>;
@@ -191,9 +194,13 @@ export interface IStorage {
   deleteService(id: string): Promise<boolean>;
 
   getAvailabilityBlocks(coachId: string): Promise<AvailabilityBlock[]>;
+  getAvailabilityBlockForCoach(id: string, coachId: string): Promise<AvailabilityBlock | undefined>;
+  getAvailabilityBlockForOrganization(id: string, orgId: string): Promise<AvailabilityBlock | undefined>;
   createAvailabilityBlock(block: InsertAvailabilityBlock): Promise<AvailabilityBlock>;
-  updateAvailabilityBlock(id: string, data: { startTime?: string; endTime?: string; location?: string; dayOfWeek?: number }): Promise<AvailabilityBlock>;
-  deleteAvailabilityBlock(id: string): Promise<void>;
+  updateAvailabilityBlockForCoach(id: string, coachId: string, data: { startTime?: string; endTime?: string; location?: string; dayOfWeek?: number }): Promise<AvailabilityBlock | undefined>;
+  updateAvailabilityBlockForOrganization(id: string, orgId: string, data: { startTime?: string; endTime?: string; location?: string; dayOfWeek?: number }): Promise<AvailabilityBlock | undefined>;
+  deleteAvailabilityBlockForCoach(id: string, coachId: string): Promise<boolean>;
+  deleteAvailabilityBlockForOrganization(id: string, orgId: string): Promise<boolean>;
 
   getBookings(clientId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]>;
   getParticipantBookings(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]>;
@@ -203,21 +210,26 @@ export interface IStorage {
   getBooking(id: string): Promise<Booking | undefined>;
   createBooking(booking: InsertBooking): Promise<Booking>;
   updateBookingStatus(id: string, status: string): Promise<Booking | undefined>;
+  updateBookingStatusForCoach(id: string, coachId: string, status: string): Promise<Booking | undefined>;
   updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null; ageRange?: string; skillLevel?: string; sport?: string }): Promise<Booking | undefined>;
+  updateBookingForCoach(id: string, coachId: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null; ageRange?: string; skillLevel?: string; sport?: string }): Promise<Booking | undefined>;
   deleteBooking(id: string): Promise<boolean>;
+  deleteBookingForCoach(id: string, coachId: string): Promise<boolean>;
   deleteBookingsByClientAndCoach(clientId: string, coachId: string): Promise<number>;
   deleteBookingsByRecurringGroup(recurringGroupId: string, excludeCompleted?: boolean): Promise<number>;
+  deleteBookingsByRecurringGroupForCoach(recurringGroupId: string, coachId: string, excludeCompleted?: boolean): Promise<number>;
   getOverlappingBookings(coachId: string, startAt: Date, endAt: Date, excludeId?: string): Promise<Booking[]>;
 
   getBookingParticipants(bookingId: string): Promise<(BookingParticipant & { user: User })[]>;
   getBookingParticipantsBatch(bookingIds: string[]): Promise<(BookingParticipant & { user: User })[]>;
   addBookingParticipant(participant: InsertBookingParticipant): Promise<BookingParticipant>;
   removeBookingParticipant(bookingId: string, userId: string): Promise<void>;
-  removeBookingParticipantById(participantId: string): Promise<void>;
+  removeBookingParticipantByIdForBooking(participantId: string, bookingId: string): Promise<boolean>;
   getOpenSemiPrivateSessions(organizationId?: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]>;
 
   getCoachRedemptions(coachId: string): Promise<Redemption[]>;
   getAllRedemptions(): Promise<Redemption[]>;
+  getRedemptionsByOrganization(orgId: string): Promise<Redemption[]>;
   createRedemption(redemption: InsertRedemption): Promise<Redemption>;
   getRedemptionByBookingId(bookingId: string): Promise<Redemption | undefined>;
   findOrCreateUserByName(firstName: string, lastName: string, organizationId?: string | null): Promise<User>;
@@ -248,12 +260,14 @@ export interface IStorage {
 
   getCoachCashouts(coachId: string): Promise<Cashout[]>;
   getAllCashouts(): Promise<Cashout[]>;
+  getCashoutsByOrganization(orgId: string): Promise<Cashout[]>;
   createCashout(cashout: InsertCashout): Promise<Cashout>;
   updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined>;
   updateCashoutStatusForOrganization(orgId: string, id: string, status: string, createdBy: string): Promise<Cashout | undefined>;
   markRedemptionsSent(coachId: string): Promise<void>;
 
   getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
+  getWalletTransactionsByOrganization(orgId: string): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
   getAllUserBalances(): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string | null; balanceCents: number }[]>;
   getUserIdsByOrganization(orgId: string): Promise<string[]>;
   getClientUsersWithEmailByOrg(orgId: string): Promise<{ id: string; firstName: string | null; lastName: string | null; email: string }[]>;
@@ -262,7 +276,7 @@ export interface IStorage {
   getUserBalance(userId: string): Promise<number>;
   getUserBalanceForOrganization(orgId: string, userId: string): Promise<number | undefined>;
   creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string, livemode?: boolean): Promise<WalletTransaction>;
-  creditWalletForOrganization(orgId: string, userId: string, amountCents: number, description: string, createdBy: string): Promise<WalletTransaction | undefined>;
+  creditManualPaymentForOrganization(userId: string, orgId: string, amountCents: number, description: string, method: string, createdBy: string): Promise<WalletTransaction | undefined>;
   debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
   getWalletTransactionsForOrganization(orgId: string, userId?: string): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
@@ -332,6 +346,7 @@ export interface IStorage {
   logWorkflowExecution(data: InsertWorkflowExecutionLog): Promise<WorkflowExecutionLog>;
   getWorkflowExecutionLogs(orgId: string, workflowId?: string, limit?: number): Promise<WorkflowExecutionLog[]>;
   updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined>;
+  updateRedemptionAmountForOrganization(id: string, orgId: string, amountCents: number): Promise<Redemption | undefined>;
   updateUserStripeCustomerId(userId: string, stripeCustomerId: string): Promise<void>;
   getWalletTransactionByStripeSessionId(stripeSessionId: string): Promise<WalletTransaction | undefined>;
   getWalletTransactionByStripePaymentIntentId(stripePaymentIntentId: string): Promise<WalletTransaction | undefined>;
@@ -649,6 +664,19 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
+  async updateClientForOrganization(id: string, orgId: string, data: { firstName?: string; lastName?: string; email?: string | null }): Promise<User | undefined> {
+    const [updated] = await db.update(users).set(data).where(and(
+      eq(users.id, id),
+      sql`EXISTS (
+        SELECT 1 FROM user_profiles up
+        WHERE up.user_id = ${users.id}
+          AND up.organization_id = ${orgId}
+          AND up.role = 'CLIENT'
+      )`,
+    )).returning();
+    return updated || undefined;
+  }
+
   async updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined> {
     const now = new Date();
     const setData: any = { smsOptIn: optIn };
@@ -677,6 +705,32 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
 
+  async deleteClientForOrganization(id: string, orgId: string): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const ownership = await tx.execute(sql`
+        SELECT user_id FROM user_profiles
+        WHERE user_id = ${id} AND organization_id = ${orgId} AND role = 'CLIENT'
+        FOR UPDATE
+      `);
+      if (ownership.rows.length === 0) return false;
+      await tx.delete(bookingParticipants).where(eq(bookingParticipants.userId, id));
+      await tx.delete(walletTransactions).where(eq(walletTransactions.userId, id));
+      const userBookings = await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.clientId, id));
+      for (const booking of userBookings) {
+        await tx.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, booking.id));
+        await tx.delete(redemptions).where(eq(redemptions.bookingId, booking.id));
+      }
+      await tx.delete(bookings).where(eq(bookings.clientId, id));
+      await tx.delete(userProfiles).where(and(
+        eq(userProfiles.userId, id),
+        eq(userProfiles.organizationId, orgId),
+        eq(userProfiles.role, "CLIENT"),
+      ));
+      const deleted = await tx.delete(users).where(eq(users.id, id)).returning({ id: users.id });
+      return deleted.length > 0;
+    });
+  }
+
   async getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; redemption?: Redemption })[]> {
     const result = await db
       .select()
@@ -691,6 +745,24 @@ export class DatabaseStorage implements IStorage {
       ...r.bookings,
       service: r.services || undefined,
       coach: r.coach_profiles ? { ...r.coach_profiles, user: r.users! } : undefined,
+      redemption: r.redemptions || undefined,
+    }));
+  }
+
+  async getBookingsForUserInOrganization(userId: string, orgId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; redemption?: Redemption })[]> {
+    const result = await db
+      .select()
+      .from(bookings)
+      .leftJoin(services, eq(bookings.serviceId, services.id))
+      .innerJoin(coachProfiles, eq(bookings.coachId, coachProfiles.id))
+      .leftJoin(users, eq(coachProfiles.userId, users.id))
+      .leftJoin(redemptions, eq(redemptions.bookingId, bookings.id))
+      .where(and(eq(bookings.clientId, userId), eq(coachProfiles.organizationId, orgId)))
+      .orderBy(desc(bookings.startAt));
+    return result.map(r => ({
+      ...r.bookings,
+      service: r.services || undefined,
+      coach: r.coach_profiles && r.users ? { ...r.coach_profiles, user: r.users } : undefined,
       redemption: r.redemptions || undefined,
     }));
   }
@@ -786,18 +858,72 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(availabilityBlocks).where(eq(availabilityBlocks.coachId, coachId));
   }
 
+  async getAvailabilityBlockForCoach(id: string, coachId: string): Promise<AvailabilityBlock | undefined> {
+    const [block] = await db
+      .select()
+      .from(availabilityBlocks)
+      .where(and(eq(availabilityBlocks.id, id), eq(availabilityBlocks.coachId, coachId)));
+    return block || undefined;
+  }
+
+  async getAvailabilityBlockForOrganization(id: string, orgId: string): Promise<AvailabilityBlock | undefined> {
+    const [block] = await db
+      .select({ block: availabilityBlocks })
+      .from(availabilityBlocks)
+      .innerJoin(coachProfiles, eq(availabilityBlocks.coachId, coachProfiles.id))
+      .where(and(eq(availabilityBlocks.id, id), eq(coachProfiles.organizationId, orgId)));
+    return block?.block;
+  }
+
   async createAvailabilityBlock(block: InsertAvailabilityBlock): Promise<AvailabilityBlock> {
     const [created] = await db.insert(availabilityBlocks).values(block).returning();
     return created;
   }
 
-  async updateAvailabilityBlock(id: string, data: { startTime?: string; endTime?: string; location?: string; dayOfWeek?: number }): Promise<AvailabilityBlock> {
-    const [updated] = await db.update(availabilityBlocks).set(data).where(eq(availabilityBlocks.id, id)).returning();
-    return updated;
+  async updateAvailabilityBlockForCoach(id: string, coachId: string, data: { startTime?: string; endTime?: string; location?: string; dayOfWeek?: number }): Promise<AvailabilityBlock | undefined> {
+    const [updated] = await db
+      .update(availabilityBlocks)
+      .set(data)
+      .where(and(eq(availabilityBlocks.id, id), eq(availabilityBlocks.coachId, coachId)))
+      .returning();
+    return updated || undefined;
   }
 
-  async deleteAvailabilityBlock(id: string): Promise<void> {
-    await db.delete(availabilityBlocks).where(eq(availabilityBlocks.id, id));
+  async updateAvailabilityBlockForOrganization(id: string, orgId: string, data: { startTime?: string; endTime?: string; location?: string; dayOfWeek?: number }): Promise<AvailabilityBlock | undefined> {
+    const [updated] = await db
+      .update(availabilityBlocks)
+      .set(data)
+      .where(and(
+        eq(availabilityBlocks.id, id),
+        sql`EXISTS (
+          SELECT 1 FROM coach_profiles cp
+          WHERE cp.id = ${availabilityBlocks.coachId} AND cp.organization_id = ${orgId}
+        )`,
+      ))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteAvailabilityBlockForCoach(id: string, coachId: string): Promise<boolean> {
+    const deleted = await db
+      .delete(availabilityBlocks)
+      .where(and(eq(availabilityBlocks.id, id), eq(availabilityBlocks.coachId, coachId)))
+      .returning({ id: availabilityBlocks.id });
+    return deleted.length > 0;
+  }
+
+  async deleteAvailabilityBlockForOrganization(id: string, orgId: string): Promise<boolean> {
+    const deleted = await db
+      .delete(availabilityBlocks)
+      .where(and(
+        eq(availabilityBlocks.id, id),
+        sql`EXISTS (
+          SELECT 1 FROM coach_profiles cp
+          WHERE cp.id = ${availabilityBlocks.coachId} AND cp.organization_id = ${orgId}
+        )`,
+      ))
+      .returning({ id: availabilityBlocks.id });
+    return deleted.length > 0;
   }
 
   async getBookings(clientId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User } })[]> {
@@ -896,7 +1022,16 @@ export class DatabaseStorage implements IStorage {
     return updated;
   }
 
-  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null; ageRange?: string; skillLevel?: string; sport?: string }): Promise<Booking | undefined> {
+  async updateBookingStatusForCoach(id: string, coachId: string, status: string): Promise<Booking | undefined> {
+    const [updated] = await db
+      .update(bookings)
+      .set({ status: status as any })
+      .where(and(eq(bookings.id, id), eq(bookings.coachId, coachId)))
+      .returning();
+    return updated;
+  }
+
+  async updateBooking(id: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null; ageRange?: string; skillLevel?: string; sport?: string }, coachId?: string): Promise<Booking | undefined> {
     const setData: any = {};
     if (data.serviceId !== undefined) setData.serviceId = data.serviceId;
     if (data.startAt !== undefined) setData.startAt = data.startAt;
@@ -919,14 +1054,29 @@ export class DatabaseStorage implements IStorage {
     const [updated] = await db
       .update(bookings)
       .set(setData)
-      .where(eq(bookings.id, id))
+      .where(coachId ? and(eq(bookings.id, id), eq(bookings.coachId, coachId)) : eq(bookings.id, id))
       .returning();
     return updated;
+  }
+
+  async updateBookingForCoach(id: string, coachId: string, data: { serviceId?: string; startAt?: Date; endAt?: Date; notes?: string; groupDescription?: string; maxParticipants?: number | null; clientId?: string; recurringGroupId?: string; paymentMethod?: string | null; teamQuoteProgramId?: string | null; ageRange?: string; skillLevel?: string; sport?: string }): Promise<Booking | undefined> {
+    return this.updateBooking(id, data, coachId);
   }
 
   async deleteBooking(id: string): Promise<boolean> {
     await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, id));
     const result = await db.delete(bookings).where(eq(bookings.id, id)).returning();
+    return result.length > 0;
+  }
+
+  async deleteBookingForCoach(id: string, coachId: string): Promise<boolean> {
+    const [owned] = await db.select({ id: bookings.id }).from(bookings)
+      .where(and(eq(bookings.id, id), eq(bookings.coachId, coachId)));
+    if (!owned) return false;
+    await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, id));
+    const result = await db.delete(bookings)
+      .where(and(eq(bookings.id, id), eq(bookings.coachId, coachId)))
+      .returning({ id: bookings.id });
     return result.length > 0;
   }
 
@@ -954,6 +1104,20 @@ export class DatabaseStorage implements IStorage {
       await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, b.id));
     }
     const result = await db.delete(bookings).where(and(...conditions)).returning();
+    return result.length;
+  }
+
+  async deleteBookingsByRecurringGroupForCoach(recurringGroupId: string, coachId: string, excludeCompleted: boolean = true): Promise<number> {
+    const conditions: any[] = [
+      eq(bookings.recurringGroupId, recurringGroupId),
+      eq(bookings.coachId, coachId),
+    ];
+    if (excludeCompleted) conditions.push(sql`${bookings.status} != 'COMPLETED'`);
+    const toDelete = await db.select({ id: bookings.id }).from(bookings).where(and(...conditions));
+    for (const booking of toDelete) {
+      await db.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, booking.id));
+    }
+    const result = await db.delete(bookings).where(and(...conditions)).returning({ id: bookings.id });
     return result.length;
   }
 
@@ -1004,8 +1168,12 @@ export class DatabaseStorage implements IStorage {
     );
   }
 
-  async removeBookingParticipantById(participantId: string): Promise<void> {
-    await db.delete(bookingParticipants).where(eq(bookingParticipants.id, participantId));
+  async removeBookingParticipantByIdForBooking(participantId: string, bookingId: string): Promise<boolean> {
+    const deleted = await db.delete(bookingParticipants).where(and(
+      eq(bookingParticipants.id, participantId),
+      eq(bookingParticipants.bookingId, bookingId),
+    )).returning({ id: bookingParticipants.id });
+    return deleted.length > 0;
   }
 
   async getOpenSemiPrivateSessions(organizationId?: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; participantCount: number })[]> {
@@ -1052,6 +1220,16 @@ export class DatabaseStorage implements IStorage {
 
   async getAllRedemptions(): Promise<Redemption[]> {
     return db.select().from(redemptions).orderBy(desc(redemptions.redeemedAt));
+  }
+
+  async getRedemptionsByOrganization(orgId: string): Promise<Redemption[]> {
+    const rows = await db
+      .select({ redemption: redemptions })
+      .from(redemptions)
+      .innerJoin(coachProfiles, eq(redemptions.coachId, coachProfiles.id))
+      .where(eq(coachProfiles.organizationId, orgId))
+      .orderBy(desc(redemptions.redeemedAt));
+    return rows.map((row) => row.redemption);
   }
 
   async createRedemption(redemption: InsertRedemption): Promise<Redemption> {
@@ -1282,6 +1460,16 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(cashouts).orderBy(desc(cashouts.requestedAt));
   }
 
+  async getCashoutsByOrganization(orgId: string): Promise<Cashout[]> {
+    const rows = await db
+      .select({ cashout: cashouts })
+      .from(cashouts)
+      .innerJoin(coachProfiles, eq(cashouts.coachId, coachProfiles.id))
+      .where(eq(coachProfiles.organizationId, orgId))
+      .orderBy(desc(cashouts.requestedAt));
+    return rows.map((row) => row.cashout);
+  }
+
   async createCashout(cashout: InsertCashout): Promise<Cashout> {
     const [created] = await db.insert(cashouts).values(cashout).returning();
     return created;
@@ -1336,6 +1524,21 @@ export class DatabaseStorage implements IStorage {
 
   async updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined> {
     const [updated] = await db.update(redemptions).set({ amountCents }).where(eq(redemptions.id, id)).returning();
+    return updated || undefined;
+  }
+
+  async updateRedemptionAmountForOrganization(id: string, orgId: string, amountCents: number): Promise<Redemption | undefined> {
+    const [updated] = await db
+      .update(redemptions)
+      .set({ amountCents })
+      .where(and(
+        eq(redemptions.id, id),
+        sql`EXISTS (
+          SELECT 1 FROM coach_profiles cp
+          WHERE cp.id = ${redemptions.coachId} AND cp.organization_id = ${orgId}
+        )`,
+      ))
+      .returning();
     return updated || undefined;
   }
 
@@ -1407,11 +1610,12 @@ export class DatabaseStorage implements IStorage {
     });
   }
 
-  async creditWalletForOrganization(
-    orgId: string,
+  async creditManualPaymentForOrganization(
     userId: string,
+    orgId: string,
     amountCents: number,
     description: string,
+    method: string,
     createdBy: string,
   ): Promise<WalletTransaction | undefined> {
     if (amountCents <= 0) {
@@ -1422,7 +1626,11 @@ export class DatabaseStorage implements IStorage {
       const [membership] = await trx
         .select({ userId: userProfiles.userId })
         .from(userProfiles)
-        .where(and(eq(userProfiles.userId, userId), eq(userProfiles.organizationId, orgId)))
+        .where(and(
+          eq(userProfiles.userId, userId),
+          eq(userProfiles.organizationId, orgId),
+          eq(userProfiles.role, "CLIENT" as any),
+        ))
         .for("update")
         .limit(1);
       if (!membership) return undefined;
@@ -1432,7 +1640,7 @@ export class DatabaseStorage implements IStorage {
         type: "CREDIT" as const,
         amountCents,
         description,
-        sourceType: "manual_payment",
+        sourceType: `manual_${method}`,
         currency: "usd",
         paymentStatus: "succeeded",
         livemode: false,
@@ -1899,6 +2107,43 @@ export class DatabaseStorage implements IStorage {
         }
       }
       return { ...tx, user: userMap.get(tx.userId), redemptionCoachName, bookingLocation };
+    });
+  }
+
+  async getWalletTransactionsByOrganization(orgId: string): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]> {
+    const txRows = await db.select({ tx: walletTransactions, user: users })
+      .from(walletTransactions)
+      .innerJoin(userProfiles, eq(walletTransactions.userId, userProfiles.userId))
+      .innerJoin(users, eq(walletTransactions.userId, users.id))
+      .where(eq(userProfiles.organizationId, orgId))
+      .orderBy(desc(walletTransactions.createdAt));
+    const orgCoaches = await db.select({ coach: coachProfiles, user: users })
+      .from(coachProfiles)
+      .innerJoin(users, eq(coachProfiles.userId, users.id))
+      .where(eq(coachProfiles.organizationId, orgId));
+    const coachIds = orgCoaches.map((row) => row.coach.id);
+    const orgBookings = coachIds.length > 0
+      ? await db.select().from(bookings).where(inArray(bookings.coachId, coachIds))
+      : [];
+    const bookingIds = orgBookings.map((booking) => booking.id);
+    const orgRedemptions = bookingIds.length > 0
+      ? await db.select().from(redemptions).where(inArray(redemptions.bookingId, bookingIds))
+      : [];
+    const bookingMap = new Map(orgBookings.map((booking) => [booking.id, booking]));
+    const redemptionMap = new Map(orgRedemptions.map((redemption) => [redemption.bookingId, redemption]));
+    const coachMap = new Map(orgCoaches.map((row) => [row.coach.id, row.user]));
+    return txRows.map(({ tx, user }) => {
+      const booking = tx.sourceType === "redemption" && tx.sourceId ? bookingMap.get(tx.sourceId) : undefined;
+      const redemption = booking ? redemptionMap.get(booking.id) : undefined;
+      const coachUser = redemption ? coachMap.get(redemption.coachId) : undefined;
+      return {
+        ...tx,
+        user,
+        bookingLocation: booking?.location || undefined,
+        redemptionCoachName: coachUser
+          ? `${coachUser.firstName || ""} ${coachUser.lastName || ""}`.trim()
+          : undefined,
+      };
     });
   }
 

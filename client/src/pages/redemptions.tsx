@@ -140,7 +140,8 @@ function RedemptionOverview() {
           <p className="text-3xl font-bold text-primary" data-testid="text-overview-total-revenue">
             ${(totalRevenue / 100).toFixed(2)}
           </p>
-          <p className="text-sm text-muted-foreground">Total Revenue Redeemed</p>
+          <p className="text-sm text-muted-foreground">Gross Redeemed Session Value</p>
+          <p className="text-xs text-muted-foreground mt-1">Historical redemption records; use Transactions for authoritative ledger revenue.</p>
         </Card>
         <Card className="p-4 text-center" data-testid="card-overview-total-owed">
           <Banknote className="h-5 w-5 mx-auto mb-1 text-yellow-600 dark:text-yellow-400" />

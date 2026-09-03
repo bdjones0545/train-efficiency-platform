@@ -3256,12 +3256,20 @@ export async function registerRoutes(
   app.patch("/api/coach/bookings/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const coachId = await getCoachId(userId);
-      if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+      const requesterCoachId = await getCoachId(userId);
+      const requesterRole = await getUserRole(userId);
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const bookingId = req.params.id;
       const existing = await storage.getBooking(bookingId);
       if (!existing) return res.status(404).json({ message: "Booking not found" });
+      const bookingCoach = await storage.getCoachProfile(existing.coachId);
+      if (!bookingCoach || bookingCoach.organizationId !== orgId) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      if (requesterRole !== "ADMIN" && existing.coachId !== requesterCoachId) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
 
       if (existing.status === "COMPLETED") {
         return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
@@ -3287,7 +3295,7 @@ export async function registerRoutes(
 
       if (serviceId && serviceId !== existing.serviceId) {
         const service = await storage.getService(serviceId);
-        if (!service) return res.status(404).json({ message: "Service not found" });
+        if (!service || service.organizationId !== orgId) return res.status(404).json({ message: "Service not found" });
         updateData.serviceId = serviceId;
 
         const isSemiPrivate = service.sessionType === "GROUP";
@@ -3316,6 +3324,10 @@ export async function registerRoutes(
       const editCoachOrgId = editCoachProfile?.organizationId || null;
 
       if (clientId) {
+        const clientProfile = await storage.getUserProfile(clientId);
+        if (!clientProfile || clientProfile.organizationId !== orgId) {
+          return res.status(404).json({ message: "Client not found" });
+        }
         updateData.clientId = clientId;
       } else if (clientFirstName && clientLastName) {
         const user = await storage.findOrCreateUserByName(clientFirstName.trim(), clientLastName.trim(), editCoachOrgId);
@@ -3338,7 +3350,8 @@ export async function registerRoutes(
         }
       }
 
-      const updated = await storage.updateBooking(bookingId, updateData);
+      const updated = await storage.updateBookingForCoach(bookingId, bookingCoachId, updateData);
+      if (!updated) return res.status(404).json({ message: "Booking not found" });
 
       // Track reschedule event in attention inbox when time changes (fire-and-forget)
       if (updateData.startAt) {
@@ -3452,6 +3465,7 @@ export async function registerRoutes(
 
       res.json(updated);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error updating booking:", error);
       res.status(500).json({ message: "Failed to update session" });
     }
@@ -3460,13 +3474,21 @@ export async function registerRoutes(
   app.delete("/api/coach/bookings/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const coachId = await getCoachId(userId);
-      if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+      const requesterCoachId = await getCoachId(userId);
+      const requesterRole = await getUserRole(userId);
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const bookingId = req.params.id;
       const deleteGroup = req.query.deleteGroup === "true";
       const existing = await storage.getBooking(bookingId);
       if (!existing) return res.status(404).json({ message: "Booking not found" });
+      const bookingCoach = await storage.getCoachProfile(existing.coachId);
+      if (!bookingCoach || bookingCoach.organizationId !== orgId) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
+      if (requesterRole !== "ADMIN" && existing.coachId !== requesterCoachId) {
+        return res.status(404).json({ message: "Booking not found" });
+      }
 
       if (existing.status === "COMPLETED") {
         return res.status(403).json({ message: "Redeemed sessions are locked and cannot be changed." });
@@ -3477,14 +3499,15 @@ export async function registerRoutes(
       }
 
       if (deleteGroup && existing.recurringGroupId) {
-        const count = await storage.deleteBookingsByRecurringGroup(existing.recurringGroupId);
+        const count = await storage.deleteBookingsByRecurringGroupForCoach(existing.recurringGroupId, existing.coachId);
         res.json({ success: true, deletedCount: count });
       } else {
-        const deleted = await storage.deleteBooking(bookingId);
+        const deleted = await storage.deleteBookingForCoach(bookingId, existing.coachId);
         if (!deleted) return res.status(500).json({ message: "Failed to delete session" });
         res.json({ success: true, deletedCount: 1 });
       }
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error deleting booking:", error);
       res.status(500).json({ message: "Failed to delete session" });
     }
@@ -3507,11 +3530,22 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const targetCoachId = req.query.coachId as string | undefined;
-      const coachId = targetCoachId || await getCoachId(userId);
+      const requesterCoachId = await getCoachId(userId);
+      const requesterRole = await getUserRole(userId);
+      if (targetCoachId && requesterRole !== "ADMIN" && targetCoachId !== requesterCoachId) {
+        return res.status(403).json({ message: "You can only view your own availability" });
+      }
+      const coachId = targetCoachId || requesterCoachId;
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+      const orgId = await resolveOrgIdOrThrow(req);
+      const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+      if (!orgCoaches.some((coach) => coach.id === coachId)) {
+        return res.status(404).json({ message: "Coach profile not found" });
+      }
       const blocks = await storage.getAvailabilityBlocks(coachId);
       res.json(blocks);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error fetching availability:", error);
       res.status(500).json({ message: "Failed to fetch availability" });
     }
@@ -3521,8 +3555,18 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const targetCoachId = req.body.coachId as string | undefined;
-      const coachId = targetCoachId || await getCoachId(userId);
+      const requesterCoachId = await getCoachId(userId);
+      const requesterRole = await getUserRole(userId);
+      if (targetCoachId && requesterRole !== "ADMIN" && targetCoachId !== requesterCoachId) {
+        return res.status(403).json({ message: "You can only manage your own availability" });
+      }
+      const coachId = targetCoachId || requesterCoachId;
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+      const orgId = await resolveOrgIdOrThrow(req);
+      const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+      if (!orgCoaches.some((coach) => coach.id === coachId)) {
+        return res.status(404).json({ message: "Coach profile not found" });
+      }
 
       const { dayOfWeek, startTime, endTime } = req.body;
       if (dayOfWeek === undefined || !startTime || !endTime) {
@@ -3546,6 +3590,7 @@ export async function registerRoutes(
       });
       res.json(block);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error creating availability:", error);
       res.status(500).json({ message: "Failed to create availability" });
     }
@@ -3553,13 +3598,33 @@ export async function registerRoutes(
 
   app.patch("/api/coach/availability/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const userId = req.user.claims.sub;
+      const requesterRole = await getUserRole(userId);
+      const requesterCoachId = await getCoachId(userId);
+      const orgId = await resolveOrgIdOrThrow(req);
+      const existing = requesterRole === "ADMIN"
+        ? await storage.getAvailabilityBlockForOrganization(req.params.id, orgId)
+        : requesterCoachId
+          ? await storage.getAvailabilityBlockForCoach(req.params.id, requesterCoachId)
+          : undefined;
+      if (!existing) return res.status(404).json({ message: "Availability block not found" });
+
       const { startTime, endTime, location, dayOfWeek } = req.body;
-      if (startTime && endTime && startTime >= endTime) {
+      const nextStartTime = startTime ?? existing.startTime;
+      const nextEndTime = endTime ?? existing.endTime;
+      if (nextStartTime >= nextEndTime) {
         return res.status(400).json({ message: "End time must be after start time" });
       }
-      const updated = await storage.updateAvailabilityBlock(req.params.id, { startTime, endTime, location, dayOfWeek });
+      if (dayOfWeek !== undefined && (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6)) {
+        return res.status(400).json({ message: "Invalid day of week" });
+      }
+      const updated = requesterRole === "ADMIN"
+        ? await storage.updateAvailabilityBlockForOrganization(req.params.id, orgId, { startTime, endTime, location, dayOfWeek })
+        : await storage.updateAvailabilityBlockForCoach(req.params.id, requesterCoachId!, { startTime, endTime, location, dayOfWeek });
+      if (!updated) return res.status(404).json({ message: "Availability block not found" });
       res.json(updated);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error updating availability:", error);
       res.status(500).json({ message: "Failed to update availability" });
     }
@@ -3567,9 +3632,19 @@ export async function registerRoutes(
 
   app.delete("/api/coach/availability/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      await storage.deleteAvailabilityBlock(req.params.id);
+      const userId = req.user.claims.sub;
+      const requesterRole = await getUserRole(userId);
+      const requesterCoachId = await getCoachId(userId);
+      const orgId = await resolveOrgIdOrThrow(req);
+      const deleted = requesterRole === "ADMIN"
+        ? await storage.deleteAvailabilityBlockForOrganization(req.params.id, orgId)
+        : requesterCoachId
+          ? await storage.deleteAvailabilityBlockForCoach(req.params.id, requesterCoachId)
+          : false;
+      if (!deleted) return res.status(404).json({ message: "Availability block not found" });
       res.json({ success: true });
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error deleting availability:", error);
       res.status(500).json({ message: "Failed to delete availability" });
     }
@@ -3579,8 +3654,18 @@ export async function registerRoutes(
     try {
       const userId = req.user.claims.sub;
       const targetCoachId = req.query.coachId as string | undefined;
-      const coachId = targetCoachId || await getCoachId(userId);
+      const requesterCoachId = await getCoachId(userId);
+      const requesterRole = await getUserRole(userId);
+      if (targetCoachId && requesterRole !== "ADMIN" && targetCoachId !== requesterCoachId) {
+        return res.status(403).json({ message: "You can only view your own redemptions" });
+      }
+      const coachId = targetCoachId || requesterCoachId;
       if (!coachId) return res.status(404).json({ message: "Coach profile not found" });
+      const orgId = await resolveOrgIdOrThrow(req);
+      const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
+      if (!orgCoaches.some((coach) => coach.id === coachId)) {
+        return res.status(404).json({ message: "Coach profile not found" });
+      }
       const redemptionsList = await storage.getCoachRedemptions(coachId);
       const allBookings = await storage.getAllBookings();
       const servicesList = await storage.getServices();
@@ -3595,6 +3680,7 @@ export async function registerRoutes(
       });
       res.json(enriched);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error fetching redemptions:", error);
       res.status(500).json({ message: "Failed to fetch redemptions" });
     }
@@ -3924,7 +4010,7 @@ export async function registerRoutes(
       const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
       const orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
       const coachMap = new Map(orgCoaches.map(c => [c.id, c]));
-      const allRedemptions = await storage.getAllRedemptions();
+      const allRedemptions = await storage.getRedemptionsByOrganization(orgId);
 
       const result = allRedemptions
         .filter((r: any) => orgCoachIdSet.has(r.coachId))
@@ -4250,11 +4336,13 @@ export async function registerRoutes(
   app.patch("/api/coach/users/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.params.id;
+      const orgId = await resolveOrgIdOrThrow(req);
       const { firstName, lastName, email } = req.body;
-      const updated = await storage.updateUser(userId, { firstName, lastName, email });
+      const updated = await storage.updateClientForOrganization(userId, orgId, { firstName, lastName, email });
       if (!updated) return res.status(404).json({ message: "User not found" });
       res.json(updated);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error updating user:", error);
       res.status(500).json({ message: "Failed to update user" });
     }
@@ -4263,10 +4351,12 @@ export async function registerRoutes(
   app.delete("/api/coach/users/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.params.id;
-      const deleted = await storage.deleteUser(userId);
+      const orgId = await resolveOrgIdOrThrow(req);
+      const deleted = await storage.deleteClientForOrganization(userId, orgId);
       if (!deleted) return res.status(404).json({ message: "User not found" });
       res.json({ success: true });
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error deleting user:", error);
       res.status(500).json({ message: "Failed to delete user" });
     }
@@ -4275,9 +4365,15 @@ export async function registerRoutes(
   app.get("/api/coach/users/:id/bookings", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const userId = req.params.id;
-      const userBookings = await storage.getBookingsForUser(userId);
+      const orgId = await resolveOrgIdOrThrow(req);
+      const targetProfile = await storage.getUserProfile(userId);
+      if (!targetProfile || targetProfile.organizationId !== orgId || targetProfile.role !== "CLIENT") {
+        return res.status(404).json({ message: "User not found" });
+      }
+      const userBookings = await storage.getBookingsForUserInOrganization(userId, orgId);
       res.json(userBookings);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error fetching user bookings:", error);
       res.status(500).json({ message: "Failed to fetch bookings" });
     }
@@ -4287,9 +4383,23 @@ export async function registerRoutes(
     try {
       const bookingId = req.params.id;
       const { userId, participantName } = req.body;
+      const requesterUserId = req.user.claims.sub;
+      const requesterRole = await getUserRole(requesterUserId);
+      const requesterCoachId = await getCoachId(requesterUserId);
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const booking = await storage.getBooking(bookingId);
       if (!booking) return res.status(404).json({ message: "Session not found" });
+      const bookingCoach = await storage.getCoachProfile(booking.coachId);
+      if (!bookingCoach || bookingCoach.organizationId !== orgId) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      if (requesterRole !== "ADMIN" && booking.coachId !== requesterCoachId) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      if (booking.status === "COMPLETED" || await storage.getRedemptionByBookingId(bookingId)) {
+        return res.status(403).json({ message: "Completed or redeemed sessions cannot be changed" });
+      }
       if (!booking.maxParticipants) return res.status(400).json({ message: "This is not a group session" });
 
       const participants = await storage.getBookingParticipants(bookingId);
@@ -4298,6 +4408,10 @@ export async function registerRoutes(
       }
 
       const targetUserId = userId || (participantName ? booking.clientId : req.user.claims.sub);
+      const targetProfile = await storage.getUserProfile(targetUserId);
+      if (!targetProfile || targetProfile.organizationId !== orgId) {
+        return res.status(404).json({ message: "Participant not found" });
+      }
 
       const alreadyJoined = participants.some(p => p.userId === targetUserId && (!participantName || p.participantName === participantName?.trim()));
       if (alreadyJoined) {
@@ -4311,6 +4425,7 @@ export async function registerRoutes(
       });
       res.json(p);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error adding participant:", error);
       res.status(500).json({ message: "Failed to add participant" });
     }
@@ -4320,17 +4435,33 @@ export async function registerRoutes(
     try {
       const bookingId = req.params.id;
       const participantId = req.params.participantId;
+      const requesterUserId = req.user.claims.sub;
+      const requesterRole = await getUserRole(requesterUserId);
+      const requesterCoachId = await getCoachId(requesterUserId);
+      const orgId = await resolveOrgIdOrThrow(req);
 
       const booking = await storage.getBooking(bookingId);
       if (!booking) return res.status(404).json({ message: "Session not found" });
+      const bookingCoach = await storage.getCoachProfile(booking.coachId);
+      if (!bookingCoach || bookingCoach.organizationId !== orgId) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      if (requesterRole !== "ADMIN" && booking.coachId !== requesterCoachId) {
+        return res.status(404).json({ message: "Session not found" });
+      }
+      if (booking.status === "COMPLETED" || await storage.getRedemptionByBookingId(bookingId)) {
+        return res.status(403).json({ message: "Completed or redeemed sessions cannot be changed" });
+      }
 
       const participants = await storage.getBookingParticipants(bookingId);
       const target = participants.find(p => p.id === participantId);
       if (!target) return res.status(404).json({ message: "Participant not found in this session" });
 
-      await storage.removeBookingParticipantById(participantId);
+      const removed = await storage.removeBookingParticipantByIdForBooking(participantId, bookingId);
+      if (!removed) return res.status(404).json({ message: "Participant not found in this session" });
       res.json({ message: "Participant removed" });
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error removing participant:", error);
       res.status(500).json({ message: "Failed to remove participant" });
     }
@@ -4342,7 +4473,7 @@ export async function registerRoutes(
       if (!userId || !amountCents || !method) {
         return res.status(400).json({ message: "userId, amountCents, and method are required" });
       }
-      if (amountCents <= 0) {
+      if (!Number.isSafeInteger(amountCents) || amountCents <= 0) {
         return res.status(400).json({ message: "Amount must be greater than zero" });
       }
       if (!["cash", "venmo", "stripe"].includes(method)) {
@@ -4352,10 +4483,17 @@ export async function registerRoutes(
       const actorUserId = req.user?.claims?.sub ?? req.user?.id;
       if (!actorUserId) return res.status(401).json({ message: "Unauthorized" });
       const orgId = await resolveOrgIdOrThrow(req);
+      const [user, userProfile] = await Promise.all([
+        storage.getUser(userId),
+        storage.getUserProfile(userId),
+      ]);
+      if (!user || !userProfile || userProfile.organizationId !== orgId || userProfile.role !== "CLIENT") {
+        return res.status(404).json({ message: "User not found" });
+      }
       const methodLabel = method === "cash" ? "Cash" : method === "venmo" ? "Venmo" : "Stripe";
       const description = `Manual payment (${methodLabel})`;
       const tx = await executeManualPaymentForOrganization({ amountCents, description }, {
-        credit: () => storage.creditWalletForOrganization(orgId, userId, amountCents, description, actorUserId),
+        credit: () => storage.creditManualPaymentForOrganization(userId, orgId, amountCents, description, method, actorUserId),
         getUser: () => storage.getUser(userId),
         getBalance: () => storage.getUserBalance(userId),
         getBranding: () => getOrgBranding(orgId),
@@ -4364,8 +4502,17 @@ export async function registerRoutes(
       });
       if (!tx) return res.status(404).json({ message: "User not found" });
 
+      onPaymentReceived({
+        orgId,
+        clientId: userId,
+        amountCents,
+        walletTxId: tx.id,
+        isSubscriptionPayment: false,
+        createdBy: actorUserId,
+      }).catch(() => {});
+
       res.json(tx);
-    } catch (error: any) {
+    } catch (error) {
       if (handleOrgError(error, res)) return;
       console.error("Error recording manual payment:", error);
       res.status(500).json({ message: "Failed to record payment" });
@@ -4375,9 +4522,8 @@ export async function registerRoutes(
   app.get("/api/coach/transactions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
-      const transactions = await storage.getWalletTransactionsForOrganization(orgId);
-      res.json(transactions);
-    } catch (error: any) {
+      res.json(await storage.getWalletTransactionsByOrganization(orgId));
+    } catch (error) {
       if (handleOrgError(error, res)) return;
       console.error("Error fetching transactions:", error);
       res.status(500).json({ message: "Failed to fetch transactions" });
@@ -4439,9 +4585,8 @@ export async function registerRoutes(
   app.get("/api/coach/user-balances", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
-      const balances = await storage.getUserBalancesByOrganization(orgId);
-      res.json(balances);
-    } catch (error: any) {
+      res.json(await storage.getUserBalancesByOrganization(orgId));
+    } catch (error) {
       if (handleOrgError(error, res)) return;
       console.error("Error fetching user balances:", error);
       res.status(500).json({ message: "Failed to fetch user balances" });
@@ -4966,19 +5111,14 @@ export async function registerRoutes(
 
   app.get("/api/admin/redemptions", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub ?? req.user.id;
-      const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId || null;
-      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
+      const orgId = await resolveOrgIdOrThrow(req);
       const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
-      const orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
       const coachMap = new Map(orgCoaches.map(c => [c.id, c]));
-      const redemptionsList = await storage.getAllRedemptions();
+      const redemptionsList = await storage.getRedemptionsByOrganization(orgId);
       const allBookings = await storage.getAllBookings();
       const servicesList = await storage.getServices();
 
       const enriched = redemptionsList
-        .filter((r: any) => orgCoachIdSet.has(r.coachId))
         .map((r: any) => {
           const coach = coachMap.get(r.coachId);
           const booking = allBookings.find((b: any) => b.id === r.bookingId);
@@ -4999,22 +5139,25 @@ export async function registerRoutes(
         });
       res.json(enriched);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error fetching all redemptions:", error);
       res.status(500).json({ message: "Failed to fetch redemptions" });
     }
   });
 
-  app.patch("/api/admin/redemptions/:id/amount", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  app.patch("/api/admin/redemptions/:id/amount", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
       const { id } = req.params;
       const { amountCents } = req.body;
       if (typeof amountCents !== "number" || amountCents < 0) {
         return res.status(400).json({ message: "Valid amountCents required" });
       }
-      const updated = await storage.updateRedemptionAmount(id, amountCents);
+      const orgId = await resolveOrgIdOrThrow(req);
+      const updated = await storage.updateRedemptionAmountForOrganization(id, orgId, amountCents);
       if (!updated) return res.status(404).json({ message: "Redemption not found" });
       res.json(updated);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error updating redemption amount:", error);
       res.status(500).json({ message: "Failed to update redemption" });
     }
@@ -5377,43 +5520,19 @@ export async function registerRoutes(
   // ── Revenue Summary V2 — collected / recognized / deferred / compensation ────
   app.get("/api/admin/revenue-summary-v2", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub ?? req.user?.id;
-      const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId || null;
+      const orgId = await resolveOrgIdOrThrow(req);
       const sinceParam = req.query.since as string | undefined;
       const since = sinceParam ? new Date(sinceParam) : undefined;
-
-      const orgFilter = orgId ? sql`AND org_id = ${orgId}` : sql``;
-      const sinceFilter = since ? sql`AND created_at >= ${since}` : sql``;
-
-      const totals = await db.execute(sql`
-        SELECT
-          event_type,
-          COALESCE(SUM(amount_cents), 0)::int AS total_cents,
-          COUNT(*)::int AS event_count
-        FROM revenue_ledger_events
-        WHERE 1=1 ${orgFilter} ${sinceFilter}
-        GROUP BY event_type
-      `);
-
-      const byType: Record<string, { totalCents: number; count: number }> = {};
-      for (const row of totals.rows as any[]) {
-        byType[row.event_type] = { totalCents: row.total_cents, count: row.event_count };
+      if (since && Number.isNaN(since.getTime())) {
+        return res.status(400).json({ message: "Invalid since date" });
       }
 
-      const get = (type: string) => byType[type]?.totalCents ?? 0;
+      const { getRevenueLedgerSummary } = await import("./revenue-recognition");
+      const summary = await getRevenueLedgerSummary(orgId, since);
+      const { eventCounts, dataQuality, ...metrics } = summary;
 
-      const collectedRevenueCents = get("payment_received");
-      const recognizedRevenueCents = get("revenue_recognized");
-      const deferredCreatedCents = get("deferred_revenue_created");
-      const deferredReleasedCents = get("deferred_revenue_released");
-      const deferredRevenueCents = Math.max(0, deferredCreatedCents - deferredReleasedCents);
-      const coachAccruedCents = get("coach_compensation_accrued");
-      const coachPaidCents = get("coach_compensation_paid");
-      const refundedCents = get("refund_issued");
-      const netOrgRevenueCents = Math.max(0, recognizedRevenueCents - coachAccruedCents);
-
-      // Per-coach accruals (last 90 days)
+      const coachSinceFilter = since ? sql`AND rle.created_at >= ${since}` : sql``;
+      // Per-coach accruals for the same period as the summary.
       const coachBreakdown = await db.execute(sql`
         SELECT
           rle.coach_id,
@@ -5427,7 +5546,8 @@ export async function registerRoutes(
         LEFT JOIN users u ON u.id = cp.user_id
         WHERE rle.coach_id IS NOT NULL
           AND rle.event_type IN ('coach_compensation_accrued', 'coach_compensation_paid')
-          ${orgFilter}
+          AND rle.org_id = ${orgId}
+          ${coachSinceFilter}
         GROUP BY rle.coach_id, u.first_name, u.last_name
         ORDER BY accrued_cents DESC
       `);
@@ -5437,59 +5557,26 @@ export async function registerRoutes(
         organizationId: orgId,
         since: since?.toISOString() ?? null,
         // Top-level aliases so home page cards can read values directly
-        periodRevenueCents: recognizedRevenueCents,
-        thisMonth: recognizedRevenueCents,
-        total: collectedRevenueCents,
+        periodRevenueCents: metrics.recognizedRevenueCents,
+        thisMonth: metrics.recognizedRevenueCents,
+        total: metrics.collectedRevenueCents,
         growthPct: 0,
-        metrics: {
-          collectedRevenueCents,
-          recognizedRevenueCents,
-          deferredRevenueCents,
-          deferredCreatedCents,
-          deferredReleasedCents,
-          coachAccruedCents,
-          coachPaidCents,
-          coachPendingCents: Math.max(0, coachAccruedCents - coachPaidCents),
-          refundedCents,
-          netOrgRevenueCents,
-        },
+        metrics,
         coachBreakdown: (coachBreakdown.rows as any[]).map(r => ({
           coachId: r.coach_id,
           coachName: [r.first_name, r.last_name].filter(Boolean).join(" ") || "Unknown",
           accruedCents: r.accrued_cents,
           paidCents: r.paid_cents,
-          pendingCents: Math.max(0, r.accrued_cents - r.paid_cents),
+          pendingCents: r.accrued_cents - r.paid_cents,
           sessionsRedeemed: r.sessions_redeemed,
         })),
-        eventCounts: Object.fromEntries(
-          Object.entries(byType).map(([k, v]) => [k, v.count])
-        ),
+        eventCounts,
+        dataQuality,
       });
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error computing revenue summary v2:", error);
-      res.json({
-        generatedAt: new Date().toISOString(),
-        organizationId: null,
-        since: null,
-        periodRevenueCents: 0,
-        thisMonth: 0,
-        total: 0,
-        growthPct: 0,
-        metrics: {
-          collectedRevenueCents: 0,
-          recognizedRevenueCents: 0,
-          deferredRevenueCents: 0,
-          deferredCreatedCents: 0,
-          deferredReleasedCents: 0,
-          coachAccruedCents: 0,
-          coachPaidCents: 0,
-          coachPendingCents: 0,
-          refundedCents: 0,
-          netOrgRevenueCents: 0,
-        },
-        coachBreakdown: [],
-        eventCounts: {},
-      });
+      res.status(500).json({ message: "Failed to compute revenue summary" });
     }
   });
 
@@ -7146,15 +7233,10 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
   app.get("/api/admin/cashouts", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub ?? req.user.id;
-      const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId || null;
-      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
-      const cashoutsList = await storage.getAllCashouts();
+      const orgId = await resolveOrgIdOrThrow(req);
+      const cashoutsList = await storage.getCashoutsByOrganization(orgId);
       const coaches = await storage.getCoachProfilesByOrganization(orgId);
-      const coachIdSet = new Set(coaches.map((c: any) => c.id));
       const enriched = cashoutsList
-        .filter((c: any) => coachIdSet.has(c.coachId))
         .map((c: any) => {
           const coach = coaches.find((cp: any) => cp.id === c.coachId);
           return {
@@ -7164,6 +7246,7 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         });
       res.json(enriched);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error fetching all cashouts:", error);
       res.status(500).json({ message: "Failed to fetch cashouts" });
     }
@@ -7176,14 +7259,14 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!["PAID", "DENIED"].includes(status)) {
         return res.status(400).json({ message: "Status must be PAID or DENIED" });
       }
+      const orgId = await resolveOrgIdOrThrow(req);
       const adminUserId = req.user?.claims?.sub ?? req.user?.id;
       if (!adminUserId) return res.status(401).json({ message: "Unauthorized" });
-      const orgId = await resolveOrgIdOrThrow(req);
       const updated = await storage.updateCashoutStatusForOrganization(orgId, id, status, adminUserId);
       if (!updated) return res.status(404).json({ message: "Cashout not found" });
 
       res.json(updated);
-    } catch (error: any) {
+    } catch (error) {
       if (handleOrgError(error, res)) return;
       console.error("Error updating cashout status:", error);
       res.status(500).json({ message: "Failed to update cashout status" });
@@ -15787,18 +15870,33 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
   // ─── Unified Attention System ─────────────────────────────────────────────────
 
-  // GET /api/attention — sync + return ranked items
+  // GET /api/attention — return a bounded page of ranked items.
+  // Synchronization is intentionally explicit via POST /api/attention/sync;
+  // a read must not start background writes or expensive fan-out work.
   app.get("/api/attention", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
-
-      const { syncAttentionItems, runEscalation, getAttentionItems } = await import("./attention-engine");
-      // Run sync + escalation silently in background (non-blocking for fast response)
-      syncAttentionItems(orgId).catch(() => {});
-      runEscalation(orgId).catch(() => {});
-
-      const items = await getAttentionItems(orgId);
+      const limit = Math.min(Math.max(Number.parseInt(String(req.query.limit ?? "100"), 10) || 100, 1), 200);
+      const offset = Math.max(Number.parseInt(String(req.query.offset ?? "0"), 10) || 0, 0);
+      const requestedLevel = String(req.query.level ?? "");
+      const level = ["critical", "important", "suggested", "informational"].includes(requestedLevel)
+        ? requestedLevel as "critical" | "important" | "suggested" | "informational"
+        : undefined;
+      const { getAttentionItems } = await import("./attention-engine");
+      const items = await getAttentionItems(orgId, { limit, offset, level });
       res.json(items);
+    } catch (err: any) {
+      if (handleOrgError(err, res)) return;
+      res.status(500).json({ message: err.message });
+    }
+  });
+
+  // GET /api/attention/count — SQL aggregate for the global bell and page totals.
+  app.get("/api/attention/count", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await resolveOrgIdOrThrow(req);
+      const { getAttentionCount } = await import("./attention-engine");
+      res.json(await getAttentionCount(orgId));
     } catch (err: any) {
       if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
@@ -15810,11 +15908,14 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
     try {
       const orgId = await resolveOrgIdOrThrow(req);
 
-      const { syncAttentionItems, runEscalation, getAttentionItems } = await import("./attention-engine");
+      const { syncAttentionItems, runEscalation, getAttentionItems, getAttentionCount } = await import("./attention-engine");
       await syncAttentionItems(orgId);
       await runEscalation(orgId);
-      const items = await getAttentionItems(orgId);
-      res.json({ synced: items.length, items });
+      const [items, count] = await Promise.all([
+        getAttentionItems(orgId, { limit: 100 }),
+        getAttentionCount(orgId),
+      ]);
+      res.json({ synced: count.total, items, count });
     } catch (err: any) {
       if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
@@ -15844,9 +15945,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       if (!id || isNaN(hours) || hours <= 0) return res.status(400).json({ message: "Invalid request" });
 
       const { snoozeAttentionItem } = await import("./attention-engine");
-      await snoozeAttentionItem(id, hours);
+      const orgId = await resolveOrgIdOrThrow(req);
+      const updated = await snoozeAttentionItem(orgId, id, hours);
+      if (!updated) return res.status(404).json({ message: "Attention item not found" });
       res.json({ success: true, snoozedHours: hours });
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -15858,9 +15962,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       if (!id) return res.status(400).json({ message: "Missing id" });
 
       const { dismissAttentionItem } = await import("./attention-engine");
-      await dismissAttentionItem(id);
+      const orgId = await resolveOrgIdOrThrow(req);
+      const updated = await dismissAttentionItem(orgId, id);
+      if (!updated) return res.status(404).json({ message: "Attention item not found" });
       res.json({ success: true });
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });
@@ -15872,9 +15979,12 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
       if (!id) return res.status(400).json({ message: "Missing id" });
 
       const { completeAttentionItem } = await import("./attention-engine");
-      await completeAttentionItem(id);
+      const orgId = await resolveOrgIdOrThrow(req);
+      const updated = await completeAttentionItem(orgId, id);
+      if (!updated) return res.status(404).json({ message: "Attention item not found" });
       res.json({ success: true });
     } catch (err: any) {
+      if (handleOrgError(err, res)) return;
       res.status(500).json({ message: err.message });
     }
   });

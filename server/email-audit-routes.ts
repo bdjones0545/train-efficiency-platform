@@ -15,23 +15,13 @@ import type { Express, Request, Response } from "express";
 import { queryOutboundAuditLog } from "./services/outbound-audit-log";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
+import { handleOrgError, resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 
 function rowsOf(r: unknown): any[] {
   if (Array.isArray(r)) return r;
   return (r as any)?.rows ?? [];
-}
-
-function requireAdmin(req: Request, res: Response): boolean {
-  if (!(req as any).user) {
-    res.status(401).json({ error: "Not authenticated" });
-    return false;
-  }
-  return true;
-}
-
-function getOrgId(req: Request): string | null {
-  const user = (req as any).user;
-  return user?.organizationId ?? user?.orgId ?? null;
 }
 
 export function registerEmailAuditRoutes(app: Express): void {
@@ -49,12 +39,9 @@ export function registerEmailAuditRoutes(app: Express): void {
    *   limit           — default 50, max 200
    *   offset          — default 0
    */
-  app.get("/api/email-audit", async (req: Request, res: Response) => {
-    if (!requireAdmin(req, res)) return;
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(403).json({ error: "No organization" });
-
+  app.get("/api/email-audit", isAuthenticated, requireRole("ADMIN"), async (req: Request, res: Response) => {
     try {
+      const orgId = await resolveOrgIdOrThrow(req);
       const {
         channel,
         status,
@@ -85,6 +72,7 @@ export function registerEmailAuditRoutes(app: Express): void {
 
       res.json(result);
     } catch (e: any) {
+      if (handleOrgError(e, res)) return;
       console.error("[EmailAudit] GET /api/email-audit error:", e.message);
       res.status(500).json({ error: e.message });
     }
@@ -94,15 +82,11 @@ export function registerEmailAuditRoutes(app: Express): void {
    * GET /api/email-audit/stats
    * Returns aggregate counts for the org.
    */
-  app.get("/api/email-audit/stats", async (req: Request, res: Response) => {
-    if (!requireAdmin(req, res)) return;
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(403).json({ error: "No organization" });
-
+  app.get("/api/email-audit/stats", isAuthenticated, requireRole("ADMIN"), async (req: Request, res: Response) => {
     try {
-      const safeOrgId = orgId.replace(/'/g, "''");
+      const orgId = await resolveOrgIdOrThrow(req);
       const rows = rowsOf(
-        await db.execute(sql.raw(`
+        await db.execute(sql`
           SELECT
             COUNT(*) FILTER (WHERE status = 'sent')          AS total_sent,
             COUNT(*) FILTER (WHERE status = 'blocked')        AS total_blocked,
@@ -117,8 +101,8 @@ export function registerEmailAuditRoutes(app: Express): void {
             COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours' AND status = 'sent') AS last_24h_sent,
             COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours' AND status = 'blocked') AS last_24h_blocked
           FROM outbound_email_audit_log
-          WHERE organization_id = '${safeOrgId}'
-        `)).catch(() => [])
+          WHERE organization_id = ${orgId}
+        `).catch(() => [])
       );
 
       const stats = rows[0] ?? {};
@@ -137,6 +121,7 @@ export function registerEmailAuditRoutes(app: Express): void {
         last24hBlocked: parseInt(stats.last_24h_blocked ?? "0", 10),
       });
     } catch (e: any) {
+      if (handleOrgError(e, res)) return;
       res.status(500).json({ error: e.message });
     }
   });
@@ -145,15 +130,13 @@ export function registerEmailAuditRoutes(app: Express): void {
    * GET /api/email-audit/blocked
    * Convenience endpoint — last 100 blocked sends.
    */
-  app.get("/api/email-audit/blocked", async (req: Request, res: Response) => {
-    if (!requireAdmin(req, res)) return;
-    const orgId = getOrgId(req);
-    if (!orgId) return res.status(403).json({ error: "No organization" });
-
+  app.get("/api/email-audit/blocked", isAuthenticated, requireRole("ADMIN"), async (req: Request, res: Response) => {
     try {
+      const orgId = await resolveOrgIdOrThrow(req);
       const result = await queryOutboundAuditLog({ orgId, status: "blocked", limit: 100 });
       res.json(result);
     } catch (e: any) {
+      if (handleOrgError(e, res)) return;
       res.status(500).json({ error: e.message });
     }
   });
