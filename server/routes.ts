@@ -1085,7 +1085,10 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/import-csv", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
+  // Creates CLIENT users in the caller's own organization only. Coaches are
+  // permitted: this is the single path behind "Add Client" on the athletes
+  // page, and a coach can already edit and delete those same users.
+  app.post("/api/admin/import-csv", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const { rows } = req.body;
       if (!Array.isArray(rows) || rows.length === 0) {
