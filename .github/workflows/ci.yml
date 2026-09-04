@@ -1,0 +1,105 @@
+name: CI
+
+# Runs the gates that already exist in this repo on every pull request.
+# Before this workflow, nothing ran them except a developer running them by
+# hand, or the build step at deploy time — which is after review, not during.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  # A new push to a branch cancels the run still going for the old commit.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: tests and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 20 matches production. .replit declares nodejs-20, so a green run
+      # on a newer major would not be evidence about the deployed runtime.
+      # Keep this on the 20 line rather than an exact patch: vite requires
+      # ^20.19.0 and connect-pg-simple ^20.9.0, so a lower 20.x will not install.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # npm 10.9.8, which ships with Node 20, dies on this dependency tree with
+      # "Exit handler never called" and then exits 0, leaving packages missing.
+      # It did that on three separate runs here, omitting openai, @octokit/rest,
+      # composio-core and @anthropic-ai/claude-code. Pin a newer npm rather than
+      # retrying a broken one.
+      - name: Use an npm that can install this tree
+        run: npm install -g npm@11
+
+      # 124 of the lockfile's 952 resolved URLs point at
+      # http://package-firewall.replit.local, Replit's internal package proxy,
+      # which does not resolve anywhere else. npm 10 failed to fetch them and
+      # exited 0 with the packages missing; npm 11 fails loudly. Rewrite them to
+      # the public registry for the duration of the job. The committed lockfile
+      # is untouched, so nothing about the Replit build changes — but it does
+      # mean this repository cannot currently be installed off Replit without
+      # this step, which is worth fixing at the source.
+      - name: Point the lockfile at the public registry
+        run: |
+          before=$(grep -c 'package-firewall.replit.local' package-lock.json || true)
+          sed -i 's|http://package-firewall\.replit\.local/npm/|https://registry.npmjs.org/|g' package-lock.json
+          after=$(grep -c 'package-firewall.replit.local' package-lock.json || true)
+          echo "rewrote $before internal URLs; $after remain"
+          test "$after" -eq 0
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify the install actually produced what the steps need
+        # npm has twice reported success here with an incomplete node_modules:
+        # once dying with "Exit handler never called", once silently omitting
+        # `openai`, which 33 server files import. Checking two binaries was not
+        # enough — check that every declared dependency actually landed, and
+        # retry once before giving up, because the failure is intermittent.
+        run: |
+          check() {
+            node -e '
+              const fs = require("fs");
+              const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+              const declared = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+              const missing = declared.filter(
+                (name) => !fs.existsSync("node_modules/" + name + "/package.json"),
+              );
+              if (missing.length) {
+                console.error("missing from node_modules: " + missing.join(", "));
+                process.exit(1);
+              }
+              console.log("install verified: " + declared.length + " declared dependencies present");
+            '
+          }
+          if ! check; then
+            echo "::warning::npm ci reported success with an incomplete install — retrying once"
+            npm ci --no-audit --no-fund
+            check || { echo "::error::install still incomplete after a retry"; exit 1; }
+          fi
+
+      - name: Tests
+        run: npm test
+
+      - name: Security and tenant-isolation tests
+        run: npm run test:security
+
+      - name: Server typecheck (ratchet)
+        # Added once the ratchet reached main. The server has never been
+        # typechecked by the build, so this gates on not getting worse.
+        run: npm run typecheck:server
+
+      - name: Client typecheck
+        # Never `npx tsc` here. When the local binary is absent npx silently
+        # fetches an unrelated `tsc` package from the registry and typechecks
+        # nothing — which is what happened on the first run. The explicit path
+        # fails loudly instead, and matches the repo's own `check` script.
+        run: node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.client.json

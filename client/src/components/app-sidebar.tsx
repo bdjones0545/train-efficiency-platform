@@ -679,14 +679,11 @@ export function AppSidebar() {
               testId: "nav-workforce-preferences",
             },
           ]
-        : [
-            {
-              title: "Notifications",
-              url: "/admin/notification-settings",
-              icon: Bell,
-              testId: "nav-notification-settings",
-            },
-          ]),
+        : // Notification settings are organization-wide and the API is
+          // ADMIN-only, so coaches are not offered the link. Previously it was
+          // shown here and the page rendered hardcoded defaults when the
+          // request came back 403.
+          []),
     ],
   };
 

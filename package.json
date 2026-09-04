@@ -12,10 +12,11 @@
     "test:e2e": "node script/test-runner.mjs e2e",
     "test:all": "node script/test-runner.mjs all",
     "dev": "NODE_ENV=development tsx server/index.ts",
-    "build": "tsx script/build.ts",
+    "build": "node --import tsx script/build.ts",
     "start": "NODE_ENV=production node dist/index.cjs",
     "check": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc",
     "audit:routes": "tsx script/route-guard-audit.ts",
+    "typecheck:server": "node --import tsx script/typecheck-server.ts",
     "db:migrate": "tsx script/migrate.ts",
     "db:push": "drizzle-kit push"
   },

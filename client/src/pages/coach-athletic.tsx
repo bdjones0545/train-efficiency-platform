@@ -19,6 +19,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { getAuthHeaders } from "@/lib/authToken";
 import type { AthleticBooking, AthleticProgram } from "@shared/schema";
 
 const SLOT_HEIGHT_PX = 120;
@@ -56,7 +57,7 @@ export default function CoachAthleticPage() {
   const { data: programs } = useQuery<AthleticProgram[]>({
     queryKey: ["/api/athletic/programs", orgId],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/programs?orgId=${orgId}`);
+      const res = await fetch(`/api/athletic/programs?orgId=${orgId}`, { headers: getAuthHeaders() });
       return res.json();
     },
     enabled: !!orgId,
@@ -81,7 +82,7 @@ export default function CoachAthleticPage() {
   const { data: config } = useQuery<{ startHour: number; endHour: number }>({
     queryKey: ["/api/athletic/config", programId, dateStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/config?date=${dateStr}&programId=${programId}`);
+      const res = await fetch(`/api/athletic/config?date=${dateStr}&programId=${programId}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to load config");
       return res.json();
     },
@@ -95,7 +96,7 @@ export default function CoachAthleticPage() {
   const { data: bookings, isLoading } = useQuery<AthleticBooking[]>({
     queryKey: ["/api/athletic/bookings", programId, dateStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&programId=${programId}`);
+      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&programId=${programId}`, { headers: getAuthHeaders() });
       if (!res.ok) throw new Error("Failed to load schedule");
       return res.json();
     },

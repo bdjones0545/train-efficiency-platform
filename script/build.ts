@@ -40,7 +40,10 @@ const allowlist = [
 async function typecheckClient() {
   console.log("typechecking client (tsc --noEmit)...");
   try {
-    execSync("npx tsc --noEmit -p tsconfig.client.json 2>&1", {
+    // Not `npx tsc`: when the local binary is missing npx fetches an
+    // unrelated "tsc" package from the registry and typechecks nothing,
+    // while still exiting 0. The explicit path fails loudly instead.
+    execSync("node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.client.json 2>&1", {
       encoding: "utf8",
       stdio: "pipe",
     });
@@ -57,8 +60,28 @@ async function typecheckClient() {
   }
 }
 
+/**
+ * Server typecheck, ratcheted against config/server-typecheck-baseline.json.
+ *
+ * The client tsconfig excludes server/, so until now nothing typechecked the
+ * code that actually runs in production. There are too many standing errors to
+ * gate on zero, so this aborts the build only when the tree gets worse.
+ */
+async function typecheckServer() {
+  try {
+    execSync("node --import tsx script/typecheck-server.ts 2>&1", {
+      encoding: "utf8",
+      stdio: "inherit",
+    });
+  } catch {
+    console.error("\n✗ New server type errors — build aborted.\n");
+    process.exit(1);
+  }
+}
+
 async function buildAll() {
   await typecheckClient();
+  await typecheckServer();
 
   await rm("dist", { recursive: true, force: true });
 
