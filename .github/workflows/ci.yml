@@ -31,10 +31,15 @@ jobs:
           node-version: 20
           cache: npm
 
+      # npm 10.9.8, which ships with Node 20, dies on this dependency tree with
+      # "Exit handler never called" and then exits 0, leaving packages missing.
+      # It did that on three separate runs here, omitting openai, @octokit/rest,
+      # composio-core and @anthropic-ai/claude-code. Pin a newer npm rather than
+      # retrying a broken one.
+      - name: Use an npm that can install this tree
+        run: npm install -g npm@11
+
       - name: Install
-        # --no-audit --no-fund cuts the post-install work that npm 10 was in
-        # the middle of when it died with "Exit handler never called" on the
-        # first run of this workflow.
         run: npm ci --no-audit --no-fund
 
       - name: Verify the install actually produced what the steps need
