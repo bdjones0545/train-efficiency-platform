@@ -117,7 +117,7 @@ function interpretIntent(query: string, role: string): IntentHint | null {
   if (/quote|team.?quote|proposal/.test(q) && isCoachPlus)
     return { label: "Create Team Quote", url: "/coach/team-quotes", icon: FileText };
   if (/command|hub|center|overview/.test(q) && isCoachPlus)
-    return { label: "Command Center", url: "/command-center", icon: Flame };
+    return { label: "Home", url: "/", icon: Flame };
   if (/availab/.test(q) && isCoachPlus)
     return { label: "Manage Availability", url: "/coach/availability", icon: CalendarClock };
   return null;
@@ -189,8 +189,8 @@ type PageDef = {
 };
 
 const ALL_PAGES: PageDef[] = [
-  { id: "command-center", label: "Command Center", url: "/command-center", icon: Flame, section: "Home", keywords: "hub daily ops", minRole: "COACH" },
-  { id: "dashboard", label: "Dashboard", url: "/coach", icon: LayoutDashboard, section: "Home", keywords: "overview stats", minRole: "COACH" },
+  { id: "home", label: "Home", url: "/", icon: Flame, section: "Home", keywords: "hub daily ops command center overview", minRole: "COACH" },
+  { id: "dashboard", label: "Dashboard", url: "/coach/dashboard", icon: LayoutDashboard, section: "Home", keywords: "overview stats scheduling", minRole: "COACH" },
   { id: "coaches", label: "Coaches", url: "/coaches", icon: UserCog, section: "Browse", keywords: "coaches trainers" },
   { id: "group-sessions", label: "Group Sessions", url: "/sessions", icon: UsersRound, section: "Browse", keywords: "classes open sessions group" },
   { id: "team-training", label: "Team Training", url: "/team-training", icon: TrainLogo, section: "Browse", keywords: "corporate team strength" },
@@ -252,7 +252,7 @@ const ALL_ACTIONS: ActionDef[] = [
   { id: "open-brain", label: "Open Business Brain", subtitle: "AI intelligence layer", icon: Brain, url: "/admin/business-brain", keywords: "brain intelligence AI insights", minRole: "ADMIN" },
   { id: "view-leads", label: "View Team Training Leads", subtitle: "Lead research", icon: Target, url: "/admin/team-training-leads", keywords: "leads prospects outreach research", minRole: "ADMIN" },
   { id: "start-workflow", label: "Start a Workflow", subtitle: "Workflow engine", icon: Play, url: "/admin/workflows", keywords: "start workflow automation trigger", minRole: "ADMIN", advancedOnly: true },
-  { id: "command-center-action", label: "Open Command Center", subtitle: "Business hub", icon: Flame, url: "/command-center", keywords: "command hub operations center", minRole: "COACH" },
+  { id: "home-action", label: "Open Home", subtitle: "Business hub", icon: Flame, url: "/", keywords: "command hub operations center home", minRole: "COACH" },
 ];
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

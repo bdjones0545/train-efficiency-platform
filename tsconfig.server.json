@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "include": ["server/**/*", "shared/**/*", "script/**/*"],
+  "exclude": ["node_modules", "build", "dist", "client", "**/*.test.ts", "**/*.spec.ts"],
+  "compilerOptions": {
+    "noEmit": true,
+    "skipLibCheck": true,
+    "incremental": false
+  }
+}
