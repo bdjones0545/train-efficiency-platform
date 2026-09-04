@@ -93,6 +93,7 @@
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
         "server/tests/redemption-tenant-isolation.test.ts",
+        "server/tests/route-guard-audit.test.ts",
         "server/tests/reminder-cron-locks-wiring.test.ts",
         "server/tests/write-only-cron-locks-wiring.test.ts"
       ]

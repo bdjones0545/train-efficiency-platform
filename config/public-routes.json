@@ -1,0 +1,1286 @@
+{
+  "description": "Routes registered with no middleware. A route may only appear here deliberately — see server/lib/route-guard-audit.ts. Entries marked UNREVIEWED are a backlog, not an approval: each needs a decision to be either guarded or given a real reason. Regenerate with: npm run audit:routes -- --update",
+  "totalRoutes": 1896,
+  "unguardedRoutes": 213,
+  "unreviewed": 213,
+  "routes": [
+    {
+      "method": "DELETE",
+      "path": "/api/athletic/bookings/:id",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/developer-pipeline/:id",
+      "file": "server/beta-wave6-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/validation-participants/:id",
+      "file": "server/beta-wave-x-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/action-center/summary",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/auth/debug",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/athletic/bookings",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/athletic/bookings/range",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/athletic/config",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/athletic/programs",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/athletic/programs/:id",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/athletic/programs/by-org-slug/:orgSlug/:programSlug",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/athletic/programs/by-slug/:orgId/:slug",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/athletic/schedules",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/auth/validate-reset-token",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/bookings/:id/participants",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/bookings/:id/waitlist",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/callback",
+      "file": "server/replit_integrations/auth/replitAuth.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/developer",
+      "file": "server/beta-wave4-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/campaigns/org",
+      "file": "server/beta-wave4-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/client/onboarding",
+      "file": "server/client-onboarding-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/client/onboarding/check",
+      "file": "server/client-onboarding-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/coaches/:id",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/coaches/:id/slots",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/approvals",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/channels",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/dashboard",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/health",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/hiring",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/overview",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/recovery",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/responses",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/revenue",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/risks",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/communication-intelligence/support",
+      "file": "server/communication-intelligence-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/conflicts",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/connectors/google-calendar/callback",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/coordination/stats",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/department-os/v2/extraction-report",
+      "file": "server/department-os-v2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/department-os/v2/framework-status",
+      "file": "server/department-os-v2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/developer-pipeline",
+      "file": "server/beta-wave6-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/developer-streaks",
+      "file": "server/beta-wave5-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/developer/activation",
+      "file": "server/beta-wave3-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/developer/economics",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/email-agent/track-click/:emailId",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/email-agent/track-open/:emailId",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/executions",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/executions/:id",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/executions/metrics",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/feedback",
+      "file": "server/phase10-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/first10-playbooks",
+      "file": "server/beta-phase-y-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/first10-playbooks/templates",
+      "file": "server/beta-phase-y-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/guardian/onboarding",
+      "file": "server/client-onboarding-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/integrations/gmail/callback",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/login",
+      "file": "server/replit_integrations/auth/replitAuth.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/logout",
+      "file": "server/replit_integrations/auth/replitAuth.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace-ambassadors",
+      "file": "server/beta-wave6-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/adoption-wave1",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/agents",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/agents/:agentId",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/agents/:agentId/reviews",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/analytics",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/benchmarks/public",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/billing/summary",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/case-studies",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/compare",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/conversion",
+      "file": "server/beta-wave3-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/ecosystem",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/ecosystem-score",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/funnel",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/growth",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/health",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/industry",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/installed",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/launch-programs",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/liquidity",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/maturity",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/production-readiness",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/quality",
+      "file": "server/phase10-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/rankings",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/recommendation-performance",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/reputation",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/retention",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/review-health",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/reviews",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/reviews/:agentId",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/trust",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/validation",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/verification",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/verification/:agentId",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/marketplace/versions",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/media/:filename",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/onboarding/developer",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/onboarding/org",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org-streaks",
+      "file": "server/beta-wave5-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/activation",
+      "file": "server/beta-wave3-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/booking-settings",
+      "file": "server/org-schedule-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/by-slug/:slug/nav-context",
+      "file": "server/pr-tracker-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/guardian/accept",
+      "file": "server/guardian-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/athletes/:athleteUserId/response-profile",
+      "file": "server/intervention-outcome-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/athletes/:athleteUserId/timeline",
+      "file": "server/orchestration/orchestration-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/daily-ops",
+      "file": "server/orchestration/orchestration-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/escalation-summary",
+      "file": "server/orchestration/orchestration-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/event-log",
+      "file": "server/orchestration/orchestration-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/event-stream",
+      "file": "server/orchestration/orchestration-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/learning-insights",
+      "file": "server/intervention-outcome-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/outcomes",
+      "file": "server/intervention-outcome-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/priority-queue",
+      "file": "server/intervention-outcome-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/org/intelligence/state",
+      "file": "server/orchestration/orchestration-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/organizations",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/organizations/:slug",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/organizations/:slug/coaches",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/organizations/by-id/:id",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/participant-feedback",
+      "file": "server/beta-wave-x-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/claim-subscription-info",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/lead-capture/:orgSlug/:programSlug",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/org/:slug/media",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/orgs/:slug/landing-pages",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/public/subscription-plans/:planId",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/publisher-rewards",
+      "file": "server/beta-wave4-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/referrals/developer",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/referrals/org",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/sessions/open",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/stripe/publishable-key",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/unsubscribe/:token",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/validation-participants",
+      "file": "server/beta-wave-x-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/workflow-context",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/workflow-context/stats",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/workflow-outcomes",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "GET",
+      "path": "/api/workflow-outcomes/analytics",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/campaigns/developer/:id",
+      "file": "server/beta-wave4-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/campaigns/org/:id",
+      "file": "server/beta-wave4-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/developer-pipeline/:id",
+      "file": "server/beta-wave6-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/developer/submissions/:id",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/first10-playbooks/:id",
+      "file": "server/beta-phase-y-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/marketplace-ambassadors/:id",
+      "file": "server/beta-wave6-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/marketplace/launch-programs/:id",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/onboarding/developer/:id",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/org/intelligence/event-log/:id/resolve",
+      "file": "server/orchestration/orchestration-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/org/intelligence/outcomes/:outcomeId",
+      "file": "server/intervention-outcome-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/publisher-rewards/:id/reach",
+      "file": "server/beta-wave4-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/unsubscribe/:token",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/validation-participants/:id",
+      "file": "server/beta-wave-x-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/actions/approve",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/actions/escalate",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/actions/execute",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/actions/reject",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/agentmail/webhook",
+      "file": "server/agentmail-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/athletic/bookings",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/forgot-password",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/reset-password",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/beta/feedback",
+      "file": "server/phase10-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/beta/participants",
+      "file": "server/phase10-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/campaigns/developer",
+      "file": "server/beta-wave4-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/campaigns/org",
+      "file": "server/beta-wave4-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/client-errors",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/client/login",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/client/logout",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/client/onboarding/confirm-profile",
+      "file": "server/client-onboarding-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/client/onboarding/mark-viewed",
+      "file": "server/client-onboarding-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/client/register",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/coach/login",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/conflicts/:id/resolve",
+      "file": "server/execution-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/create-password",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/developer-pipeline",
+      "file": "server/beta-wave6-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/developer-streaks",
+      "file": "server/beta-wave5-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/developer/validate",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/feedback",
+      "file": "server/phase10-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/first10-playbooks",
+      "file": "server/beta-phase-y-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/generate-image",
+      "file": "server/replit_integrations/image/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/guardian/onboarding/confirm-profile",
+      "file": "server/client-onboarding-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/guardian/onboarding/mark-viewed",
+      "file": "server/client-onboarding-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/lead-capture/submissions/:id/recover-pipeline",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace-ambassadors",
+      "file": "server/beta-wave6-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/benchmarks/refresh",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/billing/royalties",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/clone",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/e2e-test",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/ecosystem/refresh",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/install",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/launch-programs",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/reputation/refresh",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/reviews",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/runtimes/bootstrap",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/telemetry",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/trials/start",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/marketplace/verification/:agentId",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/meta/event",
+      "file": "server/meta-capi.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/onboarding/developer",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/onboarding/org",
+      "file": "server/beta-wave1-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org-auth/login",
+      "file": "server/pr-tracker-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org-auth/signup",
+      "file": "server/pr-tracker-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org-streaks",
+      "file": "server/beta-wave5-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org/intelligence/daily-ops/regenerate",
+      "file": "server/orchestration/orchestration-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org/intelligence/outcomes",
+      "file": "server/intervention-outcome-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org/intelligence/outcomes/run-evaluation-cron",
+      "file": "server/intervention-outcome-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/org/intelligence/state/refresh",
+      "file": "server/orchestration/orchestration-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/organizations/register",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/participant-feedback",
+      "file": "server/beta-wave-x-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/public/lead-capture/:orgSlug/:programSlug/funnel-event",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/public/lead-capture/:orgSlug/:programSlug/partial",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/public/lead-capture/:orgSlug/:programSlug/submit",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/public/register-and-claim",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/public/subscription-plans/:planId/checkout",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/publisher-rewards",
+      "file": "server/beta-wave4-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/referrals/developer",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/referrals/org",
+      "file": "server/beta-wave2-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/streaks/sync",
+      "file": "server/beta-wave5-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/stripe/marketplace-webhook",
+      "file": "server/phase10-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/uploads/request-url",
+      "file": "server/replit_integrations/object_storage/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/validation-participants",
+      "file": "server/beta-wave-x-routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow-context",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow-context/lifecycle",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    },
+    {
+      "method": "POST",
+      "path": "/api/workflow-outcomes",
+      "file": "server/routes.ts",
+      "reason": "UNREVIEWED — inherited when the audit was introduced"
+    }
+  ]
+}
