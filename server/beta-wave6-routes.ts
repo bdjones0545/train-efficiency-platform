@@ -302,7 +302,7 @@ export async function registerBetaWave6Routes(app: Express) {
           status: c.story_status,
         })),
         verified:   verified.length,
-        candidates: candidate_.length,
+        candidateCount: candidate_.length,
         readyToPublish: verified.length,
       });
     } catch (e) {
