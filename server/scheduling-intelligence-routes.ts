@@ -2355,7 +2355,7 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
       const topByRevenue = [...sorted].sort((a, b) => Number(b.revenue_cents) - Number(a.revenue_cents)).slice(0, 5);
       const topBySpeed = [...sorted].filter((c) => Number(c.avg_hours_to_fill) > 0).sort((a, b) => Number(a.avg_hours_to_fill) - Number(b.avg_hours_to_fill)).slice(0, 5);
       const topByBookings = [...sorted].sort((a, b) => Number(b.bookings) - Number(a.bookings)).slice(0, 5);
-      const worst = [...sorted].filter((c) => Number(c.status) !== 'pending_approval').sort((a, b) => Number(a.fill_rate_pct) - Number(b.fill_rate_pct)).slice(0, 5);
+      const worst = [...sorted].filter((c) => c.status !== 'pending_approval').sort((a, b) => Number(a.fill_rate_pct) - Number(b.fill_rate_pct)).slice(0, 5);
 
       res.json({
         summary: kpi,
@@ -2485,7 +2485,10 @@ Answer questions about scheduling, utilization, revenue opportunities, client ac
       }
 
       const context = JSON.stringify(metrics, null, 2);
-      const { openai } = await import("../services/openai-service");
+      // Use the client this module already constructs at the top of the file.
+      // What stood here was a dynamic import of a services module that does not
+      // exist, so this endpoint threw for every caller that got past the
+      // empty-metrics guard above.
       const completion = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [

@@ -1,7 +1,7 @@
 {
   "description": "Standing server type errors. The build gate fails when any file gains an error. Lower is better — regenerate with: npm run typecheck:server -- --update",
   "command": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.server.json",
-  "totalErrors": 348,
+  "totalErrors": 346,
   "counts": {
     "server/action-tracking.ts": {
       "TS2322": 1
@@ -177,9 +177,7 @@
       "TS18046": 2
     },
     "server/scheduling-intelligence-routes.ts": {
-      "TS2345": 10,
-      "TS2367": 1,
-      "TS2307": 1
+      "TS2345": 10
     },
     "server/scripts/kevin-agent-integration-flag-smoke.ts": {
       "TS2724": 2,
