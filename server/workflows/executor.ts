@@ -20,13 +20,28 @@
 
 import { db } from "../db";
 import { workflowRuns, workflowSteps } from "@shared/schema";
-import { eq, and, lt, sql } from "drizzle-orm";
+import { eq, and, lt, or, isNull, sql } from "drizzle-orm";
 import { getWorkflowDefinition, type WorkflowContext, type WorkflowStepDefinition } from "./definitions";
 import { proposeToolCall } from "../agent-tools/runtime";
 import { getTool } from "../agent-tools/registry";
 
 const MAX_RECURSION = 20; // safeguard against infinite branch loops
 const LOCK_TTL_SECONDS = 60; // a stale lock older than this is considered dead
+
+/**
+ * Cutoff before which a lock counts as dead.
+ *
+ * locked_at is a `timestamp` without time zone and is written from JavaScript,
+ * so the stored value is a UTC wall-clock reading. SQL NOW() is evaluated in
+ * the session's time zone, so `locked_at < NOW() - INTERVAL ...` only holds
+ * when that session happens to be UTC — west of it, every lock reads as being
+ * in the future and no stale lock is ever reclaimed, stranding the run.
+ * Comparing against a cutoff from the same clock that wrote the value removes
+ * the dependency entirely.
+ */
+function staleBefore(ttlSeconds: number): Date {
+  return new Date(Date.now() - ttlSeconds * 1000);
+}
 
 const WORKFLOW_DOMAIN_MAP: Record<string, string> = {
   onboarding_sequence: "onboarding",
@@ -320,7 +335,7 @@ export async function resumeWaitingWorkflows(orgId: string): Promise<number> {
       .where(and(
         eq(workflowRuns.id, run.id),
         eq(workflowRuns.status, "waiting_response"),
-        sql`(locked_at IS NULL OR locked_at < NOW() - INTERVAL '${sql.raw(String(LOCK_TTL_SECONDS))} seconds')`,
+        or(isNull(workflowRuns.lockedAt), lt(workflowRuns.lockedAt, staleBefore(LOCK_TTL_SECONDS))),
       ))
       .returning();
 
@@ -407,7 +422,7 @@ async function executeNextStep(runId: string, orgId: string, stepIndex: number, 
       .set({ lockedAt: lockNow })
       .where(and(
         eq(workflowRuns.id, runId),
-        sql`(locked_at IS NULL OR locked_at < NOW() - INTERVAL '${sql.raw(String(LOCK_TTL_SECONDS))} seconds')`,
+        or(isNull(workflowRuns.lockedAt), lt(workflowRuns.lockedAt, staleBefore(LOCK_TTL_SECONDS))),
       ))
       .returning();
 
@@ -828,7 +843,7 @@ export async function resumeWorkflowAfterPayment(
       and(
         eq(workflowRuns.id, runId),
         eq(workflowRuns.status, "waiting_response"),
-        sql`(locked_at IS NULL OR locked_at < NOW() - INTERVAL '60 seconds')`,
+        or(isNull(workflowRuns.lockedAt), lt(workflowRuns.lockedAt, staleBefore(LOCK_TTL_SECONDS))),
       )
     )
     .returning();
