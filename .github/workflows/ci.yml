@@ -38,20 +38,33 @@ jobs:
         run: npm ci --no-audit --no-fund
 
       - name: Verify the install actually produced what the steps need
-        # npm printed that error and still exited 0, so the job carried on with
-        # a half-populated node_modules. Check the artifact, not the exit code.
+        # npm has twice reported success here with an incomplete node_modules:
+        # once dying with "Exit handler never called", once silently omitting
+        # `openai`, which 33 server files import. Checking two binaries was not
+        # enough — check that every declared dependency actually landed, and
+        # retry once before giving up, because the failure is intermittent.
         run: |
-          for binary in node_modules/typescript/bin/tsc node_modules/tsx/dist/cli.mjs; do
-            if [ ! -f "$binary" ]; then
-              echo "::error::npm ci reported success but $binary is missing — the install did not complete"
-              exit 1
-            fi
-          done
-          echo "install verified"
+          check() {
+            node -e '
+              const fs = require("fs");
+              const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+              const declared = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+              const missing = declared.filter(
+                (name) => !fs.existsSync("node_modules/" + name + "/package.json"),
+              );
+              if (missing.length) {
+                console.error("missing from node_modules: " + missing.join(", "));
+                process.exit(1);
+              }
+              console.log("install verified: " + declared.length + " declared dependencies present");
+            '
+          }
+          if ! check; then
+            echo "::warning::npm ci reported success with an incomplete install — retrying once"
+            npm ci --no-audit --no-fund
+            check || { echo "::error::install still incomplete after a retry"; exit 1; }
+          fi
 
-      # The suites below disable network and real database access themselves
-      # (script/test-runner.mjs substitutes a closed-port DATABASE_URL), so no
-      # service containers are needed.
       - name: Tests
         run: npm test
 
