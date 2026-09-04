@@ -58,6 +58,11 @@ jobs:
       - name: Security and tenant-isolation tests
         run: npm run test:security
 
+      - name: Server typecheck (ratchet)
+        # Added once the ratchet reached main. The server has never been
+        # typechecked by the build, so this gates on not getting worse.
+        run: npm run typecheck:server
+
       - name: Client typecheck
         # Never `npx tsc` here. When the local binary is absent npx silently
         # fetches an unrelated `tsc` package from the registry and typechecks

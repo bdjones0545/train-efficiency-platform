@@ -46,9 +46,10 @@ export default function AdminNotificationSettingsPage() {
   const [localSettings, setLocalSettings] = useState<Partial<NotificationSettings>>({});
   const [isDirty, setIsDirty] = useState(false);
 
-  const { data: settings, isLoading } = useQuery<NotificationSettings>({
+  const { data: settings, isLoading, isError, error } = useQuery<NotificationSettings>({
     queryKey: ["/api/admin/email-notification-settings"],
     staleTime: 30_000,
+    retry: false,
   });
 
   const { data: audit } = useQuery<{ logs: AuditLog[]; summary: AuditSummary }>({
@@ -69,22 +70,9 @@ export default function AdminNotificationSettingsPage() {
     },
   });
 
-  const current: NotificationSettings = {
-    ...(settings || {
-      orgId: "",
-      athleteBookingConfirmation: true,
-      athleteRecurringConfirmation: true,
-      athleteReschedule: true,
-      athleteCancellation: true,
-      athleteReminder: true,
-      adminNewBooking: true,
-      adminRecurringBooking: false,
-      adminReschedule: true,
-      adminCancellation: true,
-      dedupWindowMinutes: 15,
-    }),
-    ...localSettings,
-  };
+  // Only ever derived from settings the server actually returned — see the
+  // guard below, which renders an explicit state rather than inventing values.
+  const current: NotificationSettings = { ...(settings as NotificationSettings), ...localSettings };
 
   function toggle(field: keyof NotificationSettings) {
     setLocalSettings((prev) => ({ ...prev, [field]: !current[field] }));
@@ -107,6 +95,28 @@ export default function AdminNotificationSettingsPage() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+      </div>
+    );
+  }
+
+  // Never fall back to hardcoded defaults — rendering them looks identical to
+  // real saved settings, so a user without access would read fabricated state
+  // and their saves would fail silently.
+  if (isError || !settings) {
+    const forbidden = /403|forbidden/i.test(String((error as any)?.message ?? ""));
+    return (
+      <div className="max-w-4xl mx-auto p-6" data-testid="notification-settings-unavailable">
+        <Card className="p-8 text-center space-y-2">
+          <Bell className="h-8 w-8 mx-auto text-muted-foreground" />
+          <h1 className="text-lg font-semibold">
+            {forbidden ? "Administrator access required" : "Settings unavailable"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {forbidden
+              ? "Notification settings apply to the whole organization and can only be viewed or changed by an administrator."
+              : "These settings could not be loaded. Refresh the page, or try again shortly."}
+          </p>
+        </Card>
       </div>
     );
   }
