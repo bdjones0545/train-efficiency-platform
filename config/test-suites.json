@@ -107,6 +107,7 @@
         "server/tests/cron-job-locks-wiring.test.ts",
         "server/tests/first-success-stories-response-shape.test.ts",
         "server/tests/hotfix-admin-setup.test.ts",
+        "server/tests/lockfile-portability.test.ts",
         "server/tests/manual-payment-authorization.test.ts",
         "server/tests/navigation-integrity.test.ts",
         "server/tests/org-isolation-helpers.test.ts",
