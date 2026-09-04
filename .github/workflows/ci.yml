@@ -39,6 +39,22 @@ jobs:
       - name: Use an npm that can install this tree
         run: npm install -g npm@11
 
+      # 124 of the lockfile's 952 resolved URLs point at
+      # http://package-firewall.replit.local, Replit's internal package proxy,
+      # which does not resolve anywhere else. npm 10 failed to fetch them and
+      # exited 0 with the packages missing; npm 11 fails loudly. Rewrite them to
+      # the public registry for the duration of the job. The committed lockfile
+      # is untouched, so nothing about the Replit build changes — but it does
+      # mean this repository cannot currently be installed off Replit without
+      # this step, which is worth fixing at the source.
+      - name: Point the lockfile at the public registry
+        run: |
+          before=$(grep -c 'package-firewall.replit.local' package-lock.json || true)
+          sed -i 's|http://package-firewall\.replit\.local/npm/|https://registry.npmjs.org/|g' package-lock.json
+          after=$(grep -c 'package-firewall.replit.local' package-lock.json || true)
+          echo "rewrote $before internal URLs; $after remain"
+          test "$after" -eq 0
+
       - name: Install
         run: npm ci --no-audit --no-fund
 
