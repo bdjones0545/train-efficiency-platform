@@ -1,8 +1,8 @@
 {
   "description": "Routes registered with no middleware. A route may only appear here deliberately — see server/lib/route-guard-audit.ts. Entries marked UNREVIEWED are a backlog, not an approval: each needs a decision to be either guarded or given a real reason. Regenerate with: npm run audit:routes -- --update",
   "totalRoutes": 1896,
-  "unguardedRoutes": 213,
-  "unreviewed": 213,
+  "unguardedRoutes": 212,
+  "unreviewed": 212,
   "routes": [
     {
       "method": "DELETE",
@@ -1028,12 +1028,6 @@
       "method": "POST",
       "path": "/api/guardian/onboarding/mark-viewed",
       "file": "server/client-onboarding-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/lead-capture/submissions/:id/recover-pipeline",
-      "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {

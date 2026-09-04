@@ -17735,8 +17735,9 @@ Respond with this exact JSON structure:
   });
 
   // Admin: Recover a submission through the full intelligent intake pipeline (for manually inserted or missed leads)
-  app.post("/api/lead-capture/submissions/:id/recover-pipeline", async (req: any, res) => {
+  app.post("/api/lead-capture/submissions/:id/recover-pipeline", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
+      const callerOrgId = await resolveOrgIdOrThrow(req);
       const { db: rdb } = await import("./db");
       const { leadCaptureSubmissions, athleticPrograms } = await import("@shared/schema");
       const { eq, and } = await import("drizzle-orm");
@@ -17744,6 +17745,13 @@ Respond with this exact JSON structure:
       const [submission] = await rdb.select().from(leadCaptureSubmissions)
         .where(eq(leadCaptureSubmissions.id, req.params.id)).limit(1);
       if (!submission) return res.status(404).json({ message: "Submission not found" });
+
+      // Recovering a submission re-runs the intelligent intake pipeline, which
+      // makes two OpenAI completions. A caller may only do that for their own
+      // organization's submissions.
+      if (submission.orgId !== callerOrgId) {
+        return res.status(403).json({ message: "Forbidden" });
+      }
 
       const [program] = await rdb.select().from(athleticPrograms)
         .where(eq(athleticPrograms.id, submission.programId)).limit(1);
@@ -17797,6 +17805,7 @@ Respond with this exact JSON structure:
         processingLog: result.processingLog,
       });
     } catch (error: any) {
+      if (handleOrgError(error, res)) return;
       console.error("[RecoverPipeline] Error:", error?.message);
       res.status(500).json({ message: "Pipeline recovery failed", error: error?.message });
     }

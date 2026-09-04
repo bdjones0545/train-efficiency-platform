@@ -118,6 +118,7 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/recover-pipeline-authz.test.ts",
         "server/tests/redemption-tenant-isolation.test.ts",
         "server/tests/reminder-cron-locks-wiring.test.ts",
         "server/tests/roster-members-only.test.ts",
