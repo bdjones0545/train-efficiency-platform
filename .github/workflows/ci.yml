@@ -1,0 +1,47 @@
+name: CI
+
+# Runs the gates that already exist in this repo on every pull request.
+# Before this workflow, nothing ran them except a developer running them by
+# hand, or the build step at deploy time — which is after review, not during.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  # A new push to a branch cancels the run still going for the old commit.
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: tests and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 20 matches production. .replit declares nodejs-20, so a green run
+      # on a newer major would not be evidence about the deployed runtime.
+      # Keep this on the 20 line rather than an exact patch: vite requires
+      # ^20.19.0 and connect-pg-simple ^20.9.0, so a lower 20.x will not install.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # The suites below disable network and real database access themselves
+      # (script/test-runner.mjs substitutes a closed-port DATABASE_URL), so no
+      # service containers are needed.
+      - name: Tests
+        run: npm test
+
+      - name: Security and tenant-isolation tests
+        run: npm run test:security
+
+      - name: Client typecheck
+        run: npx tsc --noEmit -p tsconfig.client.json
