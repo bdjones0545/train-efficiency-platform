@@ -88,11 +88,11 @@
         "server/tests/phase1c-org-isolation.test.ts",
         "server/tests/phase1d-authz.test.ts",
         "server/tests/phase1e-authz.test.ts",
-        "server/tests/phase1f-authz.test.ts",
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
         "server/tests/redemption-tenant-isolation.test.ts",
+        "server/tests/test-manifest-integrity.test.ts",
         "server/tests/reminder-cron-locks-wiring.test.ts",
         "server/tests/write-only-cron-locks-wiring.test.ts"
       ]
@@ -119,7 +119,6 @@
         "server/tests/phase1c-org-isolation.test.ts",
         "server/tests/phase1d-authz.test.ts",
         "server/tests/phase1e-authz.test.ts",
-        "server/tests/phase1f-authz.test.ts",
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
