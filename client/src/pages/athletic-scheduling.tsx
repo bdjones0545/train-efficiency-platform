@@ -45,6 +45,25 @@ import { queryClient } from "@/lib/queryClient";
 import { OrgAuthModal } from "@/components/pr-tracker/OrgAuthModal";
 import type { AthleticBooking, AthleticProgram } from "@shared/schema";
 
+/**
+ * What this page actually receives. The server withholds booker identity
+ * (name, email, account id) from anyone who is not staff of the owning
+ * organization, and replaces it with two booleans.
+ */
+type AthleticBookingView = Pick<
+  AthleticBooking,
+  "id" | "organizationId" | "programId" | "date" | "timeSlot" | "teamName" | "trainingType" | "recurrenceId"
+> & {
+  /** Booked by a signed-in member — a badge, not an identity. */
+  hasAccount?: boolean;
+  /**
+   * Mirrors the rule the DELETE route enforces, so this page cannot offer a
+   * cancel the server refuses. Optional only to tolerate a cached response
+   * from before this field existed; the server always sets it.
+   */
+  canCancel?: boolean;
+};
+
 const SLOT_HEIGHT_PX = 120;
 
 function formatHour(hour: number) {
@@ -160,7 +179,7 @@ export default function AthleticSchedulingPage() {
   const [teamName, setTeamName] = useState("");
   const [trainingType, setTrainingType] = useState(trainingTypes[0] || "Strength");
   const [repeatWeeks, setRepeatWeeks] = useState(0);
-  const [deleteTarget, setDeleteTarget] = useState<AthleticBooking | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<AthleticBookingView | null>(null);
   const { toast } = useToast();
 
   // ── Org Auth State ────────────────────────────────────────────────────────
@@ -220,10 +239,14 @@ export default function AthleticSchedulingPage() {
   const endHour = config?.endHour ?? resolvedProgram?.endHour ?? 20;
   const timeSlots = buildTimeSlots(startHour, endHour);
 
-  const { data: bookings, isLoading } = useQuery<AthleticBooking[]>({
+  const { data: bookings, isLoading } = useQuery<AthleticBookingView[]>({
     queryKey: ["/api/athletic/bookings", programId, dateStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&programId=${programId}`);
+      // The org session decides whether these bookings come back as the
+      // viewer's own (cancellable) or as anonymous occupancy.
+      const res = await fetch(`/api/athletic/bookings?date=${dateStr}&programId=${programId}`, {
+        headers: orgToken ? { "X-Org-Auth-Token": orgToken } : {},
+      });
       if (!res.ok) throw new Error("Failed to load schedule");
       return res.json();
     },
@@ -240,10 +263,12 @@ export default function AthleticSchedulingPage() {
   const rangeStartStr = format(rangeStart, "yyyy-MM-dd");
   const rangeEndStr = format(rangeEnd, "yyyy-MM-dd");
 
-  const { data: rangeBookings } = useQuery<AthleticBooking[]>({
+  const { data: rangeBookings } = useQuery<AthleticBookingView[]>({
     queryKey: ["/api/athletic/bookings/range", programId, rangeStartStr, rangeEndStr],
     queryFn: async () => {
-      const res = await fetch(`/api/athletic/bookings/range?start=${rangeStartStr}&end=${rangeEndStr}&programId=${programId}`);
+      const res = await fetch(`/api/athletic/bookings/range?start=${rangeStartStr}&end=${rangeEndStr}&programId=${programId}`, {
+        headers: orgToken ? { "X-Org-Auth-Token": orgToken } : {},
+      });
       if (!res.ok) throw new Error("Failed to load schedule");
       return res.json();
     },
@@ -892,23 +917,25 @@ export default function AthleticSchedulingPage() {
                           <Badge variant="secondary" className="flex-shrink-0" data-testid={`badge-training-type-${booking.id}`}>
                             {booking.trainingType}
                           </Badge>
-                          {(booking as any).orgUserId && (
+                          {booking.hasAccount && (
                             <User className="h-3.5 w-3.5 text-primary/60 flex-shrink-0" aria-label="Booked by a logged-in member" />
                           )}
                           {(booking as any).recurrenceId && (
                             <Repeat className="h-3.5 w-3.5 text-primary/60 flex-shrink-0" aria-label="Recurring weekly session" />
                           )}
-                          <button
-                            className="ml-auto flex-shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteTarget(booking);
-                            }}
-                            disabled={deleteMutation.isPending}
-                            data-testid={`button-delete-booking-${booking.id}`}
-                          >
-                            <X className="h-4 w-4" />
-                          </button>
+                          {booking.canCancel !== false && (
+                            <button
+                              className="ml-auto flex-shrink-0 p-1 rounded-md text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDeleteTarget(booking);
+                              }}
+                              disabled={deleteMutation.isPending}
+                              data-testid={`button-delete-booking-${booking.id}`}
+                            >
+                              <X className="h-4 w-4" />
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}

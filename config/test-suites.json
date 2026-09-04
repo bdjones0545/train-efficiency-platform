@@ -92,6 +92,7 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/athletic-read-scoping.test.ts",
         "server/tests/coach-audit-authz-hardening.test.ts",
         "server/tests/redemption-tenant-isolation.test.ts",
         "server/tests/reminder-cron-locks-wiring.test.ts",
