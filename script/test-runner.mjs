@@ -7,6 +7,10 @@ const manifest = JSON.parse(
 const requested = process.argv[2] ?? "default";
 const knownSuites = new Set(Object.keys(manifest.suites));
 const sentinelDatabaseUrl = "postgres://test:test@127.0.0.1:1/no_database_access";
+// Some modules construct provider clients at import time, so a wiring test cannot
+// even import them without a key. A sentinel satisfies construction and makes any
+// real call fail loudly — and stops a developer's own key being used by a test run.
+const sentinelOpenAiKey = "sk-test-sentinel-tests-must-not-call-openai";
 
 function filesFor(suite) {
   return [...new Set(manifest.inventory
@@ -70,12 +74,15 @@ async function run(suite, allowUnavailable = false) {
   if (suite === "default" || suite === "unit" || suite === "security") {
     // Import-only tests may load server/db.ts. Never inherit a real DB URL into a
     // safe suite; an accidental query must fail against the local closed port.
-    status = runNodeTests(suite, { DATABASE_URL: sentinelDatabaseUrl });
+    status = runNodeTests(suite, { DATABASE_URL: sentinelDatabaseUrl, OPENAI_API_KEY: sentinelOpenAiKey });
   } else if (suite === "db") {
     if (!process.env.TEST_DATABASE_URL) {
       status = unavailable(suite, "set TEST_DATABASE_URL to an isolated, disposable test database");
     } else {
-      status = runNodeTests(suite, { DATABASE_URL: process.env.TEST_DATABASE_URL });
+      status = runNodeTests(suite, {
+        DATABASE_URL: process.env.TEST_DATABASE_URL,
+        OPENAI_API_KEY: process.env.OPENAI_API_KEY ?? sentinelOpenAiKey,
+      });
     }
   } else if (suite === "server") {
     if (!process.env.TEST_BASE_URL) {

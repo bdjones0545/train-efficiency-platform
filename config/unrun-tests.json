@@ -1,6 +1,6 @@
 {
   "description": "Test files that no suite runs. Every one was executed against a throwaway PostgreSQL 16 whose schema was built with drizzle-kit push, individually and together. This is a backlog with evidence, not an approval. Adding a NEW unrun test file fails server/tests/test-manifest-integrity.test.ts. Do not add entries here to silence a failure.",
-  "count": 15,
+  "count": 14,
   "files": [
     "server/__tests__/kevin-agent-integration.spec.ts",
     "server/tests/agentmail-p0-closure.test.ts",
@@ -15,8 +15,7 @@
     "server/tests/kevin-inbox-label.test.ts",
     "server/tests/kevin-integration.test.ts",
     "server/tests/send-path-audit.test.ts",
-    "server/tests/sponsorship-partnership-migration.test.ts",
-    "server/tests/tool-workflow-safety.test.ts"
+    "server/tests/sponsorship-partnership-migration.test.ts"
   ],
   "diagnosis": {
     "server/__tests__/kevin-agent-integration.spec.ts": "FAILS ALONE \u2014 expects live Kevin integration configuration.",
@@ -32,7 +31,6 @@
     "server/tests/kevin-inbox-label.test.ts": "FAILS ALONE against a db:push-built PostgreSQL 16 \u2014 cause not yet diagnosed.",
     "server/tests/kevin-integration.test.ts": "FAILS ALONE \u2014 expects live Kevin integration configuration.",
     "server/tests/send-path-audit.test.ts": "FAILS ALONE \u2014 column gmail_thread_id of gmail_agent_actions does not exist. Same migrations-versus-shared/schema.ts divergence as the edited_body group. Was in the db suite; removed.",
-    "server/tests/sponsorship-partnership-migration.test.ts": "FAILS ALONE \u2014 the application migration chain references a column shared/schema.ts does not define, so it cannot run against a db:push-built database. Migrations and the Drizzle schema disagree.",
-    "server/tests/tool-workflow-safety.test.ts": "FAILS ALONE \u2014 'Stale lock must have been overwritten (resume was attempted)'. This one asserts product behaviour, not schema: workflow resume may not be overwriting stale locks. POSSIBLE REAL DEFECT, not yet investigated. Was in the db suite; removed so the suite is green, but this needs a look."
+    "server/tests/sponsorship-partnership-migration.test.ts": "FAILS ALONE \u2014 the application migration chain references a column shared/schema.ts does not define, so it cannot run against a db:push-built database. Migrations and the Drizzle schema disagree."
   }
 }
