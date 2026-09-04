@@ -26,9 +26,15 @@ function runNodeTests(suite, env = {}) {
   console.log(metadata.description);
   console.log(`mutation: ${metadata.mutating ? "allowed against test infrastructure" : "none"}`);
 
+  // Database tests each build the schema they need, dropping and recreating
+  // shared tables. node --test runs files in parallel by default, so they
+  // destroy one another's setup: run in one process, one file at a time.
+  // Serially, all 26 previously unrun db files pass; in parallel, 20 failed.
+  const concurrency = manifest.suites[suite].serial ? ["--test-concurrency=1"] : [];
+
   const result = spawnSync(
     process.execPath,
-    ["--import", "tsx", "--test", ...files],
+    ["--import", "tsx", "--test", ...concurrency, ...files],
     {
       stdio: "inherit",
       env: { ...process.env, ...env },

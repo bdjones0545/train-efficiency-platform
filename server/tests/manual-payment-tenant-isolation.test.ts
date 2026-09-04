@@ -83,36 +83,36 @@ beforeEach(async () => {
 after(async () => { await pool.end(); });
 
 test("same-organization ADMIN credit changes wallet and evidence atomically", async () => {
-  const tx = await storage.creditWalletForOrganization("org-a", "user-a", 2500, "Manual payment (Cash)", "admin-a");
+  const tx = await storage.creditManualPaymentForOrganization("user-a", "org-a", 2500, "Manual payment (Cash)", "cash", "admin-a");
   assert.ok(tx);
   assert.deepEqual(await counts("user-a"), { balance: 2500, transactions: 1, events: 1 });
 });
 
 test("same-organization COACH credit remains allowed", async () => {
-  const tx = await storage.creditWalletForOrganization("org-a", "user-a", 1500, "Manual payment (Venmo)", "coach-a");
+  const tx = await storage.creditManualPaymentForOrganization("user-a", "org-a", 1500, "Manual payment (Venmo)", "venmo", "coach-a");
   assert.ok(tx);
   assert.deepEqual(await counts("user-a"), { balance: 1500, transactions: 1, events: 1 });
 });
 
 test("Org A ADMIN cannot credit Org B user", async () => {
-  assert.equal(await storage.creditWalletForOrganization("org-a", "user-b", 2500, "Manual payment", "admin-a"), undefined);
+  assert.equal(await storage.creditManualPaymentForOrganization("user-b", "org-a", 2500, "Manual payment", "cash", "admin-a"), undefined);
   assert.deepEqual(await counts("user-b"), { balance: 0, transactions: 0, events: 0 });
 });
 
 test("Org A COACH cannot credit Org B user", async () => {
-  assert.equal(await storage.creditWalletForOrganization("org-a", "user-b", 2500, "Manual payment", "coach-a"), undefined);
+  assert.equal(await storage.creditManualPaymentForOrganization("user-b", "org-a", 2500, "Manual payment", "cash", "coach-a"), undefined);
   assert.deepEqual(await counts("user-b"), { balance: 0, transactions: 0, events: 0 });
 });
 
 test("nonexistent target has no side effects", async () => {
-  assert.equal(await storage.creditWalletForOrganization("org-a", "missing", 2500, "Manual payment", "admin-a"), undefined);
+  assert.equal(await storage.creditManualPaymentForOrganization("missing", "org-a", 2500, "Manual payment", "cash", "admin-a"), undefined);
   assert.deepEqual(await counts("missing"), { balance: 0, transactions: 0, events: 0 });
 });
 
 test("concurrent cross-tenant attempts cannot bypass membership", async () => {
   const results = await Promise.all([
-    storage.creditWalletForOrganization("org-a", "user-b", 1000, "Manual payment", "admin-a"),
-    storage.creditWalletForOrganization("org-a", "user-b", 1000, "Manual payment", "coach-a"),
+    storage.creditManualPaymentForOrganization("user-b", "org-a", 1000, "Manual payment", "cash", "admin-a"),
+    storage.creditManualPaymentForOrganization("user-b", "org-a", 1000, "Manual payment", "cash", "coach-a"),
   ]);
   assert.deepEqual(results, [undefined, undefined]);
   assert.deepEqual(await counts("user-b"), { balance: 0, transactions: 0, events: 0 });
@@ -120,8 +120,8 @@ test("concurrent cross-tenant attempts cannot bypass membership", async () => {
 
 test("concurrent same-organization credits preserve both wallet and evidence writes", async () => {
   const results = await Promise.all([
-    storage.creditWalletForOrganization("org-a", "user-a", 1000, "Manual payment", "admin-a"),
-    storage.creditWalletForOrganization("org-a", "user-a", 1500, "Manual payment", "coach-a"),
+    storage.creditManualPaymentForOrganization("user-a", "org-a", 1000, "Manual payment", "cash", "admin-a"),
+    storage.creditManualPaymentForOrganization("user-a", "org-a", 1500, "Manual payment", "cash", "coach-a"),
   ]);
   assert.ok(results.every(Boolean));
   assert.deepEqual(await counts("user-a"), { balance: 2500, transactions: 2, events: 2 });
@@ -131,7 +131,7 @@ test("financial evidence failure rolls back wallet transaction and balance", asy
   await pool.query("ALTER TABLE revenue_ledger_events ADD CONSTRAINT injected_failure CHECK (amount_cents <> 777)");
   try {
     await assert.rejects(
-      storage.creditWalletForOrganization("org-a", "user-a", 777, "Manual payment", "admin-a"),
+      storage.creditManualPaymentForOrganization("user-a", "org-a", 777, "Manual payment", "cash", "admin-a"),
       /injected_failure/,
     );
     assert.deepEqual(await counts("user-a"), { balance: 0, transactions: 0, events: 0 });
@@ -172,7 +172,7 @@ test("actual role middleware allows ADMIN/COACH and denies STAFF/CLIENT/unauthen
 test("actual route resolves actor organization before scoped mutation", () => {
   const route = manualPaymentRoute();
   const resolve = route.indexOf("resolveOrgIdOrThrow(req)");
-  const mutate = route.indexOf("creditWalletForOrganization(");
+  const mutate = route.indexOf("creditManualPaymentForOrganization(");
   assert.ok(resolve > 0 && mutate > resolve);
   assert.doesNotMatch(route, /creditWallet\(userId/);
 });
