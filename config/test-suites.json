@@ -12,7 +12,10 @@
     "default": {
       "command": "npm test",
       "description": "Non-mutating tests with network and real database access disabled",
-      "dependencies": ["Node.js", "tsx"],
+      "dependencies": [
+        "Node.js",
+        "tsx"
+      ],
       "mutating": false,
       "safeForLocalDefault": true,
       "safeForCI": true,
@@ -21,7 +24,10 @@
     "unit": {
       "command": "npm run test:unit",
       "description": "Unit and source-inspection tests that need no infrastructure",
-      "dependencies": ["Node.js", "tsx"],
+      "dependencies": [
+        "Node.js",
+        "tsx"
+      ],
       "mutating": false,
       "safeForLocalDefault": true,
       "safeForCI": true,
@@ -30,7 +36,10 @@
     "security": {
       "command": "npm run test:security",
       "description": "Logging, authorization, tenant-isolation, and secret-handling regressions",
-      "dependencies": ["Node.js", "tsx"],
+      "dependencies": [
+        "Node.js",
+        "tsx"
+      ],
       "mutating": false,
       "safeForLocalDefault": true,
       "safeForCI": true,
@@ -39,25 +48,35 @@
     "db": {
       "command": "npm run test:db",
       "description": "Tests that read and write an explicitly designated disposable test database",
-      "dependencies": ["PostgreSQL"],
+      "dependencies": [
+        "PostgreSQL"
+      ],
       "mutating": true,
       "safeForLocalDefault": false,
       "safeForCI": true,
-      "requiredEnvironment": ["TEST_DATABASE_URL"]
+      "requiredEnvironment": [
+        "TEST_DATABASE_URL"
+      ]
     },
     "server": {
       "command": "npm run test:server",
       "description": "Tests against an already-running non-production API",
-      "dependencies": ["running TrainEfficiency API"],
+      "dependencies": [
+        "running TrainEfficiency API"
+      ],
       "mutating": true,
       "safeForLocalDefault": false,
       "safeForCI": true,
-      "requiredEnvironment": ["TEST_BASE_URL"]
+      "requiredEnvironment": [
+        "TEST_BASE_URL"
+      ]
     },
     "e2e": {
       "command": "npm run test:e2e",
       "description": "Reserved classification; no browser runner is installed",
-      "dependencies": ["browser runner (not installed)"],
+      "dependencies": [
+        "browser runner (not installed)"
+      ],
       "mutating": false,
       "safeForLocalDefault": false,
       "safeForCI": false,
@@ -67,7 +86,10 @@
   "inventory": [
     {
       "classification": "static",
-      "suites": ["unit", "default"],
+      "suites": [
+        "unit",
+        "default"
+      ],
       "files": [
         "server/__tests__/payment-model.spec.ts",
         "server/__tests__/sprint3-idempotency-concurrency.spec.ts",
@@ -99,19 +121,36 @@
     },
     {
       "classification": "unit",
-      "suites": ["unit", "default"],
+      "suites": [
+        "unit",
+        "default"
+      ],
       "files": [
-        "server/tests/github-issue-phase2a.test.ts"
+        "server/tests/github-issue-phase2a.test.ts",
+        "server/tests/graceful-shutdown-reliability.test.ts",
+        "server/tests/kevin-slack-eoh.test.ts",
+        "server/tests/outbound-communication-idempotency-contract.test.ts"
       ],
       "note": "No database or provider calls."
     },
     {
       "classification": "unit",
-      "suites": ["security", "default"],
+      "suites": [
+        "security",
+        "default"
+      ],
       "files": [
         "server/tests/api-request-logger.test.ts",
         "server/tests/attention-security-performance.test.ts",
         "server/tests/autonomy-trust-authorization.test.ts",
+        "server/tests/composio-connected-account-ownership.test.ts",
+        "server/tests/composio-generic-mutation-authority.test.ts",
+        "server/tests/composio-google-sheets-action-identity.test.ts",
+        "server/tests/composio-provider-action-identity.test.ts",
+        "server/tests/composio-provider-action-lifecycle.test.ts",
+        "server/tests/composio-specialized-caller-versions.test.ts",
+        "server/tests/composio-specialized-version-authority.test.ts",
+        "server/tests/cross-agent-coordination-identity.test.ts",
         "server/tests/email-audit-authorization.test.ts",
         "server/tests/email-notification-authorization.test.ts",
         "server/tests/org-isolation-helpers.test.ts",
@@ -132,24 +171,30 @@
       "files": [
         "server/tests/automation-kill-switch.test.ts",
         "server/tests/gmail-draft-phase2b.test.ts",
+        "server/tests/kevin-dispatch-contract.test.ts",
         "server/tests/slack-alert-phase2c.test.ts"
       ],
-      "note": "Unit-like harnesses import live DB/provider send paths. Kept manual; slack-alert-phase2c currently has pre-existing policy assertion failures."
+      "note": "Unit-like harnesses import live DB/provider send paths. Kept manual; slack-alert-phase2c currently has pre-existing policy assertion failures. kevin-dispatch-contract asserts on production environment variables (KEVIN_HERMES_BASE_URL, KEVIN_AGENT_INTEGRATION_ENABLED, a secret fingerprint), so it can only pass where that configuration is present."
     },
     {
       "classification": "db",
-      "suites": ["db"],
+      "suites": [
+        "db"
+      ],
       "files": [
         "server/tests/apex-agent.test.ts",
         "server/tests/cron-job-locks.test.ts",
         "server/tests/send-path-audit.test.ts",
         "server/tests/stripe-webhook.test.ts",
         "server/tests/tool-workflow-safety.test.ts"
-      ]
+      ],
+      "note": "Requires TEST_DATABASE_URL pointing at an isolated, disposable test database."
     },
     {
       "classification": "server",
-      "suites": ["server"],
+      "suites": [
+        "server"
+      ],
       "files": [
         "server/__tests__/organization-isolation.spec.ts",
         "server/agents/pulse-agent.test.ts",
@@ -159,13 +204,17 @@
     {
       "classification": "server",
       "suites": [],
-      "files": ["server/tests/connector-layer.test.ts"],
+      "files": [
+        "server/tests/connector-layer.test.ts"
+      ],
       "note": "Requires both a live server and real DB imports; retained as a manual mixed-infrastructure test."
     },
     {
       "classification": "server",
       "suites": [],
-      "files": ["test-wiring.ts"],
+      "files": [
+        "test-wiring.ts"
+      ],
       "note": "Manual destructive acceptance script: writes and deletes DB rows and calls a live server."
     }
   ]
