@@ -954,14 +954,17 @@ function SessionDetailModal({
   const [joinParticipantNames, setJoinParticipantNames] = useState<string[]>([""]);
   const [showDescription, setShowDescription] = useState(false);
 
+  // The roster and waitlist name people, so the server serves them to
+  // organization members only. Do not ask when signed out — the answer would
+  // be a 403 and the page has nothing to do with it.
   const { data: participants, isLoading: participantsLoading } = useQuery<ParticipantWithUser[]>({
     queryKey: ["/api/bookings", session?.id, "participants"],
-    enabled: !!session,
+    enabled: !!session && isAuthenticated,
   });
 
   const { data: waitlist } = useQuery<any[]>({
     queryKey: ["/api/bookings", session?.id, "waitlist"],
-    enabled: !!session,
+    enabled: !!session && isAuthenticated,
   });
 
   const hasJoined = !!(userId && participants?.some((p) => p.userId === userId));
@@ -1226,6 +1229,16 @@ function SessionDetailModal({
 
             {/* 8. Registered athletes */}
             <Separator />
+            {!isAuthenticated ? (
+              <div className="space-y-2">
+                <p className="text-sm font-medium">Registered Athletes</p>
+                <p className="text-xs text-muted-foreground" data-testid="text-roster-members-only">
+                  {(session.participantCount ?? 0) === 0
+                    ? "No athletes registered yet — be the first!"
+                    : `${session.participantCount} registered. Sign in to see who.`}
+                </p>
+              </div>
+            ) : (
             <div className="space-y-2">
               <p className="text-sm font-medium">Registered Athletes</p>
               {participantsLoading ? (
@@ -1242,6 +1255,7 @@ function SessionDetailModal({
                 </div>
               )}
             </div>
+            )}
 
             {waitlist && waitlist.length > 0 && (
               <div className="space-y-2">

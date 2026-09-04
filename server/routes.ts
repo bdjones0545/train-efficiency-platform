@@ -4092,6 +4092,18 @@ export async function registerRoutes(
 
   app.get("/api/bookings/:id/participants", async (req, res) => {
     try {
+      // The roster names registered athletes, so it is members-only. Anyone can
+      // still see that a session exists and how many places are left — that
+      // comes from /api/sessions/open, which carries counts and no identities.
+      const booking = await storage.getBooking(req.params.id);
+      if (!booking) return res.status(404).json({ message: "Booking not found" });
+      if (!booking.organizationId || !(await isOrgMember(req, booking.organizationId))) {
+        return res.status(403).json({
+          message: "Sign in to see who is registered for this session",
+          code: "ROSTER_MEMBERS_ONLY",
+        });
+      }
+
       const participants = await storage.getBookingParticipants(req.params.id);
       // getBookingParticipants joins the whole users row for its other callers
       // (email, phone, balance). This is the one caller that serializes it, and
@@ -4257,6 +4269,16 @@ export async function registerRoutes(
   // ===== SESSION WAITLIST (group sessions) =====
   app.get("/api/bookings/:id/waitlist", async (req: any, res) => {
     try {
+      // Same rule as the roster: it names people.
+      const waitlistBooking = await storage.getBooking(req.params.id);
+      if (!waitlistBooking) return res.status(404).json({ message: "Booking not found" });
+      if (!waitlistBooking.organizationId || !(await isOrgMember(req, waitlistBooking.organizationId))) {
+        return res.status(403).json({
+          message: "Sign in to see the waitlist for this session",
+          code: "ROSTER_MEMBERS_ONLY",
+        });
+      }
+
       const { validateSchedulingSchema } = await import("./scheduling-schema-validation");
       await validateSchedulingSchema();
       const { db: dbRef } = await import("./db");
