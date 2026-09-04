@@ -6,6 +6,7 @@ import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 import { toPublicOrg, toDirectoryOrg, isOrgMember } from "./lib/org-visibility";
 import { requireCoachRevenueAccess } from "./lib/require-coach-revenue-access";
 import { resolveOrgSession } from "./org-auth";
+import { toPublicParticipants } from "./lib/participant-visibility";
 import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
 import { storage } from "./storage";
@@ -4088,7 +4089,10 @@ export async function registerRoutes(
   app.get("/api/bookings/:id/participants", async (req, res) => {
     try {
       const participants = await storage.getBookingParticipants(req.params.id);
-      res.json(participants);
+      // getBookingParticipants joins the whole users row for its other callers
+      // (email, phone, balance). This is the one caller that serializes it, and
+      // it must never ship credentials — see lib/participant-visibility.
+      res.json(toPublicParticipants(participants as any));
     } catch (error) {
       console.error("Error fetching participants:", error);
       res.status(500).json({ message: "Failed to fetch participants" });
