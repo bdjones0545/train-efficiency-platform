@@ -161,5 +161,9 @@ test("every allowlist entry carries a reason", () => {
 
 test("npm exposes the audit", () => {
   const pkg = JSON.parse(read("package.json"));
-  assert.equal(pkg.scripts["audit:routes"], "tsx script/route-guard-audit.ts");
+  const script = pkg.scripts["audit:routes"];
+  assert.ok(script, "audit:routes script must exist");
+  // Assert what it does, not how it is spelled — the .bin shim is not always written.
+  assert.match(script, /script\/route-guard-audit\.ts/);
+  assert.doesNotMatch(script, /^npx /, "npx can resolve to an unrelated package");
 });
