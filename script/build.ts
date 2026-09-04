@@ -57,8 +57,28 @@ async function typecheckClient() {
   }
 }
 
+/**
+ * Server typecheck, ratcheted against config/server-typecheck-baseline.json.
+ *
+ * The client tsconfig excludes server/, so until now nothing typechecked the
+ * code that actually runs in production. There are too many standing errors to
+ * gate on zero, so this aborts the build only when the tree gets worse.
+ */
+async function typecheckServer() {
+  try {
+    execSync("npx tsx script/typecheck-server.ts 2>&1", {
+      encoding: "utf8",
+      stdio: "inherit",
+    });
+  } catch {
+    console.error("\n✗ New server type errors — build aborted.\n");
+    process.exit(1);
+  }
+}
+
 async function buildAll() {
   await typecheckClient();
+  await typecheckServer();
 
   await rm("dist", { recursive: true, force: true });
 

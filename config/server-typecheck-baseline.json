@@ -1,0 +1,284 @@
+{
+  "description": "Standing server type errors. The build gate fails when any file gains an error. Lower is better — regenerate with: npm run typecheck:server -- --update",
+  "command": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.server.json",
+  "totalErrors": 348,
+  "counts": {
+    "server/action-tracking.ts": {
+      "TS2322": 1
+    },
+    "server/agent-billing-engine.ts": {
+      "TS2339": 2
+    },
+    "server/agent-outcome-attribution-routes.ts": {
+      "TS2339": 1
+    },
+    "server/agent-reputation-engine.ts": {
+      "TS2339": 1
+    },
+    "server/agent-telemetry-sdk.ts": {
+      "TS2339": 4,
+      "TS2353": 1
+    },
+    "server/agent-tools/action-mapper.ts": {
+      "TS2339": 3,
+      "TS2353": 3
+    },
+    "server/agent-tools/implementations.ts": {
+      "TS2339": 1
+    },
+    "server/agents/client-success-agent.ts": {
+      "TS2322": 2
+    },
+    "server/agents/executive-agent.ts": {
+      "TS2353": 1
+    },
+    "server/agents/pulse-agent.ts": {
+      "TS2322": 1
+    },
+    "server/athlete-intelligence-routes.ts": {
+      "TS2339": 2,
+      "TS2769": 7,
+      "TS2345": 2
+    },
+    "server/athlete-profile-routes.ts": {
+      "TS2339": 5
+    },
+    "server/attention-engine.ts": {
+      "TS2352": 5
+    },
+    "server/ceo-agent-orchestrator.ts": {
+      "TS2345": 1
+    },
+    "server/ceo-heartbeat-routes.ts": {
+      "TS2339": 2
+    },
+    "server/coach-outreach-engine-routes.ts": {
+      "TS2769": 1
+    },
+    "server/connectors/google-calendar.ts": {
+      "TS7053": 1
+    },
+    "server/connectors/stripe-invoicing.ts": {
+      "TS7053": 1
+    },
+    "server/db.ts": {
+      "TS2345": 1
+    },
+    "server/education-phase2-routes.ts": {
+      "TS2339": 24
+    },
+    "server/education-routes.ts": {
+      "TS2339": 2,
+      "TS2353": 4,
+      "TS2345": 1
+    },
+    "server/email-agent/follow-up-cron.ts": {
+      "TS2322": 2
+    },
+    "server/email-agent/scheduled-email-agent.ts": {
+      "TS2322": 2
+    },
+    "server/email-agent/trigger-alerts.ts": {
+      "TS2554": 1
+    },
+    "server/execution-routes.ts": {
+      "TS2551": 1,
+      "TS2339": 2
+    },
+    "server/forecast-routes.ts": {
+      "TS2339": 1
+    },
+    "server/goal-tracking.ts": {
+      "TS2353": 1
+    },
+    "server/guardian-routes.ts": {
+      "TS2339": 10,
+      "TS2322": 1
+    },
+    "server/index.ts": {
+      "TS2345": 1
+    },
+    "server/integration-runtime.ts": {
+      "TS18048": 1
+    },
+    "server/integrations/google-calendar.ts": {
+      "TS2339": 1
+    },
+    "server/intervention-outcome-routes.ts": {
+      "TS2339": 3
+    },
+    "server/kevin-action-api-routes.ts": {
+      "TS2345": 7,
+      "TS2769": 1,
+      "TS2322": 1
+    },
+    "server/kevin-agent-routes.ts": {
+      "TS2345": 1
+    },
+    "server/kevin-emergency-routes.ts": {
+      "TS2345": 1
+    },
+    "server/kevin-webhook-routes.ts": {
+      "TS2345": 4
+    },
+    "server/nutrition-routes.ts": {
+      "TS2353": 2
+    },
+    "server/orchestration/orchestration-routes.ts": {
+      "TS2345": 2
+    },
+    "server/orchestration/organization-intelligence-orchestrator.ts": {
+      "TS2339": 1
+    },
+    "server/outcome-intelligence-routes.ts": {
+      "TS2339": 1
+    },
+    "server/phase10-routes.ts": {
+      "TS2339": 2,
+      "TS2769": 2
+    },
+    "server/pr-tracker-routes.ts": {
+      "TS2322": 2,
+      "TS2339": 3
+    },
+    "server/recommendation-engine.ts": {
+      "TS2551": 2
+    },
+    "server/reliability-routes.ts": {
+      "TS2352": 3
+    },
+    "server/replit_integrations/batch/utils.ts": {
+      "TS2339": 2
+    },
+    "server/replit_integrations/image/client.ts": {
+      "TS18048": 2
+    },
+    "server/replit_integrations/image/routes.ts": {
+      "TS18048": 1
+    },
+    "server/revenue-agent.ts": {
+      "TS2345": 1
+    },
+    "server/revenue-intelligence.ts": {
+      "TS2339": 1
+    },
+    "server/routes.ts": {
+      "TS2339": 44,
+      "TS2551": 7,
+      "TS2345": 10,
+      "TS2783": 1,
+      "TS18048": 1,
+      "TS2353": 8,
+      "TS2769": 3,
+      "TS2322": 3
+    },
+    "server/scheduling-assistant.ts": {
+      "TS2345": 5,
+      "TS18046": 2
+    },
+    "server/scheduling-intelligence-routes.ts": {
+      "TS2345": 10,
+      "TS2367": 1,
+      "TS2307": 1
+    },
+    "server/scripts/kevin-agent-integration-flag-smoke.ts": {
+      "TS2724": 2,
+      "TS2339": 1
+    },
+    "server/scripts/kevin-request-timeout-smoke.ts": {
+      "TS2305": 3,
+      "TS2339": 2
+    },
+    "server/services/agentmail-analytics-service.ts": {
+      "TS2783": 2
+    },
+    "server/services/agentmail-send-guard.ts": {
+      "TS2339": 1
+    },
+    "server/services/athlete-context-broker.ts": {
+      "TS2339": 4,
+      "TS2345": 1
+    },
+    "server/services/ceo-heartbeat-service.ts": {
+      "TS2339": 2
+    },
+    "server/services/daily-operations-engine.ts": {
+      "TS2339": 2
+    },
+    "server/services/gmail-agent-service.ts": {
+      "TS2339": 1
+    },
+    "server/services/guarded-outbound-email.ts": {
+      "TS2339": 8
+    },
+    "server/services/intervention-priority-engine.ts": {
+      "TS2339": 1
+    },
+    "server/services/kevin-event-service.ts": {
+      "TS2339": 1
+    },
+    "server/services/kevin-learning-service.ts": {
+      "TS2322": 1
+    },
+    "server/services/message-learning-service.ts": {
+      "TS2769": 1
+    },
+    "server/services/notification-automation.ts": {
+      "TS2353": 1
+    },
+    "server/services/opportunity-executive-coordinator.ts": {
+      "TS2339": 2
+    },
+    "server/services/outcome-intelligence-service.ts": {
+      "TS18047": 6
+    },
+    "server/services/readiness-service.ts": {
+      "TS2339": 3
+    },
+    "server/services/software-improvement-agent.ts": {
+      "TS2339": 6
+    },
+    "server/services/unified-action-queue.ts": {
+      "TS2339": 5
+    },
+    "server/storage.ts": {
+      "TS2322": 1,
+      "TS2339": 5
+    },
+    "server/webhookHandlers.ts": {
+      "TS2339": 3
+    },
+    "server/workflow-graph-engine.ts": {
+      "TS2339": 1
+    },
+    "server/workflow-job-runner.ts": {
+      "TS2554": 1
+    },
+    "server/workflow-orchestrator.ts": {
+      "TS2538": 3,
+      "TS7006": 3
+    },
+    "server/workflows/definitions.ts": {
+      "TS7006": 2
+    },
+    "server/workflows/executor.ts": {
+      "TS2339": 2,
+      "TS2345": 5,
+      "TS18047": 2,
+      "TS2538": 3
+    },
+    "server/workforce-intelligence-engine.ts": {
+      "TS2345": 1
+    },
+    "server/workforce-learning-engine.ts": {
+      "TS2769": 1
+    },
+    "server/workout-builder-routes.ts": {
+      "TS2339": 10
+    },
+    "server/workout-execution-routes.ts": {
+      "TS2339": 3,
+      "TS2769": 1
+    }
+  }
+}
