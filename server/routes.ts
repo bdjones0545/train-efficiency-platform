@@ -3,6 +3,10 @@ import { createServer, type Server } from "http";
 import { buildPublicAppUrl } from "./utils/url";
 import { publicRateLimiter } from "./middleware/public-rate-limiter";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
+import { toPublicOrg, toDirectoryOrg, isOrgMember } from "./lib/org-visibility";
+import { projectAthleticBookings } from "./lib/athletic-visibility";
+import { requireCoachRevenueAccess } from "./lib/require-coach-revenue-access";
+import { resolveOrgSession } from "./org-auth";
 import { toPublicParticipants } from "./lib/participant-visibility";
 import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
@@ -1267,6 +1271,14 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Organization not found" });
       }
       const { stripeSecretKey, ...safeOrg } = org;
+
+      // Public org pages read branding and feature flags from this route
+      // anonymously, so it stays unauthenticated — but owner identity, Stripe
+      // configuration and billing state are members-only.
+      if (!(await isOrgMember(req, org.id))) {
+        return res.json(toPublicOrg(safeOrg));
+      }
+
       let ownerName: string | null = null;
       if (org.ownerUserId) {
         const owner = await storage.getUser(org.ownerUserId);
@@ -1910,11 +1922,12 @@ export async function registerRoutes(
     }
   });
 
+  // Public tenant directory (/portal). Enumerates every organization, so it is
+  // projected down to an allowlist — a new column is never exposed by default.
   app.get("/api/organizations", async (_req: any, res) => {
     try {
       const orgs = await storage.getAllOrganizations();
-      const safeOrgs = orgs.map(({ stripeSecretKey, stripePublishableKey, ...rest }) => rest);
-      res.json(safeOrgs);
+      res.json(orgs.map(toDirectoryOrg));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch organizations" });
     }
@@ -1927,6 +1940,9 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Organization not found" });
       }
       const { stripeSecretKey, ...safeOrg } = org;
+      if (!(await isOrgMember(req, org.id))) {
+        return res.json(toPublicOrg(safeOrg));
+      }
       res.json(safeOrg);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch organization" });
@@ -4523,7 +4539,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/coach/transactions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  app.get("/api/coach/transactions", isAuthenticated, requireRole("COACH", "ADMIN"), requireCoachRevenueAccess, async (req: any, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
       res.json(await storage.getWalletTransactionsByOrganization(orgId));
@@ -4534,7 +4550,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/coach/stripe-subscription-transactions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  app.get("/api/coach/stripe-subscription-transactions", isAuthenticated, requireRole("COACH", "ADMIN"), requireCoachRevenueAccess, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
       const profile = await storage.getUserProfile(userId);
@@ -4586,7 +4602,7 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/coach/user-balances", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+  app.get("/api/coach/user-balances", isAuthenticated, requireRole("COACH", "ADMIN"), requireCoachRevenueAccess, async (req: any, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
       res.json(await storage.getUserBalancesByOrganization(orgId));
@@ -5522,7 +5538,7 @@ export async function registerRoutes(
   });
 
   // ── Revenue Summary V2 — collected / recognized / deferred / compensation ────
-  app.get("/api/admin/revenue-summary-v2", isAuthenticated, requireRole("ADMIN", "COACH"), async (req: any, res) => {
+  app.get("/api/admin/revenue-summary-v2", isAuthenticated, requireRole("ADMIN", "COACH"), requireCoachRevenueAccess, async (req: any, res) => {
     try {
       const orgId = await resolveOrgIdOrThrow(req);
       const sinceParam = req.query.since as string | undefined;
@@ -7277,12 +7293,18 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
+  // Program rows carry only public scheduling configuration (name, slug, hours,
+  // slot capacity), so these stay anonymous — the org landing page and the
+  // public booking calendar both read them. Inactive programs are a different
+  // matter: a draft or retired program should not be publicly enumerable, so
+  // non-members see active programs only.
   app.get("/api/athletic/programs", async (req, res) => {
     try {
       const orgId = req.query.orgId as string;
       if (!orgId) return res.status(400).json({ message: "orgId query param required" });
       const programs = await storage.getAthleticPrograms(orgId);
-      res.json(programs);
+      if (await isOrgMember(req, orgId)) return res.json(programs);
+      res.json(programs.filter((program: any) => program.active));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch athletic programs" });
     }
@@ -7292,6 +7314,9 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     try {
       const program = await storage.getAthleticProgramById(req.params.id);
       if (!program) return res.status(404).json({ message: "Program not found" });
+      if (!program.active && !(await isOrgMember(req, program.organizationId))) {
+        return res.status(404).json({ message: "Program not found" });
+      }
       res.json(program);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch athletic program" });
@@ -7302,6 +7327,9 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     try {
       const program = await storage.getAthleticProgramBySlug(req.params.orgId, req.params.slug);
       if (!program) return res.status(404).json({ message: "Program not found" });
+      if (!program.active && !(await isOrgMember(req, program.organizationId))) {
+        return res.status(404).json({ message: "Program not found" });
+      }
       res.json(program);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch athletic program" });
@@ -7314,6 +7342,9 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!org) return res.status(404).json({ message: "Organization not found" });
       const program = await storage.getAthleticProgramBySlug(org.id, req.params.programSlug);
       if (!program) return res.status(404).json({ message: "Program not found" });
+      if (!program.active && !(await isOrgMember(req, org.id))) {
+        return res.status(404).json({ message: "Program not found" });
+      }
       res.json(program);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch program" });
@@ -7401,7 +7432,9 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!date) return res.status(400).json({ message: "date query param required" });
       if (!programId) return res.status(400).json({ message: "programId query param required" });
       const list = await storage.getAthleticBookings(date, programId);
-      res.json(list);
+      // Anonymous visitors need slot occupancy, never booker identity.
+      const auth = await resolveOrgSession(req).catch(() => null);
+      res.json(projectAthleticBookings(list as any, auth));
     } catch (error) {
       console.error("Error fetching athletic bookings:", error);
       res.status(500).json({ message: "Failed to fetch athletic bookings" });
@@ -7416,7 +7449,8 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!start || !end) return res.status(400).json({ message: "start and end query params required" });
       if (!programId) return res.status(400).json({ message: "programId query param required" });
       const list = await storage.getAthleticBookingsInRange(start, end, programId);
-      res.json(list);
+      const auth = await resolveOrgSession(req).catch(() => null);
+      res.json(projectAthleticBookings(list as any, auth));
     } catch (error) {
       console.error("Error fetching athletic bookings range:", error);
       res.status(500).json({ message: "Failed to fetch athletic bookings" });
@@ -7674,23 +7708,41 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         .where(eq(athleticBookings.id, req.params.id)).limit(1);
       if (!existing) return res.status(404).json({ message: "Booking not found" });
 
-      // Login parity with booking creation
-      const bookingOrg = await storage.getOrganizationById(existing.organizationId);
-      if (bookingOrg?.requireLoginToBook) {
-        let authed = false;
+      // Cancellation is limited to the org user who made the booking, or to
+      // staff of the organization that owns it. Previously this route was
+      // reachable anonymously whenever the org left the login-to-book setting
+      // off (the default), and the session lookup was not scoped to the
+      // booking's organization, so any logged-in user of any tenant could
+      // cancel any booking — including a whole recurring series.
+      const auth = await resolveOrgSession(req).catch(() => null);
+      const isOrgStaff =
+        !!auth &&
+        auth.orgId === existing.organizationId &&
+        ["admin", "coach", "staff", "owner"].includes(auth.role);
+
+      let isBooker = false;
+      if (!isOrgStaff && existing.orgUserId) {
         const orgAuthToken = req.headers["x-org-auth-token"] as string | undefined;
         if (orgAuthToken) {
           try {
             const tokenHash = crypto.createHash("sha256").update(orgAuthToken).digest("hex");
-            const sessions = await db.select().from(orgSessions)
-              .where(and(eq(orgSessions.tokenHash, tokenHash), gt(orgSessions.expiresAt, new Date())))
+            const [session] = await db.select().from(orgSessions)
+              .where(and(
+                eq(orgSessions.tokenHash, tokenHash),
+                gt(orgSessions.expiresAt, new Date()),
+                eq(orgSessions.orgId, existing.organizationId),
+              ))
               .limit(1);
-            authed = sessions.length > 0;
+            isBooker = !!session && session.userId === existing.orgUserId;
           } catch {}
         }
-        if (!authed) {
-          return res.status(401).json({ message: "Login required to manage sessions for this program" });
-        }
+      }
+
+      if (!isOrgStaff && !isBooker) {
+        return res.status(403).json({
+          message: "Only the person who booked this session, or a coach at this organization, can cancel it",
+          code: "ATHLETIC_CANCEL_FORBIDDEN",
+        });
       }
 
       const scope = (req.query.scope as string) || "single";
