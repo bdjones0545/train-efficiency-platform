@@ -160,5 +160,11 @@ test("the baseline is real, and shaped the way the ratchet reads it", () => {
 
 test("npm exposes the gate for local use", () => {
   const pkg = JSON.parse(read("package.json"));
-  assert.equal(pkg.scripts["typecheck:server"], "tsx script/typecheck-server.ts");
+  const script = pkg.scripts["typecheck:server"];
+  assert.ok(script, "typecheck:server script must exist");
+
+  // Assert what the script must DO, not how it is spelled — the invocation
+  // changed once already (the .bin/tsx shim is not always written by npm).
+  assert.match(script, /script\/typecheck-server\.ts/);
+  assert.doesNotMatch(script, /^npx /, "npx can resolve to an unrelated package");
 });

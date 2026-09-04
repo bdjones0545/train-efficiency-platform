@@ -40,7 +40,10 @@ const allowlist = [
 async function typecheckClient() {
   console.log("typechecking client (tsc --noEmit)...");
   try {
-    execSync("npx tsc --noEmit -p tsconfig.client.json 2>&1", {
+    // Not `npx tsc`: when the local binary is missing npx fetches an
+    // unrelated "tsc" package from the registry and typechecks nothing,
+    // while still exiting 0. The explicit path fails loudly instead.
+    execSync("node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.client.json 2>&1", {
       encoding: "utf8",
       stdio: "pipe",
     });
@@ -66,7 +69,7 @@ async function typecheckClient() {
  */
 async function typecheckServer() {
   try {
-    execSync("npx tsx script/typecheck-server.ts 2>&1", {
+    execSync("node --import tsx script/typecheck-server.ts 2>&1", {
       encoding: "utf8",
       stdio: "inherit",
     });
