@@ -242,7 +242,7 @@ export async function detectAnomalies(orgId: string): Promise<Anomaly[]> {
       key: "negative_deferred_revenue",
       severity: "critical",
       label: "Negative net deferred revenue",
-      detail: `Released (${((-defRow?.released ?? 0) / 100).toFixed(2)}) exceeds created. Logic error.`,
+      detail: `Released (${((defRow?.released ?? 0) / 100).toFixed(2)}) exceeds created. Logic error.`,
     });
   }
 

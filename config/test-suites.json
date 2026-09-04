@@ -113,8 +113,14 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/coach-surface-reachability.test.ts",
+        "server/tests/athletic-read-scoping.test.ts",
+        "server/tests/coach-audit-authz-hardening.test.ts",
+        "server/tests/first-success-stories-response-shape.test.ts",
+        "server/tests/booking-participant-exposure.test.ts",
         "server/tests/redemption-tenant-isolation.test.ts",
         "server/tests/test-manifest-integrity.test.ts",
+        "server/tests/server-typecheck-gate.test.ts",
         "server/tests/reminder-cron-locks-wiring.test.ts",
         "server/tests/write-only-cron-locks-wiring.test.ts"
       ]
