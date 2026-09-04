@@ -69,7 +69,7 @@ async function typecheckClient() {
  */
 async function typecheckServer() {
   try {
-    execSync("npx tsx script/typecheck-server.ts 2>&1", {
+    execSync("node --import tsx script/typecheck-server.ts 2>&1", {
       encoding: "utf8",
       stdio: "inherit",
     });
