@@ -136,6 +136,11 @@ test("CI runs the db suite against a postgres service", () => {
   assert.match(job, /--health-cmd\s+"?pg_isready/, "postgres service has no readiness health check");
   assert.match(
     job,
+    /^\s+POSTGRES_HOST_AUTH_METHOD:\s*trust\s*$/m,
+    "the postgres service must trust loopback logins: agent-outcome-attribution-migration.test.ts creates a passwordless role and connects as it, which fails with 28P01 under the image's default scram-sha-256",
+  );
+  assert.match(
+    job,
     /^\s+TEST_DATABASE_URL:\s*postgresql:\/\/postgres:postgres@localhost:5432\/te_test\s*$/m,
     "TEST_DATABASE_URL must point at the postgres service, which the runner maps to DATABASE_URL",
   );

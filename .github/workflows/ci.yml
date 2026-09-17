@@ -105,6 +105,12 @@ jobs:
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: te_test
+          # Trust loopback logins, as a developer's local Postgres does. The
+          # image otherwise requires scram-sha-256 on TCP, and
+          # agent-outcome-attribution-migration.test.ts creates a passwordless
+          # role and connects as it: on the first CI run that failed with
+          # 28P01 "password authentication failed", the suite's only failure.
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         # Wait for the server to accept connections before the steps start;
