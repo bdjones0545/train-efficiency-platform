@@ -6,9 +6,11 @@
  * Phase 6: Execution observability endpoints
  */
 
-import type { Express, Request, Response } from "express";
+import type { Express } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
+import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
 import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import {
   executeAction,
@@ -44,14 +46,6 @@ import { approveAgentMailReplyAuthority } from "./services/agentmail-approved-se
 async function getOrgId(req: any): Promise<string> {
   // Trusted server-side org resolution — never req.user.orgId (never populated) or client input.
   return await resolveOrgIdOrThrow(req);
-}
-
-function requireAdmin(req: Request, res: Response): boolean {
-  if (!(req as any).user) {
-    res.status(401).json({ message: "Not authenticated" });
-    return false;
-  }
-  return true;
 }
 
 // ─── Map hermes recommendation type → execution action type ───────────────────
@@ -192,6 +186,10 @@ async function approveGmailAction(orgId: string, actionId: string, userId: strin
 }
 
 // ─── Reject helpers ───────────────────────────────────────────────────────────
+// Every UPDATE here is keyed by an id the caller supplies. The matching approve
+// helpers already scope by org (`AND org_id = ${orgId}`); reject did not, so a
+// caller in one organization could reject another organization's queued action
+// by guessing or replaying its id. Scope all four the same way.
 async function rejectAction(orgId: string, actionId: string, sourceSystem: string, reason: string, userId: string) {
   switch (sourceSystem) {
     case "hermes":
@@ -202,14 +200,15 @@ async function rejectAction(orgId: string, actionId: string, sourceSystem: strin
         ON CONFLICT DO NOTHING
       `).catch(() => {});
       await db.execute(sql`
-        UPDATE hermes_recommendations SET status = 'rejected' WHERE id = ${actionId}
+        UPDATE hermes_recommendations SET status = 'rejected'
+        WHERE id = ${actionId} AND org_id = ${orgId}
       `).catch(() => {});
       break;
     case "autonomous_queue":
       await db.execute(sql`
         UPDATE autonomous_action_queue
         SET status = 'rejected', rejected_by = ${userId}, rejection_reason = ${reason}
-        WHERE id = ${actionId}
+        WHERE id = ${actionId} AND org_id = ${orgId}
       `).catch(() => {});
       break;
     case "agentmail":
@@ -221,18 +220,32 @@ async function rejectAction(orgId: string, actionId: string, sourceSystem: strin
       break;
     case "gmail_agent":
       await db.execute(sql`
-        UPDATE gmail_agent_actions SET status = 'rejected' WHERE id = ${actionId}
+        UPDATE gmail_agent_actions SET status = 'rejected'
+        WHERE id = ${actionId} AND org_id = ${orgId}
       `).catch(() => {});
       break;
   }
 }
 
+/**
+ * Every route in this module approves, executes, escalates, rejects or reads
+ * back an automated action. The previous in-handler `requireAdmin` only
+ * asserted that SOMEONE was logged in — despite the name it read no role, so
+ * any authenticated CLIENT could approve and execute agent actions. Guard the
+ * registrations with the shared middleware instead, so the role is read from
+ * `user_profiles` by the one helper that defines it.
+ *
+ * COACH and ADMIN: the only client surface that reads these endpoints is the
+ * admin CEO heartbeat page, and no client page posts to `/api/actions/*` at
+ * all, so this matches the sibling `/api/coach/*` and approval surfaces
+ * without inventing a wider grant.
+ */
+
 export function registerExecutionRoutes(app: Express): void {
 
   // ─── POST /api/actions/approve ─────────────────────────────────────────────
   // Unified approval endpoint — handles all source systems
-  app.post("/api/actions/approve", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.post("/api/actions/approve", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       const { actionId, sourceSystem, templateKey, notes } = req.body;
@@ -264,8 +277,7 @@ export function registerExecutionRoutes(app: Express): void {
   });
 
   // ─── POST /api/actions/reject ──────────────────────────────────────────────
-  app.post("/api/actions/reject", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.post("/api/actions/reject", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       const { actionId, sourceSystem, reason = "Rejected by admin" } = req.body;
@@ -281,8 +293,7 @@ export function registerExecutionRoutes(app: Express): void {
   });
 
   // ─── POST /api/actions/escalate ───────────────────────────────────────────
-  app.post("/api/actions/escalate", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.post("/api/actions/escalate", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       const { actionId, sourceSystem, reason = "Escalated for review", title = "Action Escalated" } = req.body;
@@ -304,8 +315,7 @@ export function registerExecutionRoutes(app: Express): void {
 
   // ─── POST /api/actions/execute ────────────────────────────────────────────
   // Direct execution (Phase 3 — workflow trigger endpoint)
-  app.post("/api/actions/execute", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.post("/api/actions/execute", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       const { actionId = crypto.randomUUID(), actionType, templateKey, ...rest } = req.body;
@@ -325,8 +335,7 @@ export function registerExecutionRoutes(app: Express): void {
 
   // ─── GET /api/executions ──────────────────────────────────────────────────
   // Phase 6 — list all execution events
-  app.get("/api/executions", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.get("/api/executions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       const limit = parseInt((req.query.limit as string) ?? "50", 10);
@@ -339,8 +348,7 @@ export function registerExecutionRoutes(app: Express): void {
   });
 
   // ─── GET /api/executions/metrics ──────────────────────────────────────────
-  app.get("/api/executions/metrics", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.get("/api/executions/metrics", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       const metrics = await getExecutionMetrics(orgId);
@@ -351,10 +359,10 @@ export function registerExecutionRoutes(app: Express): void {
   });
 
   // ─── GET /api/executions/:id ──────────────────────────────────────────────
-  app.get("/api/executions/:id", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.get("/api/executions/:id", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
-      const event = await getExecutionEvent(req.params.id);
+      const orgId = await getOrgId(req);
+      const event = await getExecutionEvent(req.params.id, orgId);
       if (!event) return res.status(404).json({ message: "Execution event not found" });
       res.json(event);
     } catch (e: any) {
@@ -364,8 +372,7 @@ export function registerExecutionRoutes(app: Express): void {
 
   // ─── GET /api/coordination/stats ─────────────────────────────────────────
   // Phase 4 — cross-agent coordination stats
-  app.get("/api/coordination/stats", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.get("/api/coordination/stats", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       const stats = await getCoordinationStats(orgId);
@@ -379,8 +386,7 @@ export function registerExecutionRoutes(app: Express): void {
 
   // ─── GET /api/conflicts ───────────────────────────────────────────────────
   // Phase 5 — open conflict alerts
-  app.get("/api/conflicts", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.get("/api/conflicts", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       const [conflicts, stats] = await Promise.all([
@@ -396,8 +402,7 @@ export function registerExecutionRoutes(app: Express): void {
   });
 
   // ─── POST /api/conflicts/:id/resolve ─────────────────────────────────────
-  app.post("/api/conflicts/:id/resolve", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.post("/api/conflicts/:id/resolve", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       const { resolution = "Resolved by admin" } = req.body;
@@ -415,8 +420,7 @@ export function registerExecutionRoutes(app: Express): void {
 
   // ─── GET /api/action-center/summary ──────────────────────────────────────
   // Combined summary for the action center dashboard header
-  app.get("/api/action-center/summary", async (req: any, res) => {
-    if (!requireAdmin(req, res)) return;
+  app.get("/api/action-center/summary", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {
       const orgId = await getOrgId(req);
       await Promise.all([

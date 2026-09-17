@@ -90,10 +90,12 @@ export default function AttendanceProgramEditorPage() {
 
   const orgId = data?.program?.organization_id || (user as any)?.organizationId || "";
 
+  // Recipient rows are keyed by the coach's contact address, which the public
+  // `/api/coaches` projection deliberately no longer carries. The staff-only
+  // listing returns it as `coachEmail`.
   const { data: coachesData } = useQuery<any[]>({
-    queryKey: ["/api/coaches", orgId],
-    queryFn: () => authenticatedFetch<any[]>(`/api/coaches?organizationId=${orgId}`).catch(() => []),
-    enabled: !!orgId,
+    queryKey: ["/api/admin/coaches"],
+    queryFn: () => authenticatedFetch<any[]>("/api/admin/coaches").catch(() => []),
   });
   const coaches: any[] = coachesData || [];
 
@@ -254,7 +256,7 @@ export default function AttendanceProgramEditorPage() {
     if (!selectedCoachId) return;
     const coach = coaches.find(c => c.id === selectedCoachId);
     if (!coach) return;
-    const email = coach.user?.email || "";
+    const email = coach.coachEmail || "";
     const name = [coach.user?.firstName, coach.user?.lastName].filter(Boolean).join(" ") || email;
     if (!email || recipients.some(r => r.email === email)) {
       toast({ title: "Already added", description: "This coach is already in the list" });
@@ -691,9 +693,9 @@ export default function AttendanceProgramEditorPage() {
                         <SelectValue placeholder="Select a coach…" />
                       </SelectTrigger>
                       <SelectContent>
-                        {coaches.filter(c => c.user?.email && !recipients.some(r => r.email === c.user.email)).map(c => (
+                        {coaches.filter(c => c.coachEmail && !recipients.some(r => r.email === c.coachEmail)).map(c => (
                           <SelectItem key={c.id} value={c.id}>
-                            {[c.user?.firstName, c.user?.lastName].filter(Boolean).join(" ") || c.user?.email}
+                            {[c.user?.firstName, c.user?.lastName].filter(Boolean).join(" ") || c.coachEmail}
                           </SelectItem>
                         ))}
                       </SelectContent>

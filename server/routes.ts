@@ -8,6 +8,7 @@ import { projectAthleticBookings } from "./lib/athletic-visibility";
 import { requireCoachRevenueAccess } from "./lib/require-coach-revenue-access";
 import { resolveOrgSession } from "./org-auth";
 import { toPublicParticipants } from "./lib/participant-visibility";
+import { toPublicCoach, toPublicCoaches } from "./lib/coach-visibility";
 import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
 import { storage } from "./storage";
@@ -2208,8 +2209,12 @@ export async function registerRoutes(
         if (!orgId) return res.status(400).json({ message: "organizationId required" });
       }
       const coaches = await storage.getCoachProfilesByOrganization(orgId);
-      const safe = coaches.map(({ passwordHash, email, ...rest }: any) => rest);
-      res.json(safe);
+      // The destructure above only stripped the coach row's own secrets; the
+      // JOINED users row shipped whole — passwordHash, email, phone,
+      // passwordResetToken, stripeCustomerId, unsubscribeToken — to anyone who
+      // could name an organizationId. Project through the shared allowlist so
+      // this route, /api/coaches/:id and the public org landing page agree.
+      res.json(toPublicCoaches(coaches));
     } catch (error) {
       console.error("Error fetching coaches:", error);
       res.status(500).json({ message: "Failed to fetch coaches" });
@@ -2220,8 +2225,7 @@ export async function registerRoutes(
     try {
       const coach = await storage.getCoachProfile(req.params.id);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
-      const { passwordHash, email, ...safe } = coach;
-      res.json(safe);
+      res.json(toPublicCoach(coach));
     } catch (error) {
       console.error("Error fetching coach:", error);
       res.status(500).json({ message: "Failed to fetch coach" });
@@ -4793,6 +4797,31 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error setting role:", error);
       res.status(500).json({ message: "Failed to set role" });
+    }
+  });
+
+  /**
+   * GET /api/admin/coaches
+   *
+   * The staff-only coach listing. `/api/coaches` is reachable anonymously with
+   * `?organizationId=`, so it can only ever serve the public projection (name
+   * and photo). The admin configuration screen and the attendance report
+   * recipient picker need each coach's contact address, so they read it here,
+   * behind a real role check, as an explicit `coachEmail` field rather than by
+   * shipping the whole joined users row.
+   */
+  app.get("/api/admin/coaches", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await getAdminOrgId(req);
+      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
+      const coaches = await storage.getCoachProfilesByOrganization(orgId);
+      res.json(coaches.map((coach: any) => ({
+        ...toPublicCoach(coach),
+        coachEmail: coach.user?.email ?? coach.email ?? null,
+      })));
+    } catch (error) {
+      console.error("Error fetching admin coaches:", error);
+      res.status(500).json({ message: "Failed to fetch coaches" });
     }
   });
 

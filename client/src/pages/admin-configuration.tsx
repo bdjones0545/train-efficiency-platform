@@ -245,7 +245,10 @@ type CoachWithUser = {
   specialties: string[];
   isActive: boolean;
   payoutPercentage: number | null;
-  user: { id: string; firstName: string; lastName: string; email: string };
+  // `/api/admin/coaches` reduces the joined users row to the public allowlist
+  // and carries the contact address in its own `coachEmail` field.
+  user: { firstName: string | null; lastName: string | null; profileImageUrl: string | null } | null;
+  coachEmail: string | null;
 };
 
 type SystemIntegration = {
@@ -1330,10 +1333,9 @@ export default function AdminConfigurationPage() {
     },
   });
   const { data: coaches, isLoading: coachesLoading } = useQuery<CoachWithUser[]>({
-    queryKey: ["/api/coaches", orgId],
+    queryKey: ["/api/admin/coaches"],
     queryFn: async () => {
-      const url = orgId ? `/api/coaches?organizationId=${orgId}` : "/api/coaches";
-      const res = await fetch(url);
+      const res = await fetch("/api/admin/coaches", { credentials: "include" });
       if (!res.ok) throw new Error("Failed to fetch coaches");
       return res.json();
     },
@@ -1595,6 +1597,7 @@ export default function AdminConfigurationPage() {
     onSuccess: () => {
       toast({ title: "Coach created successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/coaches"] });
       setCoachDialogOpen(false);
       setNewCoachFirstName("");
       setNewCoachLastName("");
@@ -1617,6 +1620,7 @@ export default function AdminConfigurationPage() {
     onSuccess: () => {
       toast({ title: "Coach updated successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/coaches"] });
       setEditCoachDialogOpen(false);
       setSelectedCoachId(null);
     },
@@ -1633,6 +1637,7 @@ export default function AdminConfigurationPage() {
     onSuccess: () => {
       toast({ title: "Coach deleted successfully" });
       queryClient.invalidateQueries({ queryKey: ["/api/coaches"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/coaches"] });
       setSelectedCoachId(null);
     },
     onError: (error: Error) => {
@@ -2501,9 +2506,9 @@ export default function AdminConfigurationPage() {
               <div className="flex items-center justify-between">
                 <div className="flex-1 min-w-0">
                   <p className="font-medium" data-testid={`text-coach-name-${coach.id}`}>
-                    {coach.user.firstName} {coach.user.lastName}
+                    {coach.user?.firstName} {coach.user?.lastName}
                   </p>
-                  <p className="text-sm text-muted-foreground">{coach.user.email}</p>
+                  <p className="text-sm text-muted-foreground">{coach.coachEmail}</p>
                   {coach.specialties?.length > 0 && (
                     <div className="flex gap-1 mt-1 flex-wrap">
                       {coach.specialties.map((s, i) => (
@@ -2548,11 +2553,11 @@ export default function AdminConfigurationPage() {
                 <div className="space-y-4">
                   <div>
                     <Label className="text-muted-foreground">Name</Label>
-                    <p className="font-medium">{coach.user.firstName} {coach.user.lastName}</p>
+                    <p className="font-medium">{coach.user?.firstName} {coach.user?.lastName}</p>
                   </div>
                   <div>
                     <Label className="text-muted-foreground">Email</Label>
-                    <p className="text-sm">{coach.user.email}</p>
+                    <p className="text-sm">{coach.coachEmail}</p>
                   </div>
                   <div>
                     <Label>Bio</Label>
@@ -2607,7 +2612,7 @@ export default function AdminConfigurationPage() {
                         <AlertDialogHeader>
                           <AlertDialogTitle>Delete Coach</AlertDialogTitle>
                           <AlertDialogDescription>
-                            This will permanently delete {coach.user.firstName} {coach.user.lastName} and all their associated data including bookings, availability, and earnings. This action cannot be undone.
+                            This will permanently delete {coach.user?.firstName} {coach.user?.lastName} and all their associated data including bookings, availability, and earnings. This action cannot be undone.
                           </AlertDialogDescription>
                         </AlertDialogHeader>
                         <AlertDialogFooter>

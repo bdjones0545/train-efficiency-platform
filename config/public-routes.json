@@ -1,8 +1,8 @@
 {
   "description": "Routes registered with no middleware. A route may only appear here deliberately — see server/lib/route-guard-audit.ts. Entries marked UNREVIEWED are a backlog, not an approval: each needs a decision to be either guarded or given a real reason. Regenerate with: npm run audit:routes -- --update",
-  "totalRoutes": 1896,
-  "unguardedRoutes": 212,
-  "unreviewed": 212,
+  "totalRoutes": 1897,
+  "unguardedRoutes": 201,
+  "unreviewed": 201,
   "routes": [
     {
       "method": "DELETE",
@@ -20,12 +20,6 @@
       "method": "DELETE",
       "path": "/api/validation-participants/:id",
       "file": "server/beta-wave-x-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/action-center/summary",
-      "file": "server/execution-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -210,20 +204,8 @@
     },
     {
       "method": "GET",
-      "path": "/api/conflicts",
-      "file": "server/execution-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
       "path": "/api/connectors/google-calendar/callback",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/coordination/stats",
-      "file": "server/execution-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -272,24 +254,6 @@
       "method": "GET",
       "path": "/api/email-agent/track-open/:emailId",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/executions",
-      "file": "server/execution-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/executions/:id",
-      "file": "server/execution-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/executions/metrics",
-      "file": "server/execution-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -858,30 +822,6 @@
     },
     {
       "method": "POST",
-      "path": "/api/actions/approve",
-      "file": "server/execution-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/actions/escalate",
-      "file": "server/execution-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/actions/execute",
-      "file": "server/execution-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/actions/reject",
-      "file": "server/execution-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
       "path": "/api/agentmail/webhook",
       "file": "server/agentmail-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
@@ -968,12 +908,6 @@
       "method": "POST",
       "path": "/api/coach/login",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/conflicts/:id/resolve",
-      "file": "server/execution-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
