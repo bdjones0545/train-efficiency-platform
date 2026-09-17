@@ -173,6 +173,14 @@ export interface IStorage {
   updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null; phone?: string | null; smsOptIn?: boolean; smsOptInAt?: Date | null; smsOptOutAt?: Date | null; smsConsentSource?: string | null }): Promise<User | undefined>;
   updateClientForOrganization(id: string, orgId: string, data: { firstName?: string; lastName?: string; email?: string | null }): Promise<User | undefined>;
   updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
+  /** Every user record whose phone matches the normalized E.164 number. */
+  getUsersByPhone(normalizedPhone: string): Promise<User[]>;
+  /**
+   * Carrier-level STOP: flips smsOptIn=false on EVERY user_org_preferences row
+   * of the user. sendSms reads org preferences first, so a STOP that only
+   * touched users.smsOptIn was ignored for any user with an org-preference row.
+   */
+  optOutUserSmsInAllOrgs(userId: string): Promise<{ orgPreferenceRowsUpdated: number }>;
   deleteUser(id: string): Promise<boolean>;
   deleteClientForOrganization(id: string, orgId: string): Promise<boolean>;
   getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; redemption?: Redemption })[]>;
@@ -689,6 +697,20 @@ export class DatabaseStorage implements IStorage {
     if (source) setData.smsConsentSource = source;
     const [updated] = await db.update(users).set(setData).where(eq(users.id, userId)).returning();
     return updated || undefined;
+  }
+
+  async getUsersByPhone(normalizedPhone: string): Promise<User[]> {
+    return db.select().from(users).where(eq(users.phone, normalizedPhone));
+  }
+
+  async optOutUserSmsInAllOrgs(userId: string): Promise<{ orgPreferenceRowsUpdated: number }> {
+    const now = new Date();
+    const updated = await db
+      .update(userOrgPreferences)
+      .set({ smsOptIn: false, smsOptOutAt: now, updatedAt: now })
+      .where(eq(userOrgPreferences.userId, userId))
+      .returning({ id: userOrgPreferences.id });
+    return { orgPreferenceRowsUpdated: updated.length };
   }
 
   async deleteUser(id: string): Promise<boolean> {
