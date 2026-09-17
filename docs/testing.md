@@ -7,7 +7,7 @@
 | `npm test` | Safe default: unit, security, and source-inspection tests | None | None |
 | `npm run test:unit` | Unit and source-inspection tests | None | None |
 | `npm run test:security` | Logging, auth, tenant, and secret regressions | None | None |
-| `npm run test:db` | DB integration tests | `TEST_DATABASE_URL` | Test DB writes |
+| `npm run test:db` | DB integration tests; runs in CI (`db-tests` job, postgres:16 service, schema built with `drizzle-kit push --force`) | `TEST_DATABASE_URL` | Test DB writes |
 | `npm run test:server` | Live API tests | `TEST_BASE_URL` | May write through test API |
 | `npm run test:e2e` | Browser tests | Not configured | None |
 | `npm run test:all` | Default plus every available infrastructure suite | As above | As above |

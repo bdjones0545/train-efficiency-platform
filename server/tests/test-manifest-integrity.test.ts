@@ -113,3 +113,46 @@ test("every suite the inventory references is a declared suite", () => {
     }
   }
 });
+
+/**
+ * The manifest marks the db suite safeForCI, but for a long time nothing in CI
+ * ran it: `npm test` and `npm run test:security` are mostly source-inspection
+ * tests, and the db suite is the only one whose tenant-isolation tests execute
+ * real code against a real PostgreSQL. In a mutation check on 2026-09-16, three
+ * of four deliberate security breaks passed the CI-run suites. This pins the
+ * db job into the workflow so it cannot quietly disappear again.
+ */
+test("CI runs the db suite against a postgres service", () => {
+  const workflow = readFileSync(path.join(repoRoot, ".github", "workflows", "ci.yml"), "utf8");
+
+  // Isolate the db job: from its key to the next job key at the same indent.
+  const jobStart = workflow.search(/^  db-tests:\s*$/m);
+  assert.notEqual(jobStart, -1, ".github/workflows/ci.yml has no `db-tests` job");
+  const rest = workflow.slice(jobStart + "  db-tests:".length);
+  const nextJob = rest.search(/^  [A-Za-z0-9_-]+:\s*$/m);
+  const job = nextJob === -1 ? rest : rest.slice(0, nextJob);
+
+  assert.match(job, /image:\s*postgres:16\b/, "db job does not start a postgres:16 service");
+  assert.match(job, /--health-cmd\s+"?pg_isready/, "postgres service has no readiness health check");
+  assert.match(
+    job,
+    /^\s+POSTGRES_HOST_AUTH_METHOD:\s*trust\s*$/m,
+    "the postgres service must trust loopback logins: agent-outcome-attribution-migration.test.ts creates a passwordless role and connects as it, which fails with 28P01 under the image's default scram-sha-256",
+  );
+  assert.match(
+    job,
+    /^\s+TEST_DATABASE_URL:\s*postgresql:\/\/postgres:postgres@localhost:5432\/te_test\s*$/m,
+    "TEST_DATABASE_URL must point at the postgres service, which the runner maps to DATABASE_URL",
+  );
+  assert.match(
+    job,
+    /node \.\/node_modules\/drizzle-kit\/bin\.cjs push --force/,
+    "db job must build the schema with drizzle-kit push (script/migrate.ts cannot bootstrap an empty database)",
+  );
+  assert.match(job, /run:\s*npm run test:db\s*$/m, "db job does not run `npm run test:db`");
+  assert.doesNotMatch(job, /npx /, "never npx in CI: a missing binary silently resolves to an unrelated package");
+
+  const suite = manifest.suites.db;
+  assert.equal(suite.safeForCI, true);
+  assert.deepEqual(suite.requiredEnvironment, ["TEST_DATABASE_URL"]);
+});
