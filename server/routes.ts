@@ -8,6 +8,7 @@ import { projectAthleticBookings } from "./lib/athletic-visibility";
 import { requireCoachRevenueAccess } from "./lib/require-coach-revenue-access";
 import { resolveOrgSession } from "./org-auth";
 import { toPublicParticipants } from "./lib/participant-visibility";
+import { toPublicCoaches } from "./lib/coach-visibility";
 import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
 import { storage } from "./storage";
@@ -1959,7 +1960,9 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Organization not found" });
       }
       const coaches = await storage.getCoachProfilesByOrganization(org.id);
-      res.json(coaches);
+      // Anonymous route: the landing page renders name, photo, bio and
+      // specialties. Never the coach credentials or the joined users row.
+      res.json(toPublicCoaches(coaches));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch coaches" });
     }
@@ -4074,6 +4077,23 @@ export async function registerRoutes(
           orgId = profile?.organizationId || undefined;
         }
       } catch {}
+      if (!orgId) {
+        // No org on the session (anonymous, or a profile with no organization):
+        // the caller must name the org they are browsing. An unscoped query
+        // returns every tenant's sessions, so a missing identifier is a 400,
+        // and the identifier is validated against the organizations table
+        // rather than passed straight into the query.
+        const requestedSlug = typeof req.query.slug === "string" ? req.query.slug.trim() : "";
+        const requestedOrgId = typeof req.query.organizationId === "string" ? req.query.organizationId.trim() : "";
+        if (!requestedSlug && !requestedOrgId) {
+          return res.status(400).json({ message: "organizationId or slug required" });
+        }
+        const org = requestedSlug
+          ? await storage.getOrganizationBySlug(requestedSlug)
+          : await storage.getOrganizationById(requestedOrgId);
+        if (!org) return res.status(404).json({ message: "Organization not found" });
+        orgId = org.id;
+      }
       const sessions = await storage.getOpenSemiPrivateSessions(orgId);
       const safe = sessions.map(s => {
         const { coach, ...rest } = s;
@@ -25073,7 +25093,17 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // ─── Phase 9: Production Readiness, E2E Validation & Trust Hardening ────────
 
   // End-to-end lifecycle flow test (Part 1)
-  app.post("/api/marketplace/e2e-test", async (req, res) => {
+  // Writes fixture rows (e2e-test-org, e2e-test-dev, trials, installs) into the
+  // real marketplace tables, so it is a development-only ADMIN tool: 404 in
+  // production for everyone (same gate as /api/admin/auth/debug), and an
+  // authenticated ADMIN elsewhere.
+  const notInProduction = (_req: any, res: any, next: any) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(404).json({ error: "Not found" });
+    }
+    next();
+  };
+  app.post("/api/marketplace/e2e-test", notInProduction, isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     const steps: Array<{ step: number; name: string; status: "pass" | "fail" | "skip"; detail: string }> = [];
     const pass = (step: number, name: string, detail: string) => steps.push({ step, name, status: "pass", detail });
     const fail = (step: number, name: string, detail: string) => steps.push({ step, name, status: "fail", detail });
