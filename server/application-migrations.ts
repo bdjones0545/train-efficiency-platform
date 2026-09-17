@@ -94,6 +94,16 @@ function excludedBaselineColumn(table: string, column: string): boolean {
   return table === "user_org_preferences" && column === "unsubscribe_token";
 }
 
+// Unique indexes that a later migration introduces (and may legitimately skip,
+// e.g. 0022 when duplicate money rows exist). An installation adopting the
+// baseline predates them, so their absence is not baseline incompatibility.
+const POST_BASELINE_UNIQUE_INDEXES = new Set([
+  "user_org_preferences_unsubscribe_token_unique",
+  "wallet_transactions_stripe_payment_intent_id_unique",
+  "wallet_transactions_stripe_session_id_unique",
+  "redemptions_booking_id_unique",
+]);
+
 function normalizeExpression(value: string | null | undefined): string | null {
   if (value == null) return null;
   let normalized = value.replace(/\s+/g, " ").trim();
@@ -209,7 +219,7 @@ export async function validateExistingBaseline(client: PoolClient): Promise<void
       ...table.columns.filter((column) => column.isUnique && !excludedBaselineColumn(table.name, column.name))
         .map((column) => ({ name: column.uniqueName, columns: [column.name] })),
       ...table.uniqueConstraints.map((unique) => ({ name: unique.name, columns: unique.columns.map((column) => column.name) })),
-      ...table.indexes.filter((index) => index.config.unique && index.config.name !== "user_org_preferences_unsubscribe_token_unique")
+      ...table.indexes.filter((index) => index.config.unique && !POST_BASELINE_UNIQUE_INDEXES.has(String(index.config.name)))
         .map((index) => ({ name: index.config.name, columns: index.config.columns.map((column: any) => column.name) })),
     ];
     for (const unique of uniqueSets) {

@@ -221,6 +221,7 @@
         "server/tests/tool-workflow-safety.test.ts",
         "server/tests/unsubscribe-token-scope.test.ts",
         "server/tests/wallet-read-tenant-isolation.test.ts",
+        "server/tests/wallet-redemption-idempotency.test.ts",
         "server/tests/workflow-idempotency-scoping.test.ts",
         "server/tests/workflow-job-reliability.test.ts"
       ],
