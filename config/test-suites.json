@@ -172,6 +172,7 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/replit-committed-secrets.test.ts",
         "server/tests/revenue-summary-integrity.test.ts",
         "server/tests/secrets-and-token-hash.test.ts"
       ]
