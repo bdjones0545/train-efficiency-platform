@@ -6,6 +6,9 @@ import { isAuthenticated } from "./replit_integrations/auth";
 import { requireRole } from "./lib/require-role";
 import { resolveOrgIdOrThrow } from "./lib/resolve-org-id";
 import { requireAttendanceSchema } from "./attendance-schema-validation";
+import { publicRateLimiter } from "./middleware/public-rate-limiter";
+import { findRecentAttendance, normalizeIntakeEmail, DEDUP_WINDOW_HOURS } from "./lib/public-intake-dedup";
+import { initialSequenceStatus } from "./lib/automation-sends";
 
 function rows(result: unknown): any[] {
   if (Array.isArray(result)) return result;
@@ -341,7 +344,14 @@ export async function registerAttendanceRoutes(app: Express) {
   });
 
   // ─── Public: submit attendance (no auth required) ─────────────────────────
-  app.post("/api/attendance/checkin/:slug", requireAttendanceSchema, async (req, res) => {
+  //
+  // Unauthenticated kiosk endpoint. Every POST used to insert a visit, enrol a
+  // lead and send mail through this file's own SendGrid client, with no rate
+  // limit and no duplicate window — an open email relay keyed only on a public
+  // slug. It now carries the shared public IP rate limiter, and a repeat
+  // check-in by the same athlete on the same program inside 24h is treated as
+  // the double-tap it is: no second visit, no second email, no second sequence.
+  app.post("/api/attendance/checkin/:slug", publicRateLimiter(20, 10 * 60_000, "attendance-checkin"), requireAttendanceSchema, async (req, res) => {
     try {
       const { slug } = req.params;
       const qr = row0(await db.execute(sql`
@@ -352,9 +362,37 @@ export async function registerAttendanceRoutes(app: Express) {
       const { firstName, lastName, email, phone, sport, position, school, gradYear, team, age, extraFields } = req.body;
       if (!email) return res.status(400).json({ error: "Email is required" });
 
-      const normalizedEmail = email.toLowerCase().trim();
+      const normalizedEmail = normalizeIntakeEmail(email);
       const programId = qr.program_id;
       const orgId = qr.organization_id;
+
+      // ── Duplicate window ───────────────────────────────────────────────
+      const recentVisit = await findRecentAttendance(
+        db as any,
+        { programId, email: normalizedEmail },
+        sql,
+      ).catch((err: any) => {
+        // Fail open: a broken dedup query must not stop athletes checking in.
+        console.error("[Attendance] duplicate lookup failed:", err?.message || err);
+        return null;
+      });
+
+      if (recentVisit?.id) {
+        console.log(`[Attendance] Duplicate check-in within ${DEDUP_WINDOW_HOURS}h for ${normalizedEmail} @ program ${programId} — returning existing visit`);
+        const dupTiers = rows(await db.execute(sql`
+          SELECT * FROM attendance_reward_tiers WHERE program_id = ${programId} AND active = true ORDER BY visit_count ASC
+        `));
+        const dupVisitNumber = Number(recentVisit.visit_number ?? 0);
+        const dupNext = dupTiers.find(t => t.visit_count > dupVisitNumber);
+        return res.json({
+          ok: true,
+          duplicate: true,
+          visitNumber: dupVisitNumber,
+          nextReward: dupNext || null,
+          rewardsEarned: dupTiers.filter(t => t.visit_count <= dupVisitNumber),
+          visitsToNext: dupNext ? dupNext.visit_count - dupVisitNumber : null,
+        });
+      }
 
       // Count existing visits for this email+program
       const existingVisits = row0(await db.execute(sql`
@@ -377,9 +415,11 @@ export async function registerAttendanceRoutes(app: Express) {
           ORDER BY created_at DESC LIMIT 1
         `));
         if (!existingLead) {
+          // Nurture enrolment is automation — with the kill-switch on the lead
+          // is still recorded, in a state the sequence cron never selects.
           await db.execute(sql`
             INSERT INTO lead_capture_submissions (org_id, program_id, athlete_name, email, phone, sport, position, school, grade, sequence_status)
-            VALUES (${orgId}, ${programId}, ${athleteName}, ${normalizedEmail}, ${phone ?? null}, ${sport ?? null}, ${position ?? null}, ${school ?? null}, ${gradYear ?? null}, 'pending')
+            VALUES (${orgId}, ${programId}, ${athleteName}, ${normalizedEmail}, ${phone ?? null}, ${sport ?? null}, ${position ?? null}, ${school ?? null}, ${gradYear ?? null}, ${initialSequenceStatus()})
           `);
         }
       } catch (leadErr) {

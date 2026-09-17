@@ -686,7 +686,25 @@ export async function sendSessionChargeEmail(
   await sendEmail(clientEmail, `Session Charged — ${serviceName}`, html, b.name);
 }
 
-export async function sendWeeklyReminderEmail(email: string, firstName: string, org?: OrgBranding) {
+/**
+ * Weekly "we miss you" re-engagement.
+ *
+ * This is MARKETING, not transactional: nobody asked for it, it is produced by
+ * a timer, and it exists to bring lapsed users back. It used to be sent with no
+ * logCtx at all, which meant no notification-preference check, no unsubscribe
+ * token and no emergency-pause check. It now carries a logCtx with
+ * type "marketing", so all three apply — and because the default marketing
+ * preference is OFF, a user who has not opted in no longer receives it.
+ *
+ * Session reminders (server/session-reminders.ts) are transactional and are
+ * deliberately untouched.
+ */
+export async function sendWeeklyReminderEmail(
+  email: string,
+  firstName: string,
+  org?: OrgBranding,
+  logCtx?: EmailLogContext,
+) {
   const b = brand(org);
   const subject = `We miss you at ${b.name}! Time to schedule a session`;
   const html = emailShell("Time to Get Back in the Game!", `
@@ -700,7 +718,7 @@ export async function sendWeeklyReminderEmail(email: string, firstName: string, 
     </ul>
     <p style="font-size: 12px; color: #666; margin-top: 16px;">You're receiving this because you have an account with ${b.name}. Sign in to your account to manage your email preferences.</p>
   `, org);
-  await sendEmail(email, subject, html, b.name);
+  await sendEmail(email, subject, html, b.name, logCtx);
 }
 
 export async function sendGroupSessionJoinConfirmation(

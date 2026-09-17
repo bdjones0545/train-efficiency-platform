@@ -16247,7 +16247,15 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // Public: submit lead capture form
-  app.post("/api/public/lead-capture/:orgSlug/:programSlug/submit", async (req, res) => {
+  //
+  // Unauthenticated, and every POST used to insert a submission, send three
+  // emails (org admin, the caller-supplied applicant address, a high-intent
+  // alert), call OpenAI and enrol a 3-step nurture sequence. Two controls now
+  // bound that: an IP rate limit, and a (program, normalized email) duplicate
+  // window so a repeat POST returns the existing submission instead of relaying
+  // more mail. See server/book-funnel-routes.ts POST /api/book-funnel/leads for
+  // the same pattern.
+  app.post("/api/public/lead-capture/:orgSlug/:programSlug/submit", publicRateLimiter(10, 10 * 60_000, "lead-capture-submit"), async (req, res) => {
     try {
       const org = await storage.getOrganizationBySlug(req.params.orgSlug);
       if (!org) return res.status(404).json({ message: "Organization not found" });
@@ -16294,9 +16302,57 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
       const { db } = await import("./db");
       const { leadCaptureSubmissions, leadCaptureAbandoned } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { eq, sql: sqlTag } = await import("drizzle-orm");
+      const { findRecentSubmission, normalizeIntakeEmail, DEDUP_WINDOW_HOURS } = await import("./lib/public-intake-dedup");
+      const { initialSequenceStatus } = await import("./lib/automation-sends");
+
+      // ── Duplicate window ─────────────────────────────────────────────────
+      // Same program, same email, inside 24h → no second row, no second
+      // applicant email, no second sequence. 200 with the existing id, so a
+      // double-submitting athlete still sees success.
+      const normalizedEmail = normalizeIntakeEmail(email);
+      const duplicate = await findRecentSubmission(
+        db as any,
+        { orgId: org.id, programId: program.id, email: normalizedEmail },
+        sqlTag,
+      ).catch((err: any) => {
+        // Fail open on a lookup error — a broken dedup query must not drop leads.
+        console.error("[LeadCapture] duplicate lookup failed:", err?.message || err);
+        return null;
+      });
+
+      if (duplicate?.id) {
+        console.log(`[LeadCapture] Duplicate submit within ${DEDUP_WINDOW_HOURS}h for ${normalizedEmail} @ ${program.slug} — returning existing submission ${duplicate.id}`);
+        let dupBookingUrl: string | null = null;
+        let dupBookingType = "none";
+        try {
+          const { leadCapturePrograms: lcpDup } = await import("@shared/schema");
+          const [lcDupRow] = await db.select({ bookingUrl: lcpDup.bookingUrl, bookingType: lcpDup.bookingType })
+            .from(lcpDup).where(eq(lcpDup.programId, program.id)).limit(1);
+          dupBookingUrl = lcDupRow?.bookingUrl ?? null;
+          dupBookingType = lcDupRow?.bookingType ?? "none";
+        } catch (_) {}
+        return res.status(200).json({
+          success: true,
+          duplicate: true,
+          submissionId: duplicate.id,
+          orgSlug: org.slug,
+          orgName: org.name,
+          orgId: org.id,
+          programId: program.id,
+          programName: program.name,
+          athleteName,
+          email,
+          bookingUrl: dupBookingUrl,
+          bookingType: dupBookingType,
+          emailStatus: { admin: "already_sent", applicant: "already_sent" },
+        });
+      }
 
       const [submission] = await db.insert(leadCaptureSubmissions).values({
+        // Nurture enrolment is automation: with the kill-switch on, the lead is
+        // still captured in full, but in a state the sequence cron never selects.
+        sequenceStatus: initialSequenceStatus(),
         orgId: org.id,
         programId: program.id,
         athleteName,
@@ -17288,11 +17344,13 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       const coachName = owner?.firstName ? `${owner.firstName} ${owner.lastName || ""}`.trim() : "Coach";
       const step = req.body.step || "followup_24hr";
       const { sendSubmissionFollowUp } = await import("./lead-capture-sequences");
-      const sent = await sendSubmissionFollowUp({ submissionId: sub.id, step, orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName });
+      // Returns "sent" | "failed" | "skipped" — "skipped" is the kill-switch or an opt-out.
+      const outcome = await sendSubmissionFollowUp({ submissionId: sub.id, step, orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName });
+      const sent = outcome === "sent";
       if (sent) {
         await db.update(leadCaptureSubmissions).set({ lastFollowUpAt: new Date(), followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
       }
-      res.json({ success: sent });
+      res.json({ success: sent, outcome });
     } catch (error) {
       res.status(500).json({ message: "Failed to send follow-up" });
     }
@@ -17348,11 +17406,12 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       if (!program || !org) return res.status(404).json({ message: "Program/org not found" });
       const { sendAbandonedRecovery } = await import("./lead-capture-sequences");
       const step = req.body.step || "recovery_30min";
-      const sent = await sendAbandonedRecovery({ abandonedId: ab.id, step, orgId: ab.orgId, athleteName: ab.athleteName, email: ab.email, programName: program.name, orgName: org.name, orgSlug: org.slug, programSlug: program.slug });
+      const outcome = await sendAbandonedRecovery({ abandonedId: ab.id, step, orgId: ab.orgId, athleteName: ab.athleteName, email: ab.email, programName: program.name, orgName: org.name, orgSlug: org.slug, programSlug: program.slug });
+      const sent = outcome === "sent";
       if (sent) {
         await db.update(leadCaptureAbandoned).set({ followupSentAt: new Date(), followupCount: (ab.followupCount ?? 0) + 1 }).where(eq(leadCaptureAbandoned.id, ab.id));
       }
-      res.json({ success: sent });
+      res.json({ success: sent, outcome });
     } catch (error) {
       res.status(500).json({ message: "Failed to send recovery" });
     }

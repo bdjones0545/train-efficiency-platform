@@ -153,6 +153,7 @@
       "files": [
         "server/tests/api-request-logger.test.ts",
         "server/tests/attention-security-performance.test.ts",
+        "server/tests/automation-sends-coverage.test.ts",
         "server/tests/autonomy-trust-authorization.test.ts",
         "server/tests/composio-connected-account-ownership.test.ts",
         "server/tests/composio-generic-mutation-authority.test.ts",
@@ -172,6 +173,7 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/public-intake-abuse-controls.test.ts",
         "server/tests/revenue-summary-integrity.test.ts",
         "server/tests/secrets-and-token-hash.test.ts"
       ]
