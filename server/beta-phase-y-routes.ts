@@ -87,17 +87,17 @@ function computeParticipantScore(p: any, fb: any | null): {
 export async function registerBetaPhaseYRoutes(app: Express) {
 
   // ─── Playbooks CRUD ───────────────────────────────────────────────────────
-  app.get("/api/first10-playbooks", async (_req, res) => {
+  app.get("/api/first10-playbooks", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM first10_playbooks ORDER BY created_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch playbooks" }); }
   });
 
-  app.get("/api/first10-playbooks/templates", async (_req, res) => {
+  app.get("/api/first10-playbooks/templates", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     res.json({ types: Object.keys(PLAYBOOK_TEMPLATES), templates: PLAYBOOK_TEMPLATES });
   });
 
-  app.post("/api/first10-playbooks", async (req, res) => {
+  app.post("/api/first10-playbooks", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { template_type, participant_name, participant_id, notes } = req.body;
       const r = rows(await db.execute(sql`
@@ -109,7 +109,7 @@ export async function registerBetaPhaseYRoutes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create playbook entry" }); }
   });
 
-  app.patch("/api/first10-playbooks/:id", async (req, res) => {
+  app.patch("/api/first10-playbooks/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       const { status, sent_at, opened_at, responded_at, activated_at, notes } = req.body;
