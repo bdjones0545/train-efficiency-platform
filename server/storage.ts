@@ -501,7 +501,15 @@ export interface IStorage {
   isProspectOptedOut(orgId: string, email: string): Promise<boolean>;
   addProspectOptOut(orgId: string, email: string, reason?: string): Promise<void>;
   getProspectDashboardStats(orgId: string): Promise<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>;
-  findProspectByContactEmail(email: string): Promise<{ prospect: import("@shared/schema").TeamTrainingProspect; orgId: string } | undefined>;
+  /**
+   * Org-scoped prospect lookup by contact/decision-maker email.
+   * Prospect emails are NOT unique across organizations — a global lookup by
+   * email cannot say which tenant a message belongs to, so callers must bring
+   * an organization they have already established by other evidence.
+   */
+  findProspectByContactEmailForOrganization(orgId: string, email: string): Promise<import("@shared/schema").TeamTrainingProspect | undefined>;
+  /** Organizations that have actually SENT outreach to this address. */
+  findOrganizationIdsWithSentOutreachToEmail(email: string): Promise<string[]>;
   getOutreachDraftsByOrg(orgId: string): Promise<(import("@shared/schema").TeamTrainingOutreachDraft & { prospect?: import("@shared/schema").TeamTrainingProspect })[]>;
   getEmailPerformanceStats(orgId: string): Promise<{ sent: number; opened: number; clicked: number; replied: number; openRate: number; clickRate: number; replyRate: number; conversionRate: number; bestVariant: import("@shared/schema").EmailMessageVariant | null }>;
   getEmailMessageVariants(orgId: string): Promise<import("@shared/schema").EmailMessageVariant[]>;
@@ -3197,17 +3205,46 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.prospectId, prospectId)).orderBy(desc(teamTrainingOutreachDrafts.createdAt));
   }
 
-  async findProspectByContactEmail(email: string) {
+  async findProspectByContactEmailForOrganization(orgId: string, email: string) {
     const { teamTrainingProspects } = await import("@shared/schema");
     const lowerEmail = email.toLowerCase().trim();
     const rows = await db.select().from(teamTrainingProspects).where(
-      or(
-        sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
-        sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+      and(
+        eq(teamTrainingProspects.orgId, orgId),
+        or(
+          sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
+          sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+        ),
       )
-    );
-    if (rows.length === 0) return undefined;
-    return { prospect: rows[0], orgId: rows[0].orgId };
+    ).orderBy(desc(teamTrainingProspects.lastContactedAt), desc(teamTrainingProspects.createdAt));
+    return rows[0] || undefined;
+  }
+
+  async findOrganizationIdsWithSentOutreachToEmail(email: string): Promise<string[]> {
+    const { teamTrainingProspects, teamTrainingOutreachDrafts } = await import("@shared/schema");
+    const lowerEmail = email.toLowerCase().trim();
+    const rows = await db
+      .select({ orgId: teamTrainingOutreachDrafts.orgId })
+      .from(teamTrainingOutreachDrafts)
+      .innerJoin(
+        teamTrainingProspects,
+        and(
+          eq(teamTrainingProspects.id, teamTrainingOutreachDrafts.prospectId),
+          // A draft may only speak for the org that owns the prospect.
+          eq(teamTrainingProspects.orgId, teamTrainingOutreachDrafts.orgId),
+        ),
+      )
+      .where(
+        and(
+          isNotNull(teamTrainingOutreachDrafts.sentAt),
+          or(
+            sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
+            sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+          ),
+        ),
+      )
+      .groupBy(teamTrainingOutreachDrafts.orgId);
+    return rows.map((r) => r.orgId).filter((id): id is string => typeof id === "string" && id.length > 0);
   }
 
   async getOutreachDraftsByOrg(orgId: string) {
