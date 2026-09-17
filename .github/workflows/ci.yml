@@ -87,3 +87,98 @@ jobs:
         # nothing — which is what happened on the first run. The explicit path
         # fails loudly instead, and matches the repo's own `check` script.
         run: node ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.client.json
+
+  db-tests:
+    name: db integration tests
+    # The `db` suite is the only one whose tenant-isolation tests execute real
+    # code against a real PostgreSQL. `npm test` and `npm run test:security`
+    # are mostly source-inspection tests: in a mutation check on 2026-09-16,
+    # three of four deliberate security breaks passed both of them. This job
+    # is the behavioural gate they cannot be.
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: te_test
+        ports:
+          - 5432:5432
+        # Wait for the server to accept connections before the steps start;
+        # the container reports "started" well before postgres is listening.
+        options: >-
+          --health-cmd "pg_isready -U postgres -d te_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+
+    env:
+      # The runner maps this to DATABASE_URL for the test process and refuses
+      # to run the suite without it, so a missing service fails loudly.
+      TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/te_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Node 20 matches production. .replit declares nodejs-20, so a green run
+      # on a newer major would not be evidence about the deployed runtime.
+      # Keep this on the 20 line rather than an exact patch: vite requires
+      # ^20.19.0 and connect-pg-simple ^20.9.0, so a lower 20.x will not install.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # npm 10.9.8, which ships with Node 20, dies on this dependency tree with
+      # "Exit handler never called" and then exits 0, leaving packages missing.
+      # It did that on three separate runs here, omitting openai, @octokit/rest,
+      # composio-core and @anthropic-ai/claude-code. Pin a newer npm rather than
+      # retrying a broken one.
+      - name: Use an npm that can install this tree
+        run: npm install -g npm@11
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      - name: Verify the install actually produced what the steps need
+        # npm has twice reported success here with an incomplete node_modules:
+        # once dying with "Exit handler never called", once silently omitting
+        # `openai`, which 33 server files import. Checking two binaries was not
+        # enough — check that every declared dependency actually landed, and
+        # retry once before giving up, because the failure is intermittent.
+        run: |
+          check() {
+            node -e '
+              const fs = require("fs");
+              const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+              const declared = Object.keys({ ...pkg.dependencies, ...pkg.devDependencies });
+              const missing = declared.filter(
+                (name) => !fs.existsSync("node_modules/" + name + "/package.json"),
+              );
+              if (missing.length) {
+                console.error("missing from node_modules: " + missing.join(", "));
+                process.exit(1);
+              }
+              console.log("install verified: " + declared.length + " declared dependencies present");
+            '
+          }
+          if ! check; then
+            echo "::warning::npm ci reported success with an incomplete install — retrying once"
+            npm ci --no-audit --no-fund
+            check || { echo "::error::install still incomplete after a retry"; exit 1; }
+          fi
+
+      - name: Build the test schema
+        # `script/migrate.ts` validates against a baseline and cannot bootstrap
+        # an empty database, so build the schema straight from shared/schema.ts
+        # the same way the manifest note says it was verified. Never `npx`:
+        # the explicit path fails loudly if drizzle-kit did not install.
+        run: DATABASE_URL="$TEST_DATABASE_URL" node ./node_modules/drizzle-kit/bin.cjs push --force
+
+      - name: DB integration tests
+        # config/test-suites.json marks the suite serial: each file builds the
+        # tables it needs and would clobber the others' setup if run in parallel.
+        run: npm run test:db
