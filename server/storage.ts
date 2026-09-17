@@ -185,6 +185,9 @@ export interface IStorage {
   createCoachProfile(profile: InsertCoachProfile): Promise<CoachProfile>;
   updateCoachProfile(id: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined>;
   deleteCoachProfile(id: string): Promise<boolean>;
+  getCoachProfileForOrganization(id: string, orgId: string): Promise<(CoachProfile & { user: User }) | undefined>;
+  updateCoachProfileForOrganization(id: string, orgId: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined>;
+  deleteCoachProfileForOrganization(id: string, orgId: string): Promise<boolean>;
 
   getServices(): Promise<Service[]>;
   getServicesByOrganization(orgId: string): Promise<Service[]>;
@@ -820,6 +823,54 @@ export class DatabaseStorage implements IStorage {
     await db.delete(bookings).where(eq(bookings.coachId, id));
     await db.delete(coachProfiles).where(eq(coachProfiles.id, id));
     return true;
+  }
+
+  // ── Org-scoped coach profile access ─────────────────────────────────────────
+  // The org predicate lives in the SQL so a coach id from another tenant matches
+  // zero rows: no read, no write, no delete.
+
+  async getCoachProfileForOrganization(id: string, orgId: string): Promise<(CoachProfile & { user: User }) | undefined> {
+    const [result] = await db
+      .select()
+      .from(coachProfiles)
+      .innerJoin(users, eq(coachProfiles.userId, users.id))
+      .where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)));
+    if (!result) return undefined;
+    return { ...result.coach_profiles, user: result.users };
+  }
+
+  async updateCoachProfileForOrganization(id: string, orgId: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined> {
+    // Never let a scoped update re-home the profile or change its identity.
+    const { id: _id, userId: _userId, organizationId: _organizationId, ...safeData } = data;
+    if (Object.keys(safeData).length === 0) return this.getCoachProfileForOrganization(id, orgId);
+    const [updated] = await db
+      .update(coachProfiles)
+      .set(safeData)
+      .where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteCoachProfileForOrganization(id: string, orgId: string): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const [owned] = await tx
+        .select({ id: coachProfiles.id })
+        .from(coachProfiles)
+        .where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)))
+        .for("update");
+      if (!owned) return false;
+      await tx.delete(availabilityBlocks).where(eq(availabilityBlocks.coachId, id));
+      const coachBookings = await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.coachId, id));
+      for (const b of coachBookings) {
+        await tx.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, b.id));
+        await tx.delete(redemptions).where(eq(redemptions.bookingId, b.id));
+      }
+      await tx.delete(redemptions).where(eq(redemptions.coachId, id));
+      await tx.delete(cashouts).where(eq(cashouts.coachId, id));
+      await tx.delete(bookings).where(eq(bookings.coachId, id));
+      await tx.delete(coachProfiles).where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)));
+      return true;
+    });
   }
 
   async getServices(): Promise<Service[]> {
