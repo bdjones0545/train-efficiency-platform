@@ -1468,7 +1468,12 @@ export const connectorTokens = pgTable("connector_tokens", {
   email: varchar("email"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  // One token row per org per connector. server/connectors/google-calendar.ts
+  // stores OAuth tokens with ON CONFLICT (org_id, connector); without this
+  // index Postgres raises 42P10 on every connect and no token is ever stored.
+  orgConnectorUnique: uniqueIndex("connector_tokens_org_connector_unique").on(t.orgId, t.connector),
+}));
 
 export type ConnectorToken = typeof connectorTokens.$inferSelect;
 
