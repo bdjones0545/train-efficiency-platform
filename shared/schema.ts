@@ -1468,7 +1468,11 @@ export const connectorTokens = pgTable("connector_tokens", {
   email: varchar("email"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  // One token row per (org, connector). Target of the connector's
+  // `ON CONFLICT (org_id, connector)` upsert; created by migration 0021.
+  orgConnectorUnique: uniqueIndex("connector_tokens_org_connector_unique").on(t.orgId, t.connector),
+}));
 
 export type ConnectorToken = typeof connectorTokens.$inferSelect;
 
