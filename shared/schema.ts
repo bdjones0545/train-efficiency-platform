@@ -617,6 +617,11 @@ export const agentActions = pgTable("agent_actions", {
   relatedSlot: jsonb("related_slot"),
   messageContent: jsonb("message_content"),
   status: agentActionStatusEnum("status").default("pending"),
+  // Delivery marker. Only a real provider send sets this. status='sent' alone is
+  // not proof of delivery (historic auto-pilot rows were written 'sent' with no
+  // provider call), so anything that must reason about "a message actually left"
+  // reads sentAt, not status.
+  sentAt: timestamp("sent_at"),
   bookingId: varchar("booking_id"),
   outcomeValueCents: integer("outcome_value_cents"),
   followUpAt: timestamp("follow_up_at"),
