@@ -442,9 +442,14 @@ export default function AdminAthleteIntelligencePage() {
 
   const [selectedAthleteId, setSelectedAthleteId] = useState<string>("");
 
-  // Fetch all athletes
+  // Fetch all athletes.
+  // orgId stays in the key so the list is cached per organization, but the
+  // server derives the org from the session and registers no :orgId segment —
+  // the default queryFn would request ".../athletes/<orgId>" and 404, which the
+  // page rendered as "No athletes found".
   const { data: athletesData, isLoading: athletesLoading } = useQuery<any>({
     queryKey: ["/api/admin/athlete-intelligence/athletes", orgId],
+    queryFn: () => fetchJson("/api/admin/athlete-intelligence/athletes"),
     enabled: !!orgId,
     refetchInterval: 60_000,
   });
