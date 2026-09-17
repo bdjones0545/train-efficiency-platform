@@ -164,6 +164,7 @@
         "server/tests/cross-agent-coordination-identity.test.ts",
         "server/tests/email-audit-authorization.test.ts",
         "server/tests/email-notification-authorization.test.ts",
+        "server/tests/kevin-action-api-replay.test.ts",
         "server/tests/org-isolation-helpers.test.ts",
         "server/tests/phase1b-authz.test.ts",
         "server/tests/phase1c-org-isolation.test.ts",

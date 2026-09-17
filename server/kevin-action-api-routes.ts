@@ -4,11 +4,19 @@
  * Versioned internal endpoints Kevin's virtual computer calls into.
  * Base path: /api/internal/kevin/v1/
  *
- * Authentication: requireInternalServiceToken (TE_INTERNAL_SERVICE_TOKEN bearer)
- * Organization: NEVER trust org_id from Kevin payload — always validate server-side
+ * Authentication: requireInternalServiceToken (TE_INTERNAL_SERVICE_TOKEN bearer,
+ *   or TE_INTERNAL_SERVICE_TOKEN_NEW during rotation)
+ * Organization: the bearer token is global and carries no org claim. org_id comes
+ *   from the request, is checked against KEVIN_ALLOWED_ORG_IDS when that is set
+ *   (403 otherwise), and must exist server-side. Per-org credentials are the
+ *   real fix and are tracked separately.
  * Role claims: verified against DB user_profiles, not from Kevin
  *
- * Replay protection: X-Kevin-Timestamp header must be within ±5 minutes
+ * Replay protection: X-Kevin-Timestamp + X-Kevin-Nonce, REQUIRED in production on
+ *   every mutating request. Timestamp within KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS
+ *   (default 300); nonces claimed in PostgreSQL so a replay to another autoscale
+ *   instance is rejected too. See server/middleware/kevin-action-api-guards.ts.
+ * Rate limiting: 120 req/min per token, per instance (defence in depth).
  * Idempotency: all POST endpoints check idempotency keys
  *
  * Routes:
@@ -28,8 +36,16 @@
  *   GET    /api/internal/kevin/v1/navigate/:intent
  */
 
-import type { Express, Request, Response, NextFunction } from "express";
+import type { Express, Request, Response } from "express";
 import { requireInternalServiceToken } from "./middleware/require-internal-service-token";
+import {
+  kevinActionRateLimiter,
+  kevinActionReplayGuard,
+  kevinOrgAllowlistGuard,
+  isOrgAllowedForActionApi,
+  warnIfOrgAllowlistUnset,
+  getAllowedSkewSeconds,
+} from "./middleware/kevin-action-api-guards";
 import {
   createIntent,
   getIntentById,
@@ -82,57 +98,6 @@ void ensureKevinOutcomesTable().catch(() => {});
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-const REPLAY_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-
-/**
- * In-memory nonce store for duplicate-request detection.
- * Nonces expire automatically once their timestamp window closes.
- * Map<nonce, expiresAt>
- */
-const _seenNonces = new Map<string, number>();
-const _NONCE_CLEANUP_INTERVAL = 60_000; // clean up every 60s
-setInterval(() => {
-  const now = Date.now();
-  for (const [nonce, expiresAt] of _seenNonces) {
-    if (now > expiresAt) _seenNonces.delete(nonce);
-  }
-}, _NONCE_CLEANUP_INTERVAL).unref();
-
-/**
- * Validate X-Kevin-Timestamp header to prevent replay attacks.
- * Also enforces nonce uniqueness within the replay window.
- */
-function replayGuard(req: Request, res: Response, next: NextFunction): void {
-  const tsHeader = req.headers["x-kevin-timestamp"];
-  if (!tsHeader) {
-    next(); // optional in development — production should enforce
-    return;
-  }
-  const ts = parseInt(String(tsHeader), 10);
-  if (isNaN(ts) || Math.abs(Date.now() - ts) > REPLAY_WINDOW_MS) {
-    res.status(400).json({
-      message: "Request timestamp out of allowed window",
-      code: "REPLAY_REJECTED",
-    });
-    return;
-  }
-
-  // Nonce deduplication — reject duplicate nonces within the replay window
-  const nonce = req.headers["x-kevin-nonce"] as string | undefined;
-  if (nonce) {
-    if (_seenNonces.has(nonce)) {
-      res.status(400).json({
-        message: "Duplicate nonce — request already processed",
-        code: "REPLAY_REJECTED",
-      });
-      return;
-    }
-    _seenNonces.set(nonce, ts + REPLAY_WINDOW_MS);
-  }
-
-  next();
-}
-
 function extractRows(result: unknown): any[] {
   return Array.isArray((result as any)?.rows)
     ? (result as any).rows
@@ -142,14 +107,19 @@ function extractRows(result: unknown): any[] {
 }
 
 async function resolveOrgIdFromRequest(req: Request): Promise<string | null> {
-  // NEVER trust org_id from Kevin's body — always use the authenticated context
-  // For internal service token auth, org_id must come from a validated path param
-  // or query param, then we verify the org exists server-side.
+  // The internal service token is GLOBAL: it carries no organization claim, so
+  // the org can only come from the request. Per-org credentials are the real
+  // fix and are deliberately out of scope here (see docs/kevin-integration.md
+  // §"Organization scoping"). What we can do is bound which orgs the one token
+  // may name: kevinOrgAllowlistGuard rejects anything outside KEVIN_ALLOWED_ORG_IDS
+  // with 403 before a handler runs, and the check below repeats it so a route
+  // registered without that middleware still cannot resolve a foreign org.
   const rawOrgId =
     (req.body?.org_id as string | undefined) ??
     (req.query.org_id as string | undefined) ??
     (req.headers["x-org-id"] as string | undefined);
   if (!rawOrgId) return null;
+  if (!isOrgAllowedForActionApi(String(rawOrgId))) return null;
 
   // Verify org exists
   try {
@@ -167,7 +137,13 @@ async function resolveOrgIdFromRequest(req: Request): Promise<string | null> {
 
 export async function registerKevinActionApiRoutes(app: Express): Promise<void> {
   const base = "/api/internal/kevin/v1";
-  const guard = [requireInternalServiceToken, replayGuard];
+  warnIfOrgAllowlistUnset();
+  const guard = [
+    requireInternalServiceToken,
+    kevinActionRateLimiter,
+    kevinActionReplayGuard,
+    kevinOrgAllowlistGuard,
+  ];
 
   // ── Intents ────────────────────────────────────────────────────────────────
 
@@ -815,9 +791,10 @@ export async function registerKevinActionApiRoutes(app: Express): Promise<void> 
       replay_protection: {
         header: "X-Kevin-Timestamp",
         format: "unix_milliseconds",
-        window_ms: 300000,
+        window_seconds: getAllowedSkewSeconds(),
         nonce_header: "X-Kevin-Nonce",
-        note: "Timestamp must be within ±5 minutes of server time.",
+        required: "Both headers are REQUIRED on POST/PUT/PATCH/DELETE in production.",
+        note: "Timestamp must be within the allowed skew of server time; each nonce may be used once (409 on reuse).",
       },
       correlation: {
         header: "X-Correlation-ID",
