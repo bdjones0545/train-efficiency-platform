@@ -17,26 +17,27 @@ import {
   workoutCompletionLogs,
   workoutReadinessCheckins,
   athleteRiskFlags,
-  orgUsers,
 } from "@shared/schema";
 import { isAuthenticated } from "./replit_integrations/auth";
+import { requireRole } from "./lib/require-role";
+import { resolveOrgIdOrNull } from "./lib/org-visibility";
 
+/**
+ * Trusted org for the caller — never client-supplied. The previous version
+ * selected org_users.org_id / org_users.user_id, columns that table does not
+ * have, so the query threw, was swallowed, and every route answered 401.
+ */
 async function getAdminOrgId(req: any): Promise<string | null> {
-  const userId = req.user?.claims?.sub ?? req.user?.id;
-  if (!userId) return null;
-  const [row] = await db.select({ orgId: orgUsers.orgId })
-    .from(orgUsers)
-    .where(eq(orgUsers.userId, userId))
-    .limit(1)
-    .catch(() => []);
-  // Trusted org from the authenticated user's org membership only — never client-supplied.
-  return row?.orgId ?? null;
+  return resolveOrgIdOrNull(req);
 }
+
+/** These routes read and overwrite athlete profiles and trust levels: staff only. */
+const coachOrAdmin = requireRole("COACH", "ADMIN");
 
 export async function registerAthleteIntelligenceRoutes(app: Express) {
   // ── GET /api/admin/athlete-intelligence/athletes ──────────────────────────
   // Overview: all athletes with memory summaries and risk badges.
-  app.get("/api/admin/athlete-intelligence/athletes", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/athlete-intelligence/athletes", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -100,7 +101,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
   });
 
   // ── GET /api/admin/athlete-intelligence/profile/:athleteUserId ────────────
-  app.get("/api/admin/athlete-intelligence/profile/:athleteUserId", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/athlete-intelligence/profile/:athleteUserId", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -127,7 +128,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
 
   // ── PUT /api/admin/athlete-intelligence/profile/:athleteUserId ────────────
   // Manual coach override of any memory profile field.
-  app.put("/api/admin/athlete-intelligence/profile/:athleteUserId", isAuthenticated, async (req, res) => {
+  app.put("/api/admin/athlete-intelligence/profile/:athleteUserId", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -158,7 +159,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
 
   // ── POST /api/admin/athlete-intelligence/synthesize/:athleteUserId ─────────
   // Trigger full AI synthesis for one athlete.
-  app.post("/api/admin/athlete-intelligence/synthesize/:athleteUserId", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/athlete-intelligence/synthesize/:athleteUserId", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -174,7 +175,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
 
   // ── POST /api/admin/athlete-intelligence/synthesize-org ───────────────────
   // Trigger synthesis for all active athletes in the org.
-  app.post("/api/admin/athlete-intelligence/synthesize-org", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/athlete-intelligence/synthesize-org", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -188,7 +189,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
   });
 
   // ── GET /api/admin/athlete-intelligence/effectiveness/:athleteUserId ───────
-  app.get("/api/admin/athlete-intelligence/effectiveness/:athleteUserId", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/athlete-intelligence/effectiveness/:athleteUserId", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -210,7 +211,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
   });
 
   // ── GET /api/admin/athlete-intelligence/session-outcomes/:athleteUserId ────
-  app.get("/api/admin/athlete-intelligence/session-outcomes/:athleteUserId", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/athlete-intelligence/session-outcomes/:athleteUserId", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -235,7 +236,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
 
   // ── POST /api/admin/athlete-intelligence/analyze-notes/:athleteUserId ──────
   // Trigger coach note AI analysis for one athlete.
-  app.post("/api/admin/athlete-intelligence/analyze-notes/:athleteUserId", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/athlete-intelligence/analyze-notes/:athleteUserId", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -256,7 +257,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
 
   // ── PUT /api/admin/athlete-intelligence/trust-level/:athleteUserId ─────────
   // Coach adjusts athlete autonomy trust level (0-3).
-  app.put("/api/admin/athlete-intelligence/trust-level/:athleteUserId", isAuthenticated, async (req, res) => {
+  app.put("/api/admin/athlete-intelligence/trust-level/:athleteUserId", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -291,7 +292,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
   });
 
   // ── GET /api/admin/athlete-intelligence/adaptation-history/:athleteUserId ──
-  app.get("/api/admin/athlete-intelligence/adaptation-history/:athleteUserId", isAuthenticated, async (req, res) => {
+  app.get("/api/admin/athlete-intelligence/adaptation-history/:athleteUserId", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
@@ -315,7 +316,7 @@ export async function registerAthleteIntelligenceRoutes(app: Express) {
 
   // ── POST /api/admin/athlete-intelligence/session-outcome ──────────────────
   // Record a session outcome (called from workout execution routes).
-  app.post("/api/admin/athlete-intelligence/session-outcome", isAuthenticated, async (req, res) => {
+  app.post("/api/admin/athlete-intelligence/session-outcome", isAuthenticated, coachOrAdmin, async (req, res) => {
     try {
       const orgId = await getAdminOrgId(req);
       if (!orgId) return res.status(401).json({ message: "Unauthorized" });
