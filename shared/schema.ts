@@ -4511,8 +4511,17 @@ export const agentRevenueEvents = pgTable("agent_revenue_events", {
   royaltyAmount: doublePrecision("royalty_amount").default(0),
   attribution: jsonb("attribution"),
   period: text("period"),
+  currency: text("currency").default("usd"),
+  // Stripe event/session id — the idempotency key for webhook-sourced rows.
+  // Nullable: rows created by internal billing jobs have no Stripe event.
+  stripeEventId: text("stripe_event_id"),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => ({
+  stripeEventUnique: uniqueIndex("agent_revenue_events_stripe_event_id_unique")
+    .on(t.stripeEventId)
+    .where(sql`${t.stripeEventId} IS NOT NULL`),
+}));
 export type AgentRevenueEvent = typeof agentRevenueEvents.$inferSelect;
 
 // ─── Developer Payouts ────────────────────────────────────────────────────────
@@ -4685,6 +4694,10 @@ export const royaltyDistributions = pgTable("royalty_distributions", {
   developerShareRate: doublePrecision("developer_share_rate").default(0.30),
   payoutStatus: text("payout_status").default("pending"), // pending | processing | paid | cancelled
   period: text("period"),            // "2026-05"
+  // Per-distribution royalty terms as applied at the time of the distribution.
+  royaltyRate: doublePrecision("royalty_rate"),
+  royaltyAmountCents: integer("royalty_amount_cents"),
+  status: text("status").default("pending"), // pending | processing | paid | cancelled
   createdAt: timestamp("created_at").defaultNow(),
 });
 export type RoyaltyDistribution = typeof royaltyDistributions.$inferSelect;

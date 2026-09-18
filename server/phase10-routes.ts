@@ -381,7 +381,7 @@ export async function registerPhase10Routes(app: Express) {
     }
   });
 
-  app.get("/api/feedback", async (req, res) => {
+  app.get("/api/feedback", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { inAppFeedback } = await import("@shared/schema");
       const { status, category, severity, limit } = req.query as Record<string, string>;
@@ -988,22 +988,47 @@ export async function registerPhase10Routes(app: Express) {
 
   // ─── Stripe Revenue Integration (Part 4 foundation) ──────────────────────────
 
-  app.post("/api/stripe/marketplace-webhook", async (req, res) => {
+  // Signature verification requires the EXACT bytes Stripe signed. This route is
+  // registered after express.json(), so req.body is already parsed and
+  // re-serializing it would not reproduce those bytes — server/index.ts captures
+  // the raw buffer via express.json({ verify }) into req.rawBody, and that is
+  // what constructEvent() must be given.
+  //
+  // Fails CLOSED: with no STRIPE_MARKETPLACE_WEBHOOK_SECRET configured the
+  // endpoint returns 503 rather than accepting unsigned events, matching
+  // require-internal-service-token.ts and the main Stripe webhook.
+  app.post("/api/stripe/marketplace-webhook", async (req: any, res) => {
     try {
-      const { getUncachableStripeClient } = await import("./stripeClient");
-      const stripe = getUncachableStripeClient();
-      const sig = req.headers["stripe-signature"] as string;
       const webhookSecret = process.env.STRIPE_MARKETPLACE_WEBHOOK_SECRET;
+      if (!webhookSecret) {
+        console.error("[marketplace-webhook] STRIPE_MARKETPLACE_WEBHOOK_SECRET is not configured — rejecting event");
+        return res.status(503).json({
+          message: "Marketplace webhook unavailable",
+          code: "WEBHOOK_SECRET_NOT_CONFIGURED",
+        });
+      }
+
+      const sigHeader = req.headers["stripe-signature"];
+      const sig = Array.isArray(sigHeader) ? sigHeader[0] : sigHeader;
+      if (!sig) {
+        return res.status(400).json({ message: "Missing stripe-signature" });
+      }
+
+      const rawBody = req.rawBody;
+      if (!Buffer.isBuffer(rawBody)) {
+        console.error("[marketplace-webhook] raw request body unavailable — cannot verify signature");
+        return res.status(400).json({ message: "Webhook signature invalid" });
+      }
+
+      const { getUncachableStripeClient } = await import("./stripeClient");
+      const stripe = await getUncachableStripeClient();
 
       let event: any;
-      if (webhookSecret && sig) {
-        try {
-          event = stripe.webhooks.constructEvent(req.body, sig, webhookSecret);
-        } catch {
-          return res.status(400).json({ message: "Webhook signature invalid" });
-        }
-      } else {
-        event = req.body; // dev mode: accept raw event
+      try {
+        event = stripe.webhooks.constructEvent(rawBody, sig, webhookSecret);
+      } catch (err: any) {
+        console.warn("[marketplace-webhook] signature verification failed:", err?.message);
+        return res.status(400).json({ message: "Webhook signature invalid" });
       }
 
       const { agentRevenueEvents, royaltyDistributions } = await import("@shared/schema");
@@ -1015,28 +1040,35 @@ export async function registerPhase10Routes(app: Express) {
         const amount = (session.amount_total ?? 0) / 100;
 
         if (agentId && orgId && amount > 0) {
-          await db.insert(agentRevenueEvents).values({
+          // stripeEventId carries the idempotency: a redelivered event is a no-op.
+          const inserted = await db.insert(agentRevenueEvents).values({
             agentId,
             orgId,
             eventType: "install_purchase",
             amount,
             currency: session.currency ?? "usd",
-            stripeEventId: session.id,
-            metadata: { sessionId: session.id, customerId: session.customer },
-          }).catch(() => {});
+            stripeEventId: event.id,
+            metadata: { sessionId: session.id, customerId: session.customer, stripeEventType: event.type },
+          })
+            .onConflictDoNothing({
+              target: agentRevenueEvents.stripeEventId,
+              where: sql`${agentRevenueEvents.stripeEventId} IS NOT NULL`,
+            })
+            .returning({ id: agentRevenueEvents.id });
+          if (inserted.length === 0) {
+            console.info(`[marketplace-webhook] duplicate event ${event.id} ignored`);
+          }
         }
       }
 
       if (event.type === "invoice.paid") {
         const invoice = event.data.object;
         const agentId = invoice.metadata?.agentId;
-        const orgId = invoice.metadata?.orgId;
         const developerId = invoice.metadata?.developerId;
         const amount = (invoice.amount_paid ?? 0) / 100;
 
         if (agentId && developerId && amount > 0) {
           const royaltyRate = 0.30;
-          const royaltyAmount = amount * royaltyRate;
           const period = new Date().toISOString().substring(0, 7);
           await db.insert(royaltyDistributions).values({
             developerId,
@@ -1045,9 +1077,9 @@ export async function registerPhase10Routes(app: Express) {
             period,
             grossRevenue: amount,
             royaltyRate,
-            royaltyAmount,
+            royaltyAmountCents: Math.round(amount * royaltyRate * 100),
             status: "pending",
-          }).catch(() => {});
+          });
         }
       }
 

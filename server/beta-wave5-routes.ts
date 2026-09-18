@@ -136,7 +136,13 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 3: Developer Streak CRUD ────────────────────────────────────────
-  app.get("/api/developer-streaks", async (_req, res) => {
+  // NOTE: the `developer_streaks` and `org_streaks` tables these five routes
+  // query exist nowhere — not in shared/schema.ts, not in migrations/, and not
+  // in any runtime DDL — so every one of them currently returns 500. They are
+  // gated here alongside the rest of the platform-operations surface so that a
+  // later product decision (implement the tables, or delete the routes) is not
+  // blocked by an anonymous surface sitting in production in the meantime.
+  app.get("/api/developer-streaks", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const streaks = rows(await db.execute(sql`
         SELECT ds.*, dra.lifetime_earned,
@@ -158,7 +164,7 @@ export async function registerBetaWave5Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to fetch developer streaks" }); }
   });
 
-  app.post("/api/developer-streaks", async (req, res) => {
+  app.post("/api/developer-streaks", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { developer_id } = req.body;
       if (!developer_id) return res.status(400).json({ error: "developer_id required" });
@@ -173,7 +179,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // ─── PART 4: Org Streak CRUD ───────────────────────────────────────────────
-  app.get("/api/org-streaks", async (_req, res) => {
+  app.get("/api/org-streaks", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const streaks = rows(await db.execute(sql`
         SELECT os2.*, COUNT(DISTINCT oia.id) AS real_installs, COUNT(DISTINCT ar.id) AS real_reviews
@@ -187,7 +193,7 @@ export async function registerBetaWave5Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to fetch org streaks" }); }
   });
 
-  app.post("/api/org-streaks", async (req, res) => {
+  app.post("/api/org-streaks", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { org_id } = req.body;
       if (!org_id) return res.status(400).json({ error: "org_id required" });
@@ -202,7 +208,7 @@ export async function registerBetaWave5Routes(app: Express) {
   });
 
   // Auto-sync streaks from real data
-  app.post("/api/streaks/sync", async (_req, res) => {
+  app.post("/api/streaks/sync", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       // Upsert developer streaks from agent_templates
       await db.execute(sql`

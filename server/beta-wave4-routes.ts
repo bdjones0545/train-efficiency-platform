@@ -69,12 +69,12 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 2: Developer Campaigns CRUD ─────────────────────────────────────
-  app.get("/api/campaigns/developer", async (_req, res) => {
+  app.get("/api/campaigns/developer", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try { res.json(rows(await db.execute(sql`SELECT * FROM developer_campaigns ORDER BY created_at DESC`))); }
     catch (e) { res.status(500).json({ error: "Failed to fetch developer campaigns" }); }
   });
 
-  app.post("/api/campaigns/developer", async (req, res) => {
+  app.post("/api/campaigns/developer", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { name, audience, channel, messages_sent } = req.body;
       if (!name) return res.status(400).json({ error: "name required" });
@@ -87,7 +87,7 @@ export async function registerBetaWave4Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create developer campaign" }); }
   });
 
-  app.patch("/api/campaigns/developer/:id", async (req, res) => {
+  app.patch("/api/campaigns/developer/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       const { responses, registrations, agents_published, installs_generated, revenue_generated, status } = req.body;
@@ -106,12 +106,12 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 3: Org Campaigns CRUD ───────────────────────────────────────────
-  app.get("/api/campaigns/org", async (_req, res) => {
+  app.get("/api/campaigns/org", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try { res.json(rows(await db.execute(sql`SELECT * FROM org_campaigns ORDER BY created_at DESC`))); }
     catch (e) { res.status(500).json({ error: "Failed to fetch org campaigns" }); }
   });
 
-  app.post("/api/campaigns/org", async (req, res) => {
+  app.post("/api/campaigns/org", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { name, audience, channel, invitations } = req.body;
       if (!name) return res.status(400).json({ error: "name required" });
@@ -124,7 +124,7 @@ export async function registerBetaWave4Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create org campaign" }); }
   });
 
-  app.patch("/api/campaigns/org/:id", async (req, res) => {
+  app.patch("/api/campaigns/org/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       const { activations, installs, executions, reviews, revenue_impact, status } = req.body;
@@ -143,12 +143,12 @@ export async function registerBetaWave4Routes(app: Express) {
   });
 
   // ─── PART 4: Publisher Rewards CRUD ───────────────────────────────────────
-  app.get("/api/publisher-rewards", async (_req, res) => {
+  app.get("/api/publisher-rewards", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try { res.json(rows(await db.execute(sql`SELECT * FROM publisher_rewards ORDER BY created_at DESC`))); }
     catch (e) { res.status(500).json({ error: "Failed to fetch publisher rewards" }); }
   });
 
-  app.post("/api/publisher-rewards", async (req, res) => {
+  app.post("/api/publisher-rewards", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { developer_id, milestone, badge_name, badge_color, agent_id } = req.body;
       if (!developer_id || !milestone) return res.status(400).json({ error: "developer_id and milestone required" });
@@ -161,7 +161,7 @@ export async function registerBetaWave4Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create publisher reward" }); }
   });
 
-  app.patch("/api/publisher-rewards/:id/reach", async (req, res) => {
+  app.patch("/api/publisher-rewards/:id/reach", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       await db.execute(sql`

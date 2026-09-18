@@ -11,6 +11,7 @@ import { toPublicParticipants } from "./lib/participant-visibility";
 import { toPublicCoaches } from "./lib/coach-visibility";
 import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
+import { phase10WriteGate } from "./lib/phase10-write-gate";
 import { requirePlatformAdminOrg, adminRepairAuth } from "./lib/platform-admin-auth";
 import { registerAdminCoachRoutes } from "./admin-coach-routes";
 import { storage, CashoutTransitionError, type RedemptionWalletDebit } from "./storage";
@@ -314,31 +315,9 @@ export async function registerRoutes(
   // ─── Phase 10: Security Hardening ─────────────────────────────────────────
   // Broad write-auth middleware for all Phase 4-9 routes that previously relied
   // solely on internal orgId checks without explicit session enforcement.
-  const PHASE10_PROTECTED_WRITE_PATHS = [
-    "/api/workforce/",
-    "/api/marketplace/runtimes/bootstrap",
-    "/api/marketplace/telemetry",
-    "/api/marketplace/trials/start",
-    "/api/marketplace/ecosystem/refresh",
-    "/api/marketplace/benchmarks/refresh",
-    "/api/marketplace/case-studies",
-    "/api/marketplace/reputation/refresh",
-    "/api/marketplace/verification/",
-    "/api/developer/register",
-    "/api/developer/submit",
-    "/api/developer/submissions",
-    "/api/developer/validate",
-    "/api/beta/",
-    "/api/feedback",
-  ];
-  app.use((req: any, res: any, next: any) => {
-    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
-    const needsAuth = PHASE10_PROTECTED_WRITE_PATHS.some(p => req.path.startsWith(p));
-    if (needsAuth && !req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    next();
-  });
+  // The path tiers and the middleware itself live in server/lib/phase10-write-gate.ts
+  // so they can be exercised directly by server/tests/phase10-write-gate.test.ts.
+  app.use(phase10WriteGate());
 
   const RESET_NEUTRAL_MSG = "If an account exists for that email, a password reset link has been sent.";
   const RESET_RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -24532,12 +24511,18 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Agent telemetry capture
-  app.post("/api/marketplace/telemetry", async (req, res) => {
+  app.post("/api/marketplace/telemetry", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
+      // orgId is bound to the caller's resolved organization — a caller may not
+      // choose which org a runtime/memory row is created for via the body.
+      const orgId = await resolveOrgIdOrThrow(req);
       const { captureExecution } = await import("./agent-telemetry-sdk");
-      await captureExecution(req.body);
+      await captureExecution({ ...(req.body ?? {}), orgId });
       res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ message: "Telemetry capture failed" }); }
+    } catch (e: any) {
+      if (handleOrgError(e, res)) return;
+      res.status(500).json({ message: "Telemetry capture failed" });
+    }
   });
 
   // Developer billing statement

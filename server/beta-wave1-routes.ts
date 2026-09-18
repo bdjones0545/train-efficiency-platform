@@ -178,7 +178,7 @@ export async function registerBetaWave1Routes(app: Express) {
   });
 
   // ─── PART 7: Developer Economics Validation ────────────────────────────────
-  app.get("/api/developer/economics", async (_req, res) => {
+  app.get("/api/developer/economics", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const devRows = rows(await db.execute(sql`
         SELECT
@@ -397,13 +397,13 @@ export async function registerBetaWave1Routes(app: Express) {
   });
 
   // ─── PART 1: Developer Onboarding Sessions ────────────────────────────────
-  app.get("/api/onboarding/developer", async (_req, res) => {
+  app.get("/api/onboarding/developer", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM developer_onboarding_sessions ORDER BY created_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch developer sessions" }); }
   });
 
-  app.post("/api/onboarding/developer", async (req, res) => {
+  app.post("/api/onboarding/developer", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { developer_id, org_id, email } = req.body;
       const r = rows(await db.execute(sql`
@@ -415,7 +415,7 @@ export async function registerBetaWave1Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create developer session" }); }
   });
 
-  app.patch("/api/onboarding/developer/:id", async (req, res) => {
+  app.patch("/api/onboarding/developer/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       const { steps_completed, completion_time, support_requests, drop_off_reason, completed } = req.body;
@@ -434,13 +434,13 @@ export async function registerBetaWave1Routes(app: Express) {
   });
 
   // ─── PART 2: Org Onboarding Sessions ──────────────────────────────────────
-  app.get("/api/onboarding/org", async (_req, res) => {
+  app.get("/api/onboarding/org", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM org_onboarding_sessions ORDER BY created_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch org sessions" }); }
   });
 
-  app.post("/api/onboarding/org", async (req, res) => {
+  app.post("/api/onboarding/org", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { org_id, org_name, role } = req.body;
       const r = rows(await db.execute(sql`
