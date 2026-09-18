@@ -101,6 +101,7 @@
         "server/tests/booking-management-authorization.test.ts",
         "server/tests/booking-participant-authorization.test.ts",
         "server/tests/booking-participant-exposure.test.ts",
+        "server/tests/client-query-key-contract.test.ts",
         "server/tests/coach-audit-authz-hardening.test.ts",
         "server/tests/coach-surface-reachability.test.ts",
         "server/tests/coach-user-management-authorization.test.ts",
@@ -137,6 +138,7 @@
         "default"
       ],
       "files": [
+        "server/tests/autopilot-phantom-sent.test.ts",
         "server/tests/github-issue-phase2a.test.ts",
         "server/tests/graceful-shutdown-reliability.test.ts",
         "server/tests/kevin-slack-eoh.test.ts",
@@ -151,6 +153,7 @@
         "default"
       ],
       "files": [
+        "server/tests/admin-intelligence-org-resolver.test.ts",
         "server/tests/api-request-logger.test.ts",
         "server/tests/attention-security-performance.test.ts",
         "server/tests/autonomy-trust-authorization.test.ts",
@@ -173,6 +176,7 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/replit-committed-secrets.test.ts",
         "server/tests/revenue-summary-integrity.test.ts",
         "server/tests/secrets-and-token-hash.test.ts"
       ]
