@@ -87,7 +87,7 @@ export async function markEventSeen(eventId: string, teamId: string): Promise<vo
     await db.execute(sql`
       INSERT INTO kevin_slack_event_dedup (event_id, team_id)
       VALUES (${eventId}, ${teamId})
-      ON CONFLICT (event_id) DO NOTHING
+      ON CONFLICT (event_id, team_id) DO NOTHING
     `);
     // Clean up expired entries opportunistically
     await db.execute(sql`
