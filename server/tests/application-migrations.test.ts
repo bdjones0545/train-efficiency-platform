@@ -74,6 +74,7 @@ test("empty database reaches the complete ordered formal schema and ledger", asy
     "0018_book_funnel_schema.sql",
     "0019_agent_outcome_attribution_schema.sql",
     "0020_agentmail_followup_schema.sql",
+    "0021_connector_tokens_org_connector_unique.sql",
     "0025_agent_action_sent_at.sql",
   ]);
   assert.equal(rows[0].execution_kind, "executed");
