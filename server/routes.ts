@@ -24,6 +24,7 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, sendBookingCancellationEmailToClient, sendBookingCancellationEmailToCoach, sendBookingRescheduleEmailToClient, sendBookingRescheduleEmailToCoach, sendRecurringSessionsCreatedEmailToClient, sendRecurringSessionsCreatedEmailToCoach, suppressBookingConfirmation, suppressNotificationType, type OrgBranding, type EmailLogContext } from "./email";
 import { sendSms, normalizePhone, smsBookingConfirmation, smsCancellation, smsReschedule } from "./sms";
+import { requireTwilioSignature, handleTwilioInboundSms } from "./twilio-inbound-sms";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -10861,39 +10862,15 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
-  // Twilio STOP/START webhook for SMS opt-out/opt-in
-  app.post("/api/twilio/sms/incoming", express.urlencoded({ extended: false }), async (req: any, res) => {
-    try {
-      const from: string = (req.body?.From || "").trim();
-      const body: string = (req.body?.Body || "").trim().toUpperCase();
-      if (!from) return res.status(200).send("<?xml version='1.0'?><Response/>");
-
-      // Normalize phone to find user
-      const { normalizePhone } = await import('./sms');
-      const normalized = normalizePhone(from);
-      if (!normalized) return res.status(200).send("<?xml version='1.0'?><Response/>");
-
-      if (body === "STOP" || body === "STOPALL" || body === "UNSUBSCRIBE" || body === "CANCEL" || body === "END" || body === "QUIT") {
-        // Find user by phone and opt them out
-        const allUsers = await db.select().from(users).where(eq(users.phone, normalized));
-        for (const u of allUsers) {
-          await storage.updateUserSmsOptIn(u.id, false, 'twilio_stop');
-          console.log(`[SMS STOP] Opted out user ${u.id} (${normalized})`);
-        }
-      } else if (body === "START" || body === "YES" || body === "UNSTOP") {
-        const allUsers = await db.select().from(users).where(eq(users.phone, normalized));
-        for (const u of allUsers) {
-          await storage.updateUserSmsOptIn(u.id, true, 'twilio_start');
-          console.log(`[SMS START] Opted in user ${u.id} (${normalized})`);
-        }
-      }
-
-      res.status(200).send("<?xml version='1.0'?><Response/>");
-    } catch (err) {
-      console.error("[Twilio webhook] Error:", err);
-      res.status(200).send("<?xml version='1.0'?><Response/>");
-    }
-  });
+  // Twilio STOP/START webhook for SMS opt-out/opt-in.
+  // Guarded by X-Twilio-Signature validation (fails closed without TWILIO_AUTH_TOKEN);
+  // handler lives in ./twilio-inbound-sms so it can be exercised in tests.
+  app.post(
+    "/api/twilio/sms/incoming",
+    express.urlencoded({ extended: false }),
+    requireTwilioSignature,
+    async (req: any, res) => handleTwilioInboundSms(req, res),
+  );
 
   // ─── Team Training Prospecting Routes ─────────────────────────────────────
 
