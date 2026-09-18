@@ -171,6 +171,12 @@ describe("Redemption — payment model branching", () => {
   const redemptionStart = routes.indexOf('app.post("/api/redemptions"');
   // onRedemption is ~287 lines after route start; extend to 12000 chars to cover all
   const redemptionBlock = routes.slice(redemptionStart, redemptionStart + 12000);
+  // The money-moving core (wallet debits + redemption row + session decrement) lives in
+  // storage.executeRedemption, one advisory-locked transaction per booking.
+  const storageSrc = src("server/storage.ts");
+  const executeStart = storageSrc.indexOf("async executeRedemption(");
+  assert.ok(executeStart !== -1, "storage.executeRedemption must exist");
+  const executeBlock = storageSrc.slice(executeStart, executeStart + 4000);
 
   test("redemption decrements sessionsRemaining when booking.subscriptionPlanId is set", () => {
     assert.ok(
@@ -178,15 +184,34 @@ describe("Redemption — payment model branching", () => {
       "Redemption must branch on booking.subscriptionPlanId"
     );
     assert.ok(
-      redemptionBlock.includes("activeSub.sessionsRemaining - 1"),
-      "Redemption must decrement sessionsRemaining by 1 on the subscription path"
+      redemptionBlock.includes("subscriptionDecrement: booking.subscriptionPlanId"),
+      "Redemption must hand the subscription decrement to executeRedemption on the subscription path"
+    );
+    assert.ok(
+      executeBlock.includes("activeSub.sessionsRemaining - 1"),
+      "executeRedemption must decrement sessionsRemaining by 1 on the subscription path"
     );
   });
 
   test("redemption uses Math.max(0, ...) to prevent negative sessionsRemaining", () => {
     assert.ok(
-      redemptionBlock.includes("Math.max(0, activeSub.sessionsRemaining - 1)"),
+      executeBlock.includes("Math.max(0, activeSub.sessionsRemaining - 1)"),
       "sessionsRemaining decrement must be guarded by Math.max(0, ...) to prevent going negative"
+    );
+  });
+
+  test("redemption executes debits, redemption row and decrement in one advisory-locked transaction", () => {
+    assert.ok(
+      redemptionBlock.includes("storage.executeRedemption("),
+      "Redemption route must delegate the money-moving core to storage.executeRedemption"
+    );
+    assert.ok(
+      executeBlock.includes("db.transaction(") && executeBlock.includes("pg_advisory_xact_lock"),
+      "executeRedemption must run inside db.transaction under a per-booking advisory lock"
+    );
+    assert.ok(
+      executeBlock.includes("debitWalletWithin(trx") && executeBlock.includes("trx.insert(redemptions)"),
+      "executeRedemption must debit wallets and insert the redemption on the same transaction client"
     );
   });
 
@@ -207,8 +232,8 @@ describe("Redemption — payment model branching", () => {
     if (subPlanBlockStart !== -1 && subPlanBlockEnd !== -1) {
       const subOnlyBlock = redemptionBlock.slice(subPlanBlockStart, subPlanBlockEnd);
       assert.ok(
-        !subOnlyBlock.includes("debitWallet"),
-        "Subscription path must not call debitWallet — wallet is not used for package-backed sessions"
+        !subOnlyBlock.includes("debitWallet") && !subOnlyBlock.includes("walletDebits.push("),
+        "Subscription path must not queue a wallet debit — wallet is not used for package-backed sessions"
       );
     } else {
       // Fallback: verify debitWallet is not inside the subscription comment block
@@ -221,8 +246,12 @@ describe("Redemption — payment model branching", () => {
 
   test("redemption debits wallet when booking.subscriptionPlanId is null (wallet model)", () => {
     assert.ok(
-      redemptionBlock.includes("storage.debitWallet("),
-      "Redemption must call debitWallet for wallet/prepaid model bookings"
+      redemptionBlock.includes("walletDebits.push("),
+      "Redemption must queue a wallet debit for wallet/prepaid model bookings"
+    );
+    assert.ok(
+      redemptionBlock.includes("walletDebits,") && redemptionBlock.includes("storage.executeRedemption("),
+      "Queued wallet debits must be applied by storage.executeRedemption"
     );
   });
 

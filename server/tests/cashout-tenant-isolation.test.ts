@@ -9,7 +9,7 @@ process.env.DATABASE_URL = connectionString;
 
 const { Pool } = pg;
 const pool = new Pool({ connectionString });
-const { storage } = await import("../storage");
+const { storage, CashoutTransitionError } = await import("../storage");
 const { requireRole } = await import("../lib/require-role");
 const { handleOrgError, resolveOrgIdOrThrow } = await import("../lib/resolve-org-id");
 const routesSource = await readFile(new URL("../routes.ts", import.meta.url), "utf8");
@@ -128,9 +128,12 @@ test("paid evidence failure rolls back cashout status", async () => {
   }
 });
 
-test("repeated PAID transition preserves idempotent evidence semantics", async () => {
+test("repeated PAID transition is rejected and preserves idempotent evidence semantics", async () => {
   await storage.updateCashoutStatusForOrganization("org-a", "cashout-a", "PAID", "admin-a");
-  await storage.updateCashoutStatusForOrganization("org-a", "cashout-a", "PAID", "admin-a");
+  await assert.rejects(
+    storage.updateCashoutStatusForOrganization("org-a", "cashout-a", "PAID", "admin-a"),
+    (error: any) => error instanceof CashoutTransitionError && error.currentStatus === "PAID",
+  );
   assert.deepEqual(await cashoutState("cashout-a"), { status: "PAID", processed: true, events: 1 });
 });
 

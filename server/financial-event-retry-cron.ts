@@ -64,7 +64,8 @@ async function replayFinancialEvent(failure: {
       );
     }
 
-    // Check if already credited to prevent double-credit on retry
+    // Fast-path check; creditWallet itself re-checks inside a per-payment advisory
+    // lock, so a replay racing the webhook or verify-session cannot double-credit.
     if (paymentIntentId) {
       const existing = await storage.getWalletTransactionByStripePaymentIntentId(paymentIntentId);
       if (existing) {

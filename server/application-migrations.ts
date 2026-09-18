@@ -97,11 +97,16 @@ function excludedBaselineColumn(table: string, column: string): boolean {
 /**
  * Unique indexes declared in the Drizzle schema but created by a migration
  * AFTER the 0000 baseline. A pre-ledger installation adopting the baseline
- * cannot have them yet; the later migration creates them.
+ * cannot have them yet; the later migration creates them. Some may also be
+ * legitimately skipped by their migration (e.g. 0022 when duplicate money
+ * rows exist), so their absence is not baseline incompatibility either.
  */
 const POST_BASELINE_UNIQUE_INDEXES = new Set<string | undefined>([
   "user_org_preferences_unsubscribe_token_unique", // 0005
   "connector_tokens_org_connector_unique", // 0021
+  "wallet_transactions_stripe_payment_intent_id_unique", // 0022
+  "wallet_transactions_stripe_session_id_unique", // 0022
+  "redemptions_booking_id_unique", // 0022
 ]);
 
 function normalizeExpression(value: string | null | undefined): string | null {

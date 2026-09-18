@@ -285,7 +285,12 @@ export const redemptions = pgTable("redemptions", {
   redeemedAt: timestamp("redeemed_at").defaultNow(),
   payoutStatus: payoutStatusEnum("payout_status").notNull().default("PENDING"),
   amountCents: integer("amount_cents").notNull().default(0),
-});
+}, (t) => ({
+  // Belt for redemption idempotency (migration 0022). The primary defense is the
+  // per-booking advisory lock in storage.executeRedemption; this index is created
+  // by 0022 only when the table holds no duplicate booking_id rows.
+  bookingUnique: uniqueIndex("redemptions_booking_id_unique").on(t.bookingId),
+}));
 
 // ── Credit Ledger: auditable trail for every session-credit movement ──────────
 export const creditEventTypeEnum = pgEnum("credit_event_type", [
@@ -495,7 +500,17 @@ export const walletTransactions = pgTable("wallet_transactions", {
   paymentStatus: varchar("payment_status"),
   livemode: boolean("livemode").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => ({
+  // Belt for Stripe credit idempotency (migration 0022). The primary defense is
+  // the per-payment advisory lock in storage.creditWallet; 0022 creates these
+  // partial unique indexes only when no duplicate Stripe ids already exist.
+  stripePaymentIntentUnique: uniqueIndex("wallet_transactions_stripe_payment_intent_id_unique")
+    .on(t.stripePaymentIntentId)
+    .where(sql`${t.stripePaymentIntentId} IS NOT NULL`),
+  stripeSessionUnique: uniqueIndex("wallet_transactions_stripe_session_id_unique")
+    .on(t.stripeSessionId)
+    .where(sql`${t.stripeSessionId} IS NOT NULL`),
+}));
 
 export const cashoutStatusEnum = pgEnum("cashout_status", ["REQUESTED", "PAID", "DENIED"]);
 

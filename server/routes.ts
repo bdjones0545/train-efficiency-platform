@@ -13,7 +13,7 @@ import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
 import { requirePlatformAdminOrg, adminRepairAuth } from "./lib/platform-admin-auth";
 import { registerAdminCoachRoutes } from "./admin-coach-routes";
-import { storage } from "./storage";
+import { storage, CashoutTransitionError, type RedemptionWalletDebit } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
 import { hashAuthToken } from "./lib/auth-token";
 import { getSessionSecret } from "./lib/secrets";
@@ -886,7 +886,7 @@ export async function registerRoutes(
       // ── Apply credit if requested ─────────────────────────────────────────
       if (apply === true && dryRun !== true) {
         try {
-          const tx = await storage.creditWallet(
+          const { transaction: tx, alreadyCredited } = await storage.creditWallet(
             matchedUser.id,
             resolvedAmountCents,
             `Manual repair — $${(resolvedAmountCents / 100).toFixed(2)} (${sourceObject}: ${sourceId})`,
@@ -896,6 +896,11 @@ export async function registerRoutes(
             resolvedCurrency || "usd",
             "succeeded"
           );
+          if (alreadyCredited) {
+            report.action = "already_credited";
+            report.creditedTxId = tx.id;
+            return res.json({ ...report, message: "Payment already credited — no action needed (idempotent)" });
+          }
           report.action = "credited";
           report.creditedTxId = tx.id;
           console.log(`[Stripe Repair] Credited userId: ${matchedUser.id} (${matchedUser.email}), $${(resolvedAmountCents / 100).toFixed(2)}, ${sourceObject}: ${sourceId}`);
@@ -3769,14 +3774,18 @@ export async function registerRoutes(
 
       let totalCollectedCents = 0;
       let amountCents = 0;
+      // Wallet debits are collected here and applied by storage.executeRedemption in the
+      // same transaction as the redemption row (advisory-locked per booking), so a
+      // concurrent duplicate submit can neither double-debit nor double-pay the coach.
+      const walletDebits: RedemptionWalletDebit[] = [];
 
       if (isFreeIntro) {
         amountCents = 2000;
       } else if (booking.subscriptionPlanId) {
         // ── Payment model: SUBSCRIPTION/PACKAGE ─────────────────────────────────
         // This booking is tied to a subscription plan. Coach pay is drawn from the
-        // plan's per-session rate. Wallet is NOT debited. sessionsRemaining will be
-        // decremented below after the redemption record is created.
+        // plan's per-session rate. Wallet is NOT debited. sessionsRemaining is
+        // decremented inside storage.executeRedemption, in the redemption's transaction.
         console.log(JSON.stringify({
           system: 'redemption',
           paymentModel: 'subscription',
@@ -3855,13 +3864,11 @@ export async function registerRoutes(
           if (perPersonCents > 0) {
             for (const entry of Array.from(chargeableMap.values())) {
               const totalForUser = perPersonCents * entry.count;
-              await storage.debitWallet(
-                entry.userId,
-                totalForUser,
-                `Semi-Private Session: ${service?.name || "Training"} (${entry.count} spot${entry.count > 1 ? "s" : ""}) - Redeemed`,
-                "redemption",
-                bookingId
-              );
+              walletDebits.push({
+                userId: entry.userId,
+                amountCents: totalForUser,
+                description: `Semi-Private Session: ${service?.name || "Training"} (${entry.count} spot${entry.count > 1 ? "s" : ""}) - Redeemed`,
+              });
               totalCollectedCents += totalForUser;
             }
           }
@@ -3879,13 +3886,11 @@ export async function registerRoutes(
           }
         } else {
           if (perPersonCents > 0) {
-            await storage.debitWallet(
-              booking.clientId,
-              perPersonCents,
-              `Session: ${service?.name || "Training"} - Redeemed`,
-              "redemption",
-              bookingId
-            );
+            walletDebits.push({
+              userId: booking.clientId,
+              amountCents: perPersonCents,
+              description: `Session: ${service?.name || "Training"} - Redeemed`,
+            });
             totalCollectedCents = perPersonCents;
           }
 
@@ -3894,63 +3899,56 @@ export async function registerRoutes(
         }
       }
 
-      const redemption = await storage.createRedemption({
+      // Wallet debit(s), redemption row and subscription decrement: one transaction,
+      // advisory-locked per booking, existence re-checked inside the lock.
+      const executed = await storage.executeRedemption({
         bookingId,
         coachId: booking.coachId,
         amountCents,
-        payoutStatus: "PENDING",
+        walletDebits,
+        subscriptionDecrement: booking.subscriptionPlanId
+          ? { clientId: booking.clientId, planId: booking.subscriptionPlanId }
+          : null,
       });
+      if (!executed.created) return res.status(409).json({ message: "Already redeemed" });
+      const redemption = executed.redemption;
 
-      if (booking.subscriptionPlanId) {
-        try {
-          const clientSubs = await storage.getUserSubscriptions(booking.clientId);
-          const activeSub = clientSubs.find(s => s.planId === booking.subscriptionPlanId && (s.status === "active" || s.status === "past_due"));
-          if (activeSub && activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining !== undefined) {
-            const newSessionCount = Math.max(0, activeSub.sessionsRemaining - 1);
-            await storage.updateUserSubscription(activeSub.id, {
-              sessionsRemaining: newSessionCount,
+      if (executed.subscription) {
+        // ── Credit ledger: record the session debit for auditability ──
+        const creditPayload = {
+          clientId: booking.clientId,
+          bookingId,
+          subscriptionId: executed.subscription.id,
+          organizationId: requesterOrgId || bookingCoachProfile?.organizationId || null,
+          eventType: "redemption_debit",
+          deltaSessions: -1,
+          deltaCents: 0,
+          sessionsAfter: executed.subscription.sessionsAfter,
+          reason: `Session redeemed: booking ${bookingId}`,
+          createdBy: userId,
+        };
+        storage.createCreditLedgerEvent(creditPayload).catch(async (e: any) => {
+          console.error("[redemption] Credit ledger write failed (non-fatal):", e?.message ?? e);
+          try {
+            await storage.createFinancialEventFailure({
+              orgId: creditPayload.organizationId ?? null,
+              clientId: creditPayload.clientId ?? null,
+              coachId: null,
+              bookingId: creditPayload.bookingId ?? null,
+              redemptionId: null,
+              sourceType: "credit_ledger",
+              eventType: creditPayload.eventType,
+              payload: creditPayload as any,
+              idempotencyKey: null,
+              failureMessage: e?.message ?? String(e),
+              attempts: 1,
+              status: "pending",
+              lastAttemptAt: new Date(),
             });
-            // ── Credit ledger: record the session debit for auditability ──
-            (() => {
-              const creditPayload = {
-                clientId: booking.clientId,
-                bookingId,
-                subscriptionId: activeSub.id,
-                organizationId: requesterOrgId || bookingCoachProfile?.organizationId || null,
-                eventType: "redemption_debit",
-                deltaSessions: -1,
-                deltaCents: 0,
-                sessionsAfter: newSessionCount,
-                reason: `Session redeemed: booking ${bookingId}`,
-                createdBy: userId,
-              };
-              storage.createCreditLedgerEvent(creditPayload).catch(async (e: any) => {
-                console.error("[redemption] Credit ledger write failed (non-fatal):", e?.message ?? e);
-                try {
-                  await storage.createFinancialEventFailure({
-                    orgId: creditPayload.organizationId ?? null,
-                    clientId: creditPayload.clientId ?? null,
-                    coachId: null,
-                    bookingId: creditPayload.bookingId ?? null,
-                    redemptionId: null,
-                    sourceType: "credit_ledger",
-                    eventType: creditPayload.eventType,
-                    payload: creditPayload as any,
-                    idempotencyKey: null,
-                    failureMessage: e?.message ?? String(e),
-                    attempts: 1,
-                    status: "pending",
-                    lastAttemptAt: new Date(),
-                  });
-                } catch (queueErr: any) {
-                  console.error("[redemption] CRITICAL: credit failure queue insert failed:", queueErr?.message ?? queueErr);
-                }
-              });
-            })();
+          } catch (queueErr: any) {
+            console.error("[redemption] CRITICAL: credit failure queue insert failed:", queueErr?.message ?? queueErr);
           }
-        } catch (e) {
-          console.error("Error decrementing session count on redemption:", e);
-        }
+        });
       }
 
       // ── Revenue recognition: write immutable ledger events ──────────────────
@@ -3998,20 +3996,10 @@ export async function registerRoutes(
       const ownerUserId = await getOwnerUserId();
       if (ownerUserId && coachProfile.userId === ownerUserId) return res.status(403).json({ message: "Owner does not need to cash out" });
 
-      const redemptionsList = await storage.getCoachRedemptions(coachId);
-      const pendingAmount = redemptionsList
-        .filter((r) => r.payoutStatus === "PENDING")
-        .reduce((sum, r) => sum + r.amountCents, 0);
-
-      if (pendingAmount <= 0) return res.status(400).json({ message: "No pending balance to cash out" });
-
-      const cashout = await storage.createCashout({
-        coachId,
-        amountCents: pendingAmount,
-        status: "REQUESTED",
-      });
-
-      await storage.markRedemptionsSent(coachId);
+      // Pending sum, cashout row and PENDING→SENT flip happen atomically per coach.
+      const cashout = await storage.requestCashout(coachId);
+      if (!cashout) return res.status(400).json({ message: "No pending balance to cash out" });
+      const pendingAmount = cashout.amountCents;
 
       const coachName = `${coachProfile.user?.firstName} ${coachProfile.user?.lastName}`;
       const orgB = await getOrgBranding(coachProfile.organizationId);
@@ -7174,6 +7162,9 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
       res.json(updated);
     } catch (error) {
+      if (error instanceof CashoutTransitionError) {
+        return res.status(409).json({ message: `Cashout is already ${error.currentStatus}; only REQUESTED cashouts can be marked ${error.requestedStatus}` });
+      }
       if (handleOrgError(error, res)) return;
       console.error("Error updating cashout status:", error);
       res.status(500).json({ message: "Failed to update cashout status" });
@@ -8120,7 +8111,14 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         }
       }
 
-      const stripeCreditTx = await storage.creditWallet(userId, amountCents, `Added $${(amountCents / 100).toFixed(2)} via Stripe`, sessionId, piId || undefined);
+      // creditWallet re-checks for an existing credit inside a per-payment advisory lock,
+      // so a poll racing the webhook (or another poll) credits once; the loser gets
+      // alreadyCredited and must not record revenue or email a second confirmation.
+      const credit = await storage.creditWallet(userId, amountCents, `Added $${(amountCents / 100).toFixed(2)} via Stripe`, sessionId, piId || undefined);
+      if (credit.alreadyCredited) {
+        return res.json({ credited: true, alreadyProcessed: true });
+      }
+      const stripeCreditTx = credit.transaction;
 
       // ── Revenue recognition: record payment received ─────────────────────────
       onPaymentReceived({
