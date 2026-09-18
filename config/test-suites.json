@@ -47,7 +47,7 @@
     },
     "db": {
       "command": "npm run test:db",
-      "description": "Tests that read and write an explicitly designated disposable test database. Runs one file at a time: these tests build their own schema and would otherwise clobber each other.",
+      "description": "Tests that read and write an explicitly designated disposable test database. TEST_DATABASE_URL names a TEMPLATE: the runner gives each file its own `CREATE DATABASE ... TEMPLATE` clone and its own process, then drops it. These tests build their own schema with destructive DDL and would otherwise clobber each other even when run one file at a time.",
       "dependencies": [
         "PostgreSQL"
       ],
@@ -230,7 +230,7 @@
         "server/tests/workflow-idempotency-scoping.test.ts",
         "server/tests/workflow-job-reliability.test.ts"
       ],
-      "note": "Requires TEST_DATABASE_URL pointing at an isolated, disposable database whose schema was built with drizzle-kit push. Verified green against PostgreSQL 16, one file at a time."
+      "note": "Requires TEST_DATABASE_URL pointing at an isolated, disposable template database whose schema was built with drizzle-kit push, and a role permitted to CREATE DATABASE. The runner clones that template per file, so a file's destructive DDL cannot reach any other file. Verified green against PostgreSQL 16."
     },
     {
       "classification": "server",
