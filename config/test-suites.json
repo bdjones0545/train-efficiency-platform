@@ -154,6 +154,8 @@
       ],
       "files": [
         "server/tests/admin-intelligence-org-resolver.test.ts",
+        "server/tests/anonymous-exposure-orchestration.test.ts",
+        "server/tests/anonymous-exposure-routes.test.ts",
         "server/tests/api-request-logger.test.ts",
         "server/tests/attention-security-performance.test.ts",
         "server/tests/autonomy-trust-authorization.test.ts",
