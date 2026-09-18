@@ -11,6 +11,8 @@ import { toPublicParticipants } from "./lib/participant-visibility";
 import { toPublicCoaches } from "./lib/coach-visibility";
 import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
+import { requirePlatformAdminOrg, adminRepairAuth } from "./lib/platform-admin-auth";
+import { registerAdminCoachRoutes } from "./admin-coach-routes";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
 import { hashAuthToken } from "./lib/auth-token";
@@ -164,20 +166,6 @@ async function getAdminAuthContext(req: any): Promise<{
     };
   } catch {
     return null;
-  }
-}
-
-const PLATFORM_ADMIN_ORG_ID = "org-est";
-
-async function requirePlatformAdminOrg(req: any, res: any, next: any) {
-  try {
-    const orgId = await getAdminOrgId(req);
-    if (!orgId || orgId !== PLATFORM_ADMIN_ORG_ID) {
-      return res.status(403).json({ message: "Access restricted to platform administrators." });
-    }
-    next();
-  } catch {
-    res.status(403).json({ message: "Access restricted to platform administrators." });
   }
 }
 
@@ -693,23 +681,8 @@ export async function registerRoutes(
     });
   });
 
-  function isAdminRepairAuthorized(req: any, res: any): boolean {
-    const headerKey = req.headers["x-admin-key"];
-    const envKey = process.env.ADMIN_REPAIR_KEY;
-    if (envKey && headerKey === envKey) return true;
-    return false;
-  }
-
-  async function adminRepairAuth(req: any, res: any, next: any) {
-    if (isAdminRepairAuthorized(req, res)) return next();
-    return isAuthenticated(req, res, async () => {
-      const userId = req.user?.claims?.sub;
-      if (!userId) return res.status(401).json({ message: "Unauthorized" });
-      const role = await getUserRole(userId);
-      if (role !== "ADMIN") return res.status(403).json({ message: "Forbidden" });
-      next();
-    });
-  }
+  // adminRepairAuth (shared ADMIN_REPAIR_KEY, or an ADMIN of the platform org) lives in
+  // ./lib/platform-admin-auth — every route below reads or repairs money platform-wide.
 
   app.get("/api/admin/stripe-wallet-sync-audit", adminRepairAuth, async (req: any, res) => {
     try {
@@ -4052,37 +4025,6 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/coach/payout-redemptions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub ?? req.user.id;
-      const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId || null;
-      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
-      const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
-      const orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
-      const coachMap = new Map(orgCoaches.map(c => [c.id, c]));
-      const allRedemptions = await storage.getRedemptionsByOrganization(orgId);
-
-      const result = allRedemptions
-        .filter((r: any) => orgCoachIdSet.has(r.coachId))
-        .map((r: any) => {
-          const coach = coachMap.get(r.coachId);
-          return {
-            id: r.id,
-            coachId: r.coachId,
-            coachEmail: coach?.user?.email || null,
-            amountCents: r.amountCents,
-            redeemedAt: r.redeemedAt,
-            payoutStatus: r.payoutStatus,
-          };
-        });
-      res.json(result);
-    } catch (error) {
-      console.error("Error fetching payout redemptions:", error);
-      res.status(500).json({ message: "Failed to fetch payout redemptions" });
-    }
-  });
-
   app.get("/api/sessions/open", async (req: any, res) => {
     try {
       let orgId: string | undefined;
@@ -4865,164 +4807,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/coaches", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
-    try {
-      const { firstName, lastName, email, password, bio, specialties } = req.body;
-      if (!firstName || !lastName || !email || !password) {
-        return res.status(400).json({ message: "First name, last name, email, and password are required" });
-      }
-      if (typeof email !== "string" || !email.includes("@")) {
-        return res.status(400).json({ message: "Please provide a valid email address" });
-      }
-      if (typeof password !== "string" || password.length < 6) {
-        return res.status(400).json({ message: "Password must be at least 6 characters" });
-      }
-
-      const normalizedEmail = email.toLowerCase().trim();
-      const existingUser = await storage.getUserByEmail(normalizedEmail);
-      if (existingUser) {
-        const existingCoach = await storage.getCoachProfileByUserId(existingUser.id);
-        if (existingCoach) {
-          return res.status(400).json({ message: "A coach with this email already exists" });
-        }
-        const existingProfile = await storage.getUserProfile(existingUser.id);
-        if (existingProfile?.role === "ADMIN") {
-          return res.status(400).json({ message: "This user is an admin and cannot be added as a coach" });
-        }
-      }
-
-      const { db: dbRef } = await import("./db");
-      const { users: usersTable } = await import("@shared/models/auth");
-
-      let userId: string;
-      if (existingUser) {
-        userId = existingUser.id;
-      } else {
-        const [newUser] = await dbRef.insert(usersTable).values({
-          email: normalizedEmail,
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          profileImageUrl: null,
-          lastSignInAt: new Date(),
-        }).returning();
-        userId = newUser.id;
-      }
-
-      const adminUserId = req.user.claims.sub;
-      const adminProfile = await storage.getUserProfile(adminUserId);
-      const adminOrgId = adminProfile?.organizationId || null;
-
-      await storage.upsertUserProfile({ userId, role: "COACH", organizationId: adminOrgId });
-
-      const passwordHash = await bcrypt.hash(password, 10);
-      const parsedSpecialties = Array.isArray(specialties)
-        ? specialties.filter((s: any) => typeof s === "string" && s.trim())
-        : [];
-      const coachProfile = await storage.createCoachProfile({
-        userId,
-        email: normalizedEmail,
-        passwordHash,
-        bio: typeof bio === "string" ? bio.trim() : "",
-        specialties: parsedSpecialties,
-        timezone: "America/New_York",
-        isActive: true,
-        organizationId: adminOrgId,
-      });
-
-      getOrgBranding(adminOrgId).then(async orgB => {
-        try {
-          await sendCoachWelcomeEmail(normalizedEmail, firstName.trim(), password, orgB);
-          storage.createCommunicationLog({
-            orgId: adminOrgId || undefined,
-            userId,
-            type: "welcome",
-            channel: "email",
-            recipientEmail: normalizedEmail,
-            subject: "Welcome to your coaching platform",
-            status: "sent",
-            provider: "sendgrid",
-          } as any).catch(() => {});
-        } catch (err: any) {
-          console.error("Failed to send coach welcome email:", err);
-          storage.createCommunicationLog({
-            orgId: adminOrgId || undefined,
-            userId,
-            type: "welcome",
-            channel: "email",
-            recipientEmail: normalizedEmail,
-            subject: "Welcome to your coaching platform",
-            status: "failed",
-            provider: "sendgrid",
-            errorMessage: err?.message ?? String(err),
-          } as any).catch(() => {});
-        }
-      }).catch(() => {});
-
-      res.json({ success: true, coachProfile });
-    } catch (error: any) {
-      console.error("Error creating coach:", error);
-      if (error?.message?.includes("unique") || error?.code === "23505") {
-        return res.status(400).json({ message: "A coach with this email already exists" });
-      }
-      res.status(500).json({ message: "Failed to create coach" });
-    }
-  });
-
-  app.patch("/api/admin/coaches/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const { bio, specialties, isActive, payoutPercentage } = req.body;
-      const updateData: Record<string, any> = {};
-      if (bio !== undefined) updateData.bio = bio;
-      if (specialties !== undefined) updateData.specialties = Array.isArray(specialties) ? specialties : [];
-      if (isActive !== undefined) updateData.isActive = isActive;
-      if (payoutPercentage !== undefined) {
-        const pct = parseInt(payoutPercentage);
-        if (isNaN(pct) || pct < 0 || pct > 100) {
-          return res.status(400).json({ message: "Percentage must be between 0 and 100" });
-        }
-        updateData.payoutPercentage = pct;
-      }
-      const updated = await storage.updateCoachProfile(id, updateData);
-      if (!updated) return res.status(404).json({ message: "Coach not found" });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating coach:", error);
-      res.status(500).json({ message: "Failed to update coach" });
-    }
-  });
-
-  app.delete("/api/admin/coaches/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const deleted = await storage.deleteCoachProfile(id);
-      if (!deleted) return res.status(404).json({ message: "Coach not found" });
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error deleting coach:", error);
-      res.status(500).json({ message: "Failed to delete coach" });
-    }
-  });
-
-  app.patch("/api/admin/coaches/:id/payout", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const { payoutPercentage } = req.body;
-      if (payoutPercentage === undefined || payoutPercentage === null) {
-        return res.status(400).json({ message: "payoutPercentage required" });
-      }
-      const pct = parseInt(payoutPercentage);
-      if (isNaN(pct) || pct < 0 || pct > 100) {
-        return res.status(400).json({ message: "Percentage must be between 0 and 100" });
-      }
-      const updated = await storage.updateCoachProfile(id, { payoutPercentage: pct });
-      if (!updated) return res.status(404).json({ message: "Coach not found" });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating coach payout:", error);
-      res.status(500).json({ message: "Failed to update coach payout" });
-    }
-  });
+  // Coach administration (create / update / delete / payout) and the coach payout
+  // redemption feed are org-scoped in ./admin-coach-routes.
+  registerAdminCoachRoutes(app, { getOrgBranding });
 
   app.post("/api/admin/services", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
@@ -5282,15 +5069,17 @@ export async function registerRoutes(
   // No mutations — safe to run at any time.
   app.get("/api/admin/accounting-integrity", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId || null;
+      // ADMIN is a per-organization role: every check below is scoped to the
+      // caller's organization in the SQL itself. There is no platform-wide fallback.
+      const orgId = await resolveOrgIdOrThrow(req);
 
       // 1. Duplicate redemptions (same bookingId redeemed more than once)
       const dupRedemptions = await db.execute(sql`
-        SELECT booking_id, COUNT(*)::int AS count
-        FROM redemptions
-        GROUP BY booking_id
+        SELECT r.booking_id, COUNT(*)::int AS count
+        FROM redemptions r
+        JOIN coach_profiles cp ON cp.id = r.coach_id
+        WHERE cp.organization_id = ${orgId}
+        GROUP BY r.booking_id
         HAVING COUNT(*) > 1
       `);
 
@@ -5298,10 +5087,8 @@ export async function registerRoutes(
       const negativeBalanceQuery = await db.execute(sql`
         SELECT u.id, u.first_name, u.last_name, u.email, u.balance_cents
         FROM users u
-        ${orgId ? sql`
-          JOIN user_profiles up ON up.user_id = u.id
-          WHERE up.organization_id = ${orgId} AND u.balance_cents < 0
-        ` : sql`WHERE u.balance_cents < 0`}
+        JOIN user_profiles up ON up.user_id = u.id
+        WHERE up.organization_id = ${orgId} AND u.balance_cents < 0
         ORDER BY u.balance_cents ASC
         LIMIT 100
       `);
@@ -5311,7 +5098,9 @@ export async function registerRoutes(
         SELECT r.id AS redemption_id, r.booking_id, b.status AS booking_status, r.redeemed_at
         FROM redemptions r
         JOIN bookings b ON b.id = r.booking_id
-        WHERE b.status = 'CANCELLED'
+        JOIN coach_profiles cp ON cp.id = r.coach_id
+        WHERE cp.organization_id = ${orgId}
+          AND b.status = 'CANCELLED'
         LIMIT 100
       `);
 
@@ -5322,9 +5111,9 @@ export async function registerRoutes(
         LEFT JOIN redemptions r ON r.booking_id = b.id
         WHERE b.status = 'COMPLETED'
           AND r.id IS NULL
-          ${orgId ? sql`AND b.coach_id IN (
+          AND b.coach_id IN (
             SELECT id FROM coach_profiles WHERE organization_id = ${orgId}
-          )` : sql``}
+          )
         ORDER BY b.start_at DESC
         LIMIT 50
       `);
@@ -5333,7 +5122,8 @@ export async function registerRoutes(
       const negativeCreditsQuery = await db.execute(sql`
         SELECT us.id, us.user_id, us.plan_id, us.sessions_remaining, us.status
         FROM user_subscriptions us
-        WHERE us.sessions_remaining < 0
+        WHERE us.organization_id = ${orgId}
+          AND us.sessions_remaining < 0
         LIMIT 100
       `);
 
@@ -5341,8 +5131,10 @@ export async function registerRoutes(
       const orphanedRedemptionsQuery = await db.execute(sql`
         SELECT r.id, r.booking_id, r.redeemed_at
         FROM redemptions r
+        JOIN coach_profiles cp ON cp.id = r.coach_id
         LEFT JOIN bookings b ON b.id = r.booking_id
-        WHERE b.id IS NULL
+        WHERE cp.organization_id = ${orgId}
+          AND b.id IS NULL
         LIMIT 50
       `);
 
@@ -5399,7 +5191,7 @@ export async function registerRoutes(
       };
 
       // Add credit ledger failure checks
-      if (orgId) {
+      {
         const { financialEventFailures: fefT } = await import("@shared/schema");
         const { count: cntFn, and: andFn2, eq: eqFn2, inArray: inArrayFn2, lt: ltFn2 } = await import("drizzle-orm");
         const cutoff24hCredit = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -5428,6 +5220,7 @@ export async function registerRoutes(
 
       res.json(report);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error running accounting integrity check:", error);
       res.status(500).json({ message: "Failed to run accounting integrity check" });
     }
