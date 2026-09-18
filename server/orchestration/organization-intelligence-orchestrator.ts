@@ -549,8 +549,16 @@ export async function getOrgIntelligenceState(orgId: string): Promise<Organizati
   return rows[0] ?? null;
 }
 
-export async function resolveEventLog(eventLogId: string): Promise<void> {
+/**
+ * Marks an event resolved. Scoped by orgId so a caller can only resolve
+ * events that belong to the organization they authenticated for — the id
+ * alone comes from the URL and is guessable.
+ */
+export async function resolveEventLog(eventLogId: string, orgId: string): Promise<void> {
   await db.update(organizationEventLog)
     .set({ resolutionState: "resolved", resolvedAt: new Date() })
-    .where(eq(organizationEventLog.id, eventLogId));
+    .where(and(
+      eq(organizationEventLog.id, eventLogId),
+      eq(organizationEventLog.orgId, orgId),
+    ));
 }

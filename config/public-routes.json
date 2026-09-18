@@ -1,25 +1,13 @@
 {
   "description": "Routes registered with no middleware. A route may only appear here deliberately — see server/lib/route-guard-audit.ts. Entries marked UNREVIEWED are a backlog, not an approval: each needs a decision to be either guarded or given a real reason. Regenerate with: npm run audit:routes -- --update",
   "totalRoutes": 1897,
-  "unguardedRoutes": 201,
-  "unreviewed": 201,
+  "unguardedRoutes": 153,
+  "unreviewed": 142,
   "routes": [
     {
       "method": "DELETE",
       "path": "/api/athletic/bookings/:id",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/developer-pipeline/:id",
-      "file": "server/beta-wave6-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/validation-participants/:id",
-      "file": "server/beta-wave-x-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -98,18 +86,6 @@
       "method": "GET",
       "path": "/api/callback",
       "file": "server/replit_integrations/auth/replitAuth.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/campaigns/developer",
-      "file": "server/beta-wave4-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/campaigns/org",
-      "file": "server/beta-wave4-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -222,26 +198,8 @@
     },
     {
       "method": "GET",
-      "path": "/api/developer-pipeline",
-      "file": "server/beta-wave6-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/developer-streaks",
-      "file": "server/beta-wave5-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
       "path": "/api/developer/activation",
       "file": "server/beta-wave3-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/developer/economics",
-      "file": "server/beta-wave1-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -254,24 +212,6 @@
       "method": "GET",
       "path": "/api/email-agent/track-open/:emailId",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/feedback",
-      "file": "server/phase10-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/first10-playbooks",
-      "file": "server/beta-phase-y-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/first10-playbooks/templates",
-      "file": "server/beta-phase-y-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -296,12 +236,6 @@
       "method": "GET",
       "path": "/api/logout",
       "file": "server/replit_integrations/auth/replitAuth.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/marketplace-ambassadors",
-      "file": "server/beta-wave6-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -408,12 +342,6 @@
     },
     {
       "method": "GET",
-      "path": "/api/marketplace/launch-programs",
-      "file": "server/beta-wave2-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
       "path": "/api/marketplace/liquidity",
       "file": "server/beta-wave1-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
@@ -516,24 +444,6 @@
     },
     {
       "method": "GET",
-      "path": "/api/onboarding/developer",
-      "file": "server/beta-wave1-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/onboarding/org",
-      "file": "server/beta-wave1-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/org-streaks",
-      "file": "server/beta-wave5-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
       "path": "/api/org/activation",
       "file": "server/beta-wave3-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
@@ -566,31 +476,31 @@
       "method": "GET",
       "path": "/api/org/intelligence/athletes/:athleteUserId/timeline",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
       "path": "/api/org/intelligence/daily-ops",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
       "path": "/api/org/intelligence/escalation-summary",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
       "path": "/api/org/intelligence/event-log",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
       "path": "/api/org/intelligence/event-stream",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
@@ -614,7 +524,7 @@
       "method": "GET",
       "path": "/api/org/intelligence/state",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
@@ -632,18 +542,12 @@
       "method": "GET",
       "path": "/api/organizations/:slug/coaches",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "PUBLIC BY DESIGN — the org landing page lists coaching staff to anonymous visitors. The response is projected through toPublicCoaches (server/lib/coach-visibility.ts): no coach credentials, joined user reduced to name and photo. See anonymous-exposure-routes.test.ts."
     },
     {
       "method": "GET",
       "path": "/api/organizations/by-id/:id",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/participant-feedback",
-      "file": "server/beta-wave-x-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -678,27 +582,9 @@
     },
     {
       "method": "GET",
-      "path": "/api/publisher-rewards",
-      "file": "server/beta-wave4-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/referrals/developer",
-      "file": "server/beta-wave2-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/referrals/org",
-      "file": "server/beta-wave2-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
       "path": "/api/sessions/open",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "PUBLIC BY DESIGN — the /sessions page lists open semi-private sessions to anonymous visitors. The handler scopes the query itself: a signed-in caller gets their profile org, an anonymous caller must pass ?slug= or ?organizationId= (validated against organizations, else 400/404); coach credentials are stripped and rosters are served separately (members-only). See anonymous-exposure-routes.test.ts."
     },
     {
       "method": "GET",
@@ -710,12 +596,6 @@
       "method": "GET",
       "path": "/api/unsubscribe/:token",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "GET",
-      "path": "/api/validation-participants",
-      "file": "server/beta-wave-x-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -744,57 +624,15 @@
     },
     {
       "method": "PATCH",
-      "path": "/api/campaigns/developer/:id",
-      "file": "server/beta-wave4-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/campaigns/org/:id",
-      "file": "server/beta-wave4-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/developer-pipeline/:id",
-      "file": "server/beta-wave6-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "PATCH",
       "path": "/api/developer/submissions/:id",
       "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
       "method": "PATCH",
-      "path": "/api/first10-playbooks/:id",
-      "file": "server/beta-phase-y-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/marketplace-ambassadors/:id",
-      "file": "server/beta-wave6-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/marketplace/launch-programs/:id",
-      "file": "server/beta-wave2-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/onboarding/developer/:id",
-      "file": "server/beta-wave1-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "PATCH",
       "path": "/api/org/intelligence/event-log/:id/resolve",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "PATCH",
@@ -804,20 +642,8 @@
     },
     {
       "method": "PATCH",
-      "path": "/api/publisher-rewards/:id/reach",
-      "file": "server/beta-wave4-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "PATCH",
       "path": "/api/unsubscribe/:token",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "PATCH",
-      "path": "/api/validation-participants/:id",
-      "file": "server/beta-wave-x-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -854,18 +680,6 @@
       "method": "POST",
       "path": "/api/beta/participants",
       "file": "server/phase10-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/campaigns/developer",
-      "file": "server/beta-wave4-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/campaigns/org",
-      "file": "server/beta-wave4-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -918,18 +732,6 @@
     },
     {
       "method": "POST",
-      "path": "/api/developer-pipeline",
-      "file": "server/beta-wave6-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/developer-streaks",
-      "file": "server/beta-wave5-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
       "path": "/api/developer/validate",
       "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
@@ -938,12 +740,6 @@
       "method": "POST",
       "path": "/api/feedback",
       "file": "server/phase10-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/first10-playbooks",
-      "file": "server/beta-phase-y-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -966,12 +762,6 @@
     },
     {
       "method": "POST",
-      "path": "/api/marketplace-ambassadors",
-      "file": "server/beta-wave6-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
       "path": "/api/marketplace/benchmarks/refresh",
       "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
@@ -990,12 +780,6 @@
     },
     {
       "method": "POST",
-      "path": "/api/marketplace/e2e-test",
-      "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
       "path": "/api/marketplace/ecosystem/refresh",
       "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
@@ -1004,12 +788,6 @@
       "method": "POST",
       "path": "/api/marketplace/install",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/marketplace/launch-programs",
-      "file": "server/beta-wave2-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -1027,12 +805,6 @@
     {
       "method": "POST",
       "path": "/api/marketplace/runtimes/bootstrap",
-      "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/marketplace/telemetry",
       "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
@@ -1056,18 +828,6 @@
     },
     {
       "method": "POST",
-      "path": "/api/onboarding/developer",
-      "file": "server/beta-wave1-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/onboarding/org",
-      "file": "server/beta-wave1-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
       "path": "/api/org-auth/login",
       "file": "server/pr-tracker-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
@@ -1080,15 +840,9 @@
     },
     {
       "method": "POST",
-      "path": "/api/org-streaks",
-      "file": "server/beta-wave5-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
       "path": "/api/org/intelligence/daily-ops/regenerate",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "POST",
@@ -1106,18 +860,12 @@
       "method": "POST",
       "path": "/api/org/intelligence/state/refresh",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "POST",
       "path": "/api/organizations/register",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/participant-feedback",
-      "file": "server/beta-wave-x-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {
@@ -1129,12 +877,6 @@
     {
       "method": "POST",
       "path": "/api/public/lead-capture/:orgSlug/:programSlug/partial",
-      "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/public/lead-capture/:orgSlug/:programSlug/submit",
       "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
@@ -1152,30 +894,6 @@
     },
     {
       "method": "POST",
-      "path": "/api/publisher-rewards",
-      "file": "server/beta-wave4-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/referrals/developer",
-      "file": "server/beta-wave2-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/referrals/org",
-      "file": "server/beta-wave2-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/streaks/sync",
-      "file": "server/beta-wave5-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
       "path": "/api/stripe/marketplace-webhook",
       "file": "server/phase10-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
@@ -1184,12 +902,6 @@
       "method": "POST",
       "path": "/api/uploads/request-url",
       "file": "server/replit_integrations/object_storage/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/validation-participants",
-      "file": "server/beta-wave-x-routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },
     {

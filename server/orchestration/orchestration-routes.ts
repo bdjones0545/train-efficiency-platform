@@ -24,17 +24,23 @@ import {
 } from "./organization-intelligence-orchestrator";
 import { generateDailyOperationsBrief } from "../services/daily-operations-engine";
 import { eventBus } from "../events/event-bus";
+import { resolveOrgIdOrThrow } from "../lib/resolve-org-id";
 
-// ─── Auth helper (mirrors intervention-outcome-routes pattern) ────────────────
+// ─── Auth helper ──────────────────────────────────────────────────────────────
+//
+// Every route here is org-scoped, so the org must come from the trusted
+// resolver. resolveOrgIdOrThrow verifies X-Org-Auth-Token against org_sessions
+// and org_memberships, and otherwise falls back to the OIDC session or Bearer
+// token profile. The previous helper returned the raw header VALUE as the
+// orgId, which let any anonymous caller read or mutate any tenant's data by
+// sending that tenant's id as the "token".
 
-function resolveOrgAuth(req: Request): { orgId: string | null; error?: string } {
-  const headerToken = req.headers["x-org-auth-token"] as string | undefined;
-  if (headerToken) return { orgId: headerToken };
-  const profile = (req as any)._profile;
-  const orgAuth = (req as any)._orgAuth;
-  if (orgAuth?.orgId) return { orgId: orgAuth.orgId };
-  if (profile?.organizationId) return { orgId: profile.organizationId };
-  return { orgId: null, error: "Organization context required" };
+async function resolveOrgAuth(req: Request): Promise<{ orgId: string | null; error?: string }> {
+  try {
+    return { orgId: await resolveOrgIdOrThrow(req) };
+  } catch {
+    return { orgId: null, error: "Organization context required" };
+  }
 }
 
 // ─── Route Registration ───────────────────────────────────────────────────────
@@ -44,7 +50,7 @@ export function registerOrchestrationRoutes(app: Express): void {
   // ── GET /api/org/intelligence/state ─────────────────────────────────────────
   // Returns the current org-wide intelligence state snapshot
   app.get("/api/org/intelligence/state", async (req: Request, res: Response) => {
-    const { orgId, error } = resolveOrgAuth(req);
+    const { orgId, error } = await resolveOrgAuth(req);
     if (!orgId) return res.status(401).json({ error });
     try {
       const state = await getOrgIntelligenceState(orgId);
@@ -63,7 +69,7 @@ export function registerOrchestrationRoutes(app: Express): void {
   // ── POST /api/org/intelligence/state/refresh ─────────────────────────────────
   // Forces a re-computation of the org intelligence state
   app.post("/api/org/intelligence/state/refresh", async (req: Request, res: Response) => {
-    const { orgId, error } = resolveOrgAuth(req);
+    const { orgId, error } = await resolveOrgAuth(req);
     if (!orgId) return res.status(401).json({ error });
     try {
       await refreshOrgIntelligenceState(orgId);
@@ -77,7 +83,7 @@ export function registerOrchestrationRoutes(app: Express): void {
   // ── GET /api/org/intelligence/event-log ──────────────────────────────────────
   // Returns paginated org event timeline
   app.get("/api/org/intelligence/event-log", async (req: Request, res: Response) => {
-    const { orgId, error } = resolveOrgAuth(req);
+    const { orgId, error } = await resolveOrgAuth(req);
     if (!orgId) return res.status(401).json({ error });
     const limit = Math.min(parseInt(String(req.query.limit ?? "50")), 200);
     const athleteUserId = req.query.athleteUserId as string | undefined;
@@ -92,7 +98,7 @@ export function registerOrchestrationRoutes(app: Express): void {
   // ── GET /api/org/intelligence/athletes/:athleteUserId/timeline ───────────────
   // Returns the intelligence timeline for a specific athlete
   app.get("/api/org/intelligence/athletes/:athleteUserId/timeline", async (req: Request, res: Response) => {
-    const { orgId, error } = resolveOrgAuth(req);
+    const { orgId, error } = await resolveOrgAuth(req);
     if (!orgId) return res.status(401).json({ error });
     const { athleteUserId } = req.params;
     const limit = Math.min(parseInt(String(req.query.limit ?? "30")), 100);
@@ -107,11 +113,11 @@ export function registerOrchestrationRoutes(app: Express): void {
   // ── PATCH /api/org/intelligence/event-log/:id/resolve ───────────────────────
   // Marks an event as resolved
   app.patch("/api/org/intelligence/event-log/:id/resolve", async (req: Request, res: Response) => {
-    const { orgId, error } = resolveOrgAuth(req);
+    const { orgId, error } = await resolveOrgAuth(req);
     if (!orgId) return res.status(401).json({ error });
     const { id } = req.params;
     try {
-      await resolveEventLog(id);
+      await resolveEventLog(id, orgId);
       return res.json({ success: true });
     } catch (err: any) {
       return res.status(500).json({ error: err.message });
@@ -121,7 +127,7 @@ export function registerOrchestrationRoutes(app: Express): void {
   // ── GET /api/org/intelligence/daily-ops ──────────────────────────────────────
   // Returns (or generates) the daily operations brief
   app.get("/api/org/intelligence/daily-ops", async (req: Request, res: Response) => {
-    const { orgId, error } = resolveOrgAuth(req);
+    const { orgId, error } = await resolveOrgAuth(req);
     if (!orgId) return res.status(401).json({ error });
     try {
       const brief = await generateDailyOperationsBrief(orgId);
@@ -134,7 +140,7 @@ export function registerOrchestrationRoutes(app: Express): void {
   // ── POST /api/org/intelligence/daily-ops/regenerate ──────────────────────────
   // Force-regenerates the daily ops brief
   app.post("/api/org/intelligence/daily-ops/regenerate", async (req: Request, res: Response) => {
-    const { orgId, error } = resolveOrgAuth(req);
+    const { orgId, error } = await resolveOrgAuth(req);
     if (!orgId) return res.status(401).json({ error });
     try {
       const brief = await generateDailyOperationsBrief(orgId);
@@ -147,7 +153,7 @@ export function registerOrchestrationRoutes(app: Express): void {
   // ── GET /api/org/intelligence/event-stream ───────────────────────────────────
   // Returns recent events from the in-memory event bus ring buffer
   app.get("/api/org/intelligence/event-stream", async (req: Request, res: Response) => {
-    const { orgId, error } = resolveOrgAuth(req);
+    const { orgId, error } = await resolveOrgAuth(req);
     if (!orgId) return res.status(401).json({ error });
     const limit = Math.min(parseInt(String(req.query.limit ?? "20")), 100);
     try {
@@ -163,7 +169,7 @@ export function registerOrchestrationRoutes(app: Express): void {
   // ── GET /api/org/intelligence/escalation-summary ─────────────────────────────
   // Returns athletes with open escalated events
   app.get("/api/org/intelligence/escalation-summary", async (req: Request, res: Response) => {
-    const { orgId, error } = resolveOrgAuth(req);
+    const { orgId, error } = await resolveOrgAuth(req);
     if (!orgId) return res.status(401).json({ error });
     try {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);

@@ -131,13 +131,13 @@ export async function registerBetaWave2Routes(app: Express) {
   });
 
   // ─── PART 3: Agent Launch Programs CRUD ───────────────────────────────────
-  app.get("/api/marketplace/launch-programs", async (_req, res) => {
+  app.get("/api/marketplace/launch-programs", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM marketplace_launch_programs ORDER BY created_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch launch programs" }); }
   });
 
-  app.post("/api/marketplace/launch-programs", async (req, res) => {
+  app.post("/api/marketplace/launch-programs", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { agent_id, agent_name, developer_id } = req.body;
       if (!agent_id) return res.status(400).json({ error: "agent_id required" });
@@ -159,7 +159,7 @@ export async function registerBetaWave2Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create launch program" }); }
   });
 
-  app.patch("/api/marketplace/launch-programs/:id", async (req, res) => {
+  app.patch("/api/marketplace/launch-programs/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       const { checklist, launched } = req.body;
@@ -447,13 +447,13 @@ export async function registerBetaWave2Routes(app: Express) {
   });
 
   // ─── PART 9: Referrals CRUD ────────────────────────────────────────────────
-  app.get("/api/referrals/developer", async (_req, res) => {
+  app.get("/api/referrals/developer", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM developer_referrals ORDER BY created_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch developer referrals" }); }
   });
 
-  app.post("/api/referrals/developer", async (req, res) => {
+  app.post("/api/referrals/developer", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { referrer_id, referee_email, reward_type } = req.body;
       if (!referrer_id || !referee_email) return res.status(400).json({ error: "referrer_id and referee_email required" });
@@ -466,13 +466,13 @@ export async function registerBetaWave2Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create developer referral" }); }
   });
 
-  app.get("/api/referrals/org", async (_req, res) => {
+  app.get("/api/referrals/org", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM org_referrals ORDER BY created_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch org referrals" }); }
   });
 
-  app.post("/api/referrals/org", async (req, res) => {
+  app.post("/api/referrals/org", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { referrer_id, referee_email, reward_type } = req.body;
       if (!referrer_id || !referee_email) return res.status(400).json({ error: "referrer_id and referee_email required" });

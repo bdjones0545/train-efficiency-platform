@@ -124,8 +124,14 @@ export default function CoachTransactionsPage() {
     enabled: !!orgId,
   });
 
+  // orgId stays in the key for cache identity only — the server resolves the org
+  // from the session and registers no :id segment, so the default queryFn's
+  // ".../stripe-subscription-transactions/<orgId>" 404'd and the tab reported
+  // "$0" and "No subscription payments found in your Stripe account".
   const { data: subscriptionTxs, isLoading: subTxLoading } = useQuery<StripeSubscriptionTransaction[]>({
     queryKey: ["/api/coach/stripe-subscription-transactions", orgId],
+    queryFn: () =>
+      authenticatedFetch<StripeSubscriptionTransaction[]>("/api/coach/stripe-subscription-transactions"),
     enabled: showSubscriptions && !!orgData?.subscriptionsEnabled,
   });
 

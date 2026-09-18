@@ -193,16 +193,39 @@ async function loadPreflightAuthority(database: Queryable, orgId: string, replyQ
   };
 }
 
+/**
+ * claimAttempt and persistResult take this anchor lock first, before touching
+ * any row, so the two of them are mutually exclusive per logical send.
+ *
+ * Without it the three transactions in this lifecycle disagree about lock
+ * order. claimAttempt locks agent_mail_reply_queue (FOR UPDATE) and then
+ * agentmail_approved_logical_sends; persistResult locks
+ * agentmail_approved_send_attempts, then agentmail_approved_logical_sends,
+ * then agent_mail_reply_queue. A claim that overlaps a persist therefore holds
+ * the queue row and waits for the logical send while the persist holds the
+ * logical send and waits for the queue row — a 40P01 deadlock, which is what
+ * the ten-way concurrency test hit intermittently in CI whenever a late
+ * duplicate caller was still claiming as the winner's provider call returned.
+ * The anchor makes those transactions mutually exclusive per logical send, so
+ * no cycle can form; it is never taken after a row lock, so it cannot create one.
+ */
+function lockLogicalSend(
+  client: { query: (text: string, values?: unknown[]) => Promise<unknown> },
+  authority: Pick<AgentMailApprovedReplyAuthority, "orgId" | "logicalSendId">,
+) {
+  return client.query(
+    `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
+    [`agentmail-approved:${authority.orgId}:${authority.logicalSendId}`],
+  );
+}
+
 type Claim = { authorized: boolean; duplicate: boolean; logicalSendRowId: string; attemptId?: string; state: ApprovedSendResult["state"]; messageId?: string };
 
 async function claimAttempt(database: Queryable, authority: AgentMailApprovedReplyAuthority): Promise<Claim> {
   const client = await database.connect();
   try {
     await client.query("BEGIN");
-    await client.query(
-      `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`,
-      [`agentmail-approved:${authority.orgId}:${authority.logicalSendId}`],
-    );
+    await lockLogicalSend(client, authority);
     const locked = await client.query(
       `SELECT * FROM agent_mail_reply_queue WHERE id=$1 AND organization_id=$2 FOR UPDATE`,
       [authority.replyQueueId, authority.orgId],
@@ -311,6 +334,11 @@ async function startProviderAttempt(
 ): Promise<boolean> {
   const client = await database.connect();
   try {
+    // Deliberately no anchor lock: this transaction only ever locks the attempt
+    // row and then the logical send, which is the same order persistResult uses
+    // and never the reverse of claimAttempt's, so it cannot close a cycle. Making
+    // it queue behind in-flight duplicate claims would only delay the one caller
+    // that is authorized to reach the provider.
     await client.query("BEGIN");
     const attempt = await client.query(
       `UPDATE agentmail_approved_send_attempts SET status='in_progress',started_at=NOW(),updated_at=NOW()
@@ -347,6 +375,7 @@ async function persistResult(
   const client = await database.connect();
   try {
     await client.query("BEGIN");
+    await lockLogicalSend(client, authority);
     const completedAt = new Date();
     const attemptUpdate = await client.query(
       `UPDATE agentmail_approved_send_attempts SET status=$2,provider_message_id=$3,provider_thread_id=$4,

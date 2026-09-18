@@ -24,6 +24,10 @@ import { sendTeamTrainingOutreachEmail, sendAgentOutreachEmail, type OrgBranding
 import { checkHumanApprovedSendGuards } from "./send-guard-service";
 import { shouldSuppressCrossChannelSend, recordOutboundTouch } from "./communication-coordination-service";
 import { writeOutboundAuditLog } from "./outbound-audit-log";
+import {
+  AUTOMATION_KILL_SWITCH_REASON,
+  automationSendsDisabled,
+} from "../lib/automation-sends";
 
 export interface GuardedSendResult {
   sent: boolean;
@@ -51,15 +55,14 @@ export interface GuardedSendOpts {
 }
 
 // ── Global kill-switch ────────────────────────────────────────────────────────
-// Emergency off-switch for ALL automated outreach sends routed through this
-// module. Transactional reminders/receipts (sent via sendEmail()) never route
-// here and are intentionally unaffected. Disabled ONLY when the env var is
-// exactly "false" or "0"; unset or any other value = enabled (current behavior).
-const AUTOMATION_KILL_SWITCH_REASON = "global kill-switch (AUTOMATION_SENDS_ENABLED=false)";
-
+// The switch itself now lives in server/lib/automation-sends.ts, which every
+// automated sender consults — this chain, the lead-capture nurture cron, the
+// weekly re-engagement sweep, the attendance report cron and nurture enrolment.
+// Semantics are unchanged: disabled ONLY when AUTOMATION_SENDS_ENABLED is
+// exactly "false" or "0"; unset or any other value = enabled.
+// Transactional mail (sendEmail()) never routes here and stays unaffected.
 function automatedSendsDisabled(): boolean {
-  const v = process.env.AUTOMATION_SENDS_ENABLED;
-  return v === "false" || v === "0";
+  return automationSendsDisabled();
 }
 
 /**

@@ -21,13 +21,13 @@ const SEEDED_ORG_ID = "TrainEfficiency";
 export async function registerBetaWave6Routes(app: Express) {
 
   // ─── PART 1: Developer Pipeline CRUD ──────────────────────────────────────
-  app.get("/api/developer-pipeline", async (_req, res) => {
+  app.get("/api/developer-pipeline", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM developer_pipeline ORDER BY updated_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch developer pipeline" }); }
   });
 
-  app.post("/api/developer-pipeline", async (req, res) => {
+  app.post("/api/developer-pipeline", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { name, email, source, industry, organization, stage, notes, is_external = true } = req.body;
       if (!name) return res.status(400).json({ error: "name required" });
@@ -41,7 +41,7 @@ export async function registerBetaWave6Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create pipeline entry" }); }
   });
 
-  app.patch("/api/developer-pipeline/:id", async (req, res) => {
+  app.patch("/api/developer-pipeline/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       const { stage, next_action, notes, last_touch } = req.body;
@@ -58,7 +58,7 @@ export async function registerBetaWave6Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to update pipeline entry" }); }
   });
 
-  app.delete("/api/developer-pipeline/:id", async (req, res) => {
+  app.delete("/api/developer-pipeline/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       await db.execute(sql`DELETE FROM developer_pipeline WHERE id = ${req.params.id}`);
       res.json({ ok: true });
@@ -66,13 +66,13 @@ export async function registerBetaWave6Routes(app: Express) {
   });
 
   // ─── PART 2: Ambassadors CRUD ─────────────────────────────────────────────
-  app.get("/api/marketplace-ambassadors", async (_req, res) => {
+  app.get("/api/marketplace-ambassadors", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM marketplace_ambassadors ORDER BY revenue_generated DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch ambassadors" }); }
   });
 
-  app.post("/api/marketplace-ambassadors", async (req, res) => {
+  app.post("/api/marketplace-ambassadors", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { name, type, email, organization } = req.body;
       if (!name) return res.status(400).json({ error: "name required" });
@@ -85,7 +85,7 @@ export async function registerBetaWave6Routes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create ambassador" }); }
   });
 
-  app.patch("/api/marketplace-ambassadors/:id", async (req, res) => {
+  app.patch("/api/marketplace-ambassadors/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       const { invites_sent, developers_recruited, orgs_recruited, installs_generated, revenue_generated, status } = req.body;

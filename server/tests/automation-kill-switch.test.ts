@@ -134,11 +134,44 @@ describe("transactional send path is exempt from the kill-switch", () => {
     );
   });
 
-  it("the kill-switch is scoped to the guarded outbound-email chain", () => {
-    const src = readFileSync("server/services/guarded-outbound-email.ts", "utf-8");
+  it("the kill-switch covers every automated sender, not just the guarded chain", () => {
+    // It used to be scoped to server/services/guarded-outbound-email.ts alone,
+    // and this test asserted exactly that. Three automated senders never route
+    // through that chain and kept sending with the switch off. The switch now
+    // lives in one helper that all of them consult.
+    const helper = readFileSync("server/lib/automation-sends.ts", "utf-8");
     assert.ok(
-      src.includes("AUTOMATION_SENDS_ENABLED"),
-      "kill-switch must live in the automated-outreach chain",
+      helper.includes("AUTOMATION_SENDS_ENABLED"),
+      "the kill-switch must live in the shared helper",
+    );
+
+    const COVERED: Array<[string, string]> = [
+      // file                                     what it sends
+      ["server/services/guarded-outbound-email.ts", "team-training + agent outreach (follow-up-cron, auto-execution-engine, scheduled-email-agent)"],
+      ["server/lead-capture-sequences.ts", "5-step lead nurture cron"],
+      ["server/weekly-reminder.ts", "weekly 'we miss you' re-engagement sweep"],
+      ["server/attendance-report-cron.ts", "17:00 ET attendance report cron"],
+      ["server/routes.ts", "lead-capture nurture ENROLMENT (public submit)"],
+      ["server/attendance-routes.ts", "attendance nurture ENROLMENT (public kiosk check-in)"],
+    ];
+
+    for (const [file, what] of COVERED) {
+      const src = readFileSync(file, "utf-8");
+      assert.ok(
+        /automation-sends|automationRunBlocked|isAutomationSendsEnabled|initialSequenceStatus/.test(src),
+        `${file} (${what}) must consult the automation kill-switch`,
+      );
+    }
+  });
+
+  it("the switch semantics live in exactly one place", () => {
+    // Anything else re-reading the env var directly is a second source of truth.
+    const helper = readFileSync("server/lib/automation-sends.ts", "utf-8");
+    assert.ok(helper.includes('v === "false" || v === "0"'), "helper owns the semantics");
+    const guard = readFileSync("server/services/guarded-outbound-email.ts", "utf-8");
+    assert.ok(
+      !guard.includes("process.env.AUTOMATION_SENDS_ENABLED"),
+      "the guarded chain must read the switch through the shared helper, not the env var",
     );
   });
 });

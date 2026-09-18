@@ -295,7 +295,7 @@ offset: parseInt(qOffset ?? "0"),
 | `POST /api/stripe/webhook` | `express.raw` (before json) | `stripe-signature` → `constructEvent()` | `stripe_webhook_events` UNIQUE `stripe_event_id` | fast 200 `{ received: true }` |
 | `POST /api/stripe/marketplace-webhook` | parsed JSON | `STRIPE_MARKETPLACE_WEBHOOK_SECRET` | application-level | 200 `{ received: true, type }` |
 | `POST /api/agentmail/webhook` | parsed JSON | HMAC `x-agentmail-signature` | `provider_message_id` dedup | 200 `{ received: true, routed }` |
-| `POST /api/webhooks/sendgrid-inbound` | urlencoded | optional `?token=SENDGRID_INBOUND_SECRET` | prospect/status check | **fast 200, then fire-and-forget** processing |
+| `POST /api/webhooks/sendgrid-inbound` | urlencoded | `?token=SENDGRID_INBOUND_SECRET` (timing-safe; required in production, else 503) | per-org sent-outreach attribution, prospect/status check | **fast 200, then fire-and-forget** processing |
 | `POST /api/twilio/sms/incoming` | urlencoded | (Twilio inbound) | STOP/START handling | 200 |
 
 **Convention:** verify signature/secret → respond **200 quickly** → process. Structural

@@ -16,13 +16,13 @@ const SEEDED_AGENT_IDS = ["growth_agent","recovery_agent","nutrition_agent","per
 export async function registerBetaWaveXRoutes(app: Express) {
 
   // ─── Participant CRUD ─────────────────────────────────────────────────────
-  app.get("/api/validation-participants", async (_req, res) => {
+  app.get("/api/validation-participants", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       res.json(rows(await db.execute(sql`SELECT * FROM validation_participants ORDER BY created_at DESC`)));
     } catch (e) { res.status(500).json({ error: "Failed to fetch participants" }); }
   });
 
-  app.post("/api/validation-participants", async (req, res) => {
+  app.post("/api/validation-participants", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { type, external_name, external_email, organization, notes } = req.body;
       if (!external_name) return res.status(400).json({ error: "external_name required" });
@@ -35,7 +35,7 @@ export async function registerBetaWaveXRoutes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to create participant" }); }
   });
 
-  app.patch("/api/validation-participants/:id", async (req, res) => {
+  app.patch("/api/validation-participants/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { id } = req.params;
       const { status, activated_at, first_publish_at, first_install_at, first_value_at, first_review_at, first_revenue_at, notes } = req.body;
@@ -55,7 +55,7 @@ export async function registerBetaWaveXRoutes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to update participant" }); }
   });
 
-  app.delete("/api/validation-participants/:id", async (req, res) => {
+  app.delete("/api/validation-participants/:id", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       await db.execute(sql`DELETE FROM validation_participants WHERE id = ${req.params.id}`);
       res.json({ ok: true });
@@ -63,7 +63,7 @@ export async function registerBetaWaveXRoutes(app: Express) {
   });
 
   // ─── Feedback CRUD ────────────────────────────────────────────────────────
-  app.get("/api/participant-feedback", async (_req, res) => {
+  app.get("/api/participant-feedback", isAuthenticated, requireRole("ADMIN"), async (_req, res) => {
     try {
       const result = rows(await db.execute(sql`
         SELECT pf.*, vp.external_name, vp.type AS participant_type, vp.organization
@@ -75,7 +75,7 @@ export async function registerBetaWaveXRoutes(app: Express) {
     } catch (e) { res.status(500).json({ error: "Failed to fetch feedback" }); }
   });
 
-  app.post("/api/participant-feedback", async (req, res) => {
+  app.post("/api/participant-feedback", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
       const { participant_id, confused_by, expected, loved, almost_quit, use_again, recommend, pay_for_it, publish_another, overall_rating } = req.body;
       if (!participant_id) return res.status(400).json({ error: "participant_id required" });

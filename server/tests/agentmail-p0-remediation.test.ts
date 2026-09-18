@@ -86,6 +86,20 @@ function makeSvixHeaders(secret: string, payload: string, overrides: Partial<Rec
   return base;
 }
 
+/**
+ * The AgentMail ownership tables are not in shared/schema.ts, so `drizzle-kit
+ * push` does not create them: runAgentMailMigration() does, at runtime. Section
+ * 4 below calls it, but sections 2 and 7 need it first. While every db file
+ * shared one database this file silently borrowed the table from
+ * agentmail-multitenant.test.ts, which sorts ahead of it and calls
+ * ensureOwnershipTable(). With one clone database per file that borrowing is
+ * gone, so build the prerequisite here. The call is the same idempotent one
+ * section 4 asserts on, so nothing it proves is weakened.
+ */
+before(async () => {
+  await runAgentMailMigration();
+});
+
 describe("1 — Svix webhook verification", () => {
   const secret = "whsec_" + Buffer.from("test-svix-secret-32-bytes-long!!").toString("base64");
   const payload = JSON.stringify({ event_type: "message.received", message: { inbox_id: "test-inbox" } });
