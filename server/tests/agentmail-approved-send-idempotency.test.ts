@@ -166,7 +166,14 @@ test("ten concurrent identical callers authorize exactly one provider invocation
   const requests = Array.from({ length: 10 }, () => executeAgentMailApprovedReply({
     orgId: reply.orgId, replyQueueId: reply.id, preflight: allow, invokeProvider, database, validateSchema: async () => undefined,
   }));
-  await new Promise(resolve => setTimeout(resolve, 50));
+  // Wait for the one authorized caller to reach the provider rather than
+  // guessing how long ten serialized claim transactions take. A fixed 50ms
+  // sleep here failed intermittently — on main, twice in six local runs — with
+  // `calls` still 0, which asserts nothing about idempotency and everything
+  // about how loaded the machine was. Only one caller may ever invoke the
+  // provider, so waiting for the first invocation cannot mask a second.
+  const deadline = Date.now() + 10_000;
+  while (calls === 0 && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 5));
   assert.equal(calls, 1);
   assert.equal(await editAgentMailReplyAuthority(reply.orgId, reply.id, "racing edit", database), false);
   release();

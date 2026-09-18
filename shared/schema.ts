@@ -617,6 +617,11 @@ export const agentActions = pgTable("agent_actions", {
   relatedSlot: jsonb("related_slot"),
   messageContent: jsonb("message_content"),
   status: agentActionStatusEnum("status").default("pending"),
+  // Delivery marker. Only a real provider send sets this. status='sent' alone is
+  // not proof of delivery (historic auto-pilot rows were written 'sent' with no
+  // provider call), so anything that must reason about "a message actually left"
+  // reads sentAt, not status.
+  sentAt: timestamp("sent_at"),
   bookingId: varchar("booking_id"),
   outcomeValueCents: integer("outcome_value_cents"),
   followUpAt: timestamp("follow_up_at"),
@@ -1468,7 +1473,11 @@ export const connectorTokens = pgTable("connector_tokens", {
   email: varchar("email"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  // One token row per (org, connector). Target of the connector's
+  // `ON CONFLICT (org_id, connector)` upsert; created by migration 0021.
+  orgConnectorUnique: uniqueIndex("connector_tokens_org_connector_unique").on(t.orgId, t.connector),
+}));
 
 export type ConnectorToken = typeof connectorTokens.$inferSelect;
 

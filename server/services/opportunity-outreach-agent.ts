@@ -139,7 +139,7 @@ Write the outreach draft now.`;
     opportunityTitle: opp.title,
   };
 
-  // ── Upsert draft into DB
+  // ── Upsert draft into DB (unique index: opportunity_outreach_org_opportunity_unique (org_id, opportunity_id))
   await db.execute(sql`
     INSERT INTO opportunity_outreach_drafts
       (org_id, opportunity_id, subject, body, status, channel, confidence_score,
@@ -150,7 +150,7 @@ Write the outreach draft now.`;
       ${result.confidenceScore}, true,
       ${result.callToAction}, ${result.positioningAngle}
     )
-    ON CONFLICT (opportunity_id) DO UPDATE SET
+    ON CONFLICT (org_id, opportunity_id) DO UPDATE SET
       subject           = EXCLUDED.subject,
       body              = EXCLUDED.body,
       status            = 'draft',

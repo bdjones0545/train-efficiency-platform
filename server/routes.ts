@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { buildPublicAppUrl } from "./utils/url";
 import { publicRateLimiter } from "./middleware/public-rate-limiter";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
-import { toPublicOrg, toDirectoryOrg, isOrgMember } from "./lib/org-visibility";
+import { toPublicOrg, toDirectoryOrg, isOrgMember, resolveOrgIdOrNull } from "./lib/org-visibility";
 import { projectAthleticBookings } from "./lib/athletic-visibility";
 import { requireCoachRevenueAccess } from "./lib/require-coach-revenue-access";
 import { resolveOrgSession } from "./org-auth";
@@ -15,6 +15,8 @@ import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
 import { hashAuthToken } from "./lib/auth-token";
 import { getSessionSecret } from "./lib/secrets";
+import { createSendGridInboundHandler } from "./email-agent/inbound-reply";
+import { buildOAuthState, verifyOAuthState } from "./lib/oauth-state";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -25,6 +27,7 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, sendBookingCancellationEmailToClient, sendBookingCancellationEmailToCoach, sendBookingRescheduleEmailToClient, sendBookingRescheduleEmailToCoach, sendRecurringSessionsCreatedEmailToClient, sendRecurringSessionsCreatedEmailToCoach, suppressBookingConfirmation, suppressNotificationType, type OrgBranding, type EmailLogContext } from "./email";
 import { sendSms, normalizePhone, smsBookingConfirmation, smsCancellation, smsReschedule } from "./sms";
+import { requireTwilioSignature, handleTwilioInboundSms } from "./twilio-inbound-sms";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -32,6 +35,7 @@ import {
   organizationSubscriptionPlans,
   availabilityBlocks as availabilityBlocksSchema,
   bookings as bookingsSchema,
+  bookingParticipants,
   athleticBookings,
   orgSessions,
   orgUsers,
@@ -2394,6 +2398,18 @@ export async function registerRoutes(
       const coach = await storage.getCoachProfile(coachId);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
 
+      // The service and the coach are fetched independently, so a request can
+      // pair org A's coach with org B's service. A booking belongs to exactly
+      // one organization: both rows must agree, and a caller who already
+      // belongs to an organization may only book inside it.
+      if (service.organizationId !== coach.organizationId) {
+        return res.status(400).json({ message: "Service is not offered by this coach's organization" });
+      }
+      const callerOrgId = await resolveOrgIdOrNull(req);
+      if (callerOrgId && callerOrgId !== coach.organizationId) {
+        return res.status(404).json({ message: "Coach not found" });
+      }
+
       const start = new Date(startAt);
       const end = new Date(endAt);
 
@@ -2719,7 +2735,19 @@ export async function registerRoutes(
 
       const isOwner = booking.clientId === userId;
       const isCoach = coachProfile && booking.coachId === coachProfile.id;
-      const isAdmin = role === "ADMIN";
+      // ADMIN is the platform role, not an organization. An admin may only act
+      // on bookings of their own organization — the booking's organizationId,
+      // or its coach's organization for rows that predate that column.
+      let isAdmin = false;
+      if (role === "ADMIN") {
+        const adminOrgId = await resolveOrgIdOrNull(req);
+        let bookingOrgId: string | null = booking.organizationId ?? null;
+        if (!bookingOrgId) {
+          const bookingCoach = await storage.getCoachProfile(booking.coachId);
+          bookingOrgId = bookingCoach?.organizationId ?? null;
+        }
+        isAdmin = !!adminOrgId && !!bookingOrgId && adminOrgId === bookingOrgId;
+      }
 
       if (!isOwner && !isCoach && !isAdmin) {
         return res.status(403).json({ message: "Not authorized" });
@@ -4142,41 +4170,62 @@ export async function registerRoutes(
 
       const booking = await storage.getBooking(bookingId);
       if (!booking) return res.status(410).json({ message: "This session is no longer available." });
+      // A group session is joinable only by members of the organization that
+      // owns it; the booking id alone is not an invitation.
+      if (!booking.organizationId || !(await isOrgMember(req, booking.organizationId))) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
       if (!booking.maxParticipants) return res.status(400).json({ message: "This is not a group session" });
       if (!["CONFIRMED", "PENDING"].includes(booking.status)) {
         return res.status(410).json({ message: "This session is no longer available." });
       }
 
-      const participants = await storage.getBookingParticipants(bookingId);
-      if (participants.length >= booking.maxParticipants) {
-        return res.status(409).json({ message: "This session is full" });
-      }
-
-      const alreadyJoined = participants.some(p => p.userId === userId && !p.participantName);
+      const maxParticipants = booking.maxParticipants;
       const participantNames: string[] = req.body.participantNames || [];
-
-      const namesToAdd = participantNames.length > 0
+      const namesToAdd: (string | null)[] = participantNames.length > 0
         ? participantNames.filter(n => n.trim())
         : [null];
 
-      const totalAfterJoin = participants.length + namesToAdd.length;
-      if (totalAfterJoin > booking.maxParticipants) {
-        return res.status(409).json({ message: `Only ${booking.maxParticipants - participants.length} spots remaining` });
-      }
+      // Atomic join: an advisory transaction lock on the booking serializes
+      // concurrent capacity checks so a group session can never be overbooked.
+      // (A read-then-insert let two joiners both see the last open spot.)
+      const outcome = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`booking-join:${bookingId}`}))`);
+        const existingRes: any = await tx.execute(sql`
+          SELECT user_id AS "userId", participant_name AS "participantName"
+          FROM booking_participants
+          WHERE booking_id = ${bookingId}
+        `);
+        const existing: Array<{ userId: string; participantName: string | null }> =
+          Array.isArray(existingRes) ? existingRes : existingRes?.rows ?? [];
 
-      if (participantNames.length === 0 && alreadyJoined) {
-        return res.status(409).json({ message: "You have already joined this session" });
-      }
+        if (existing.length >= maxParticipants) {
+          return { ok: false as const, status: 409, message: "This session is full" };
+        }
+        const totalAfterJoin = existing.length + namesToAdd.length;
+        if (totalAfterJoin > maxParticipants) {
+          return { ok: false as const, status: 409, message: `Only ${maxParticipants - existing.length} spots remaining` };
+        }
+        const alreadyJoined = existing.some(p => p.userId === userId && !p.participantName);
+        if (participantNames.length === 0 && alreadyJoined) {
+          return { ok: false as const, status: 409, message: "You have already joined this session" };
+        }
 
-      const added = [];
-      for (const name of namesToAdd) {
-        const p = await storage.addBookingParticipant({
-          bookingId,
-          userId,
-          ...(name ? { participantName: name.trim() } : {}),
-        });
-        added.push(p);
+        const added = namesToAdd.length === 0
+          ? []
+          : await tx.insert(bookingParticipants).values(
+              namesToAdd.map(name => ({
+                bookingId,
+                userId,
+                ...(name ? { participantName: name.trim() } : {}),
+              })),
+            ).returning();
+        return { ok: true as const, added };
+      });
+      if (!outcome.ok) {
+        return res.status(outcome.status).json({ message: outcome.message });
       }
+      const added = outcome.added;
 
       try {
         const coachProfile = await storage.getCoachProfile(booking.coachId);
@@ -9835,14 +9884,28 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!service || service.organizationId !== profile.organizationId) {
         return res.status(400).json({ message: "Service does not belong to this organization" });
       }
+      const clientProfile = await storage.getUserProfile(clientId);
+      if (!clientProfile || clientProfile.organizationId !== profile.organizationId) {
+        return res.status(400).json({ message: "Client does not belong to this organization" });
+      }
+      const start = new Date(startAt);
+      const end = new Date(endAt);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        return res.status(400).json({ message: "startAt must be a valid time before endAt" });
+      }
+      // Same double-booking guard as every other booking creation path.
+      const overlapping = await storage.getOverlappingBookings(coachId, start, end);
+      if (overlapping.length > 0) {
+        return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
+      }
       const booking = await storage.createBooking({
         organizationId: profile.organizationId,
         clientId,
         coachId,
         serviceId,
         locationId: locationId || null,
-        startAt: new Date(startAt),
-        endAt: new Date(endAt),
+        startAt: start,
+        endAt: end,
         status: "CONFIRMED",
         notes: notes || "",
         location: location || "",
@@ -9863,6 +9926,13 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const { status } = req.body;
       const booking = await storage.getBooking(req.params.id);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
+      // Staff of one organization must not see or change another's bookings.
+      let bookingOrgId: string | null = booking.organizationId ?? null;
+      if (!bookingOrgId) {
+        const bookingCoach = await storage.getCoachProfile(booking.coachId);
+        bookingOrgId = bookingCoach?.organizationId ?? null;
+      }
+      if (bookingOrgId !== profile.organizationId) return res.status(404).json({ message: "Booking not found" });
       const existingRedemption = await storage.getRedemptionByBookingId(req.params.id);
       if (existingRedemption) {
         return res.status(409).json({ message: "This session has been redeemed and is locked. It cannot be modified." });
@@ -9870,7 +9940,8 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (booking.status === "COMPLETED" && status !== "COMPLETED") {
         return res.status(409).json({ message: "Completed sessions cannot have their status changed without an admin reversal." });
       }
-      const updated = await storage.updateBookingStatus(req.params.id, status);
+      const updated = await storage.updateBookingStatusForCoach(req.params.id, booking.coachId, status);
+      if (!updated) return res.status(404).json({ message: "Booking not found" });
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -9884,6 +9955,13 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const booking = await storage.getBooking(req.params.id);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
+      // Staff of one organization must not see or change another's bookings.
+      let bookingOrgId: string | null = booking.organizationId ?? null;
+      if (!bookingOrgId) {
+        const bookingCoach = await storage.getCoachProfile(booking.coachId);
+        bookingOrgId = bookingCoach?.organizationId ?? null;
+      }
+      if (bookingOrgId !== profile.organizationId) return res.status(404).json({ message: "Booking not found" });
       const existingRedemption = await storage.getRedemptionByBookingId(req.params.id);
       if (existingRedemption) {
         return res.status(409).json({ message: "This session has been redeemed and is locked. It cannot be rescheduled or edited." });
@@ -9892,14 +9970,40 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         return res.status(409).json({ message: "Completed sessions cannot be rescheduled. Use an admin reversal if needed." });
       }
       const { startAt, endAt, notes, location, serviceId, clientId } = req.body;
-      const updated = await storage.updateBooking(req.params.id, {
-        ...(startAt && { startAt: new Date(startAt) }),
-        ...(endAt && { endAt: new Date(endAt) }),
+      // A booking may only be re-pointed at a service or client of the same
+      // organization (coachId is not editable on this route).
+      if (serviceId && serviceId !== booking.serviceId) {
+        const service = await storage.getService(serviceId);
+        if (!service || service.organizationId !== profile.organizationId) {
+          return res.status(404).json({ message: "Service not found" });
+        }
+      }
+      if (clientId && clientId !== booking.clientId) {
+        const clientProfile = await storage.getUserProfile(clientId);
+        if (!clientProfile || clientProfile.organizationId !== profile.organizationId) {
+          return res.status(404).json({ message: "Client not found" });
+        }
+      }
+      const nextStart = startAt ? new Date(startAt) : booking.startAt;
+      const nextEnd = endAt ? new Date(endAt) : booking.endAt;
+      if (Number.isNaN(nextStart.getTime()) || Number.isNaN(nextEnd.getTime()) || nextEnd <= nextStart) {
+        return res.status(400).json({ message: "startAt must be a valid time before endAt" });
+      }
+      if (startAt || endAt) {
+        const overlapping = await storage.getOverlappingBookings(booking.coachId, nextStart, nextEnd, booking.id);
+        if (overlapping.length > 0) {
+          return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
+        }
+      }
+      const updated = await storage.updateBookingForCoach(req.params.id, booking.coachId, {
+        ...(startAt && { startAt: nextStart }),
+        ...(endAt && { endAt: nextEnd }),
         ...(notes !== undefined && { notes }),
         ...(location !== undefined && { location }),
         ...(serviceId && { serviceId }),
         ...(clientId && { clientId }),
       });
+      if (!updated) return res.status(404).json({ message: "Booking not found" });
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -10881,39 +10985,15 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
-  // Twilio STOP/START webhook for SMS opt-out/opt-in
-  app.post("/api/twilio/sms/incoming", express.urlencoded({ extended: false }), async (req: any, res) => {
-    try {
-      const from: string = (req.body?.From || "").trim();
-      const body: string = (req.body?.Body || "").trim().toUpperCase();
-      if (!from) return res.status(200).send("<?xml version='1.0'?><Response/>");
-
-      // Normalize phone to find user
-      const { normalizePhone } = await import('./sms');
-      const normalized = normalizePhone(from);
-      if (!normalized) return res.status(200).send("<?xml version='1.0'?><Response/>");
-
-      if (body === "STOP" || body === "STOPALL" || body === "UNSUBSCRIBE" || body === "CANCEL" || body === "END" || body === "QUIT") {
-        // Find user by phone and opt them out
-        const allUsers = await db.select().from(users).where(eq(users.phone, normalized));
-        for (const u of allUsers) {
-          await storage.updateUserSmsOptIn(u.id, false, 'twilio_stop');
-          console.log(`[SMS STOP] Opted out user ${u.id} (${normalized})`);
-        }
-      } else if (body === "START" || body === "YES" || body === "UNSTOP") {
-        const allUsers = await db.select().from(users).where(eq(users.phone, normalized));
-        for (const u of allUsers) {
-          await storage.updateUserSmsOptIn(u.id, true, 'twilio_start');
-          console.log(`[SMS START] Opted in user ${u.id} (${normalized})`);
-        }
-      }
-
-      res.status(200).send("<?xml version='1.0'?><Response/>");
-    } catch (err) {
-      console.error("[Twilio webhook] Error:", err);
-      res.status(200).send("<?xml version='1.0'?><Response/>");
-    }
-  });
+  // Twilio STOP/START webhook for SMS opt-out/opt-in.
+  // Guarded by X-Twilio-Signature validation (fails closed without TWILIO_AUTH_TOKEN);
+  // handler lives in ./twilio-inbound-sms so it can be exercised in tests.
+  app.post(
+    "/api/twilio/sms/incoming",
+    express.urlencoded({ extended: false }),
+    requireTwilioSignature,
+    async (req: any, res) => handleTwilioInboundSms(req, res),
+  );
 
   // ─── Team Training Prospecting Routes ─────────────────────────────────────
 
@@ -13917,139 +13997,24 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // ─── SendGrid Inbound Parse Webhook ────────────────────────────────────────
-  // Receives replies to outreach emails automatically. No auth — must return 200 fast.
-  // Setup: In SendGrid → Settings → Inbound Parse → add your domain and point webhook to:
-  //   https://[your-domain]/api/webhooks/sendgrid-inbound
-  app.post("/api/webhooks/sendgrid-inbound", express.urlencoded({ extended: true }), async (req: any, res: any) => {
-    // Always 200 immediately so SendGrid does not retry
-    // URL-token guard (enforced only when SENDGRID_INBOUND_SECRET is set).
-    // In SendGrid dashboard: append ?token=<secret> to the inbound parse webhook URL.
-    const _inboundSecret = process.env.SENDGRID_INBOUND_SECRET;
-    if (_inboundSecret && req.query.token !== _inboundSecret) {
-      return res.status(401).json({ ok: false, error: "Unauthorized" });
-    }
-
-    res.status(200).json({ ok: true });
-
-    try {
-      // Extract sender email — prefer envelope JSON (cleanest), fallback to parsing from header
-      let senderEmail: string | null = null;
-      try {
-        const envelope = typeof req.body.envelope === "string"
-          ? JSON.parse(req.body.envelope)
-          : req.body.envelope;
-        senderEmail = envelope?.from || null;
-      } catch {}
-
-      if (!senderEmail && req.body.from) {
-        const match = (req.body.from as string).match(/<([^>]+)>/);
-        senderEmail = match ? match[1] : (req.body.from as string).trim();
-      }
-
-      if (!senderEmail) {
-        console.log("[InboundParse] Could not extract sender email — skipping");
-        return;
-      }
-
-      senderEmail = senderEmail.toLowerCase().trim();
-      const replyText = ((req.body.text as string) || "").slice(0, 2000);
-
-      // Find the prospect whose contactEmail or decisionMakerEmail matches the sender
-      const found = await storage.findProspectByContactEmail(senderEmail);
-      if (!found) {
-        console.log(`[InboundParse] No prospect found for sender: ${senderEmail}`);
-        return;
-      }
-
-      const { prospect, orgId } = found;
-
-      // Don't double-process
-      if (prospect.outreachStatus === "Replied") {
-        console.log(`[InboundParse] Prospect ${prospect.id} already marked replied — skipping`);
-        return;
-      }
-
-      // AI-classify the reply intent
-      let classification: import("./email-agent/reply-classifier").ReplyClassification | null = null;
-      if (replyText) {
-        try {
-          const { classifyReply } = await import("./email-agent/reply-classifier");
-          classification = await classifyReply(replyText);
-        } catch {}
-      }
-
-      // Mark the prospect replied
-      await storage.updateTeamTrainingProspect(prospect.id, { outreachStatus: "Replied" });
-
-      // Stamp repliedAt on the most recent sent draft, cancel follow-ups
-      const drafts = await storage.getOutreachDraftsByProspect(prospect.id);
-      const sentDraft = drafts.find(d => !!d.sentAt && !d.repliedAt);
-      if (sentDraft) {
-        await storage.updateTeamTrainingOutreachDraft(sentDraft.id, {
-          repliedAt: new Date(),
-          replyText: replyText || null,
-          replyClassification: classification,
-        });
-        await storage.cancelFollowUpSequence(sentDraft.id);
-        if (sentDraft.messageVariantId) {
-          try {
-            const variant = await storage.getEmailMessageVariant(sentDraft.messageVariantId);
-            if (variant) {
-              await storage.updateEmailMessageVariant(variant.id, {
-                replies: (variant.replies ?? 0) + 1,
-                conversions: (variant.conversions ?? 0) + 1,
-              });
-            }
-          } catch {}
-        }
-      }
-
-      // Log the event
-      await storage.logOutreachEvent({
-        orgId,
-        prospectId: prospect.id,
-        eventType: "replied",
-        description: classification
-          ? `Auto-detected inbound reply (${classification})`
-          : "Auto-detected inbound reply via SendGrid",
-        metadata: {
-          replyText: replyText.slice(0, 500) || null,
-          classification,
-          source: "sendgrid_inbound",
-        },
-      });
-
-      // Revenue attribution
-      try {
-        const { attributeOutcomeToProspect } = await import("./email-agent/revenue-outcome-engine");
-        await attributeOutcomeToProspect(orgId, prospect.id, "engaged", 0, "reply");
-      } catch {}
-
-      // Auto-create deal when prospect seems interested
-      if (classification === "interested" || classification === "ask_info") {
-        const existingDeal = await storage.getTeamTrainingDealByProspect(prospect.id, orgId);
-        if (!existingDeal) {
-          await storage.createTeamTrainingDeal({
-            organizationId: orgId,
-            prospectId: prospect.id,
-            outreachDraftId: sentDraft?.id ?? null,
-            status: "interested",
-            estimatedValue: prospect.estimatedValue ?? 0,
-            probability: 40,
-            nextAction: classification === "ask_info"
-              ? "Send information and schedule a call"
-              : "Schedule a discovery call",
-            notes: replyText ? `Auto-detected reply: ${replyText.slice(0, 300)}` : "",
-            lastActivityAt: new Date(),
-          });
-        }
-      }
-
-      console.log(`[InboundParse] Reply processed — prospect: ${prospect.prospectName} (${prospect.id}), classification: ${classification}`);
-    } catch (err: any) {
-      console.error("[InboundParse] Error processing inbound email:", err.message);
-    }
-  });
+  // Receives replies to outreach emails automatically. Must return 200 fast.
+  //
+  // Auth: a shared secret in the query string (Inbound Parse can only be
+  // configured with a URL, so there is no header to carry it). The secret is
+  // REQUIRED in production — with none set this endpoint responds 503 and
+  // processes nothing. Comparison is timing-safe.
+  // Setup: In SendGrid → Settings → Inbound Parse, point the webhook at:
+  //   https://[your-domain]/api/webhooks/sendgrid-inbound?token=<SENDGRID_INBOUND_SECRET>
+  //
+  // Attribution: prospect contact emails are NOT unique across organizations,
+  // so the reply is attributed to every org that actually sent outreach to the
+  // sender, each processed against its own records. See
+  // server/email-agent/inbound-reply.ts.
+  app.post(
+    "/api/webhooks/sendgrid-inbound",
+    express.urlencoded({ extended: true }),
+    createSendGridInboundHandler({ storage }),
+  );
 
   // ─── Business Brain API ──────────────────────────────────────────────────────
 
@@ -15889,45 +15854,27 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/connectors/google-calendar/callback — OAuth callback (public, Google redirects here)
-  // State is either plain orgId (connector flow) or "orgId|fromIntegration" (org-integration flow).
+  // The org is taken ONLY from the HMAC-signed state issued by the connect
+  // routes above (server/lib/oauth-state.ts); unsigned/tampered/expired state
+  // is rejected with gcal_error=invalid_state before any code exchange.
+  // Handler logic lives in server/connectors/google-calendar.ts so it is
+  // testable; this registration intentionally stays middleware-free.
   app.get("/api/connectors/google-calendar/callback", async (req: any, res) => {
-    const { code, state: rawState, error } = req.query;
-    const fromIntegration = typeof rawState === "string" && rawState.includes("|fromIntegration");
-    const orgId = typeof rawState === "string" ? rawState.replace("|fromIntegration", "") : (rawState as string);
-    const successBase = fromIntegration ? "/admin/configuration?tab=advanced" : "/admin/agent-ops?tab=connectors";
-    const errorBase  = fromIntegration ? "/admin/configuration?tab=advanced" : "/admin/agent-ops?tab=connectors";
-
-    if (error) {
-      return res.redirect(`${errorBase}&gcal_error=${encodeURIComponent(error as string)}`);
-    }
-    if (!code || !orgId) {
-      return res.redirect(`${errorBase}&gcal_error=missing_params`);
-    }
-    try {
-      let email: string | null = null;
-      if (fromIntegration) {
-        // Use the credentials stored in external_integrations for this org
+    const { handleGoogleCalendarOAuthCallback, exchangeCodeAndStoreTokens, exchangeCodeAndStoreTokensWithCredentials } =
+      await import("./connectors/google-calendar");
+    const { decryptCredentials } = await import("./credentials-vault");
+    const redirectTo = await handleGoogleCalendarOAuthCallback(req.query ?? {}, {
+      exchange: exchangeCodeAndStoreTokens,
+      exchangeWithCredentials: exchangeCodeAndStoreTokensWithCredentials,
+      getIntegrationCredentials: async (orgId) => {
         const integration = await storage.getExternalIntegration(orgId, "google_calendar");
-        const { decryptCredentials } = await import("./credentials-vault");
-        const creds = decryptCredentials(integration?.encryptedCredentials as any);
-        if (!creds?.clientId || !creds?.clientSecret) {
-          return res.redirect(`${errorBase}&gcal_error=${encodeURIComponent("Stored credentials missing — please re-enter them")}`);
-        }
-        const { exchangeCodeAndStoreTokensWithCredentials } = await import("./connectors/google-calendar");
-        const result = await exchangeCodeAndStoreTokensWithCredentials(code as string, orgId, creds.clientId, creds.clientSecret);
-        email = result.email;
-        // Mark external_integrations row as connected now that OAuth is complete
+        return decryptCredentials(integration?.encryptedCredentials as any);
+      },
+      markIntegrationConnected: async (orgId) => {
         await storage.upsertExternalIntegration(orgId, "google_calendar", { status: "connected" } as any);
-        return res.redirect(`${successBase}&gcal=connected&gcal_email=${encodeURIComponent(email ?? "")}`);
-      } else {
-        const { exchangeCodeAndStoreTokens } = await import("./connectors/google-calendar");
-        const result = await exchangeCodeAndStoreTokens(code as string, orgId);
-        email = result.email;
-        return res.redirect(`${successBase}&gcal_connected=1&gcal_email=${encodeURIComponent(email ?? "")}`);
-      }
-    } catch (err: any) {
-      res.redirect(`${errorBase}&gcal_error=${encodeURIComponent(err.message)}`);
-    }
+      },
+    });
+    res.redirect(redirectTo);
   });
 
   // DELETE /api/admin/connectors/google-calendar — disconnect
@@ -18492,34 +18439,18 @@ Respond with this exact JSON structure:
     return `${returnTo}${sep}gmail=${status}`;
   }
 
-  function buildOAuthState(orgId: string, returnTo?: string): string {
-    const { createHmac, randomBytes } = require("crypto");
-    const nonce = randomBytes(16).toString("hex");
-    const ts = String(Date.now());
-    const payload: Record<string, string> = { orgId, nonce, ts };
-    if (returnTo) payload.returnTo = sanitizeReturnTo(returnTo);
-    const raw = JSON.stringify(payload);
-    const sig = createHmac("sha256", getSessionSecret())
-      .update(raw)
-      .digest("hex");
-    return Buffer.from(JSON.stringify({ ...payload, sig })).toString("base64url");
+  // Signing/verification lives in server/lib/oauth-state.ts (HMAC over
+  // {orgId,nonce,ts,...}, timing-safe compare, 15-min expiry) and is shared
+  // with the Google Calendar flow. These adapters only add the returnTo field.
+  function buildGmailOAuthState(orgId: string, returnTo?: string): string {
+    return buildOAuthState(orgId, returnTo ? { returnTo: sanitizeReturnTo(returnTo) } : {});
   }
 
-  function verifyOAuthState(state: string): { orgId: string; returnTo: string } | null {
-    try {
-      const { createHmac } = require("crypto");
-      const obj = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
-      const { sig, ...payload } = obj;
-      const raw = JSON.stringify(payload);
-      const expected = createHmac("sha256", getSessionSecret())
-        .update(raw)
-        .digest("hex");
-      if (sig !== expected) return null;
-      if (Date.now() - parseInt(payload.ts) > 15 * 60 * 1000) return null; // 15-min expiry
-      return { orgId: payload.orgId, returnTo: sanitizeReturnTo(payload.returnTo) };
-    } catch {
-      return null;
-    }
+  function verifyGmailOAuthState(state: unknown): { orgId: string; returnTo: string } | null {
+    const verified = verifyOAuthState(state);
+    if (!verified) return null;
+    const returnTo = verified.extra.returnTo;
+    return { orgId: verified.orgId, returnTo: sanitizeReturnTo(typeof returnTo === "string" ? returnTo : undefined) };
   }
 
   // GET /api/integrations/gmail/oauth/start-url — authenticated JSON endpoint.
@@ -18628,7 +18559,7 @@ Respond with this exact JSON structure:
       // Embed returnTo in the signed state so the callback can redirect back
       // to the exact page the admin was on, preserving the tab + any other params.
       const returnTo = sanitizeReturnTo((req.query as any).returnTo as string | undefined);
-      const state = buildOAuthState(orgId, returnTo);
+      const state = buildGmailOAuthState(orgId, returnTo);
 
       const scopes = [
         "https://www.googleapis.com/auth/gmail.send",
@@ -18703,7 +18634,7 @@ Respond with this exact JSON structure:
         return cbRedirect(DEFAULT_OAUTH_RETURN, "error");
       }
 
-      const verified = verifyOAuthState(state);
+      const verified = verifyGmailOAuthState(state);
       if (!verified) {
         console.error("[gmail/oauth/callback] state verification failed — invalid signature or expired. State length:", state?.length);
         return cbRedirect(DEFAULT_OAUTH_RETURN, "error");
@@ -18778,7 +18709,7 @@ Respond with this exact JSON structure:
       try {
         const stateStr = (req.query as any).state as string | undefined;
         if (stateStr) {
-          const v = verifyOAuthState(stateStr);
+          const v = verifyGmailOAuthState(stateStr);
           if (v) fallbackReturnTo = v.returnTo;
         }
       } catch { /* ignore */ }
