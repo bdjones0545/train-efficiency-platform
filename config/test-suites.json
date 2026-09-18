@@ -101,6 +101,7 @@
         "server/tests/booking-management-authorization.test.ts",
         "server/tests/booking-participant-authorization.test.ts",
         "server/tests/booking-participant-exposure.test.ts",
+        "server/tests/client-query-key-contract.test.ts",
         "server/tests/coach-audit-authz-hardening.test.ts",
         "server/tests/coach-surface-reachability.test.ts",
         "server/tests/coach-user-management-authorization.test.ts",
@@ -137,6 +138,7 @@
         "default"
       ],
       "files": [
+        "server/tests/autopilot-phantom-sent.test.ts",
         "server/tests/github-issue-phase2a.test.ts",
         "server/tests/graceful-shutdown-reliability.test.ts",
         "server/tests/kevin-slack-eoh.test.ts",
@@ -151,6 +153,7 @@
         "default"
       ],
       "files": [
+        "server/tests/admin-intelligence-org-resolver.test.ts",
         "server/tests/api-request-logger.test.ts",
         "server/tests/attention-security-performance.test.ts",
         "server/tests/autonomy-trust-authorization.test.ts",
@@ -164,6 +167,7 @@
         "server/tests/cross-agent-coordination-identity.test.ts",
         "server/tests/email-audit-authorization.test.ts",
         "server/tests/email-notification-authorization.test.ts",
+        "server/tests/google-calendar-oauth-state.test.ts",
         "server/tests/org-isolation-helpers.test.ts",
         "server/tests/phase1b-authz.test.ts",
         "server/tests/phase1c-org-isolation.test.ts",
@@ -172,6 +176,7 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/replit-committed-secrets.test.ts",
         "server/tests/revenue-summary-integrity.test.ts",
         "server/tests/secrets-and-token-hash.test.ts"
       ]
@@ -209,6 +214,7 @@
         "server/tests/composio-specialized-version-persistence.test.ts",
         "server/tests/cron-job-locks.test.ts",
         "server/tests/follow-up-reliability.test.ts",
+        "server/tests/google-calendar-token-storage.test.ts",
         "server/tests/graceful-shutdown-postgres.test.ts",
         "server/tests/kevin-slack-event-dedup-upsert.test.ts",
         "server/tests/kevin-slack-tenant-isolation.test.ts",

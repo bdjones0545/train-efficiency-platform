@@ -13,7 +13,7 @@ import { requireRole, getUserRole } from "./lib/require-role";
 import { storage } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
 import { hashAuthToken } from "./lib/auth-token";
-import { getSessionSecret } from "./lib/secrets";
+import { buildOAuthState, verifyOAuthState } from "./lib/oauth-state";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -15869,45 +15869,27 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/connectors/google-calendar/callback — OAuth callback (public, Google redirects here)
-  // State is either plain orgId (connector flow) or "orgId|fromIntegration" (org-integration flow).
+  // The org is taken ONLY from the HMAC-signed state issued by the connect
+  // routes above (server/lib/oauth-state.ts); unsigned/tampered/expired state
+  // is rejected with gcal_error=invalid_state before any code exchange.
+  // Handler logic lives in server/connectors/google-calendar.ts so it is
+  // testable; this registration intentionally stays middleware-free.
   app.get("/api/connectors/google-calendar/callback", async (req: any, res) => {
-    const { code, state: rawState, error } = req.query;
-    const fromIntegration = typeof rawState === "string" && rawState.includes("|fromIntegration");
-    const orgId = typeof rawState === "string" ? rawState.replace("|fromIntegration", "") : (rawState as string);
-    const successBase = fromIntegration ? "/admin/configuration?tab=advanced" : "/admin/agent-ops?tab=connectors";
-    const errorBase  = fromIntegration ? "/admin/configuration?tab=advanced" : "/admin/agent-ops?tab=connectors";
-
-    if (error) {
-      return res.redirect(`${errorBase}&gcal_error=${encodeURIComponent(error as string)}`);
-    }
-    if (!code || !orgId) {
-      return res.redirect(`${errorBase}&gcal_error=missing_params`);
-    }
-    try {
-      let email: string | null = null;
-      if (fromIntegration) {
-        // Use the credentials stored in external_integrations for this org
+    const { handleGoogleCalendarOAuthCallback, exchangeCodeAndStoreTokens, exchangeCodeAndStoreTokensWithCredentials } =
+      await import("./connectors/google-calendar");
+    const { decryptCredentials } = await import("./credentials-vault");
+    const redirectTo = await handleGoogleCalendarOAuthCallback(req.query ?? {}, {
+      exchange: exchangeCodeAndStoreTokens,
+      exchangeWithCredentials: exchangeCodeAndStoreTokensWithCredentials,
+      getIntegrationCredentials: async (orgId) => {
         const integration = await storage.getExternalIntegration(orgId, "google_calendar");
-        const { decryptCredentials } = await import("./credentials-vault");
-        const creds = decryptCredentials(integration?.encryptedCredentials as any);
-        if (!creds?.clientId || !creds?.clientSecret) {
-          return res.redirect(`${errorBase}&gcal_error=${encodeURIComponent("Stored credentials missing — please re-enter them")}`);
-        }
-        const { exchangeCodeAndStoreTokensWithCredentials } = await import("./connectors/google-calendar");
-        const result = await exchangeCodeAndStoreTokensWithCredentials(code as string, orgId, creds.clientId, creds.clientSecret);
-        email = result.email;
-        // Mark external_integrations row as connected now that OAuth is complete
+        return decryptCredentials(integration?.encryptedCredentials as any);
+      },
+      markIntegrationConnected: async (orgId) => {
         await storage.upsertExternalIntegration(orgId, "google_calendar", { status: "connected" } as any);
-        return res.redirect(`${successBase}&gcal=connected&gcal_email=${encodeURIComponent(email ?? "")}`);
-      } else {
-        const { exchangeCodeAndStoreTokens } = await import("./connectors/google-calendar");
-        const result = await exchangeCodeAndStoreTokens(code as string, orgId);
-        email = result.email;
-        return res.redirect(`${successBase}&gcal_connected=1&gcal_email=${encodeURIComponent(email ?? "")}`);
-      }
-    } catch (err: any) {
-      res.redirect(`${errorBase}&gcal_error=${encodeURIComponent(err.message)}`);
-    }
+      },
+    });
+    res.redirect(redirectTo);
   });
 
   // DELETE /api/admin/connectors/google-calendar — disconnect
@@ -18472,34 +18454,18 @@ Respond with this exact JSON structure:
     return `${returnTo}${sep}gmail=${status}`;
   }
 
-  function buildOAuthState(orgId: string, returnTo?: string): string {
-    const { createHmac, randomBytes } = require("crypto");
-    const nonce = randomBytes(16).toString("hex");
-    const ts = String(Date.now());
-    const payload: Record<string, string> = { orgId, nonce, ts };
-    if (returnTo) payload.returnTo = sanitizeReturnTo(returnTo);
-    const raw = JSON.stringify(payload);
-    const sig = createHmac("sha256", getSessionSecret())
-      .update(raw)
-      .digest("hex");
-    return Buffer.from(JSON.stringify({ ...payload, sig })).toString("base64url");
+  // Signing/verification lives in server/lib/oauth-state.ts (HMAC over
+  // {orgId,nonce,ts,...}, timing-safe compare, 15-min expiry) and is shared
+  // with the Google Calendar flow. These adapters only add the returnTo field.
+  function buildGmailOAuthState(orgId: string, returnTo?: string): string {
+    return buildOAuthState(orgId, returnTo ? { returnTo: sanitizeReturnTo(returnTo) } : {});
   }
 
-  function verifyOAuthState(state: string): { orgId: string; returnTo: string } | null {
-    try {
-      const { createHmac } = require("crypto");
-      const obj = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
-      const { sig, ...payload } = obj;
-      const raw = JSON.stringify(payload);
-      const expected = createHmac("sha256", getSessionSecret())
-        .update(raw)
-        .digest("hex");
-      if (sig !== expected) return null;
-      if (Date.now() - parseInt(payload.ts) > 15 * 60 * 1000) return null; // 15-min expiry
-      return { orgId: payload.orgId, returnTo: sanitizeReturnTo(payload.returnTo) };
-    } catch {
-      return null;
-    }
+  function verifyGmailOAuthState(state: unknown): { orgId: string; returnTo: string } | null {
+    const verified = verifyOAuthState(state);
+    if (!verified) return null;
+    const returnTo = verified.extra.returnTo;
+    return { orgId: verified.orgId, returnTo: sanitizeReturnTo(typeof returnTo === "string" ? returnTo : undefined) };
   }
 
   // GET /api/integrations/gmail/oauth/start-url — authenticated JSON endpoint.
@@ -18608,7 +18574,7 @@ Respond with this exact JSON structure:
       // Embed returnTo in the signed state so the callback can redirect back
       // to the exact page the admin was on, preserving the tab + any other params.
       const returnTo = sanitizeReturnTo((req.query as any).returnTo as string | undefined);
-      const state = buildOAuthState(orgId, returnTo);
+      const state = buildGmailOAuthState(orgId, returnTo);
 
       const scopes = [
         "https://www.googleapis.com/auth/gmail.send",
@@ -18683,7 +18649,7 @@ Respond with this exact JSON structure:
         return cbRedirect(DEFAULT_OAUTH_RETURN, "error");
       }
 
-      const verified = verifyOAuthState(state);
+      const verified = verifyGmailOAuthState(state);
       if (!verified) {
         console.error("[gmail/oauth/callback] state verification failed — invalid signature or expired. State length:", state?.length);
         return cbRedirect(DEFAULT_OAUTH_RETURN, "error");
@@ -18758,7 +18724,7 @@ Respond with this exact JSON structure:
       try {
         const stateStr = (req.query as any).state as string | undefined;
         if (stateStr) {
-          const v = verifyOAuthState(stateStr);
+          const v = verifyGmailOAuthState(stateStr);
           if (v) fallbackReturnTo = v.returnTo;
         }
       } catch { /* ignore */ }

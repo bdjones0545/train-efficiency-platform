@@ -1,57 +1,35 @@
--- ── connector_tokens: one token row per (org_id, connector) ──────────────────
+-- Google Calendar tokens are upserted with
+--   INSERT INTO connector_tokens ... ON CONFLICT (org_id, connector) DO UPDATE
+-- but the table shipped with only a primary key, so Postgres rejected every
+-- token exchange with 42P10 ("no unique or exclusion constraint matching the
+-- ON CONFLICT specification"). This migration makes (org_id, connector) unique.
 --
--- server/connectors/google-calendar.ts stores Google OAuth tokens with
---
---   INSERT INTO connector_tokens (...) ... ON CONFLICT (org_id, connector) DO UPDATE ...
---
--- but the only unique index on connector_tokens was the primary key on (id).
--- Postgres infers an ON CONFLICT target from a unique index, not from column
--- names, so every call raised 42P10 ("there is no unique or exclusion
--- constraint matching the ON CONFLICT specification") — including the first
--- insert into an empty table. No Google Calendar token was ever stored.
---
--- This migration collapses any pre-existing duplicates (keeping the most
--- recently updated row per org+connector, which holds the freshest access and
--- refresh tokens) and installs the unique index the upsert has always assumed.
-
-LOCK TABLE connector_tokens IN ACCESS EXCLUSIVE MODE;
-
-DELETE FROM connector_tokens stale
-USING (
-  SELECT id,
-         row_number() OVER (
-           PARTITION BY org_id, connector
-           ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
-         ) AS duplicate_position
-    FROM connector_tokens
-) ranked
-WHERE stale.id = ranked.id
-  AND ranked.duplicate_position > 1;
-
-CREATE UNIQUE INDEX IF NOT EXISTS connector_tokens_org_connector_unique
-  ON connector_tokens (org_id, connector);
+-- Idempotent and safe on a populated database: if duplicate rows already exist
+-- for the same (org_id, connector), only the newest row (by updated_at, then
+-- created_at, then id) is kept. These are OAuth tokens, so the newest row is
+-- the only one that can still be valid.
 
 DO $$
 BEGIN
-  IF NOT EXISTS (
-    SELECT 1
-    FROM pg_index definition
-    JOIN pg_class relation ON relation.oid = definition.indrelid
-    JOIN pg_namespace namespace ON namespace.oid = relation.relnamespace
-    WHERE namespace.nspname = current_schema()
-      AND relation.relname = 'connector_tokens'
-      AND definition.indisunique
-      AND definition.indpred IS NULL
-      AND ARRAY(
-        SELECT attribute.attname::text
-        FROM unnest(definition.indkey) WITH ORDINALITY key(attribute_number, ordinality)
-        JOIN pg_attribute attribute
-          ON attribute.attrelid = definition.indrelid
-         AND attribute.attnum = key.attribute_number
-        ORDER BY key.ordinality
-      ) = ARRAY['org_id', 'connector']::text[]
+  IF EXISTS (
+    SELECT 1 FROM connector_tokens
+    GROUP BY org_id, connector
+    HAVING count(*) > 1
   ) THEN
-    RAISE EXCEPTION 'connector_tokens migration blocked: (org_id, connector) uniqueness was not established';
+    DELETE FROM connector_tokens
+    WHERE id IN (
+      SELECT id FROM (
+        SELECT id,
+               row_number() OVER (
+                 PARTITION BY org_id, connector
+                 ORDER BY updated_at DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
+               ) AS rn
+        FROM connector_tokens
+      ) ranked
+      WHERE ranked.rn > 1
+    );
   END IF;
-END
-$$;
+END $$;
+
+CREATE UNIQUE INDEX IF NOT EXISTS connector_tokens_org_connector_unique
+  ON connector_tokens (org_id, connector);
