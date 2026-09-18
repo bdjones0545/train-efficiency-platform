@@ -210,7 +210,17 @@ function scanDrizzle(
     const targetMatch = /(?:^|[\s,{])target\s*:/.exec(args.inner);
     if (!targetMatch) continue; // no target — no inference
 
-    base.predicate = /(?:^|[\s,{])targetWhere\s*:/.test(args.inner);
+    // Which property carries the *index predicate* differs by method in
+    // drizzle-orm (verified against 0.39.3 by inspecting the emitted SQL):
+    //   .onConflictDoUpdate({ targetWhere }) -> ON CONFLICT (...) WHERE <pred> DO UPDATE
+    //   .onConflictDoUpdate({ setWhere })    -> ON CONFLICT (...) DO UPDATE ... WHERE <pred>
+    //   .onConflictDoNothing({ where })      -> ON CONFLICT (...) WHERE <pred> DO NOTHING
+    // `targetWhere` is ignored by onConflictDoNothing, so requiring it there
+    // would report a correct partial-index upsert as dead.
+    const isDoNothing = /onConflictDoNothing/i.test(match[0]);
+    base.predicate = isDoNothing
+      ? /(?:^|[\s,{])where\s*:/.test(args.inner)
+      : /(?:^|[\s,{])targetWhere\s*:/.test(args.inner);
 
     const valueStart = targetMatch.index + targetMatch[0].length;
     let value: string;
