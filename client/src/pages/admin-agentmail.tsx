@@ -646,8 +646,11 @@ export default function AdminAgentMailPage() {
     onError: (e: any) => toast({ title: "Send failed", description: e.message, variant: "destructive" }),
   });
 
+  // The route is PATCH /api/agentmail/replies/:id (no "/edit" suffix) and the
+  // handler requires `edited_body`. Both were wrong, so saving a draft reply
+  // always failed with "Save failed".
   const editReplyMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: string }) => apiRequest("PATCH", `/api/agentmail/replies/${id}/edit`, { body }),
+    mutationFn: ({ id, body }: { id: string; body: string }) => apiRequest("PATCH", `/api/agentmail/replies/${id}`, { edited_body: body }),
     onSuccess: () => { toast({ title: "Draft saved" }); queryClient.invalidateQueries({ queryKey: ["/api/agentmail/replies"] }); },
     onError: (e: any) => toast({ title: "Save failed", description: e.message, variant: "destructive" }),
   });
@@ -670,8 +673,10 @@ export default function AdminAgentMailPage() {
     onError: (e: any) => toast({ title: "Send failed", description: e.message, variant: "destructive" }),
   });
 
+  // Same contract as the reply edit above: PATCH /api/agentmail/followups/:id
+  // with `edited_body`.
   const editFollowupMutation = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: string }) => apiRequest("PATCH", `/api/agentmail/followups/${id}/edit`, { body }),
+    mutationFn: ({ id, body }: { id: string; body: string }) => apiRequest("PATCH", `/api/agentmail/followups/${id}`, { edited_body: body }),
     onSuccess: () => { toast({ title: "Draft saved" }); queryClient.invalidateQueries({ queryKey: ["/api/agentmail/followups"] }); },
     onError: (e: any) => toast({ title: "Save failed", description: e.message, variant: "destructive" }),
   });

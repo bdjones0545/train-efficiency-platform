@@ -101,6 +101,7 @@
         "server/tests/booking-management-authorization.test.ts",
         "server/tests/booking-participant-authorization.test.ts",
         "server/tests/booking-participant-exposure.test.ts",
+        "server/tests/client-query-key-contract.test.ts",
         "server/tests/coach-audit-authz-hardening.test.ts",
         "server/tests/coach-surface-reachability.test.ts",
         "server/tests/coach-user-management-authorization.test.ts",
@@ -152,6 +153,7 @@
         "default"
       ],
       "files": [
+        "server/tests/admin-intelligence-org-resolver.test.ts",
         "server/tests/api-request-logger.test.ts",
         "server/tests/attention-security-performance.test.ts",
         "server/tests/autonomy-trust-authorization.test.ts",
