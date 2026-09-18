@@ -3509,7 +3509,9 @@ Return a JSON object with exactly these keys:
               recipientUserId: clientUser.id,
             }
           );
-          await storage.updateAgentAction(agentActionId_outreach, { status: "sent" });
+          // sentAt is the delivery marker: only a path that got a provider result
+          // may set it. Automation writes drafts and never reaches this line.
+          await storage.updateAgentAction(agentActionId_outreach, { status: "sent", sentAt: new Date() });
           console.log(`[send_drafted_outreach_email] Sent to ${clientUser.email} (action ${agentActionId_outreach})`);
           return JSON.stringify({
             success: true,
@@ -3685,7 +3687,8 @@ Return a JSON object with exactly these keys:
             },
           });
           if (smsResult.sent) {
-            await storage.updateAgentAction(resolvedAgentActionId, { status: "sent" });
+            // Provider confirmed the send, so the delivery marker is stamped here.
+            await storage.updateAgentAction(resolvedAgentActionId, { status: "sent", sentAt: new Date() });
             console.log(`[send_drafted_outreach_sms] Sent to ${clientUserSms.phone} (action ${resolvedAgentActionId})`);
             return JSON.stringify({
               success: true,

@@ -316,7 +316,8 @@ export async function qualifyOpportunity(orgId: string, opportunityId: string): 
     riskLevel:        risk.level,
   };
 
-  // ── Persist assessment (upsert by opportunity_id + org_id)
+  // ── Persist assessment (upsert by org_id + opportunity_id; the unique index is
+  //    opportunity_qualification_org_opportunity_unique (org_id, opportunity_id))
   await validateFeatureSchema("opportunity");
 
   await db.execute(sql`
@@ -335,7 +336,7 @@ export async function qualifyOpportunity(orgId: string, opportunityId: string): 
       ${JSON.stringify(result.redFlags)},
       ${JSON.stringify(result.nextSteps)}
     )
-    ON CONFLICT (opportunity_id) DO UPDATE SET
+    ON CONFLICT (org_id, opportunity_id) DO UPDATE SET
       fit_score              = EXCLUDED.fit_score,
       ai_fulfillment_score   = EXCLUDED.ai_fulfillment_score,
       revenue_potential_score = EXCLUDED.revenue_potential_score,
