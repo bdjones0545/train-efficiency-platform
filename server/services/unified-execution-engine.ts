@@ -312,10 +312,15 @@ export async function listExecutionEvents(
   return Array.isArray(rows) ? rows : (rows as any).rows ?? [];
 }
 
-export async function getExecutionEvent(executionId: string): Promise<any | null> {
+/**
+ * Reads one execution event. `orgId` is required: the id alone identifies a row
+ * in every organization's history, and the caller's org is the only thing that
+ * makes a lookup by id safe to expose over HTTP.
+ */
+export async function getExecutionEvent(executionId: string, orgId: string): Promise<any | null> {
   await ensureExecutionTables();
   const rows = await db.execute(sql`
-    SELECT * FROM execution_events WHERE id = ${executionId}
+    SELECT * FROM execution_events WHERE id = ${executionId} AND org_id = ${orgId}
   `);
   const data = Array.isArray(rows) ? rows : (rows as any).rows ?? [];
   return data[0] ?? null;

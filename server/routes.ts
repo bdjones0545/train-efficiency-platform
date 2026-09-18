@@ -8,7 +8,7 @@ import { projectAthleticBookings } from "./lib/athletic-visibility";
 import { requireCoachRevenueAccess } from "./lib/require-coach-revenue-access";
 import { resolveOrgSession } from "./org-auth";
 import { toPublicParticipants } from "./lib/participant-visibility";
-import { toPublicCoaches } from "./lib/coach-visibility";
+import { toPublicCoach, toPublicCoaches } from "./lib/coach-visibility";
 import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
 import { phase10WriteGate } from "./lib/phase10-write-gate";
@@ -2172,8 +2172,12 @@ export async function registerRoutes(
         if (!orgId) return res.status(400).json({ message: "organizationId required" });
       }
       const coaches = await storage.getCoachProfilesByOrganization(orgId);
-      const safe = coaches.map(({ passwordHash, email, ...rest }: any) => rest);
-      res.json(safe);
+      // The destructure above only stripped the coach row's own secrets; the
+      // JOINED users row shipped whole — passwordHash, email, phone,
+      // passwordResetToken, stripeCustomerId, unsubscribeToken — to anyone who
+      // could name an organizationId. Project through the shared allowlist so
+      // this route, /api/coaches/:id and the public org landing page agree.
+      res.json(toPublicCoaches(coaches));
     } catch (error) {
       console.error("Error fetching coaches:", error);
       res.status(500).json({ message: "Failed to fetch coaches" });
@@ -2184,8 +2188,7 @@ export async function registerRoutes(
     try {
       const coach = await storage.getCoachProfile(req.params.id);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
-      const { passwordHash, email, ...safe } = coach;
-      res.json(safe);
+      res.json(toPublicCoach(coach));
     } catch (error) {
       console.error("Error fetching coach:", error);
       res.status(500).json({ message: "Failed to fetch coach" });

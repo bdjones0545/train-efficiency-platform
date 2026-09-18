@@ -294,6 +294,7 @@ test("coach admin routes are registered with authentication + ADMIN role + handl
   assert.deepEqual(
     routes.map((r) => `${r.method.toUpperCase()} ${r.path}`),
     [
+      "GET /api/admin/coaches",
       "POST /api/admin/coaches",
       "PATCH /api/admin/coaches/:id",
       "DELETE /api/admin/coaches/:id",

@@ -15,6 +15,7 @@ import { isAuthenticated } from "./replit_integrations/auth";
 import { requireRole, getUserRole } from "./lib/require-role";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
 import { storage } from "./storage";
+import { toPublicCoach } from "./lib/coach-visibility";
 import { sendCoachWelcomeEmail, type OrgBranding } from "./email";
 
 export type AdminCoachRouteDeps = {
@@ -26,6 +27,31 @@ export type AdminCoachRouteDeps = {
 export function registerAdminCoachRoutes(app: Express, deps: AdminCoachRouteDeps): void {
   const resolveOrgId = deps.resolveOrgId ?? resolveOrgIdOrThrow;
   const { getOrgBranding } = deps;
+
+  /**
+   * GET /api/admin/coaches
+   *
+   * The staff-only coach listing. `/api/coaches` is reachable anonymously with
+   * `?organizationId=`, so it can only ever serve the public projection (name
+   * and photo). The admin configuration screen and the attendance report
+   * recipient picker need each coach's contact address, so they read it here,
+   * behind a real role check, as an explicit `coachEmail` field rather than by
+   * shipping the whole joined users row.
+   */
+  app.get("/api/admin/coaches", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
+    try {
+      const orgId = await resolveOrgId(req);
+      const coaches = await storage.getCoachProfilesByOrganization(orgId);
+      res.json(coaches.map((coach: any) => ({
+        ...toPublicCoach(coach),
+        coachEmail: coach.user?.email ?? coach.email ?? null,
+      })));
+    } catch (error) {
+      if (handleOrgError(error, res)) return;
+      console.error("Error fetching admin coaches:", error);
+      res.status(500).json({ message: "Failed to fetch coaches" });
+    }
+  });
 
   app.post("/api/admin/coaches", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
     try {

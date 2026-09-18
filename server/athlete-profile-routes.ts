@@ -9,12 +9,32 @@ import {
 } from "@shared/schema";
 import { eq, and, desc, asc, gte, sql as drizzleSql } from "drizzle-orm";
 import { hashAuthToken } from "./lib/auth-token";
+import { getUserRole } from "./lib/require-role";
 import OpenAI from "openai";
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // ─── Auth (reuse same 3-path pattern) ────────────────────────────────────────
 import { coachProfiles, userProfiles } from "@shared/schema";
+
+/**
+ * Every route in this module reads or writes one athlete's coaching record —
+ * status snapshots, readiness history, timelines, LLM-generated summaries and
+ * the coach intervention notes. Holding a membership in the organization is
+ * therefore NOT sufficient: anyone can self-register into an organization via
+ * `POST /api/client/register` and would then hold an org id. The caller must
+ * hold a staff role, read from `user_profiles` by the same helper
+ * `server/lib/require-role.ts` uses so one definition of "role" governs both.
+ *
+ * COACH and ADMIN only — the sibling coach surfaces in `server/routes.ts`
+ * (`/api/coach/*`) are all `requireRole("COACH", "ADMIN")`; there is no STAFF
+ * role on any coach route, so adding one here would invent a grant.
+ */
+const ATHLETE_PROFILE_ROLES = ["COACH", "ADMIN"] as const;
+
+async function hasCoachRole(userId: string): Promise<boolean> {
+  return (ATHLETE_PROFILE_ROLES as readonly string[]).includes(await getUserRole(userId));
+}
 
 async function resolveCoachAuth(req: any, res: any, next: any) {
   try {
@@ -24,6 +44,7 @@ async function resolveCoachAuth(req: any, res: any, next: any) {
       const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, uid)).limit(1);
       const orgId = coach?.organizationId ?? profile?.organizationId ?? null;
       if (!orgId) return res.status(403).json({ message: "No organization" });
+      if (!(await hasCoachRole(uid))) return res.status(403).json({ message: "Forbidden" });
       req._auth = { userId: uid, orgId };
       return next();
     }
@@ -36,7 +57,11 @@ async function resolveCoachAuth(req: any, res: any, next: any) {
           const [coach] = await db.select().from(coachProfiles).where(eq(coachProfiles.userId, uid)).limit(1);
           const [profile] = await db.select().from(userProfiles).where(eq(userProfiles.userId, uid)).limit(1);
           const orgId = coach?.organizationId ?? profile?.organizationId ?? null;
-          if (orgId) { req._auth = { userId: uid, orgId }; return next(); }
+          if (orgId) {
+            if (!(await hasCoachRole(uid))) return res.status(403).json({ message: "Forbidden" });
+            req._auth = { userId: uid, orgId };
+            return next();
+          }
         }
       } catch {}
     }
@@ -46,6 +71,7 @@ async function resolveCoachAuth(req: any, res: any, next: any) {
         const result = await db.execute(drizzleSql`SELECT user_id, org_id FROM org_sessions WHERE token_hash = ${orgToken} AND expires_at > NOW() LIMIT 1`);
         if (result.rows.length > 0) {
           const row = result.rows[0] as any;
+          if (!(await hasCoachRole(row.user_id))) return res.status(403).json({ message: "Forbidden" });
           req._auth = { userId: row.user_id, orgId: row.org_id };
           return next();
         }
@@ -447,6 +473,7 @@ Guidelines:
 
   // ── PATCH /api/org/athlete-profile/:userId/notes/:noteId ──────────────────────
   app.patch("/api/org/athlete-profile/:userId/notes/:noteId", resolveCoachAuth, async (req: any, res) => {
+    const { orgId } = req._auth;
     const { noteId } = req.params;
     const { title, note, status } = req.body;
     const updates: any = {};
@@ -454,15 +481,31 @@ Guidelines:
     if (note !== undefined) updates.summary = note;
     if (status !== undefined) updates.status = status;
 
+    // The note id alone identifies a row in every organization's notes. Scope
+    // the predicate to the caller's org and treat "no row matched" as 404, so a
+    // note belonging to another org is indistinguishable from one that is gone.
     const [updated] = await db.update(athleteInterventionRecommendations)
-      .set(updates).where(eq(athleteInterventionRecommendations.id, noteId)).returning();
+      .set(updates)
+      .where(and(
+        eq(athleteInterventionRecommendations.id, noteId),
+        eq(athleteInterventionRecommendations.orgId, orgId),
+      ))
+      .returning();
+    if (!updated) return res.status(404).json({ error: "Note not found" });
     res.json({ note: updated });
   });
 
   // ── DELETE /api/org/athlete-profile/:userId/notes/:noteId ─────────────────────
   app.delete("/api/org/athlete-profile/:userId/notes/:noteId", resolveCoachAuth, async (req: any, res) => {
+    const { orgId } = req._auth;
     const { noteId } = req.params;
-    await db.delete(athleteInterventionRecommendations).where(eq(athleteInterventionRecommendations.id, noteId));
+    const deleted = await db.delete(athleteInterventionRecommendations)
+      .where(and(
+        eq(athleteInterventionRecommendations.id, noteId),
+        eq(athleteInterventionRecommendations.orgId, orgId),
+      ))
+      .returning({ id: athleteInterventionRecommendations.id });
+    if (deleted.length === 0) return res.status(404).json({ error: "Note not found" });
     res.json({ ok: true });
   });
 }
