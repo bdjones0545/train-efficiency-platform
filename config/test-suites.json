@@ -138,6 +138,7 @@
         "default"
       ],
       "files": [
+        "server/tests/autopilot-phantom-sent.test.ts",
         "server/tests/github-issue-phase2a.test.ts",
         "server/tests/graceful-shutdown-reliability.test.ts",
         "server/tests/kevin-slack-eoh.test.ts",
