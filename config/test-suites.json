@@ -47,7 +47,7 @@
     },
     "db": {
       "command": "npm run test:db",
-      "description": "Tests that read and write an explicitly designated disposable test database. Runs one file at a time: these tests build their own schema and would otherwise clobber each other.",
+      "description": "Tests that read and write an explicitly designated disposable test database. TEST_DATABASE_URL names a TEMPLATE: the runner gives each file its own `CREATE DATABASE ... TEMPLATE` clone and its own process, then drops it. These tests build their own schema with destructive DDL and would otherwise clobber each other even when run one file at a time.",
       "dependencies": [
         "PostgreSQL"
       ],
@@ -101,6 +101,7 @@
         "server/tests/booking-management-authorization.test.ts",
         "server/tests/booking-participant-authorization.test.ts",
         "server/tests/booking-participant-exposure.test.ts",
+        "server/tests/client-query-key-contract.test.ts",
         "server/tests/coach-audit-authz-hardening.test.ts",
         "server/tests/coach-surface-reachability.test.ts",
         "server/tests/coach-user-management-authorization.test.ts",
@@ -137,6 +138,7 @@
         "default"
       ],
       "files": [
+        "server/tests/autopilot-phantom-sent.test.ts",
         "server/tests/github-issue-phase2a.test.ts",
         "server/tests/graceful-shutdown-reliability.test.ts",
         "server/tests/kevin-slack-eoh.test.ts",
@@ -151,6 +153,7 @@
         "default"
       ],
       "files": [
+        "server/tests/admin-intelligence-org-resolver.test.ts",
         "server/tests/api-request-logger.test.ts",
         "server/tests/attention-security-performance.test.ts",
         "server/tests/autonomy-trust-authorization.test.ts",
@@ -164,6 +167,7 @@
         "server/tests/cross-agent-coordination-identity.test.ts",
         "server/tests/email-audit-authorization.test.ts",
         "server/tests/email-notification-authorization.test.ts",
+        "server/tests/google-calendar-oauth-state.test.ts",
         "server/tests/org-isolation-helpers.test.ts",
         "server/tests/phase1b-authz.test.ts",
         "server/tests/phase1c-org-isolation.test.ts",
@@ -172,6 +176,7 @@
         "server/tests/phase1g-authz.test.ts",
         "server/tests/phase1h-authz.test.ts",
         "server/tests/phase1i-authz.test.ts",
+        "server/tests/replit-committed-secrets.test.ts",
         "server/tests/revenue-summary-integrity.test.ts",
         "server/tests/secrets-and-token-hash.test.ts",
         "server/tests/sms-consent-twilio-signature.test.ts"
@@ -204,14 +209,19 @@
         "server/tests/agentmail-provider-contract.test.ts",
         "server/tests/agentmail-reply-migration.test.ts",
         "server/tests/attendance-migration.test.ts",
+        "server/tests/booking-events-attention-upsert.test.ts",
         "server/tests/cashout-tenant-isolation.test.ts",
         "server/tests/composio-connected-account-ownership-migration.test.ts",
         "server/tests/composio-specialized-version-persistence.test.ts",
         "server/tests/cron-job-locks.test.ts",
         "server/tests/follow-up-reliability.test.ts",
+        "server/tests/google-calendar-token-storage.test.ts",
         "server/tests/graceful-shutdown-postgres.test.ts",
+        "server/tests/kevin-slack-event-dedup-upsert.test.ts",
         "server/tests/kevin-slack-tenant-isolation.test.ts",
         "server/tests/manual-payment-tenant-isolation.test.ts",
+        "server/tests/on-conflict-target-guard.test.ts",
+        "server/tests/opportunity-agent-upsert.test.ts",
         "server/tests/payload-versioning-reliability.test.ts",
         "server/tests/required-feature-schemas.test.ts",
         "server/tests/retry-jitter-circuit-breaker.test.ts",
@@ -225,7 +235,7 @@
         "server/tests/workflow-idempotency-scoping.test.ts",
         "server/tests/workflow-job-reliability.test.ts"
       ],
-      "note": "Requires TEST_DATABASE_URL pointing at an isolated, disposable database whose schema was built with drizzle-kit push. Verified green against PostgreSQL 16, one file at a time."
+      "note": "Requires TEST_DATABASE_URL pointing at an isolated, disposable template database whose schema was built with drizzle-kit push, and a role permitted to CREATE DATABASE. The runner clones that template per file, so a file's destructive DDL cannot reach any other file. Tables that live only in migrations/*.sql (kevin_slack_event_dedup, opportunity_*) are created by the tests that need them via runApplicationMigrations(). Verified green against PostgreSQL 16."
     },
     {
       "classification": "server",

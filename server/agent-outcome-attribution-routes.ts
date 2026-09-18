@@ -8,17 +8,15 @@ import type { Express } from "express";
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { isAuthenticated } from "./replit_integrations/auth";
+import { resolveOrgIdOrNull } from "./lib/org-visibility";
 import {
   requireAgentOutcomeAttributionSchema,
   validateAgentOutcomeAttributionSchema,
 } from "./agent-outcome-attribution-schema-validation";
 
+/** Trusted org for the caller (the users table has no orgId column). */
 async function getAdminOrgId(req: any): Promise<string | null> {
-  const userId = req.user?.claims?.sub ?? req.user?.id;
-  if (!userId) return null;
-  const { storage } = await import("./storage");
-  const user = await storage.getUser(userId);
-  return user?.orgId ?? null;
+  return resolveOrgIdOrNull(req);
 }
 
 export async function registerAgentOutcomeAttributionRoutes(app: Express) {
