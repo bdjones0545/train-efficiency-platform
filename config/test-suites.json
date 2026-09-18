@@ -178,6 +178,7 @@
         "server/tests/phase1i-authz.test.ts",
         "server/tests/replit-committed-secrets.test.ts",
         "server/tests/revenue-summary-integrity.test.ts",
+        "server/tests/scheduling-booking-cross-org.test.ts",
         "server/tests/secrets-and-token-hash.test.ts",
         "server/tests/sms-consent-twilio-signature.test.ts"
       ]
@@ -210,6 +211,7 @@
         "server/tests/agentmail-reply-migration.test.ts",
         "server/tests/attendance-migration.test.ts",
         "server/tests/booking-events-attention-upsert.test.ts",
+        "server/tests/booking-join-concurrency.test.ts",
         "server/tests/cashout-tenant-isolation.test.ts",
         "server/tests/composio-connected-account-ownership-migration.test.ts",
         "server/tests/composio-specialized-version-persistence.test.ts",

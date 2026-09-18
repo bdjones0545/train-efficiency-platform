@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { buildPublicAppUrl } from "./utils/url";
 import { publicRateLimiter } from "./middleware/public-rate-limiter";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
-import { toPublicOrg, toDirectoryOrg, isOrgMember } from "./lib/org-visibility";
+import { toPublicOrg, toDirectoryOrg, isOrgMember, resolveOrgIdOrNull } from "./lib/org-visibility";
 import { projectAthleticBookings } from "./lib/athletic-visibility";
 import { requireCoachRevenueAccess } from "./lib/require-coach-revenue-access";
 import { resolveOrgSession } from "./org-auth";
@@ -32,6 +32,7 @@ import {
   organizationSubscriptionPlans,
   availabilityBlocks as availabilityBlocksSchema,
   bookings as bookingsSchema,
+  bookingParticipants,
   athleticBookings,
   orgSessions,
   orgUsers,
@@ -2392,6 +2393,18 @@ export async function registerRoutes(
       const coach = await storage.getCoachProfile(coachId);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
 
+      // The service and the coach are fetched independently, so a request can
+      // pair org A's coach with org B's service. A booking belongs to exactly
+      // one organization: both rows must agree, and a caller who already
+      // belongs to an organization may only book inside it.
+      if (service.organizationId !== coach.organizationId) {
+        return res.status(400).json({ message: "Service is not offered by this coach's organization" });
+      }
+      const callerOrgId = await resolveOrgIdOrNull(req);
+      if (callerOrgId && callerOrgId !== coach.organizationId) {
+        return res.status(404).json({ message: "Coach not found" });
+      }
+
       const start = new Date(startAt);
       const end = new Date(endAt);
 
@@ -2717,7 +2730,19 @@ export async function registerRoutes(
 
       const isOwner = booking.clientId === userId;
       const isCoach = coachProfile && booking.coachId === coachProfile.id;
-      const isAdmin = role === "ADMIN";
+      // ADMIN is the platform role, not an organization. An admin may only act
+      // on bookings of their own organization — the booking's organizationId,
+      // or its coach's organization for rows that predate that column.
+      let isAdmin = false;
+      if (role === "ADMIN") {
+        const adminOrgId = await resolveOrgIdOrNull(req);
+        let bookingOrgId: string | null = booking.organizationId ?? null;
+        if (!bookingOrgId) {
+          const bookingCoach = await storage.getCoachProfile(booking.coachId);
+          bookingOrgId = bookingCoach?.organizationId ?? null;
+        }
+        isAdmin = !!adminOrgId && !!bookingOrgId && adminOrgId === bookingOrgId;
+      }
 
       if (!isOwner && !isCoach && !isAdmin) {
         return res.status(403).json({ message: "Not authorized" });
@@ -4123,41 +4148,62 @@ export async function registerRoutes(
 
       const booking = await storage.getBooking(bookingId);
       if (!booking) return res.status(410).json({ message: "This session is no longer available." });
+      // A group session is joinable only by members of the organization that
+      // owns it; the booking id alone is not an invitation.
+      if (!booking.organizationId || !(await isOrgMember(req, booking.organizationId))) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
       if (!booking.maxParticipants) return res.status(400).json({ message: "This is not a group session" });
       if (!["CONFIRMED", "PENDING"].includes(booking.status)) {
         return res.status(410).json({ message: "This session is no longer available." });
       }
 
-      const participants = await storage.getBookingParticipants(bookingId);
-      if (participants.length >= booking.maxParticipants) {
-        return res.status(409).json({ message: "This session is full" });
-      }
-
-      const alreadyJoined = participants.some(p => p.userId === userId && !p.participantName);
+      const maxParticipants = booking.maxParticipants;
       const participantNames: string[] = req.body.participantNames || [];
-
-      const namesToAdd = participantNames.length > 0
+      const namesToAdd: (string | null)[] = participantNames.length > 0
         ? participantNames.filter(n => n.trim())
         : [null];
 
-      const totalAfterJoin = participants.length + namesToAdd.length;
-      if (totalAfterJoin > booking.maxParticipants) {
-        return res.status(409).json({ message: `Only ${booking.maxParticipants - participants.length} spots remaining` });
-      }
+      // Atomic join: an advisory transaction lock on the booking serializes
+      // concurrent capacity checks so a group session can never be overbooked.
+      // (A read-then-insert let two joiners both see the last open spot.)
+      const outcome = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`booking-join:${bookingId}`}))`);
+        const existingRes: any = await tx.execute(sql`
+          SELECT user_id AS "userId", participant_name AS "participantName"
+          FROM booking_participants
+          WHERE booking_id = ${bookingId}
+        `);
+        const existing: Array<{ userId: string; participantName: string | null }> =
+          Array.isArray(existingRes) ? existingRes : existingRes?.rows ?? [];
 
-      if (participantNames.length === 0 && alreadyJoined) {
-        return res.status(409).json({ message: "You have already joined this session" });
-      }
+        if (existing.length >= maxParticipants) {
+          return { ok: false as const, status: 409, message: "This session is full" };
+        }
+        const totalAfterJoin = existing.length + namesToAdd.length;
+        if (totalAfterJoin > maxParticipants) {
+          return { ok: false as const, status: 409, message: `Only ${maxParticipants - existing.length} spots remaining` };
+        }
+        const alreadyJoined = existing.some(p => p.userId === userId && !p.participantName);
+        if (participantNames.length === 0 && alreadyJoined) {
+          return { ok: false as const, status: 409, message: "You have already joined this session" };
+        }
 
-      const added = [];
-      for (const name of namesToAdd) {
-        const p = await storage.addBookingParticipant({
-          bookingId,
-          userId,
-          ...(name ? { participantName: name.trim() } : {}),
-        });
-        added.push(p);
+        const added = namesToAdd.length === 0
+          ? []
+          : await tx.insert(bookingParticipants).values(
+              namesToAdd.map(name => ({
+                bookingId,
+                userId,
+                ...(name ? { participantName: name.trim() } : {}),
+              })),
+            ).returning();
+        return { ok: true as const, added };
+      });
+      if (!outcome.ok) {
+        return res.status(outcome.status).json({ message: outcome.message });
       }
+      const added = outcome.added;
 
       try {
         const coachProfile = await storage.getCoachProfile(booking.coachId);
@@ -9816,14 +9862,28 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!service || service.organizationId !== profile.organizationId) {
         return res.status(400).json({ message: "Service does not belong to this organization" });
       }
+      const clientProfile = await storage.getUserProfile(clientId);
+      if (!clientProfile || clientProfile.organizationId !== profile.organizationId) {
+        return res.status(400).json({ message: "Client does not belong to this organization" });
+      }
+      const start = new Date(startAt);
+      const end = new Date(endAt);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        return res.status(400).json({ message: "startAt must be a valid time before endAt" });
+      }
+      // Same double-booking guard as every other booking creation path.
+      const overlapping = await storage.getOverlappingBookings(coachId, start, end);
+      if (overlapping.length > 0) {
+        return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
+      }
       const booking = await storage.createBooking({
         organizationId: profile.organizationId,
         clientId,
         coachId,
         serviceId,
         locationId: locationId || null,
-        startAt: new Date(startAt),
-        endAt: new Date(endAt),
+        startAt: start,
+        endAt: end,
         status: "CONFIRMED",
         notes: notes || "",
         location: location || "",
@@ -9844,6 +9904,13 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const { status } = req.body;
       const booking = await storage.getBooking(req.params.id);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
+      // Staff of one organization must not see or change another's bookings.
+      let bookingOrgId: string | null = booking.organizationId ?? null;
+      if (!bookingOrgId) {
+        const bookingCoach = await storage.getCoachProfile(booking.coachId);
+        bookingOrgId = bookingCoach?.organizationId ?? null;
+      }
+      if (bookingOrgId !== profile.organizationId) return res.status(404).json({ message: "Booking not found" });
       const existingRedemption = await storage.getRedemptionByBookingId(req.params.id);
       if (existingRedemption) {
         return res.status(409).json({ message: "This session has been redeemed and is locked. It cannot be modified." });
@@ -9851,7 +9918,8 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (booking.status === "COMPLETED" && status !== "COMPLETED") {
         return res.status(409).json({ message: "Completed sessions cannot have their status changed without an admin reversal." });
       }
-      const updated = await storage.updateBookingStatus(req.params.id, status);
+      const updated = await storage.updateBookingStatusForCoach(req.params.id, booking.coachId, status);
+      if (!updated) return res.status(404).json({ message: "Booking not found" });
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -9865,6 +9933,13 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const booking = await storage.getBooking(req.params.id);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
+      // Staff of one organization must not see or change another's bookings.
+      let bookingOrgId: string | null = booking.organizationId ?? null;
+      if (!bookingOrgId) {
+        const bookingCoach = await storage.getCoachProfile(booking.coachId);
+        bookingOrgId = bookingCoach?.organizationId ?? null;
+      }
+      if (bookingOrgId !== profile.organizationId) return res.status(404).json({ message: "Booking not found" });
       const existingRedemption = await storage.getRedemptionByBookingId(req.params.id);
       if (existingRedemption) {
         return res.status(409).json({ message: "This session has been redeemed and is locked. It cannot be rescheduled or edited." });
@@ -9873,14 +9948,40 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         return res.status(409).json({ message: "Completed sessions cannot be rescheduled. Use an admin reversal if needed." });
       }
       const { startAt, endAt, notes, location, serviceId, clientId } = req.body;
-      const updated = await storage.updateBooking(req.params.id, {
-        ...(startAt && { startAt: new Date(startAt) }),
-        ...(endAt && { endAt: new Date(endAt) }),
+      // A booking may only be re-pointed at a service or client of the same
+      // organization (coachId is not editable on this route).
+      if (serviceId && serviceId !== booking.serviceId) {
+        const service = await storage.getService(serviceId);
+        if (!service || service.organizationId !== profile.organizationId) {
+          return res.status(404).json({ message: "Service not found" });
+        }
+      }
+      if (clientId && clientId !== booking.clientId) {
+        const clientProfile = await storage.getUserProfile(clientId);
+        if (!clientProfile || clientProfile.organizationId !== profile.organizationId) {
+          return res.status(404).json({ message: "Client not found" });
+        }
+      }
+      const nextStart = startAt ? new Date(startAt) : booking.startAt;
+      const nextEnd = endAt ? new Date(endAt) : booking.endAt;
+      if (Number.isNaN(nextStart.getTime()) || Number.isNaN(nextEnd.getTime()) || nextEnd <= nextStart) {
+        return res.status(400).json({ message: "startAt must be a valid time before endAt" });
+      }
+      if (startAt || endAt) {
+        const overlapping = await storage.getOverlappingBookings(booking.coachId, nextStart, nextEnd, booking.id);
+        if (overlapping.length > 0) {
+          return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
+        }
+      }
+      const updated = await storage.updateBookingForCoach(req.params.id, booking.coachId, {
+        ...(startAt && { startAt: nextStart }),
+        ...(endAt && { endAt: nextEnd }),
         ...(notes !== undefined && { notes }),
         ...(location !== undefined && { location }),
         ...(serviceId && { serviceId }),
         ...(clientId && { clientId }),
       });
+      if (!updated) return res.status(404).json({ message: "Booking not found" });
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
