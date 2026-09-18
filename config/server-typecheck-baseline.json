@@ -1,7 +1,7 @@
 {
   "description": "Standing server type errors. The build gate fails when any file gains an error. Lower is better — regenerate with: npm run typecheck:server -- --update",
   "command": "node --max-old-space-size=4096 ./node_modules/typescript/bin/tsc --noEmit -p tsconfig.server.json",
-  "totalErrors": 346,
+  "totalErrors": 345,
   "counts": {
     "server/action-tracking.ts": {
       "TS2322": 1
@@ -60,9 +60,6 @@
     },
     "server/connectors/stripe-invoicing.ts": {
       "TS7053": 1
-    },
-    "server/db.ts": {
-      "TS2345": 1
     },
     "server/education-phase2-routes.ts": {
       "TS2339": 24

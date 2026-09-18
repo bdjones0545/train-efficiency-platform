@@ -94,6 +94,21 @@ function excludedBaselineColumn(table: string, column: string): boolean {
   return table === "user_org_preferences" && column === "unsubscribe_token";
 }
 
+/**
+ * Unique indexes declared in the Drizzle schema but created by a migration
+ * AFTER the 0000 baseline. A pre-ledger installation adopting the baseline
+ * cannot have them yet; the later migration creates them. Some may also be
+ * legitimately skipped by their migration (e.g. 0022 when duplicate money
+ * rows exist), so their absence is not baseline incompatibility either.
+ */
+const POST_BASELINE_UNIQUE_INDEXES = new Set<string | undefined>([
+  "user_org_preferences_unsubscribe_token_unique", // 0005
+  "connector_tokens_org_connector_unique", // 0021
+  "wallet_transactions_stripe_payment_intent_id_unique", // 0022
+  "wallet_transactions_stripe_session_id_unique", // 0022
+  "redemptions_booking_id_unique", // 0022
+]);
+
 function normalizeExpression(value: string | null | undefined): string | null {
   if (value == null) return null;
   let normalized = value.replace(/\s+/g, " ").trim();
@@ -209,7 +224,7 @@ export async function validateExistingBaseline(client: PoolClient): Promise<void
       ...table.columns.filter((column) => column.isUnique && !excludedBaselineColumn(table.name, column.name))
         .map((column) => ({ name: column.uniqueName, columns: [column.name] })),
       ...table.uniqueConstraints.map((unique) => ({ name: unique.name, columns: unique.columns.map((column) => column.name) })),
-      ...table.indexes.filter((index) => index.config.unique && index.config.name !== "user_org_preferences_unsubscribe_token_unique")
+      ...table.indexes.filter((index) => index.config.unique && !POST_BASELINE_UNIQUE_INDEXES.has(index.config.name))
         .map((index) => ({ name: index.config.name, columns: index.config.columns.map((column: any) => column.name) })),
     ];
     for (const unique of uniqueSets) {

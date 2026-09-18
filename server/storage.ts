@@ -165,6 +165,71 @@ import { db } from "./db";
 import { eq, and, gte, lte, gt, lt, or, desc, sql, ilike, inArray, ne, isNull, isNotNull } from "drizzle-orm";
 import { randomUUID } from "crypto";
 
+type Trx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+export type CreditWalletResult = { transaction: WalletTransaction; alreadyCredited: boolean };
+
+export type RedemptionWalletDebit = { userId: string; amountCents: number; description: string };
+export type ExecuteRedemptionInput = {
+  bookingId: string;
+  coachId: string;
+  amountCents: number;
+  walletDebits: RedemptionWalletDebit[];
+  /** When set, the client's matching active/past_due subscription loses one session in the same transaction. */
+  subscriptionDecrement?: { clientId: string; planId: string } | null;
+};
+export type ExecuteRedemptionResult =
+  | { created: true; redemption: Redemption; subscription: { id: string; sessionsAfter: number } | null }
+  | { created: false; redemption: Redemption };
+
+/** Thrown when a cashout that exists (and is owned by the caller's org) is not in REQUESTED state. */
+export class CashoutTransitionError extends Error {
+  constructor(
+    public readonly cashoutId: string,
+    public readonly currentStatus: string,
+    public readonly requestedStatus: string,
+  ) {
+    super(`Cashout ${cashoutId} is ${currentStatus}; only REQUESTED cashouts can become ${requestedStatus}`);
+    this.name = "CashoutTransitionError";
+  }
+}
+
+/** Advisory-lock keys for one Stripe payment, in a fixed order so concurrent callers never deadlock. */
+function stripeCreditLockKeys(stripePaymentIntentId?: string, stripeSessionId?: string): string[] {
+  return [
+    stripePaymentIntentId ? `wallet-credit:pi:${stripePaymentIntentId}` : null,
+    stripeSessionId ? `wallet-credit:cs:${stripeSessionId}` : null,
+  ].filter((key): key is string => key !== null);
+}
+
+async function findStripeCredit(trx: Trx, stripePaymentIntentId?: string, stripeSessionId?: string): Promise<WalletTransaction | undefined> {
+  const predicates = [];
+  if (stripePaymentIntentId) predicates.push(eq(walletTransactions.stripePaymentIntentId, stripePaymentIntentId));
+  if (stripeSessionId) predicates.push(eq(walletTransactions.stripeSessionId, stripeSessionId));
+  if (predicates.length === 0) return undefined;
+  const [existing] = await trx.select().from(walletTransactions).where(or(...predicates)).limit(1);
+  return existing;
+}
+
+/** DEBIT row + balance decrement on one transaction client, so neither can land without the other. */
+async function debitWalletWithin(trx: Trx, userId: string, amountCents: number, description: string, sourceType: string, sourceId: string | null): Promise<WalletTransaction> {
+  const [tx] = await trx.insert(walletTransactions).values({
+    userId,
+    type: "DEBIT" as const,
+    amountCents,
+    description,
+    sourceType,
+    sourceId,
+  }).returning();
+  if (!tx) throw new Error("Wallet debit row was not created");
+
+  await trx.update(users).set({
+    balanceCents: sql`COALESCE(${users.balanceCents}, 0) - ${amountCents}`,
+  }).where(eq(users.id, userId));
+
+  return tx;
+}
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserProfile(userId: string): Promise<UserProfile | undefined>;
@@ -173,6 +238,14 @@ export interface IStorage {
   updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null; phone?: string | null; smsOptIn?: boolean; smsOptInAt?: Date | null; smsOptOutAt?: Date | null; smsConsentSource?: string | null }): Promise<User | undefined>;
   updateClientForOrganization(id: string, orgId: string, data: { firstName?: string; lastName?: string; email?: string | null }): Promise<User | undefined>;
   updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
+  /** Every user record whose phone matches the normalized E.164 number. */
+  getUsersByPhone(normalizedPhone: string): Promise<User[]>;
+  /**
+   * Carrier-level STOP: flips smsOptIn=false on EVERY user_org_preferences row
+   * of the user. sendSms reads org preferences first, so a STOP that only
+   * touched users.smsOptIn was ignored for any user with an org-preference row.
+   */
+  optOutUserSmsInAllOrgs(userId: string): Promise<{ orgPreferenceRowsUpdated: number }>;
   deleteUser(id: string): Promise<boolean>;
   deleteClientForOrganization(id: string, orgId: string): Promise<boolean>;
   getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; redemption?: Redemption })[]>;
@@ -185,6 +258,9 @@ export interface IStorage {
   createCoachProfile(profile: InsertCoachProfile): Promise<CoachProfile>;
   updateCoachProfile(id: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined>;
   deleteCoachProfile(id: string): Promise<boolean>;
+  getCoachProfileForOrganization(id: string, orgId: string): Promise<(CoachProfile & { user: User }) | undefined>;
+  updateCoachProfileForOrganization(id: string, orgId: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined>;
+  deleteCoachProfileForOrganization(id: string, orgId: string): Promise<boolean>;
 
   getServices(): Promise<Service[]>;
   getServicesByOrganization(orgId: string): Promise<Service[]>;
@@ -232,6 +308,7 @@ export interface IStorage {
   getRedemptionsByOrganization(orgId: string): Promise<Redemption[]>;
   createRedemption(redemption: InsertRedemption): Promise<Redemption>;
   getRedemptionByBookingId(bookingId: string): Promise<Redemption | undefined>;
+  executeRedemption(input: ExecuteRedemptionInput): Promise<ExecuteRedemptionResult>;
   findOrCreateUserByName(firstName: string, lastName: string, organizationId?: string | null): Promise<User>;
   findOrCreateTeamUser(teamName: string, coachEmail: string, programId: string): Promise<User>;
   searchUsers(query: string): Promise<User[]>;
@@ -265,6 +342,7 @@ export interface IStorage {
   updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined>;
   updateCashoutStatusForOrganization(orgId: string, id: string, status: string, createdBy: string): Promise<Cashout | undefined>;
   markRedemptionsSent(coachId: string): Promise<void>;
+  requestCashout(coachId: string): Promise<Cashout | undefined>;
 
   getAllWalletTransactions(): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
   getWalletTransactionsByOrganization(orgId: string): Promise<(WalletTransaction & { user?: User; redemptionCoachName?: string; bookingLocation?: string })[]>;
@@ -275,7 +353,7 @@ export interface IStorage {
 
   getUserBalance(userId: string): Promise<number>;
   getUserBalanceForOrganization(orgId: string, userId: string): Promise<number | undefined>;
-  creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string, livemode?: boolean): Promise<WalletTransaction>;
+  creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string, livemode?: boolean): Promise<CreditWalletResult>;
   creditManualPaymentForOrganization(userId: string, orgId: string, amountCents: number, description: string, method: string, createdBy: string): Promise<WalletTransaction | undefined>;
   debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction>;
   getWalletTransactions(userId: string): Promise<WalletTransaction[]>;
@@ -501,7 +579,15 @@ export interface IStorage {
   isProspectOptedOut(orgId: string, email: string): Promise<boolean>;
   addProspectOptOut(orgId: string, email: string, reason?: string): Promise<void>;
   getProspectDashboardStats(orgId: string): Promise<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>;
-  findProspectByContactEmail(email: string): Promise<{ prospect: import("@shared/schema").TeamTrainingProspect; orgId: string } | undefined>;
+  /**
+   * Org-scoped prospect lookup by contact/decision-maker email.
+   * Prospect emails are NOT unique across organizations — a global lookup by
+   * email cannot say which tenant a message belongs to, so callers must bring
+   * an organization they have already established by other evidence.
+   */
+  findProspectByContactEmailForOrganization(orgId: string, email: string): Promise<import("@shared/schema").TeamTrainingProspect | undefined>;
+  /** Organizations that have actually SENT outreach to this address. */
+  findOrganizationIdsWithSentOutreachToEmail(email: string): Promise<string[]>;
   getOutreachDraftsByOrg(orgId: string): Promise<(import("@shared/schema").TeamTrainingOutreachDraft & { prospect?: import("@shared/schema").TeamTrainingProspect })[]>;
   getEmailPerformanceStats(orgId: string): Promise<{ sent: number; opened: number; clicked: number; replied: number; openRate: number; clickRate: number; replyRate: number; conversionRate: number; bestVariant: import("@shared/schema").EmailMessageVariant | null }>;
   getEmailMessageVariants(orgId: string): Promise<import("@shared/schema").EmailMessageVariant[]>;
@@ -691,6 +777,20 @@ export class DatabaseStorage implements IStorage {
     return updated || undefined;
   }
 
+  async getUsersByPhone(normalizedPhone: string): Promise<User[]> {
+    return db.select().from(users).where(eq(users.phone, normalizedPhone));
+  }
+
+  async optOutUserSmsInAllOrgs(userId: string): Promise<{ orgPreferenceRowsUpdated: number }> {
+    const now = new Date();
+    const updated = await db
+      .update(userOrgPreferences)
+      .set({ smsOptIn: false, smsOptOutAt: now, updatedAt: now })
+      .where(eq(userOrgPreferences.userId, userId))
+      .returning({ id: userOrgPreferences.id });
+    return { orgPreferenceRowsUpdated: updated.length };
+  }
+
   async deleteUser(id: string): Promise<boolean> {
     await db.delete(bookingParticipants).where(eq(bookingParticipants.userId, id));
     await db.delete(walletTransactions).where(eq(walletTransactions.userId, id));
@@ -820,6 +920,54 @@ export class DatabaseStorage implements IStorage {
     await db.delete(bookings).where(eq(bookings.coachId, id));
     await db.delete(coachProfiles).where(eq(coachProfiles.id, id));
     return true;
+  }
+
+  // ── Org-scoped coach profile access ─────────────────────────────────────────
+  // The org predicate lives in the SQL so a coach id from another tenant matches
+  // zero rows: no read, no write, no delete.
+
+  async getCoachProfileForOrganization(id: string, orgId: string): Promise<(CoachProfile & { user: User }) | undefined> {
+    const [result] = await db
+      .select()
+      .from(coachProfiles)
+      .innerJoin(users, eq(coachProfiles.userId, users.id))
+      .where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)));
+    if (!result) return undefined;
+    return { ...result.coach_profiles, user: result.users };
+  }
+
+  async updateCoachProfileForOrganization(id: string, orgId: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined> {
+    // Never let a scoped update re-home the profile or change its identity.
+    const { id: _id, userId: _userId, organizationId: _organizationId, ...safeData } = data;
+    if (Object.keys(safeData).length === 0) return this.getCoachProfileForOrganization(id, orgId);
+    const [updated] = await db
+      .update(coachProfiles)
+      .set(safeData)
+      .where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteCoachProfileForOrganization(id: string, orgId: string): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const [owned] = await tx
+        .select({ id: coachProfiles.id })
+        .from(coachProfiles)
+        .where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)))
+        .for("update");
+      if (!owned) return false;
+      await tx.delete(availabilityBlocks).where(eq(availabilityBlocks.coachId, id));
+      const coachBookings = await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.coachId, id));
+      for (const b of coachBookings) {
+        await tx.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, b.id));
+        await tx.delete(redemptions).where(eq(redemptions.bookingId, b.id));
+      }
+      await tx.delete(redemptions).where(eq(redemptions.coachId, id));
+      await tx.delete(cashouts).where(eq(cashouts.coachId, id));
+      await tx.delete(bookings).where(eq(bookings.coachId, id));
+      await tx.delete(coachProfiles).where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)));
+      return true;
+    });
   }
 
   async getServices(): Promise<Service[]> {
@@ -1242,6 +1390,62 @@ export class DatabaseStorage implements IStorage {
     return result || undefined;
   }
 
+  /**
+   * The money-moving core of POST /api/redemptions: wallet debit(s), the
+   * redemption row and the subscription session decrement in ONE transaction,
+   * serialized per booking by an advisory transaction lock. The existence check
+   * is re-run inside the lock, so of N concurrent submits for one booking exactly
+   * one creates (and debits) and the rest get { created: false } with the winner's
+   * row. Pricing and authorization stay with the caller; this only executes.
+   * Does not depend on the 0022 unique index existing — that index is the belt.
+   */
+  async executeRedemption(input: ExecuteRedemptionInput): Promise<ExecuteRedemptionResult> {
+    const { bookingId } = input;
+    return await db.transaction(async (trx) => {
+      await trx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`redemption:${bookingId}`}))`);
+      const [existing] = await trx.select().from(redemptions).where(eq(redemptions.bookingId, bookingId)).limit(1);
+      if (existing) return { created: false as const, redemption: existing };
+
+      for (const debit of input.walletDebits) {
+        if (debit.amountCents <= 0) continue;
+        await debitWalletWithin(trx, debit.userId, debit.amountCents, debit.description, "redemption", bookingId);
+      }
+
+      const [redemption] = await trx.insert(redemptions).values({
+        bookingId,
+        coachId: input.coachId,
+        amountCents: input.amountCents,
+        payoutStatus: "PENDING",
+      }).returning();
+      if (!redemption) throw new Error("Redemption row was not created");
+
+      let subscription: { id: string; sessionsAfter: number } | null = null;
+      if (input.subscriptionDecrement) {
+        const { clientId, planId } = input.subscriptionDecrement;
+        const [activeSub] = await trx
+          .select()
+          .from(userSubscriptions)
+          .where(and(
+            eq(userSubscriptions.userId, clientId),
+            eq(userSubscriptions.planId, planId),
+            inArray(userSubscriptions.status, ["active", "past_due"]),
+          ))
+          .orderBy(desc(userSubscriptions.createdAt))
+          .limit(1)
+          .for("update");
+        if (activeSub && activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining !== undefined) {
+          const sessionsAfter = Math.max(0, activeSub.sessionsRemaining - 1);
+          await trx.update(userSubscriptions)
+            .set({ sessionsRemaining: sessionsAfter, updatedAt: new Date() })
+            .where(eq(userSubscriptions.id, activeSub.id));
+          subscription = { id: activeSub.id, sessionsAfter };
+        }
+      }
+
+      return { created: true as const, redemption, subscription };
+    });
+  }
+
   async findOrCreateUserByName(firstName: string, lastName: string, organizationId?: string | null): Promise<User> {
     const existing = await db
       .select()
@@ -1476,7 +1680,9 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateCashoutStatus(id: string, status: string): Promise<Cashout | undefined> {
-    const [updated] = await db.update(cashouts).set({ status: status as any, processedAt: new Date() }).where(eq(cashouts.id, id)).returning();
+    // Only REQUESTED cashouts may be decided (REQUESTED→PAID / REQUESTED→DENIED).
+    const [updated] = await db.update(cashouts).set({ status: status as any, processedAt: new Date() })
+      .where(and(eq(cashouts.id, id), eq(cashouts.status, "REQUESTED"))).returning();
     return updated;
   }
 
@@ -1491,12 +1697,23 @@ export class DatabaseStorage implements IStorage {
         .select({ id: coachProfiles.id })
         .from(coachProfiles)
         .where(eq(coachProfiles.organizationId, orgId));
+      // State machine enforced in SQL: only REQUESTED→PAID and REQUESTED→DENIED.
+      // The org scope (coach owned by orgId) is unchanged.
       const [updated] = await trx
         .update(cashouts)
         .set({ status: status as any, processedAt: new Date() })
-        .where(and(eq(cashouts.id, id), inArray(cashouts.coachId, ownedCoachIds)))
+        .where(and(eq(cashouts.id, id), eq(cashouts.status, "REQUESTED"), inArray(cashouts.coachId, ownedCoachIds)))
         .returning();
-      if (!updated) return undefined;
+      if (!updated) {
+        // Same org scope: an owned row that is no longer REQUESTED is a 409, not a 404.
+        const [current] = await trx
+          .select({ status: cashouts.status })
+          .from(cashouts)
+          .where(and(eq(cashouts.id, id), inArray(cashouts.coachId, ownedCoachIds)))
+          .limit(1);
+        if (current) throw new CashoutTransitionError(id, current.status, status);
+        return undefined;
+      }
 
       if (status === "PAID") {
         await trx
@@ -1520,6 +1737,39 @@ export class DatabaseStorage implements IStorage {
 
   async markRedemptionsSent(coachId: string): Promise<void> {
     await db.update(redemptions).set({ payoutStatus: "SENT" }).where(and(eq(redemptions.coachId, coachId), eq(redemptions.payoutStatus, "PENDING")));
+  }
+
+  /**
+   * POST /api/cashouts core: sum the coach's PENDING redemptions, create the
+   * REQUESTED cashout and flip exactly those redemptions to SENT, all in one
+   * transaction serialized per coach by an advisory lock. Two concurrent requests
+   * cannot both claim the same redemptions; the second sees no pending balance.
+   * Returns undefined when there is nothing to cash out.
+   */
+  async requestCashout(coachId: string): Promise<Cashout | undefined> {
+    return await db.transaction(async (trx) => {
+      await trx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`cashout:${coachId}`}))`);
+      const pending = await trx
+        .select({ id: redemptions.id, amountCents: redemptions.amountCents })
+        .from(redemptions)
+        .where(and(eq(redemptions.coachId, coachId), eq(redemptions.payoutStatus, "PENDING")))
+        .for("update");
+      const pendingAmount = pending.reduce((sum, r) => sum + r.amountCents, 0);
+      if (pendingAmount <= 0) return undefined;
+
+      const [cashout] = await trx.insert(cashouts).values({
+        coachId,
+        amountCents: pendingAmount,
+        status: "REQUESTED",
+      }).returning();
+      if (!cashout) throw new Error("Cashout row was not created");
+
+      await trx.update(redemptions).set({ payoutStatus: "SENT" }).where(and(
+        inArray(redemptions.id, pending.map((r) => r.id)),
+        eq(redemptions.payoutStatus, "PENDING"),
+      ));
+      return cashout;
+    });
   }
 
   async updateRedemptionAmount(id: string, amountCents: number): Promise<Redemption | undefined> {
@@ -1560,15 +1810,40 @@ export class DatabaseStorage implements IStorage {
     return user?.balanceCents ?? undefined;
   }
 
-  async creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string, livemode?: boolean): Promise<WalletTransaction> {
+  /**
+   * Credit a wallet for one Stripe payment, exactly once.
+   *
+   * INSERT + balance UPDATE run in one transaction, serialized per Stripe payment by
+   * advisory transaction locks, and the existence check is re-run INSIDE the lock so
+   * only the first caller (verify-session poll, webhook or retry cron) credits; every
+   * other caller gets { alreadyCredited: true } and must not re-apply side effects.
+   *
+   * This does not depend on the 0022 belt indexes existing. The ON CONFLICT DO NOTHING
+   * is deliberately left without a conflict target: a payment can conflict on either
+   * the payment-intent or the session index, only one target may be named, and naming
+   * an index that a duplicate-bearing production database legitimately lacks would make
+   * every credit fail. Target-less DO NOTHING covers both belt indexes and degrades to
+   * a plain insert when neither exists.
+   */
+  async creditWallet(userId: string, amountCents: number, description: string, stripeSessionId?: string, stripePaymentIntentId?: string, stripeChargeId?: string, currency?: string, paymentStatus?: string, livemode?: boolean): Promise<CreditWalletResult> {
     if (amountCents <= 0) {
       throw new Error(`creditWallet: amountCents must be positive (got ${amountCents})`);
     }
 
-    // Wrap INSERT + balance UPDATE in a single transaction to eliminate the ledger
-    // drift risk: a process crash between the two statements previously left the
-    // wallet_transactions row inserted but the user.balance_cents unchanged.
+    const lockKeys = stripeCreditLockKeys(stripePaymentIntentId, stripeSessionId);
+
     return await db.transaction(async (trx) => {
+      for (const lockKey of lockKeys) {
+        await trx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
+      }
+      if (lockKeys.length > 0) {
+        const existing = await findStripeCredit(trx, stripePaymentIntentId, stripeSessionId);
+        if (existing) {
+          console.log(`[creditWallet] Idempotent skip — already credited (piId: ${stripePaymentIntentId ?? "none"}, sessionId: ${stripeSessionId ?? "none"}, txId: ${existing.id})`);
+          return { transaction: existing, alreadyCredited: true };
+        }
+      }
+
       const [tx] = await trx.insert(walletTransactions).values({
         userId,
         type: "CREDIT" as const,
@@ -1584,20 +1859,11 @@ export class DatabaseStorage implements IStorage {
       }).onConflictDoNothing().returning();
 
       if (!tx) {
-        // Idempotent: already credited — return existing record without re-updating balance
-        let existing: WalletTransaction | undefined;
-        if (stripePaymentIntentId) {
-          [existing] = await trx.select().from(walletTransactions)
-            .where(eq(walletTransactions.stripePaymentIntentId, stripePaymentIntentId))
-            .limit(1);
-        } else if (stripeSessionId) {
-          [existing] = await trx.select().from(walletTransactions)
-            .where(eq(walletTransactions.stripeSessionId, stripeSessionId))
-            .limit(1);
-        }
+        // Belt: a 0022 unique index rejected the row (a writer outside the lock won).
+        const existing = await findStripeCredit(trx, stripePaymentIntentId, stripeSessionId);
         if (existing) {
-          console.log(`[creditWallet] Idempotent skip — already credited (piId: ${stripePaymentIntentId ?? "none"}, sessionId: ${stripeSessionId ?? "none"}, existingTxId: ${existing.id})`);
-          return existing;
+          console.log(`[creditWallet] Idempotent skip — unique index conflict (piId: ${stripePaymentIntentId ?? "none"}, sessionId: ${stripeSessionId ?? "none"}, existingTxId: ${existing.id})`);
+          return { transaction: existing, alreadyCredited: true };
         }
         throw new Error(`creditWallet: insert skipped (unique conflict) but no existing record found (piId: ${stripePaymentIntentId}, sessionId: ${stripeSessionId})`);
       }
@@ -1606,7 +1872,7 @@ export class DatabaseStorage implements IStorage {
         balanceCents: sql`COALESCE(${users.balanceCents}, 0) + ${amountCents}`,
       }).where(eq(users.id, userId));
 
-      return tx;
+      return { transaction: tx, alreadyCredited: false };
     });
   }
 
@@ -1668,20 +1934,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async debitWallet(userId: string, amountCents: number, description: string, sourceType?: string, sourceId?: string): Promise<WalletTransaction> {
-    const [tx] = await db.insert(walletTransactions).values({
-      userId,
-      type: "DEBIT" as const,
-      amountCents,
-      description,
-      sourceType: sourceType || "redemption",
-      sourceId: sourceId || null,
-    }).returning();
-
-    await db.update(users).set({
-      balanceCents: sql`COALESCE(${users.balanceCents}, 0) - ${amountCents}`,
-    }).where(eq(users.id, userId));
-
-    return tx;
+    return await db.transaction((trx) =>
+      debitWalletWithin(trx, userId, amountCents, description, sourceType || "redemption", sourceId || null));
   }
 
   async getWalletTransactions(userId: string): Promise<WalletTransaction[]> {
@@ -3197,17 +3451,46 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.prospectId, prospectId)).orderBy(desc(teamTrainingOutreachDrafts.createdAt));
   }
 
-  async findProspectByContactEmail(email: string) {
+  async findProspectByContactEmailForOrganization(orgId: string, email: string) {
     const { teamTrainingProspects } = await import("@shared/schema");
     const lowerEmail = email.toLowerCase().trim();
     const rows = await db.select().from(teamTrainingProspects).where(
-      or(
-        sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
-        sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+      and(
+        eq(teamTrainingProspects.orgId, orgId),
+        or(
+          sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
+          sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+        ),
       )
-    );
-    if (rows.length === 0) return undefined;
-    return { prospect: rows[0], orgId: rows[0].orgId };
+    ).orderBy(desc(teamTrainingProspects.lastContactedAt), desc(teamTrainingProspects.createdAt));
+    return rows[0] || undefined;
+  }
+
+  async findOrganizationIdsWithSentOutreachToEmail(email: string): Promise<string[]> {
+    const { teamTrainingProspects, teamTrainingOutreachDrafts } = await import("@shared/schema");
+    const lowerEmail = email.toLowerCase().trim();
+    const rows = await db
+      .select({ orgId: teamTrainingOutreachDrafts.orgId })
+      .from(teamTrainingOutreachDrafts)
+      .innerJoin(
+        teamTrainingProspects,
+        and(
+          eq(teamTrainingProspects.id, teamTrainingOutreachDrafts.prospectId),
+          // A draft may only speak for the org that owns the prospect.
+          eq(teamTrainingProspects.orgId, teamTrainingOutreachDrafts.orgId),
+        ),
+      )
+      .where(
+        and(
+          isNotNull(teamTrainingOutreachDrafts.sentAt),
+          or(
+            sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
+            sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+          ),
+        ),
+      )
+      .groupBy(teamTrainingOutreachDrafts.orgId);
+    return rows.map((r) => r.orgId).filter((id): id is string => typeof id === "string" && id.length > 0);
   }
 
   async getOutreachDraftsByOrg(orgId: string) {

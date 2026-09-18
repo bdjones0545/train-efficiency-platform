@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { fetchJson } from "@/lib/api-helpers";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -93,9 +94,15 @@ export default function AdminCommunicationIntelligencePage() {
   const [tab, setTab] = useState("overview");
   const [refreshKey, setRefreshKey] = useState(0);
 
+  // refreshKey is a cache-buster, not a path segment. The default queryFn joins
+  // key elements with "/", so every panel on this page used to request
+  // "/api/communication-intelligence/<panel>/<refreshKey>" — a path no route
+  // serves — and the whole dashboard rendered the `?? {}` empty state.
   function makeQuery(path: string) {
+    const url = `/api/communication-intelligence/${path}`;
     return {
-      queryKey: [`/api/communication-intelligence/${path}`, refreshKey],
+      queryKey: [url, refreshKey],
+      queryFn: () => fetchJson<any>(url),
       refetchInterval: 60_000,
     };
   }
@@ -106,7 +113,7 @@ export default function AdminCommunicationIntelligencePage() {
   const approvals = useQuery<any>(makeQuery("approvals"));
   const responses = useQuery<any>(makeQuery("responses"));
   const leads = useQuery<any>(makeQuery("revenue") /* alias */);
-  const leadMetrics = useQuery<any>({ queryKey: ["/api/communication-intelligence/revenue", refreshKey] });
+  const leadMetrics = useQuery<any>(makeQuery("revenue"));
   const hiringQ = useQuery<any>(makeQuery("hiring"));
   const supportQ = useQuery<any>(makeQuery("support"));
   const recovery = useQuery<any>(makeQuery("recovery"));

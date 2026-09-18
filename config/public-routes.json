@@ -1,8 +1,8 @@
 {
   "description": "Routes registered with no middleware. A route may only appear here deliberately — see server/lib/route-guard-audit.ts. Entries marked UNREVIEWED are a backlog, not an approval: each needs a decision to be either guarded or given a real reason. Regenerate with: npm run audit:routes -- --update",
   "totalRoutes": 1896,
-  "unguardedRoutes": 166,
-  "unreviewed": 166,
+  "unguardedRoutes": 164,
+  "unreviewed": 153,
   "routes": [
     {
       "method": "DELETE",
@@ -512,31 +512,31 @@
       "method": "GET",
       "path": "/api/org/intelligence/athletes/:athleteUserId/timeline",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
       "path": "/api/org/intelligence/daily-ops",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
       "path": "/api/org/intelligence/escalation-summary",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
       "path": "/api/org/intelligence/event-log",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
       "path": "/api/org/intelligence/event-stream",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
@@ -560,7 +560,7 @@
       "method": "GET",
       "path": "/api/org/intelligence/state",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "GET",
@@ -578,7 +578,7 @@
       "method": "GET",
       "path": "/api/organizations/:slug/coaches",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "PUBLIC BY DESIGN — the org landing page lists coaching staff to anonymous visitors. The response is projected through toPublicCoaches (server/lib/coach-visibility.ts): no coach credentials, joined user reduced to name and photo. See anonymous-exposure-routes.test.ts."
     },
     {
       "method": "GET",
@@ -620,7 +620,7 @@
       "method": "GET",
       "path": "/api/sessions/open",
       "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "PUBLIC BY DESIGN — the /sessions page lists open semi-private sessions to anonymous visitors. The handler scopes the query itself: a signed-in caller gets their profile org, an anonymous caller must pass ?slug= or ?organizationId= (validated against organizations, else 400/404); coach credentials are stripped and rosters are served separately (members-only). See anonymous-exposure-routes.test.ts."
     },
     {
       "method": "GET",
@@ -668,7 +668,7 @@
       "method": "PATCH",
       "path": "/api/org/intelligence/event-log/:id/resolve",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "PATCH",
@@ -846,12 +846,6 @@
     },
     {
       "method": "POST",
-      "path": "/api/marketplace/e2e-test",
-      "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
       "path": "/api/marketplace/ecosystem/refresh",
       "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
@@ -914,7 +908,7 @@
       "method": "POST",
       "path": "/api/org/intelligence/daily-ops/regenerate",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "POST",
@@ -932,7 +926,7 @@
       "method": "POST",
       "path": "/api/org/intelligence/state/refresh",
       "file": "server/orchestration/orchestration-routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
+      "reason": "INLINE AUTH — every handler resolves the org through resolveOrgIdOrThrow (X-Org-Auth-Token verified against org_sessions/org_memberships, or OIDC/Bearer profile) and returns 401 otherwise; PATCH resolve is also scoped to that org. See anonymous-exposure-orchestration.test.ts."
     },
     {
       "method": "POST",
@@ -949,12 +943,6 @@
     {
       "method": "POST",
       "path": "/api/public/lead-capture/:orgSlug/:programSlug/partial",
-      "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/public/lead-capture/:orgSlug/:programSlug/submit",
       "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },

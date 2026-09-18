@@ -4,6 +4,18 @@
  */
 
 import { storage } from "./storage";
+import {
+  AUTOMATION_KILL_SWITCH_REASON,
+  automationRunBlocked,
+  isAutomationSendsEnabled,
+  logAutomationSendsDisabled,
+  resetAutomationSendsLog,
+} from "./lib/automation-sends";
+
+/** Minimal shape of the SendGrid client, so tests can inject a counting stub. */
+export type MailClient = { send: (msg: any) => Promise<any> };
+
+const AUTOMATION_SCOPE = "lead-capture nurture sequences";
 
 async function getSgMail() {
   const key = process.env.SENDGRID_API_KEY;
@@ -197,7 +209,77 @@ function buildAbandonedRecovery2(athleteName: string, orgName: string, programNa
   };
 }
 
+// ─── Opt-out / unsubscribe ────────────────────────────────────────────────────
+
+const APP_BASE_URL = process.env.APP_URL || process.env.BASE_URL || "https://trainefficiency.com";
+
+/**
+ * Nurture mail is marketing, so every step carries a way out.
+ *
+ *  - Recipient has an account → the real per-org unsubscribe token
+ *    (users/user_org_preferences.unsubscribe_token, the same mechanism
+ *    server/email.ts uses) behind /unsubscribe/<token>.
+ *  - Recipient is only a prospect → the prospect opt-out mechanism
+ *    (prospect_opt_outs, read by storage.isProspectOptedOut, which every step
+ *    below consults). There is no self-serve prospect opt-out endpoint yet, so
+ *    the link is a mailto: to the org — honest about what exists.
+ */
+export async function buildOptOutFooter(
+  orgId: string,
+  recipientEmail: string,
+  orgName: string,
+  contactEmail?: string | null,
+): Promise<string> {
+  try {
+    const user = await storage.getUserByEmail(recipientEmail);
+    if (user?.id) {
+      const token = await storage.ensureUnsubscribeToken(user.id, orgId);
+      const url = `${APP_BASE_URL}/unsubscribe/${token}`;
+      return `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid #333">
+        <p style="font-size:12px;color:#666;margin:0;font-family:Arial,sans-serif">
+          <a href="${url}" style="color:#888;text-decoration:underline">Manage email preferences</a>
+        </p></div>`;
+    }
+  } catch (err: any) {
+    console.error(`[LeadCapture Sequences] unsubscribe token lookup failed for ${recipientEmail}:`, err?.message || err);
+  }
+
+  const mailTo = contactEmail || process.env.SENDGRID_FROM_EMAIL || FROM_EMAIL;
+  const href = `mailto:${mailTo}?subject=${encodeURIComponent("Unsubscribe")}&body=${encodeURIComponent(`Please stop sending me emails (${recipientEmail}).`)}`;
+  return `<div style="text-align:center;margin-top:24px;padding-top:16px;border-top:1px solid #333">
+    <p style="font-size:12px;color:#666;margin:0;font-family:Arial,sans-serif">
+      You are receiving this because you applied to a ${orgName} program.
+      <a href="${href}" style="color:#888;text-decoration:underline">Unsubscribe</a>
+    </p></div>`;
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
+
+export interface SequenceSendDeps {
+  /** Injected SendGrid client (tests pass a counting stub). */
+  mail?: MailClient | null;
+  /** Injected opt-out predicate (defaults to storage.isProspectOptedOut). */
+  isOptedOut?: (orgId: string, email: string) => Promise<boolean>;
+  /** Injected follow-up logger. */
+  log?: typeof logFollowUp;
+  /** Injected database handle — lets a test observe claim/send ordering. */
+  loadDb?: () => Promise<any>;
+  /** Injected storage facade. */
+  storage?: Pick<typeof storage, "getOrganizationById" | "getAthleticProgramById" | "getUser">;
+}
+
+export type SequenceSendOutcome = "sent" | "failed" | "skipped";
+
+async function resolveOptOut(deps: SequenceSendDeps, orgId: string, email: string): Promise<boolean> {
+  const check = deps.isOptedOut ?? ((o: string, e: string) => storage.isProspectOptedOut(o, e));
+  try {
+    return await check(orgId, email);
+  } catch (err: any) {
+    // Fail closed: an opt-out lookup we cannot complete is not permission to send.
+    console.error(`[LeadCapture Sequences] opt-out lookup failed for ${email} — skipping send:`, err?.message || err);
+    return true;
+  }
+}
 
 export async function sendSubmissionFollowUp(params: {
   submissionId: string;
@@ -211,9 +293,23 @@ export async function sendSubmissionFollowUp(params: {
   orgSlug: string;
   coachName?: string;
   bookingUrl?: string | null;
-}): Promise<boolean> {
-  const sg = await getSgMail();
-  if (!sg) return false;
+  contactEmail?: string | null;
+}, deps: SequenceSendDeps = {}): Promise<SequenceSendOutcome> {
+  // ── 0: Global kill-switch — automated nurture mail, not transactional ──────
+  if (!isAutomationSendsEnabled()) {
+    logAutomationSendsDisabled(AUTOMATION_SCOPE);
+    return "skipped";
+  }
+
+  const logStep = deps.log ?? logFollowUp;
+  if (await resolveOptOut(deps, params.orgId, params.email)) {
+    console.log(`[LeadCapture Sequences] ${params.email} has opted out — skipping ${params.step}`);
+    await logStep({ orgId: params.orgId, submissionId: params.submissionId, sequenceStep: params.step, channel: "email", subject: "(suppressed)", body: "", status: "skipped_opt_out" });
+    return "skipped";
+  }
+
+  const sg = deps.mail !== undefined ? deps.mail : await getSgMail();
+  if (!sg) return "failed";
   const coachName = params.coachName || "Coach";
   let emailData: { subject: string; html: string } | null = null;
 
@@ -225,15 +321,19 @@ export async function sendSubmissionFollowUp(params: {
     emailData = build3DayNurture(params.athleteName, params.orgName, params.programName, coachName, params.sport || null, params.bookingUrl);
   }
 
-  if (!emailData) return false;
+  if (!emailData) return "failed";
+
+  const footer = await buildOptOutFooter(params.orgId, params.email, params.orgName, params.contactEmail);
+  const html = emailData.html + footer;
 
   try {
-    await sg.send({ to: params.email, from: FROM_EMAIL, subject: emailData.subject, html: emailData.html });
-    await logFollowUp({ orgId: params.orgId, submissionId: params.submissionId, sequenceStep: params.step, channel: "email", subject: emailData.subject, body: emailData.html, status: "sent" });
-    return true;
+    await sg.send({ to: params.email, from: FROM_EMAIL, subject: emailData.subject, html });
+    await logStep({ orgId: params.orgId, submissionId: params.submissionId, sequenceStep: params.step, channel: "email", subject: emailData.subject, body: html, status: "sent" });
+    return "sent";
   } catch (err: any) {
-    await logFollowUp({ orgId: params.orgId, submissionId: params.submissionId, sequenceStep: params.step, channel: "email", subject: emailData.subject, body: emailData.html, status: "failed" });
-    return false;
+    console.error(`[LeadCapture Sequences] ${params.step} send FAILED → ${params.email}:`, err?.message || err);
+    await logStep({ orgId: params.orgId, submissionId: params.submissionId, sequenceStep: params.step, channel: "email", subject: emailData.subject, body: html, status: "failed" });
+    return "failed";
   }
 }
 
@@ -247,9 +347,23 @@ export async function sendAbandonedRecovery(params: {
   orgName: string;
   orgSlug: string;
   programSlug: string;
-}): Promise<boolean> {
-  const sg = await getSgMail();
-  if (!sg) return false;
+  contactEmail?: string | null;
+}, deps: SequenceSendDeps = {}): Promise<SequenceSendOutcome> {
+  // ── 0: Global kill-switch ─────────────────────────────────────────────────
+  if (!isAutomationSendsEnabled()) {
+    logAutomationSendsDisabled(AUTOMATION_SCOPE);
+    return "skipped";
+  }
+
+  const logStep = deps.log ?? logFollowUp;
+  if (await resolveOptOut(deps, params.orgId, params.email)) {
+    console.log(`[LeadCapture Sequences] ${params.email} has opted out — skipping ${params.step}`);
+    await logStep({ orgId: params.orgId, abandonedId: params.abandonedId, sequenceStep: params.step, channel: "email", subject: "(suppressed)", body: "", status: "skipped_opt_out" });
+    return "skipped";
+  }
+
+  const sg = deps.mail !== undefined ? deps.mail : await getSgMail();
+  if (!sg) return "failed";
   let emailData: { subject: string; html: string } | null = null;
 
   if (params.step === "recovery_30min") {
@@ -258,30 +372,103 @@ export async function sendAbandonedRecovery(params: {
     emailData = buildAbandonedRecovery2(params.athleteName, params.orgName, params.programName, params.orgSlug, params.programSlug);
   }
 
-  if (!emailData) return false;
+  if (!emailData) return "failed";
+
+  const footer = await buildOptOutFooter(params.orgId, params.email, params.orgName, params.contactEmail);
+  const html = emailData.html + footer;
 
   try {
-    await sg.send({ to: params.email, from: FROM_EMAIL, subject: emailData.subject, html: emailData.html });
-    await logFollowUp({ orgId: params.orgId, abandonedId: params.abandonedId, sequenceStep: params.step, channel: "email", subject: emailData.subject, body: emailData.html, status: "sent" });
-    return true;
-  } catch {
-    await logFollowUp({ orgId: params.orgId, abandonedId: params.abandonedId, sequenceStep: params.step, channel: "email", subject: emailData.subject, body: emailData.html, status: "failed" });
-    return false;
+    await sg.send({ to: params.email, from: FROM_EMAIL, subject: emailData.subject, html });
+    await logStep({ orgId: params.orgId, abandonedId: params.abandonedId, sequenceStep: params.step, channel: "email", subject: emailData.subject, body: html, status: "sent" });
+    return "sent";
+  } catch (err: any) {
+    console.error(`[LeadCapture Sequences] ${params.step} send FAILED → ${params.email}:`, err?.message || err);
+    await logStep({ orgId: params.orgId, abandonedId: params.abandonedId, sequenceStep: params.step, channel: "email", subject: emailData.subject, body: html, status: "failed" });
+    return "failed";
   }
+}
+
+// ─── Claim-before-send ────────────────────────────────────────────────────────
+//
+// Before this PR the cron sent first and wrote sequence_status afterwards, so a
+// status write that failed after a successful send re-sent the same step on the
+// next tick, and a send that failed still advanced the row (a silent drop).
+//
+// Now each step is CLAIMED first with an atomic conditional UPDATE — the same
+// shape as claimFollowUp() in server/email-agent/follow-up-cron.ts — into a
+// terminal-for-the-sweep "<step>_sending" state. The sweep selects only
+// pending / high_intent_sent / followup_24hr_sent, so a claimed row is never
+// picked up twice. The result is then recorded: "<step>_sent" (or "completed")
+// on success, "<step>_failed" on failure. A failed step does NOT advance to the
+// next step, and it is a visible row rather than a swallowed exception.
+//
+// Tradeoff, deliberately chosen: a process that dies between claim and result
+// leaves a "<step>_sending" row that the sweep will not retry. A stuck row is
+// an operational annoyance; a duplicate send is money and a spam complaint.
+
+export const SENDING_SUFFIX = "_sending";
+export const FAILED_SUFFIX = "_failed";
+
+/**
+ * Atomic claim: advances `sequence_status` from `expected` to `claimStatus`
+ * only if no other worker got there first. Returns true when THIS caller owns
+ * the step.
+ */
+export async function claimSubmissionStep(
+  dbLike: any,
+  table: any,
+  ops: { eq: any; and: any; sql: any },
+  submissionId: string,
+  expected: string,
+  claimStatus: string,
+  now: Date,
+): Promise<boolean> {
+  const claimed = await dbLike
+    .update(table)
+    .set({
+      sequenceStatus: claimStatus,
+      lastFollowUpAt: now,
+      followUpCount: ops.sql`COALESCE(${table.followUpCount}, 0) + 1`,
+    })
+    .where(ops.and(ops.eq(table.id, submissionId), ops.eq(table.sequenceStatus, expected)))
+    .returning({ id: table.id });
+  return Array.isArray(claimed) ? claimed.length > 0 : !!claimed;
+}
+
+export async function claimAbandonedStep(
+  dbLike: any,
+  table: any,
+  ops: { eq: any; and: any; sql: any },
+  abandonedId: string,
+  expected: string,
+  claimStatus: string,
+  now: Date,
+): Promise<boolean> {
+  const claimed = await dbLike
+    .update(table)
+    .set({
+      recoverySequenceStatus: claimStatus,
+      followupSentAt: now,
+      followupCount: ops.sql`COALESCE(${table.followupCount}, 0) + 1`,
+    })
+    .where(ops.and(ops.eq(table.id, abandonedId), ops.eq(table.recoverySequenceStatus, expected)))
+    .returning({ id: table.id });
+  return Array.isArray(claimed) ? claimed.length > 0 : !!claimed;
 }
 
 // ─── Cron Runner ─────────────────────────────────────────────────────────────
 
-async function runLeadCaptureSequenceCron(): Promise<void> {
+export async function runLeadCaptureSequenceCron(deps: SequenceSendDeps = {}): Promise<void> {
+  // ── 0: Global kill-switch — before any DB read, any send, any state change ──
+  if (automationRunBlocked(AUTOMATION_SCOPE)) return;
+
   try {
-    const { db } = await import("./db");
-    const { leadCaptureSubmissions, leadCaptureAbandoned, leadCaptureFunnelEvents } = await import("@shared/schema");
-    const { eq, isNull, lte, and, or, ne } = await import("drizzle-orm");
+    const db = deps.loadDb ? await deps.loadDb() : (await import("./db")).db;
+    const store = deps.storage ?? storage;
+    const { leadCaptureSubmissions, leadCaptureAbandoned } = await import("@shared/schema");
+    const { eq, isNull, and, or, sql } = await import("drizzle-orm");
+    const ops = { eq, and, sql };
     const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-    const twentyFourHrsAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const threeDaysAgo = new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000);
-    const thirtyMinAgo = new Date(now.getTime() - 30 * 60 * 1000);
 
     // --- Process submission sequences ---
     const submissions = await db.select().from(leadCaptureSubmissions)
@@ -293,34 +480,61 @@ async function runLeadCaptureSequenceCron(): Promise<void> {
 
     for (const sub of submissions) {
       try {
-        const org = await storage.getOrganizationById(sub.orgId);
+        const org = await store.getOrganizationById(sub.orgId);
         if (!org) continue;
-        const program = await storage.getAthleticProgramById(sub.programId);
+        const program = await store.getAthleticProgramById(sub.programId);
         if (!program) continue;
-        const owner = org.ownerUserId ? await storage.getUser(org.ownerUserId) : null;
+        const owner = org.ownerUserId ? await store.getUser(org.ownerUserId) : null;
         const coachName = owner?.firstName ? `${owner.firstName} ${owner.lastName || ""}`.trim() : "Coach";
         const subAge = now.getTime() - new Date(sub.createdAt!).getTime();
 
         const bookingUrl = (program as any).bookingUrl || null;
+        const contactEmail = (org as any).ownerEmail || (org as any).schedulingInquiryEmail || null;
+
+        // Decide which step is due, if any.
+        let step: string | null = null;
+        let expected: string | null = null;
+        let successStatus: string | null = null;
 
         if (sub.sequenceStatus === "pending" && (sub.aiQualificationScore ?? 0) >= 75 && subAge >= 60 * 60 * 1000) {
-          // 1hr high-intent follow-up
-          await sendSubmissionFollowUp({ submissionId: sub.id, step: "high_intent_1hr", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName, bookingUrl });
-          await db.update(leadCaptureSubmissions).set({ sequenceStatus: "high_intent_sent", lastFollowUpAt: now, followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
+          step = "high_intent_1hr"; expected = "pending"; successStatus = "high_intent_sent";
         } else if (sub.sequenceStatus === "pending" && subAge >= 24 * 60 * 60 * 1000 && !sub.contactedAt) {
-          // 24hr follow-up for uncontacted
-          await sendSubmissionFollowUp({ submissionId: sub.id, step: "followup_24hr", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName, bookingUrl });
-          await db.update(leadCaptureSubmissions).set({ sequenceStatus: "followup_24hr_sent", lastFollowUpAt: now, followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
+          step = "followup_24hr"; expected = "pending"; successStatus = "followup_24hr_sent";
         } else if (sub.sequenceStatus === "high_intent_sent" && subAge >= 24 * 60 * 60 * 1000 && !sub.contactedAt) {
-          // 24hr follow-up after high-intent
-          await sendSubmissionFollowUp({ submissionId: sub.id, step: "followup_24hr", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName, bookingUrl });
-          await db.update(leadCaptureSubmissions).set({ sequenceStatus: "followup_24hr_sent", lastFollowUpAt: now, followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
+          step = "followup_24hr"; expected = "high_intent_sent"; successStatus = "followup_24hr_sent";
         } else if (sub.sequenceStatus === "followup_24hr_sent" && subAge >= 3 * 24 * 60 * 60 * 1000 && !sub.contactedAt) {
-          // 3-day nurture
-          await sendSubmissionFollowUp({ submissionId: sub.id, step: "nurture_3day", orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName, bookingUrl });
-          await db.update(leadCaptureSubmissions).set({ sequenceStatus: "completed", lastFollowUpAt: now, followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
+          step = "nurture_3day"; expected = "followup_24hr_sent"; successStatus = "completed";
         }
-      } catch (_) {}
+
+        if (!step || !expected || !successStatus) continue;
+
+        // ── Claim BEFORE sending ───────────────────────────────────────────
+        const claimStatus = `${step}${SENDING_SUFFIX}`;
+        const owned = await claimSubmissionStep(db, leadCaptureSubmissions, ops, sub.id, expected, claimStatus, now);
+        if (!owned) {
+          console.log(`[LeadCapture Sequences] submission ${sub.id} step ${step} already claimed — skipping`);
+          continue;
+        }
+
+        const outcome = await sendSubmissionFollowUp({
+          submissionId: sub.id, step, orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email,
+          sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug,
+          coachName, bookingUrl, contactEmail,
+        }, deps);
+
+        // ── Record the result ──────────────────────────────────────────────
+        const finalStatus = outcome === "sent" ? successStatus : `${step}${FAILED_SUFFIX}`;
+        await db.update(leadCaptureSubmissions)
+          .set({ sequenceStatus: finalStatus })
+          .where(eq(leadCaptureSubmissions.id, sub.id));
+        if (outcome !== "sent") {
+          console.warn(`[LeadCapture Sequences] submission ${sub.id} step ${step} ${outcome} — sequence NOT advanced (status=${finalStatus})`);
+        }
+      } catch (err: any) {
+        // Never swallowed: the previous `catch (_) {}` turned every failure here
+        // into an invisible drop.
+        console.error(`[LeadCapture Sequences] submission ${sub.id} failed:`, err?.message || err);
+      }
     }
 
     // --- Process abandoned recovery sequences ---
@@ -332,20 +546,48 @@ async function runLeadCaptureSequenceCron(): Promise<void> {
 
     for (const ab of abandoned) {
       try {
-        const org = await storage.getOrganizationById(ab.orgId);
+        const org = await store.getOrganizationById(ab.orgId);
         if (!org) continue;
-        const program = await storage.getAthleticProgramById(ab.programId);
+        const program = await store.getAthleticProgramById(ab.programId);
         if (!program) continue;
         const abAge = now.getTime() - new Date(ab.createdAt!).getTime();
+        const contactEmail = (org as any).ownerEmail || (org as any).schedulingInquiryEmail || null;
+
+        let step: "recovery_30min" | "recovery_24hr" | null = null;
+        let expected: string | null = null;
+        let successStatus: string | null = null;
 
         if (ab.recoverySequenceStatus === "pending" && abAge >= 30 * 60 * 1000) {
-          await sendAbandonedRecovery({ abandonedId: ab.id, step: "recovery_30min", orgId: ab.orgId, athleteName: ab.athleteName, email: ab.email, programName: program.name, orgName: org.name, orgSlug: org.slug, programSlug: program.slug });
-          await db.update(leadCaptureAbandoned).set({ recoverySequenceStatus: "recovery_30min_sent", followupSentAt: now, followupCount: (ab.followupCount ?? 0) + 1 }).where(eq(leadCaptureAbandoned.id, ab.id));
+          step = "recovery_30min"; expected = "pending"; successStatus = "recovery_30min_sent";
         } else if (ab.recoverySequenceStatus === "recovery_30min_sent" && abAge >= 24 * 60 * 60 * 1000) {
-          await sendAbandonedRecovery({ abandonedId: ab.id, step: "recovery_24hr", orgId: ab.orgId, athleteName: ab.athleteName, email: ab.email, programName: program.name, orgName: org.name, orgSlug: org.slug, programSlug: program.slug });
-          await db.update(leadCaptureAbandoned).set({ recoverySequenceStatus: "recovery_24hr_sent", followupSentAt: now, followupCount: (ab.followupCount ?? 0) + 1 }).where(eq(leadCaptureAbandoned.id, ab.id));
+          step = "recovery_24hr"; expected = "recovery_30min_sent"; successStatus = "recovery_24hr_sent";
         }
-      } catch (_) {}
+
+        if (!step || !expected || !successStatus) continue;
+
+        const claimStatus = `${step}${SENDING_SUFFIX}`;
+        const owned = await claimAbandonedStep(db, leadCaptureAbandoned, ops, ab.id, expected, claimStatus, now);
+        if (!owned) {
+          console.log(`[LeadCapture Sequences] abandoned ${ab.id} step ${step} already claimed — skipping`);
+          continue;
+        }
+
+        const outcome = await sendAbandonedRecovery({
+          abandonedId: ab.id, step, orgId: ab.orgId, athleteName: ab.athleteName, email: ab.email,
+          programName: program.name, orgName: org.name, orgSlug: org.slug, programSlug: program.slug,
+          contactEmail,
+        }, deps);
+
+        const finalStatus = outcome === "sent" ? successStatus : `${step}${FAILED_SUFFIX}`;
+        await db.update(leadCaptureAbandoned)
+          .set({ recoverySequenceStatus: finalStatus })
+          .where(eq(leadCaptureAbandoned.id, ab.id));
+        if (outcome !== "sent") {
+          console.warn(`[LeadCapture Sequences] abandoned ${ab.id} step ${step} ${outcome} — sequence NOT advanced (status=${finalStatus})`);
+        }
+      } catch (err: any) {
+        console.error(`[LeadCapture Sequences] abandoned ${ab.id} failed:`, err?.message || err);
+      }
     }
   } catch (err: any) {
     console.error("[LeadCapture Sequences] cron error:", err.message);
@@ -357,6 +599,7 @@ export function initializeLeadCaptureSequenceCron(): void {
   // instance runs it per tick (autoscale) — preventing duplicate lead sends
   // before each row's sequenceStatus advances. Send behavior is unchanged.
   const guardedRun = async () => {
+    resetAutomationSendsLog(AUTOMATION_SCOPE);
     const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
     const { acquired, lockKey } = await acquireJobLock("__global__", "lead_capture_sequences", 30).catch(
       (error) => { console.error("[Lead Capture] lock failure:", error); return { acquired: false, lockKey: "", ownerToken: "", expiresAt: null, failure: "lock_service" as const }; }
@@ -374,5 +617,5 @@ export function initializeLeadCaptureSequenceCron(): void {
 
   setTimeout(guardedRun, 5 * 60 * 1000); // first run 5 min after boot
   setInterval(guardedRun, 30 * 60 * 1000); // then every 30 min
-  console.log("[LeadCapture Sequences] cron started — runs every 30 minutes");
+  console.log(`[LeadCapture Sequences] cron started — runs every 30 minutes (${AUTOMATION_KILL_SWITCH_REASON} respected)`);
 }
