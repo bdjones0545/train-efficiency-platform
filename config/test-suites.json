@@ -180,6 +180,7 @@
         "server/tests/revenue-summary-integrity.test.ts",
         "server/tests/scheduling-booking-cross-org.test.ts",
         "server/tests/secrets-and-token-hash.test.ts",
+        "server/tests/sendgrid-inbound-scoping.test.ts",
         "server/tests/sms-consent-twilio-signature.test.ts"
       ]
     },
