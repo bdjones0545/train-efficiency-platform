@@ -14,6 +14,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { fetchJson } from "@/lib/api-helpers";
 import { isUnauthorizedError } from "@/lib/auth-utils";
 import { Search, Pencil, Trash2, Calendar, UserPlus, ChevronLeft, Clock, MapPin, UserCog, Upload, FileSpreadsheet, CheckCircle, AlertCircle, SkipForward, RefreshCw, MessageSquare, Lock, Phone, Mail, User as UserIcon, CreditCard, MessageCircle, StickyNote, Send } from "lucide-react";
 import { format, parseISO } from "date-fns";
@@ -146,8 +147,14 @@ export default function UserManagementPage() {
     enabled: !!selectedUser,
   });
 
+  // The server reads the term from `?q=` (routes.ts, GET /api/coach/clients/search).
+  // The default queryFn joins key elements with "/", so it used to request
+  // "/api/coach/clients/search/<term>" — a path no route serves — and every
+  // participant search showed "No users found".
   const { data: participantSearchResults } = useQuery<User[]>({
     queryKey: ["/api/coach/clients/search", participantSearch],
+    queryFn: () =>
+      fetchJson<User[]>(`/api/coach/clients/search?q=${encodeURIComponent(participantSearch)}`),
     enabled: participantSearch.length >= 2,
   });
 

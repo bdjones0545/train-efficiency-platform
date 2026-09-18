@@ -6,14 +6,16 @@
 
 import type { Express } from "express";
 import { isAuthenticated } from "./replit_integrations/auth";
+import { resolveOrgIdOrNull } from "./lib/org-visibility";
 import { validateForecastSchema } from "./services/forecast-engine";
 
+/**
+ * Trusted org for the caller. The previous implementation read `user.orgId`
+ * from the users table, which has no such column, so every forecast route
+ * returned 403 and the page rendered zeros.
+ */
 async function getOrgId(req: any): Promise<string | null> {
-  const userId = req.user?.claims?.sub ?? req.user?.id;
-  if (!userId) return null;
-  const { storage } = await import("./storage");
-  const user = await storage.getUser(userId);
-  return user?.orgId ?? null;
+  return resolveOrgIdOrNull(req);
 }
 
 export async function registerForecastRoutes(app: Express) {

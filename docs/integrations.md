@@ -334,10 +334,16 @@ the `openai` SDK pointed at `https://openrouter.ai/api/v1`.
 - **Config checks:** `isEmailProviderConfigured()` (fast: env or connector present),
   `validateEmailProvider()` (async, called at startup in `index.ts`; warns and
   continues if unconfigured).
-- **Inbound Parse webhook:** `POST /api/webhooks/sendgrid-inbound`. Optional
-  URL-token guard `?token=<SENDGRID_INBOUND_SECRET>` (only enforced if the secret is
-  set). Always responds 200 immediately, then processes asynchronously (matches
-  prospect by sender email, marks replied, AI-classifies intent).
+- **Inbound Parse webhook:** `POST /api/webhooks/sendgrid-inbound`, implemented in
+  `server/email-agent/inbound-reply.ts`. URL-token guard
+  `?token=<SENDGRID_INBOUND_SECRET>`, compared timing-safely. The secret is
+  **required in production**: with none set the endpoint returns 503 and processes
+  nothing. Outside production a missing secret is lenient but logged. Once
+  authorized it responds 200 immediately, then processes asynchronously. The reply
+  is attributed to every organization that actually sent outreach to the sender
+  (narrowed to one when the message was delivered to a per-org reply-to identity),
+  and each organization is processed against its own prospect, draft, follow-up
+  sequence and deal. A sender no organization has emailed changes nothing.
 
 > The transactional send functions (`sendWelcomeEmail`, `sendBookingConfirmationToClient`,
 > etc.) and the outbound guard chain are documented in `docs/core-services.md`.
@@ -650,7 +656,7 @@ Need credentials for integration X
 |---|---|---|
 | Stripe | `POST /api/stripe/webhook` | `stripe-signature` (constructEvent) |
 | Stripe marketplace | `POST /api/stripe/marketplace-webhook` | `STRIPE_MARKETPLACE_WEBHOOK_SECRET` |
-| SendGrid inbound | `POST /api/webhooks/sendgrid-inbound` | optional `?token=SENDGRID_INBOUND_SECRET` |
+| SendGrid inbound | `POST /api/webhooks/sendgrid-inbound` | `?token=SENDGRID_INBOUND_SECRET` (timing-safe; required in production, else 503) |
 | AgentMail | `POST /api/agentmail/webhook` | HMAC `x-agentmail-signature` |
 | Twilio SMS | `POST /api/twilio/sms/incoming` | (Twilio inbound) |
 | Meta CAPI (outbound only) | — | — |

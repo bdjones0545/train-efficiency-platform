@@ -285,7 +285,12 @@ export const redemptions = pgTable("redemptions", {
   redeemedAt: timestamp("redeemed_at").defaultNow(),
   payoutStatus: payoutStatusEnum("payout_status").notNull().default("PENDING"),
   amountCents: integer("amount_cents").notNull().default(0),
-});
+}, (t) => ({
+  // Belt for redemption idempotency (migration 0022). The primary defense is the
+  // per-booking advisory lock in storage.executeRedemption; this index is created
+  // by 0022 only when the table holds no duplicate booking_id rows.
+  bookingUnique: uniqueIndex("redemptions_booking_id_unique").on(t.bookingId),
+}));
 
 // ── Credit Ledger: auditable trail for every session-credit movement ──────────
 export const creditEventTypeEnum = pgEnum("credit_event_type", [
@@ -495,7 +500,17 @@ export const walletTransactions = pgTable("wallet_transactions", {
   paymentStatus: varchar("payment_status"),
   livemode: boolean("livemode").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => ({
+  // Belt for Stripe credit idempotency (migration 0022). The primary defense is
+  // the per-payment advisory lock in storage.creditWallet; 0022 creates these
+  // partial unique indexes only when no duplicate Stripe ids already exist.
+  stripePaymentIntentUnique: uniqueIndex("wallet_transactions_stripe_payment_intent_id_unique")
+    .on(t.stripePaymentIntentId)
+    .where(sql`${t.stripePaymentIntentId} IS NOT NULL`),
+  stripeSessionUnique: uniqueIndex("wallet_transactions_stripe_session_id_unique")
+    .on(t.stripeSessionId)
+    .where(sql`${t.stripeSessionId} IS NOT NULL`),
+}));
 
 export const cashoutStatusEnum = pgEnum("cashout_status", ["REQUESTED", "PAID", "DENIED"]);
 
@@ -617,6 +632,11 @@ export const agentActions = pgTable("agent_actions", {
   relatedSlot: jsonb("related_slot"),
   messageContent: jsonb("message_content"),
   status: agentActionStatusEnum("status").default("pending"),
+  // Delivery marker. Only a real provider send sets this. status='sent' alone is
+  // not proof of delivery (historic auto-pilot rows were written 'sent' with no
+  // provider call), so anything that must reason about "a message actually left"
+  // reads sentAt, not status.
+  sentAt: timestamp("sent_at"),
   bookingId: varchar("booking_id"),
   outcomeValueCents: integer("outcome_value_cents"),
   followUpAt: timestamp("follow_up_at"),
@@ -1468,7 +1488,11 @@ export const connectorTokens = pgTable("connector_tokens", {
   email: varchar("email"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (t) => ({
+  // One token row per (org, connector). Target of the connector's
+  // `ON CONFLICT (org_id, connector)` upsert; created by migration 0021.
+  orgConnectorUnique: uniqueIndex("connector_tokens_org_connector_unique").on(t.orgId, t.connector),
+}));
 
 export type ConnectorToken = typeof connectorTokens.$inferSelect;
 
@@ -4487,8 +4511,17 @@ export const agentRevenueEvents = pgTable("agent_revenue_events", {
   royaltyAmount: doublePrecision("royalty_amount").default(0),
   attribution: jsonb("attribution"),
   period: text("period"),
+  currency: text("currency").default("usd"),
+  // Stripe event/session id — the idempotency key for webhook-sourced rows.
+  // Nullable: rows created by internal billing jobs have no Stripe event.
+  stripeEventId: text("stripe_event_id"),
+  metadata: jsonb("metadata"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (t) => ({
+  stripeEventUnique: uniqueIndex("agent_revenue_events_stripe_event_id_unique")
+    .on(t.stripeEventId)
+    .where(sql`${t.stripeEventId} IS NOT NULL`),
+}));
 export type AgentRevenueEvent = typeof agentRevenueEvents.$inferSelect;
 
 // ─── Developer Payouts ────────────────────────────────────────────────────────
@@ -4661,6 +4694,10 @@ export const royaltyDistributions = pgTable("royalty_distributions", {
   developerShareRate: doublePrecision("developer_share_rate").default(0.30),
   payoutStatus: text("payout_status").default("pending"), // pending | processing | paid | cancelled
   period: text("period"),            // "2026-05"
+  // Per-distribution royalty terms as applied at the time of the distribution.
+  royaltyRate: doublePrecision("royalty_rate"),
+  royaltyAmountCents: integer("royalty_amount_cents"),
+  status: text("status").default("pending"), // pending | processing | paid | cancelled
   createdAt: timestamp("created_at").defaultNow(),
 });
 export type RoyaltyDistribution = typeof royaltyDistributions.$inferSelect;

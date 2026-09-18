@@ -3,17 +3,23 @@ import { createServer, type Server } from "http";
 import { buildPublicAppUrl } from "./utils/url";
 import { publicRateLimiter } from "./middleware/public-rate-limiter";
 import { resolveOrgIdOrThrow, handleOrgError } from "./lib/resolve-org-id";
-import { toPublicOrg, toDirectoryOrg, isOrgMember } from "./lib/org-visibility";
+import { toPublicOrg, toDirectoryOrg, isOrgMember, resolveOrgIdOrNull } from "./lib/org-visibility";
 import { projectAthleticBookings } from "./lib/athletic-visibility";
 import { requireCoachRevenueAccess } from "./lib/require-coach-revenue-access";
 import { resolveOrgSession } from "./org-auth";
 import { toPublicParticipants } from "./lib/participant-visibility";
+import { toPublicCoach, toPublicCoaches } from "./lib/coach-visibility";
 import { validateFeatureSchema } from "./feature-schema-validation";
 import { requireRole, getUserRole } from "./lib/require-role";
-import { storage } from "./storage";
+import { phase10WriteGate } from "./lib/phase10-write-gate";
+import { requirePlatformAdminOrg, adminRepairAuth } from "./lib/platform-admin-auth";
+import { registerAdminCoachRoutes } from "./admin-coach-routes";
+import { storage, CashoutTransitionError, type RedemptionWalletDebit } from "./storage";
 import { setupAuth, registerAuthRoutes, isAuthenticated, createAuthToken, deleteAuthToken, deleteAllUserAuthTokens } from "./replit_integrations/auth";
 import { hashAuthToken } from "./lib/auth-token";
 import { getSessionSecret } from "./lib/secrets";
+import { createSendGridInboundHandler } from "./email-agent/inbound-reply";
+import { buildOAuthState, verifyOAuthState } from "./lib/oauth-state";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
@@ -24,6 +30,7 @@ import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import bcrypt from "bcryptjs";
 import { sendWelcomeEmail, sendCoachWelcomeEmail, sendBookingConfirmationToClient, sendBookingNotificationToCoach, sendCashoutRequestEmail, sendPaymentConfirmationEmail, sendTeamQuoteEmail, sendTeamTrainingRequestEmail, sendClientInviteEmail, sendSubscriberSessionNotification, sendSubscriptionClaimEmail, sendPasswordResetEmail, sendBookingCancellationEmailToClient, sendBookingCancellationEmailToCoach, sendBookingRescheduleEmailToClient, sendBookingRescheduleEmailToCoach, sendRecurringSessionsCreatedEmailToClient, sendRecurringSessionsCreatedEmailToCoach, suppressBookingConfirmation, suppressNotificationType, type OrgBranding, type EmailLogContext } from "./email";
 import { sendSms, normalizePhone, smsBookingConfirmation, smsCancellation, smsReschedule } from "./sms";
+import { requireTwilioSignature, handleTwilioInboundSms } from "./twilio-inbound-sms";
 import crypto from "crypto";
 import Stripe from "stripe";
 import { z } from "zod";
@@ -31,6 +38,7 @@ import {
   organizationSubscriptionPlans,
   availabilityBlocks as availabilityBlocksSchema,
   bookings as bookingsSchema,
+  bookingParticipants,
   athleticBookings,
   orgSessions,
   orgUsers,
@@ -159,20 +167,6 @@ async function getAdminAuthContext(req: any): Promise<{
     };
   } catch {
     return null;
-  }
-}
-
-const PLATFORM_ADMIN_ORG_ID = "org-est";
-
-async function requirePlatformAdminOrg(req: any, res: any, next: any) {
-  try {
-    const orgId = await getAdminOrgId(req);
-    if (!orgId || orgId !== PLATFORM_ADMIN_ORG_ID) {
-      return res.status(403).json({ message: "Access restricted to platform administrators." });
-    }
-    next();
-  } catch {
-    res.status(403).json({ message: "Access restricted to platform administrators." });
   }
 }
 
@@ -321,31 +315,9 @@ export async function registerRoutes(
   // ─── Phase 10: Security Hardening ─────────────────────────────────────────
   // Broad write-auth middleware for all Phase 4-9 routes that previously relied
   // solely on internal orgId checks without explicit session enforcement.
-  const PHASE10_PROTECTED_WRITE_PATHS = [
-    "/api/workforce/",
-    "/api/marketplace/runtimes/bootstrap",
-    "/api/marketplace/telemetry",
-    "/api/marketplace/trials/start",
-    "/api/marketplace/ecosystem/refresh",
-    "/api/marketplace/benchmarks/refresh",
-    "/api/marketplace/case-studies",
-    "/api/marketplace/reputation/refresh",
-    "/api/marketplace/verification/",
-    "/api/developer/register",
-    "/api/developer/submit",
-    "/api/developer/submissions",
-    "/api/developer/validate",
-    "/api/beta/",
-    "/api/feedback",
-  ];
-  app.use((req: any, res: any, next: any) => {
-    if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return next();
-    const needsAuth = PHASE10_PROTECTED_WRITE_PATHS.some(p => req.path.startsWith(p));
-    if (needsAuth && !req.user) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-    next();
-  });
+  // The path tiers and the middleware itself live in server/lib/phase10-write-gate.ts
+  // so they can be exercised directly by server/tests/phase10-write-gate.test.ts.
+  app.use(phase10WriteGate());
 
   const RESET_NEUTRAL_MSG = "If an account exists for that email, a password reset link has been sent.";
   const RESET_RATE_WINDOW_MS = 15 * 60 * 1000;
@@ -688,23 +660,8 @@ export async function registerRoutes(
     });
   });
 
-  function isAdminRepairAuthorized(req: any, res: any): boolean {
-    const headerKey = req.headers["x-admin-key"];
-    const envKey = process.env.ADMIN_REPAIR_KEY;
-    if (envKey && headerKey === envKey) return true;
-    return false;
-  }
-
-  async function adminRepairAuth(req: any, res: any, next: any) {
-    if (isAdminRepairAuthorized(req, res)) return next();
-    return isAuthenticated(req, res, async () => {
-      const userId = req.user?.claims?.sub;
-      if (!userId) return res.status(401).json({ message: "Unauthorized" });
-      const role = await getUserRole(userId);
-      if (role !== "ADMIN") return res.status(403).json({ message: "Forbidden" });
-      next();
-    });
-  }
+  // adminRepairAuth (shared ADMIN_REPAIR_KEY, or an ADMIN of the platform org) lives in
+  // ./lib/platform-admin-auth — every route below reads or repairs money platform-wide.
 
   app.get("/api/admin/stripe-wallet-sync-audit", adminRepairAuth, async (req: any, res) => {
     try {
@@ -908,7 +865,7 @@ export async function registerRoutes(
       // ── Apply credit if requested ─────────────────────────────────────────
       if (apply === true && dryRun !== true) {
         try {
-          const tx = await storage.creditWallet(
+          const { transaction: tx, alreadyCredited } = await storage.creditWallet(
             matchedUser.id,
             resolvedAmountCents,
             `Manual repair — $${(resolvedAmountCents / 100).toFixed(2)} (${sourceObject}: ${sourceId})`,
@@ -918,6 +875,11 @@ export async function registerRoutes(
             resolvedCurrency || "usd",
             "succeeded"
           );
+          if (alreadyCredited) {
+            report.action = "already_credited";
+            report.creditedTxId = tx.id;
+            return res.json({ ...report, message: "Payment already credited — no action needed (idempotent)" });
+          }
           report.action = "credited";
           report.creditedTxId = tx.id;
           console.log(`[Stripe Repair] Credited userId: ${matchedUser.id} (${matchedUser.email}), $${(resolvedAmountCents / 100).toFixed(2)}, ${sourceObject}: ${sourceId}`);
@@ -1959,7 +1921,9 @@ export async function registerRoutes(
         return res.status(404).json({ message: "Organization not found" });
       }
       const coaches = await storage.getCoachProfilesByOrganization(org.id);
-      res.json(coaches);
+      // Anonymous route: the landing page renders name, photo, bio and
+      // specialties. Never the coach credentials or the joined users row.
+      res.json(toPublicCoaches(coaches));
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch coaches" });
     }
@@ -2208,8 +2172,12 @@ export async function registerRoutes(
         if (!orgId) return res.status(400).json({ message: "organizationId required" });
       }
       const coaches = await storage.getCoachProfilesByOrganization(orgId);
-      const safe = coaches.map(({ passwordHash, email, ...rest }: any) => rest);
-      res.json(safe);
+      // The destructure above only stripped the coach row's own secrets; the
+      // JOINED users row shipped whole — passwordHash, email, phone,
+      // passwordResetToken, stripeCustomerId, unsubscribeToken — to anyone who
+      // could name an organizationId. Project through the shared allowlist so
+      // this route, /api/coaches/:id and the public org landing page agree.
+      res.json(toPublicCoaches(coaches));
     } catch (error) {
       console.error("Error fetching coaches:", error);
       res.status(500).json({ message: "Failed to fetch coaches" });
@@ -2220,8 +2188,7 @@ export async function registerRoutes(
     try {
       const coach = await storage.getCoachProfile(req.params.id);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
-      const { passwordHash, email, ...safe } = coach;
-      res.json(safe);
+      res.json(toPublicCoach(coach));
     } catch (error) {
       console.error("Error fetching coach:", error);
       res.status(500).json({ message: "Failed to fetch coach" });
@@ -2390,6 +2357,18 @@ export async function registerRoutes(
 
       const coach = await storage.getCoachProfile(coachId);
       if (!coach) return res.status(404).json({ message: "Coach not found" });
+
+      // The service and the coach are fetched independently, so a request can
+      // pair org A's coach with org B's service. A booking belongs to exactly
+      // one organization: both rows must agree, and a caller who already
+      // belongs to an organization may only book inside it.
+      if (service.organizationId !== coach.organizationId) {
+        return res.status(400).json({ message: "Service is not offered by this coach's organization" });
+      }
+      const callerOrgId = await resolveOrgIdOrNull(req);
+      if (callerOrgId && callerOrgId !== coach.organizationId) {
+        return res.status(404).json({ message: "Coach not found" });
+      }
 
       const start = new Date(startAt);
       const end = new Date(endAt);
@@ -2716,7 +2695,19 @@ export async function registerRoutes(
 
       const isOwner = booking.clientId === userId;
       const isCoach = coachProfile && booking.coachId === coachProfile.id;
-      const isAdmin = role === "ADMIN";
+      // ADMIN is the platform role, not an organization. An admin may only act
+      // on bookings of their own organization — the booking's organizationId,
+      // or its coach's organization for rows that predate that column.
+      let isAdmin = false;
+      if (role === "ADMIN") {
+        const adminOrgId = await resolveOrgIdOrNull(req);
+        let bookingOrgId: string | null = booking.organizationId ?? null;
+        if (!bookingOrgId) {
+          const bookingCoach = await storage.getCoachProfile(booking.coachId);
+          bookingOrgId = bookingCoach?.organizationId ?? null;
+        }
+        isAdmin = !!adminOrgId && !!bookingOrgId && adminOrgId === bookingOrgId;
+      }
 
       if (!isOwner && !isCoach && !isAdmin) {
         return res.status(403).json({ message: "Not authorized" });
@@ -3765,14 +3756,18 @@ export async function registerRoutes(
 
       let totalCollectedCents = 0;
       let amountCents = 0;
+      // Wallet debits are collected here and applied by storage.executeRedemption in the
+      // same transaction as the redemption row (advisory-locked per booking), so a
+      // concurrent duplicate submit can neither double-debit nor double-pay the coach.
+      const walletDebits: RedemptionWalletDebit[] = [];
 
       if (isFreeIntro) {
         amountCents = 2000;
       } else if (booking.subscriptionPlanId) {
         // ── Payment model: SUBSCRIPTION/PACKAGE ─────────────────────────────────
         // This booking is tied to a subscription plan. Coach pay is drawn from the
-        // plan's per-session rate. Wallet is NOT debited. sessionsRemaining will be
-        // decremented below after the redemption record is created.
+        // plan's per-session rate. Wallet is NOT debited. sessionsRemaining is
+        // decremented inside storage.executeRedemption, in the redemption's transaction.
         console.log(JSON.stringify({
           system: 'redemption',
           paymentModel: 'subscription',
@@ -3851,13 +3846,11 @@ export async function registerRoutes(
           if (perPersonCents > 0) {
             for (const entry of Array.from(chargeableMap.values())) {
               const totalForUser = perPersonCents * entry.count;
-              await storage.debitWallet(
-                entry.userId,
-                totalForUser,
-                `Semi-Private Session: ${service?.name || "Training"} (${entry.count} spot${entry.count > 1 ? "s" : ""}) - Redeemed`,
-                "redemption",
-                bookingId
-              );
+              walletDebits.push({
+                userId: entry.userId,
+                amountCents: totalForUser,
+                description: `Semi-Private Session: ${service?.name || "Training"} (${entry.count} spot${entry.count > 1 ? "s" : ""}) - Redeemed`,
+              });
               totalCollectedCents += totalForUser;
             }
           }
@@ -3875,13 +3868,11 @@ export async function registerRoutes(
           }
         } else {
           if (perPersonCents > 0) {
-            await storage.debitWallet(
-              booking.clientId,
-              perPersonCents,
-              `Session: ${service?.name || "Training"} - Redeemed`,
-              "redemption",
-              bookingId
-            );
+            walletDebits.push({
+              userId: booking.clientId,
+              amountCents: perPersonCents,
+              description: `Session: ${service?.name || "Training"} - Redeemed`,
+            });
             totalCollectedCents = perPersonCents;
           }
 
@@ -3890,63 +3881,56 @@ export async function registerRoutes(
         }
       }
 
-      const redemption = await storage.createRedemption({
+      // Wallet debit(s), redemption row and subscription decrement: one transaction,
+      // advisory-locked per booking, existence re-checked inside the lock.
+      const executed = await storage.executeRedemption({
         bookingId,
         coachId: booking.coachId,
         amountCents,
-        payoutStatus: "PENDING",
+        walletDebits,
+        subscriptionDecrement: booking.subscriptionPlanId
+          ? { clientId: booking.clientId, planId: booking.subscriptionPlanId }
+          : null,
       });
+      if (!executed.created) return res.status(409).json({ message: "Already redeemed" });
+      const redemption = executed.redemption;
 
-      if (booking.subscriptionPlanId) {
-        try {
-          const clientSubs = await storage.getUserSubscriptions(booking.clientId);
-          const activeSub = clientSubs.find(s => s.planId === booking.subscriptionPlanId && (s.status === "active" || s.status === "past_due"));
-          if (activeSub && activeSub.sessionsRemaining !== null && activeSub.sessionsRemaining !== undefined) {
-            const newSessionCount = Math.max(0, activeSub.sessionsRemaining - 1);
-            await storage.updateUserSubscription(activeSub.id, {
-              sessionsRemaining: newSessionCount,
+      if (executed.subscription) {
+        // ── Credit ledger: record the session debit for auditability ──
+        const creditPayload = {
+          clientId: booking.clientId,
+          bookingId,
+          subscriptionId: executed.subscription.id,
+          organizationId: requesterOrgId || bookingCoachProfile?.organizationId || null,
+          eventType: "redemption_debit",
+          deltaSessions: -1,
+          deltaCents: 0,
+          sessionsAfter: executed.subscription.sessionsAfter,
+          reason: `Session redeemed: booking ${bookingId}`,
+          createdBy: userId,
+        };
+        storage.createCreditLedgerEvent(creditPayload).catch(async (e: any) => {
+          console.error("[redemption] Credit ledger write failed (non-fatal):", e?.message ?? e);
+          try {
+            await storage.createFinancialEventFailure({
+              orgId: creditPayload.organizationId ?? null,
+              clientId: creditPayload.clientId ?? null,
+              coachId: null,
+              bookingId: creditPayload.bookingId ?? null,
+              redemptionId: null,
+              sourceType: "credit_ledger",
+              eventType: creditPayload.eventType,
+              payload: creditPayload as any,
+              idempotencyKey: null,
+              failureMessage: e?.message ?? String(e),
+              attempts: 1,
+              status: "pending",
+              lastAttemptAt: new Date(),
             });
-            // ── Credit ledger: record the session debit for auditability ──
-            (() => {
-              const creditPayload = {
-                clientId: booking.clientId,
-                bookingId,
-                subscriptionId: activeSub.id,
-                organizationId: requesterOrgId || bookingCoachProfile?.organizationId || null,
-                eventType: "redemption_debit",
-                deltaSessions: -1,
-                deltaCents: 0,
-                sessionsAfter: newSessionCount,
-                reason: `Session redeemed: booking ${bookingId}`,
-                createdBy: userId,
-              };
-              storage.createCreditLedgerEvent(creditPayload).catch(async (e: any) => {
-                console.error("[redemption] Credit ledger write failed (non-fatal):", e?.message ?? e);
-                try {
-                  await storage.createFinancialEventFailure({
-                    orgId: creditPayload.organizationId ?? null,
-                    clientId: creditPayload.clientId ?? null,
-                    coachId: null,
-                    bookingId: creditPayload.bookingId ?? null,
-                    redemptionId: null,
-                    sourceType: "credit_ledger",
-                    eventType: creditPayload.eventType,
-                    payload: creditPayload as any,
-                    idempotencyKey: null,
-                    failureMessage: e?.message ?? String(e),
-                    attempts: 1,
-                    status: "pending",
-                    lastAttemptAt: new Date(),
-                  });
-                } catch (queueErr: any) {
-                  console.error("[redemption] CRITICAL: credit failure queue insert failed:", queueErr?.message ?? queueErr);
-                }
-              });
-            })();
+          } catch (queueErr: any) {
+            console.error("[redemption] CRITICAL: credit failure queue insert failed:", queueErr?.message ?? queueErr);
           }
-        } catch (e) {
-          console.error("Error decrementing session count on redemption:", e);
-        }
+        });
       }
 
       // ── Revenue recognition: write immutable ledger events ──────────────────
@@ -3994,20 +3978,10 @@ export async function registerRoutes(
       const ownerUserId = await getOwnerUserId();
       if (ownerUserId && coachProfile.userId === ownerUserId) return res.status(403).json({ message: "Owner does not need to cash out" });
 
-      const redemptionsList = await storage.getCoachRedemptions(coachId);
-      const pendingAmount = redemptionsList
-        .filter((r) => r.payoutStatus === "PENDING")
-        .reduce((sum, r) => sum + r.amountCents, 0);
-
-      if (pendingAmount <= 0) return res.status(400).json({ message: "No pending balance to cash out" });
-
-      const cashout = await storage.createCashout({
-        coachId,
-        amountCents: pendingAmount,
-        status: "REQUESTED",
-      });
-
-      await storage.markRedemptionsSent(coachId);
+      // Pending sum, cashout row and PENDING→SENT flip happen atomically per coach.
+      const cashout = await storage.requestCashout(coachId);
+      if (!cashout) return res.status(400).json({ message: "No pending balance to cash out" });
+      const pendingAmount = cashout.amountCents;
 
       const coachName = `${coachProfile.user?.firstName} ${coachProfile.user?.lastName}`;
       const orgB = await getOrgBranding(coachProfile.organizationId);
@@ -4018,37 +3992,6 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Error creating cashout:", error);
       res.status(500).json({ message: "Failed to create cashout request" });
-    }
-  });
-
-  app.get("/api/coach/payout-redemptions", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub ?? req.user.id;
-      const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId || null;
-      if (!orgId) return res.status(403).json({ message: "Organization not found for session" });
-      const orgCoaches = await storage.getCoachProfilesByOrganization(orgId);
-      const orgCoachIdSet = new Set(orgCoaches.map(c => c.id));
-      const coachMap = new Map(orgCoaches.map(c => [c.id, c]));
-      const allRedemptions = await storage.getRedemptionsByOrganization(orgId);
-
-      const result = allRedemptions
-        .filter((r: any) => orgCoachIdSet.has(r.coachId))
-        .map((r: any) => {
-          const coach = coachMap.get(r.coachId);
-          return {
-            id: r.id,
-            coachId: r.coachId,
-            coachEmail: coach?.user?.email || null,
-            amountCents: r.amountCents,
-            redeemedAt: r.redeemedAt,
-            payoutStatus: r.payoutStatus,
-          };
-        });
-      res.json(result);
-    } catch (error) {
-      console.error("Error fetching payout redemptions:", error);
-      res.status(500).json({ message: "Failed to fetch payout redemptions" });
     }
   });
 
@@ -4074,6 +4017,23 @@ export async function registerRoutes(
           orgId = profile?.organizationId || undefined;
         }
       } catch {}
+      if (!orgId) {
+        // No org on the session (anonymous, or a profile with no organization):
+        // the caller must name the org they are browsing. An unscoped query
+        // returns every tenant's sessions, so a missing identifier is a 400,
+        // and the identifier is validated against the organizations table
+        // rather than passed straight into the query.
+        const requestedSlug = typeof req.query.slug === "string" ? req.query.slug.trim() : "";
+        const requestedOrgId = typeof req.query.organizationId === "string" ? req.query.organizationId.trim() : "";
+        if (!requestedSlug && !requestedOrgId) {
+          return res.status(400).json({ message: "organizationId or slug required" });
+        }
+        const org = requestedSlug
+          ? await storage.getOrganizationBySlug(requestedSlug)
+          : await storage.getOrganizationById(requestedOrgId);
+        if (!org) return res.status(404).json({ message: "Organization not found" });
+        orgId = org.id;
+      }
       const sessions = await storage.getOpenSemiPrivateSessions(orgId);
       const safe = sessions.map(s => {
         const { coach, ...rest } = s;
@@ -4122,41 +4082,62 @@ export async function registerRoutes(
 
       const booking = await storage.getBooking(bookingId);
       if (!booking) return res.status(410).json({ message: "This session is no longer available." });
+      // A group session is joinable only by members of the organization that
+      // owns it; the booking id alone is not an invitation.
+      if (!booking.organizationId || !(await isOrgMember(req, booking.organizationId))) {
+        return res.status(403).json({ message: "Not authorized" });
+      }
       if (!booking.maxParticipants) return res.status(400).json({ message: "This is not a group session" });
       if (!["CONFIRMED", "PENDING"].includes(booking.status)) {
         return res.status(410).json({ message: "This session is no longer available." });
       }
 
-      const participants = await storage.getBookingParticipants(bookingId);
-      if (participants.length >= booking.maxParticipants) {
-        return res.status(409).json({ message: "This session is full" });
-      }
-
-      const alreadyJoined = participants.some(p => p.userId === userId && !p.participantName);
+      const maxParticipants = booking.maxParticipants;
       const participantNames: string[] = req.body.participantNames || [];
-
-      const namesToAdd = participantNames.length > 0
+      const namesToAdd: (string | null)[] = participantNames.length > 0
         ? participantNames.filter(n => n.trim())
         : [null];
 
-      const totalAfterJoin = participants.length + namesToAdd.length;
-      if (totalAfterJoin > booking.maxParticipants) {
-        return res.status(409).json({ message: `Only ${booking.maxParticipants - participants.length} spots remaining` });
-      }
+      // Atomic join: an advisory transaction lock on the booking serializes
+      // concurrent capacity checks so a group session can never be overbooked.
+      // (A read-then-insert let two joiners both see the last open spot.)
+      const outcome = await db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${`booking-join:${bookingId}`}))`);
+        const existingRes: any = await tx.execute(sql`
+          SELECT user_id AS "userId", participant_name AS "participantName"
+          FROM booking_participants
+          WHERE booking_id = ${bookingId}
+        `);
+        const existing: Array<{ userId: string; participantName: string | null }> =
+          Array.isArray(existingRes) ? existingRes : existingRes?.rows ?? [];
 
-      if (participantNames.length === 0 && alreadyJoined) {
-        return res.status(409).json({ message: "You have already joined this session" });
-      }
+        if (existing.length >= maxParticipants) {
+          return { ok: false as const, status: 409, message: "This session is full" };
+        }
+        const totalAfterJoin = existing.length + namesToAdd.length;
+        if (totalAfterJoin > maxParticipants) {
+          return { ok: false as const, status: 409, message: `Only ${maxParticipants - existing.length} spots remaining` };
+        }
+        const alreadyJoined = existing.some(p => p.userId === userId && !p.participantName);
+        if (participantNames.length === 0 && alreadyJoined) {
+          return { ok: false as const, status: 409, message: "You have already joined this session" };
+        }
 
-      const added = [];
-      for (const name of namesToAdd) {
-        const p = await storage.addBookingParticipant({
-          bookingId,
-          userId,
-          ...(name ? { participantName: name.trim() } : {}),
-        });
-        added.push(p);
+        const added = namesToAdd.length === 0
+          ? []
+          : await tx.insert(bookingParticipants).values(
+              namesToAdd.map(name => ({
+                bookingId,
+                userId,
+                ...(name ? { participantName: name.trim() } : {}),
+              })),
+            ).returning();
+        return { ok: true as const, added };
+      });
+      if (!outcome.ok) {
+        return res.status(outcome.status).json({ message: outcome.message });
       }
+      const added = outcome.added;
 
       try {
         const coachProfile = await storage.getCoachProfile(booking.coachId);
@@ -4796,164 +4777,9 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/admin/coaches", isAuthenticated, requireRole("COACH", "ADMIN"), async (req: any, res) => {
-    try {
-      const { firstName, lastName, email, password, bio, specialties } = req.body;
-      if (!firstName || !lastName || !email || !password) {
-        return res.status(400).json({ message: "First name, last name, email, and password are required" });
-      }
-      if (typeof email !== "string" || !email.includes("@")) {
-        return res.status(400).json({ message: "Please provide a valid email address" });
-      }
-      if (typeof password !== "string" || password.length < 6) {
-        return res.status(400).json({ message: "Password must be at least 6 characters" });
-      }
-
-      const normalizedEmail = email.toLowerCase().trim();
-      const existingUser = await storage.getUserByEmail(normalizedEmail);
-      if (existingUser) {
-        const existingCoach = await storage.getCoachProfileByUserId(existingUser.id);
-        if (existingCoach) {
-          return res.status(400).json({ message: "A coach with this email already exists" });
-        }
-        const existingProfile = await storage.getUserProfile(existingUser.id);
-        if (existingProfile?.role === "ADMIN") {
-          return res.status(400).json({ message: "This user is an admin and cannot be added as a coach" });
-        }
-      }
-
-      const { db: dbRef } = await import("./db");
-      const { users: usersTable } = await import("@shared/models/auth");
-
-      let userId: string;
-      if (existingUser) {
-        userId = existingUser.id;
-      } else {
-        const [newUser] = await dbRef.insert(usersTable).values({
-          email: normalizedEmail,
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          profileImageUrl: null,
-          lastSignInAt: new Date(),
-        }).returning();
-        userId = newUser.id;
-      }
-
-      const adminUserId = req.user.claims.sub;
-      const adminProfile = await storage.getUserProfile(adminUserId);
-      const adminOrgId = adminProfile?.organizationId || null;
-
-      await storage.upsertUserProfile({ userId, role: "COACH", organizationId: adminOrgId });
-
-      const passwordHash = await bcrypt.hash(password, 10);
-      const parsedSpecialties = Array.isArray(specialties)
-        ? specialties.filter((s: any) => typeof s === "string" && s.trim())
-        : [];
-      const coachProfile = await storage.createCoachProfile({
-        userId,
-        email: normalizedEmail,
-        passwordHash,
-        bio: typeof bio === "string" ? bio.trim() : "",
-        specialties: parsedSpecialties,
-        timezone: "America/New_York",
-        isActive: true,
-        organizationId: adminOrgId,
-      });
-
-      getOrgBranding(adminOrgId).then(async orgB => {
-        try {
-          await sendCoachWelcomeEmail(normalizedEmail, firstName.trim(), password, orgB);
-          storage.createCommunicationLog({
-            orgId: adminOrgId || undefined,
-            userId,
-            type: "welcome",
-            channel: "email",
-            recipientEmail: normalizedEmail,
-            subject: "Welcome to your coaching platform",
-            status: "sent",
-            provider: "sendgrid",
-          } as any).catch(() => {});
-        } catch (err: any) {
-          console.error("Failed to send coach welcome email:", err);
-          storage.createCommunicationLog({
-            orgId: adminOrgId || undefined,
-            userId,
-            type: "welcome",
-            channel: "email",
-            recipientEmail: normalizedEmail,
-            subject: "Welcome to your coaching platform",
-            status: "failed",
-            provider: "sendgrid",
-            errorMessage: err?.message ?? String(err),
-          } as any).catch(() => {});
-        }
-      }).catch(() => {});
-
-      res.json({ success: true, coachProfile });
-    } catch (error: any) {
-      console.error("Error creating coach:", error);
-      if (error?.message?.includes("unique") || error?.code === "23505") {
-        return res.status(400).json({ message: "A coach with this email already exists" });
-      }
-      res.status(500).json({ message: "Failed to create coach" });
-    }
-  });
-
-  app.patch("/api/admin/coaches/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const { bio, specialties, isActive, payoutPercentage } = req.body;
-      const updateData: Record<string, any> = {};
-      if (bio !== undefined) updateData.bio = bio;
-      if (specialties !== undefined) updateData.specialties = Array.isArray(specialties) ? specialties : [];
-      if (isActive !== undefined) updateData.isActive = isActive;
-      if (payoutPercentage !== undefined) {
-        const pct = parseInt(payoutPercentage);
-        if (isNaN(pct) || pct < 0 || pct > 100) {
-          return res.status(400).json({ message: "Percentage must be between 0 and 100" });
-        }
-        updateData.payoutPercentage = pct;
-      }
-      const updated = await storage.updateCoachProfile(id, updateData);
-      if (!updated) return res.status(404).json({ message: "Coach not found" });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating coach:", error);
-      res.status(500).json({ message: "Failed to update coach" });
-    }
-  });
-
-  app.delete("/api/admin/coaches/:id", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const deleted = await storage.deleteCoachProfile(id);
-      if (!deleted) return res.status(404).json({ message: "Coach not found" });
-      res.json({ success: true });
-    } catch (error) {
-      console.error("Error deleting coach:", error);
-      res.status(500).json({ message: "Failed to delete coach" });
-    }
-  });
-
-  app.patch("/api/admin/coaches/:id/payout", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
-    try {
-      const { id } = req.params;
-      const { payoutPercentage } = req.body;
-      if (payoutPercentage === undefined || payoutPercentage === null) {
-        return res.status(400).json({ message: "payoutPercentage required" });
-      }
-      const pct = parseInt(payoutPercentage);
-      if (isNaN(pct) || pct < 0 || pct > 100) {
-        return res.status(400).json({ message: "Percentage must be between 0 and 100" });
-      }
-      const updated = await storage.updateCoachProfile(id, { payoutPercentage: pct });
-      if (!updated) return res.status(404).json({ message: "Coach not found" });
-      res.json(updated);
-    } catch (error) {
-      console.error("Error updating coach payout:", error);
-      res.status(500).json({ message: "Failed to update coach payout" });
-    }
-  });
+  // Coach administration (create / update / delete / payout) and the coach payout
+  // redemption feed are org-scoped in ./admin-coach-routes.
+  registerAdminCoachRoutes(app, { getOrgBranding });
 
   app.post("/api/admin/services", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
@@ -5213,15 +5039,17 @@ export async function registerRoutes(
   // No mutations — safe to run at any time.
   app.get("/api/admin/accounting-integrity", isAuthenticated, requireRole("ADMIN"), async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
-      const profile = await storage.getUserProfile(userId);
-      const orgId = profile?.organizationId || null;
+      // ADMIN is a per-organization role: every check below is scoped to the
+      // caller's organization in the SQL itself. There is no platform-wide fallback.
+      const orgId = await resolveOrgIdOrThrow(req);
 
       // 1. Duplicate redemptions (same bookingId redeemed more than once)
       const dupRedemptions = await db.execute(sql`
-        SELECT booking_id, COUNT(*)::int AS count
-        FROM redemptions
-        GROUP BY booking_id
+        SELECT r.booking_id, COUNT(*)::int AS count
+        FROM redemptions r
+        JOIN coach_profiles cp ON cp.id = r.coach_id
+        WHERE cp.organization_id = ${orgId}
+        GROUP BY r.booking_id
         HAVING COUNT(*) > 1
       `);
 
@@ -5229,10 +5057,8 @@ export async function registerRoutes(
       const negativeBalanceQuery = await db.execute(sql`
         SELECT u.id, u.first_name, u.last_name, u.email, u.balance_cents
         FROM users u
-        ${orgId ? sql`
-          JOIN user_profiles up ON up.user_id = u.id
-          WHERE up.organization_id = ${orgId} AND u.balance_cents < 0
-        ` : sql`WHERE u.balance_cents < 0`}
+        JOIN user_profiles up ON up.user_id = u.id
+        WHERE up.organization_id = ${orgId} AND u.balance_cents < 0
         ORDER BY u.balance_cents ASC
         LIMIT 100
       `);
@@ -5242,7 +5068,9 @@ export async function registerRoutes(
         SELECT r.id AS redemption_id, r.booking_id, b.status AS booking_status, r.redeemed_at
         FROM redemptions r
         JOIN bookings b ON b.id = r.booking_id
-        WHERE b.status = 'CANCELLED'
+        JOIN coach_profiles cp ON cp.id = r.coach_id
+        WHERE cp.organization_id = ${orgId}
+          AND b.status = 'CANCELLED'
         LIMIT 100
       `);
 
@@ -5253,9 +5081,9 @@ export async function registerRoutes(
         LEFT JOIN redemptions r ON r.booking_id = b.id
         WHERE b.status = 'COMPLETED'
           AND r.id IS NULL
-          ${orgId ? sql`AND b.coach_id IN (
+          AND b.coach_id IN (
             SELECT id FROM coach_profiles WHERE organization_id = ${orgId}
-          )` : sql``}
+          )
         ORDER BY b.start_at DESC
         LIMIT 50
       `);
@@ -5264,7 +5092,8 @@ export async function registerRoutes(
       const negativeCreditsQuery = await db.execute(sql`
         SELECT us.id, us.user_id, us.plan_id, us.sessions_remaining, us.status
         FROM user_subscriptions us
-        WHERE us.sessions_remaining < 0
+        WHERE us.organization_id = ${orgId}
+          AND us.sessions_remaining < 0
         LIMIT 100
       `);
 
@@ -5272,8 +5101,10 @@ export async function registerRoutes(
       const orphanedRedemptionsQuery = await db.execute(sql`
         SELECT r.id, r.booking_id, r.redeemed_at
         FROM redemptions r
+        JOIN coach_profiles cp ON cp.id = r.coach_id
         LEFT JOIN bookings b ON b.id = r.booking_id
-        WHERE b.id IS NULL
+        WHERE cp.organization_id = ${orgId}
+          AND b.id IS NULL
         LIMIT 50
       `);
 
@@ -5330,7 +5161,7 @@ export async function registerRoutes(
       };
 
       // Add credit ledger failure checks
-      if (orgId) {
+      {
         const { financialEventFailures: fefT } = await import("@shared/schema");
         const { count: cntFn, and: andFn2, eq: eqFn2, inArray: inArrayFn2, lt: ltFn2 } = await import("drizzle-orm");
         const cutoff24hCredit = new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -5359,6 +5190,7 @@ export async function registerRoutes(
 
       res.json(report);
     } catch (error) {
+      if (handleOrgError(error, res)) return;
       console.error("Error running accounting integrity check:", error);
       res.status(500).json({ message: "Failed to run accounting integrity check" });
     }
@@ -7312,6 +7144,9 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
 
       res.json(updated);
     } catch (error) {
+      if (error instanceof CashoutTransitionError) {
+        return res.status(409).json({ message: `Cashout is already ${error.currentStatus}; only REQUESTED cashouts can be marked ${error.requestedStatus}` });
+      }
       if (handleOrgError(error, res)) return;
       console.error("Error updating cashout status:", error);
       res.status(500).json({ message: "Failed to update cashout status" });
@@ -8258,7 +8093,14 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         }
       }
 
-      const stripeCreditTx = await storage.creditWallet(userId, amountCents, `Added $${(amountCents / 100).toFixed(2)} via Stripe`, sessionId, piId || undefined);
+      // creditWallet re-checks for an existing credit inside a per-payment advisory lock,
+      // so a poll racing the webhook (or another poll) credits once; the loser gets
+      // alreadyCredited and must not record revenue or email a second confirmation.
+      const credit = await storage.creditWallet(userId, amountCents, `Added $${(amountCents / 100).toFixed(2)} via Stripe`, sessionId, piId || undefined);
+      if (credit.alreadyCredited) {
+        return res.json({ credited: true, alreadyProcessed: true });
+      }
+      const stripeCreditTx = credit.transaction;
 
       // ── Revenue recognition: record payment received ─────────────────────────
       onPaymentReceived({
@@ -9815,14 +9657,28 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!service || service.organizationId !== profile.organizationId) {
         return res.status(400).json({ message: "Service does not belong to this organization" });
       }
+      const clientProfile = await storage.getUserProfile(clientId);
+      if (!clientProfile || clientProfile.organizationId !== profile.organizationId) {
+        return res.status(400).json({ message: "Client does not belong to this organization" });
+      }
+      const start = new Date(startAt);
+      const end = new Date(endAt);
+      if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
+        return res.status(400).json({ message: "startAt must be a valid time before endAt" });
+      }
+      // Same double-booking guard as every other booking creation path.
+      const overlapping = await storage.getOverlappingBookings(coachId, start, end);
+      if (overlapping.length > 0) {
+        return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
+      }
       const booking = await storage.createBooking({
         organizationId: profile.organizationId,
         clientId,
         coachId,
         serviceId,
         locationId: locationId || null,
-        startAt: new Date(startAt),
-        endAt: new Date(endAt),
+        startAt: start,
+        endAt: end,
         status: "CONFIRMED",
         notes: notes || "",
         location: location || "",
@@ -9843,6 +9699,13 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       const { status } = req.body;
       const booking = await storage.getBooking(req.params.id);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
+      // Staff of one organization must not see or change another's bookings.
+      let bookingOrgId: string | null = booking.organizationId ?? null;
+      if (!bookingOrgId) {
+        const bookingCoach = await storage.getCoachProfile(booking.coachId);
+        bookingOrgId = bookingCoach?.organizationId ?? null;
+      }
+      if (bookingOrgId !== profile.organizationId) return res.status(404).json({ message: "Booking not found" });
       const existingRedemption = await storage.getRedemptionByBookingId(req.params.id);
       if (existingRedemption) {
         return res.status(409).json({ message: "This session has been redeemed and is locked. It cannot be modified." });
@@ -9850,7 +9713,8 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (booking.status === "COMPLETED" && status !== "COMPLETED") {
         return res.status(409).json({ message: "Completed sessions cannot have their status changed without an admin reversal." });
       }
-      const updated = await storage.updateBookingStatus(req.params.id, status);
+      const updated = await storage.updateBookingStatusForCoach(req.params.id, booking.coachId, status);
+      if (!updated) return res.status(404).json({ message: "Booking not found" });
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -9864,6 +9728,13 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
       if (!profile?.organizationId) return res.status(403).json({ message: "No organization" });
       const booking = await storage.getBooking(req.params.id);
       if (!booking) return res.status(404).json({ message: "Booking not found" });
+      // Staff of one organization must not see or change another's bookings.
+      let bookingOrgId: string | null = booking.organizationId ?? null;
+      if (!bookingOrgId) {
+        const bookingCoach = await storage.getCoachProfile(booking.coachId);
+        bookingOrgId = bookingCoach?.organizationId ?? null;
+      }
+      if (bookingOrgId !== profile.organizationId) return res.status(404).json({ message: "Booking not found" });
       const existingRedemption = await storage.getRedemptionByBookingId(req.params.id);
       if (existingRedemption) {
         return res.status(409).json({ message: "This session has been redeemed and is locked. It cannot be rescheduled or edited." });
@@ -9872,14 +9743,40 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
         return res.status(409).json({ message: "Completed sessions cannot be rescheduled. Use an admin reversal if needed." });
       }
       const { startAt, endAt, notes, location, serviceId, clientId } = req.body;
-      const updated = await storage.updateBooking(req.params.id, {
-        ...(startAt && { startAt: new Date(startAt) }),
-        ...(endAt && { endAt: new Date(endAt) }),
+      // A booking may only be re-pointed at a service or client of the same
+      // organization (coachId is not editable on this route).
+      if (serviceId && serviceId !== booking.serviceId) {
+        const service = await storage.getService(serviceId);
+        if (!service || service.organizationId !== profile.organizationId) {
+          return res.status(404).json({ message: "Service not found" });
+        }
+      }
+      if (clientId && clientId !== booking.clientId) {
+        const clientProfile = await storage.getUserProfile(clientId);
+        if (!clientProfile || clientProfile.organizationId !== profile.organizationId) {
+          return res.status(404).json({ message: "Client not found" });
+        }
+      }
+      const nextStart = startAt ? new Date(startAt) : booking.startAt;
+      const nextEnd = endAt ? new Date(endAt) : booking.endAt;
+      if (Number.isNaN(nextStart.getTime()) || Number.isNaN(nextEnd.getTime()) || nextEnd <= nextStart) {
+        return res.status(400).json({ message: "startAt must be a valid time before endAt" });
+      }
+      if (startAt || endAt) {
+        const overlapping = await storage.getOverlappingBookings(booking.coachId, nextStart, nextEnd, booking.id);
+        if (overlapping.length > 0) {
+          return res.status(409).json({ message: "This time slot overlaps with an existing booking" });
+        }
+      }
+      const updated = await storage.updateBookingForCoach(req.params.id, booking.coachId, {
+        ...(startAt && { startAt: nextStart }),
+        ...(endAt && { endAt: nextEnd }),
         ...(notes !== undefined && { notes }),
         ...(location !== undefined && { location }),
         ...(serviceId && { serviceId }),
         ...(clientId && { clientId }),
       });
+      if (!updated) return res.status(404).json({ message: "Booking not found" });
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -10861,39 +10758,15 @@ Write a ${channel} message for a coaching business client. Be concise, human, an
     }
   });
 
-  // Twilio STOP/START webhook for SMS opt-out/opt-in
-  app.post("/api/twilio/sms/incoming", express.urlencoded({ extended: false }), async (req: any, res) => {
-    try {
-      const from: string = (req.body?.From || "").trim();
-      const body: string = (req.body?.Body || "").trim().toUpperCase();
-      if (!from) return res.status(200).send("<?xml version='1.0'?><Response/>");
-
-      // Normalize phone to find user
-      const { normalizePhone } = await import('./sms');
-      const normalized = normalizePhone(from);
-      if (!normalized) return res.status(200).send("<?xml version='1.0'?><Response/>");
-
-      if (body === "STOP" || body === "STOPALL" || body === "UNSUBSCRIBE" || body === "CANCEL" || body === "END" || body === "QUIT") {
-        // Find user by phone and opt them out
-        const allUsers = await db.select().from(users).where(eq(users.phone, normalized));
-        for (const u of allUsers) {
-          await storage.updateUserSmsOptIn(u.id, false, 'twilio_stop');
-          console.log(`[SMS STOP] Opted out user ${u.id} (${normalized})`);
-        }
-      } else if (body === "START" || body === "YES" || body === "UNSTOP") {
-        const allUsers = await db.select().from(users).where(eq(users.phone, normalized));
-        for (const u of allUsers) {
-          await storage.updateUserSmsOptIn(u.id, true, 'twilio_start');
-          console.log(`[SMS START] Opted in user ${u.id} (${normalized})`);
-        }
-      }
-
-      res.status(200).send("<?xml version='1.0'?><Response/>");
-    } catch (err) {
-      console.error("[Twilio webhook] Error:", err);
-      res.status(200).send("<?xml version='1.0'?><Response/>");
-    }
-  });
+  // Twilio STOP/START webhook for SMS opt-out/opt-in.
+  // Guarded by X-Twilio-Signature validation (fails closed without TWILIO_AUTH_TOKEN);
+  // handler lives in ./twilio-inbound-sms so it can be exercised in tests.
+  app.post(
+    "/api/twilio/sms/incoming",
+    express.urlencoded({ extended: false }),
+    requireTwilioSignature,
+    async (req: any, res) => handleTwilioInboundSms(req, res),
+  );
 
   // ─── Team Training Prospecting Routes ─────────────────────────────────────
 
@@ -13897,139 +13770,24 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // ─── SendGrid Inbound Parse Webhook ────────────────────────────────────────
-  // Receives replies to outreach emails automatically. No auth — must return 200 fast.
-  // Setup: In SendGrid → Settings → Inbound Parse → add your domain and point webhook to:
-  //   https://[your-domain]/api/webhooks/sendgrid-inbound
-  app.post("/api/webhooks/sendgrid-inbound", express.urlencoded({ extended: true }), async (req: any, res: any) => {
-    // Always 200 immediately so SendGrid does not retry
-    // URL-token guard (enforced only when SENDGRID_INBOUND_SECRET is set).
-    // In SendGrid dashboard: append ?token=<secret> to the inbound parse webhook URL.
-    const _inboundSecret = process.env.SENDGRID_INBOUND_SECRET;
-    if (_inboundSecret && req.query.token !== _inboundSecret) {
-      return res.status(401).json({ ok: false, error: "Unauthorized" });
-    }
-
-    res.status(200).json({ ok: true });
-
-    try {
-      // Extract sender email — prefer envelope JSON (cleanest), fallback to parsing from header
-      let senderEmail: string | null = null;
-      try {
-        const envelope = typeof req.body.envelope === "string"
-          ? JSON.parse(req.body.envelope)
-          : req.body.envelope;
-        senderEmail = envelope?.from || null;
-      } catch {}
-
-      if (!senderEmail && req.body.from) {
-        const match = (req.body.from as string).match(/<([^>]+)>/);
-        senderEmail = match ? match[1] : (req.body.from as string).trim();
-      }
-
-      if (!senderEmail) {
-        console.log("[InboundParse] Could not extract sender email — skipping");
-        return;
-      }
-
-      senderEmail = senderEmail.toLowerCase().trim();
-      const replyText = ((req.body.text as string) || "").slice(0, 2000);
-
-      // Find the prospect whose contactEmail or decisionMakerEmail matches the sender
-      const found = await storage.findProspectByContactEmail(senderEmail);
-      if (!found) {
-        console.log(`[InboundParse] No prospect found for sender: ${senderEmail}`);
-        return;
-      }
-
-      const { prospect, orgId } = found;
-
-      // Don't double-process
-      if (prospect.outreachStatus === "Replied") {
-        console.log(`[InboundParse] Prospect ${prospect.id} already marked replied — skipping`);
-        return;
-      }
-
-      // AI-classify the reply intent
-      let classification: import("./email-agent/reply-classifier").ReplyClassification | null = null;
-      if (replyText) {
-        try {
-          const { classifyReply } = await import("./email-agent/reply-classifier");
-          classification = await classifyReply(replyText);
-        } catch {}
-      }
-
-      // Mark the prospect replied
-      await storage.updateTeamTrainingProspect(prospect.id, { outreachStatus: "Replied" });
-
-      // Stamp repliedAt on the most recent sent draft, cancel follow-ups
-      const drafts = await storage.getOutreachDraftsByProspect(prospect.id);
-      const sentDraft = drafts.find(d => !!d.sentAt && !d.repliedAt);
-      if (sentDraft) {
-        await storage.updateTeamTrainingOutreachDraft(sentDraft.id, {
-          repliedAt: new Date(),
-          replyText: replyText || null,
-          replyClassification: classification,
-        });
-        await storage.cancelFollowUpSequence(sentDraft.id);
-        if (sentDraft.messageVariantId) {
-          try {
-            const variant = await storage.getEmailMessageVariant(sentDraft.messageVariantId);
-            if (variant) {
-              await storage.updateEmailMessageVariant(variant.id, {
-                replies: (variant.replies ?? 0) + 1,
-                conversions: (variant.conversions ?? 0) + 1,
-              });
-            }
-          } catch {}
-        }
-      }
-
-      // Log the event
-      await storage.logOutreachEvent({
-        orgId,
-        prospectId: prospect.id,
-        eventType: "replied",
-        description: classification
-          ? `Auto-detected inbound reply (${classification})`
-          : "Auto-detected inbound reply via SendGrid",
-        metadata: {
-          replyText: replyText.slice(0, 500) || null,
-          classification,
-          source: "sendgrid_inbound",
-        },
-      });
-
-      // Revenue attribution
-      try {
-        const { attributeOutcomeToProspect } = await import("./email-agent/revenue-outcome-engine");
-        await attributeOutcomeToProspect(orgId, prospect.id, "engaged", 0, "reply");
-      } catch {}
-
-      // Auto-create deal when prospect seems interested
-      if (classification === "interested" || classification === "ask_info") {
-        const existingDeal = await storage.getTeamTrainingDealByProspect(prospect.id, orgId);
-        if (!existingDeal) {
-          await storage.createTeamTrainingDeal({
-            organizationId: orgId,
-            prospectId: prospect.id,
-            outreachDraftId: sentDraft?.id ?? null,
-            status: "interested",
-            estimatedValue: prospect.estimatedValue ?? 0,
-            probability: 40,
-            nextAction: classification === "ask_info"
-              ? "Send information and schedule a call"
-              : "Schedule a discovery call",
-            notes: replyText ? `Auto-detected reply: ${replyText.slice(0, 300)}` : "",
-            lastActivityAt: new Date(),
-          });
-        }
-      }
-
-      console.log(`[InboundParse] Reply processed — prospect: ${prospect.prospectName} (${prospect.id}), classification: ${classification}`);
-    } catch (err: any) {
-      console.error("[InboundParse] Error processing inbound email:", err.message);
-    }
-  });
+  // Receives replies to outreach emails automatically. Must return 200 fast.
+  //
+  // Auth: a shared secret in the query string (Inbound Parse can only be
+  // configured with a URL, so there is no header to carry it). The secret is
+  // REQUIRED in production — with none set this endpoint responds 503 and
+  // processes nothing. Comparison is timing-safe.
+  // Setup: In SendGrid → Settings → Inbound Parse, point the webhook at:
+  //   https://[your-domain]/api/webhooks/sendgrid-inbound?token=<SENDGRID_INBOUND_SECRET>
+  //
+  // Attribution: prospect contact emails are NOT unique across organizations,
+  // so the reply is attributed to every org that actually sent outreach to the
+  // sender, each processed against its own records. See
+  // server/email-agent/inbound-reply.ts.
+  app.post(
+    "/api/webhooks/sendgrid-inbound",
+    express.urlencoded({ extended: true }),
+    createSendGridInboundHandler({ storage }),
+  );
 
   // ─── Business Brain API ──────────────────────────────────────────────────────
 
@@ -15869,45 +15627,27 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // GET /api/connectors/google-calendar/callback — OAuth callback (public, Google redirects here)
-  // State is either plain orgId (connector flow) or "orgId|fromIntegration" (org-integration flow).
+  // The org is taken ONLY from the HMAC-signed state issued by the connect
+  // routes above (server/lib/oauth-state.ts); unsigned/tampered/expired state
+  // is rejected with gcal_error=invalid_state before any code exchange.
+  // Handler logic lives in server/connectors/google-calendar.ts so it is
+  // testable; this registration intentionally stays middleware-free.
   app.get("/api/connectors/google-calendar/callback", async (req: any, res) => {
-    const { code, state: rawState, error } = req.query;
-    const fromIntegration = typeof rawState === "string" && rawState.includes("|fromIntegration");
-    const orgId = typeof rawState === "string" ? rawState.replace("|fromIntegration", "") : (rawState as string);
-    const successBase = fromIntegration ? "/admin/configuration?tab=advanced" : "/admin/agent-ops?tab=connectors";
-    const errorBase  = fromIntegration ? "/admin/configuration?tab=advanced" : "/admin/agent-ops?tab=connectors";
-
-    if (error) {
-      return res.redirect(`${errorBase}&gcal_error=${encodeURIComponent(error as string)}`);
-    }
-    if (!code || !orgId) {
-      return res.redirect(`${errorBase}&gcal_error=missing_params`);
-    }
-    try {
-      let email: string | null = null;
-      if (fromIntegration) {
-        // Use the credentials stored in external_integrations for this org
+    const { handleGoogleCalendarOAuthCallback, exchangeCodeAndStoreTokens, exchangeCodeAndStoreTokensWithCredentials } =
+      await import("./connectors/google-calendar");
+    const { decryptCredentials } = await import("./credentials-vault");
+    const redirectTo = await handleGoogleCalendarOAuthCallback(req.query ?? {}, {
+      exchange: exchangeCodeAndStoreTokens,
+      exchangeWithCredentials: exchangeCodeAndStoreTokensWithCredentials,
+      getIntegrationCredentials: async (orgId) => {
         const integration = await storage.getExternalIntegration(orgId, "google_calendar");
-        const { decryptCredentials } = await import("./credentials-vault");
-        const creds = decryptCredentials(integration?.encryptedCredentials as any);
-        if (!creds?.clientId || !creds?.clientSecret) {
-          return res.redirect(`${errorBase}&gcal_error=${encodeURIComponent("Stored credentials missing — please re-enter them")}`);
-        }
-        const { exchangeCodeAndStoreTokensWithCredentials } = await import("./connectors/google-calendar");
-        const result = await exchangeCodeAndStoreTokensWithCredentials(code as string, orgId, creds.clientId, creds.clientSecret);
-        email = result.email;
-        // Mark external_integrations row as connected now that OAuth is complete
+        return decryptCredentials(integration?.encryptedCredentials as any);
+      },
+      markIntegrationConnected: async (orgId) => {
         await storage.upsertExternalIntegration(orgId, "google_calendar", { status: "connected" } as any);
-        return res.redirect(`${successBase}&gcal=connected&gcal_email=${encodeURIComponent(email ?? "")}`);
-      } else {
-        const { exchangeCodeAndStoreTokens } = await import("./connectors/google-calendar");
-        const result = await exchangeCodeAndStoreTokens(code as string, orgId);
-        email = result.email;
-        return res.redirect(`${successBase}&gcal_connected=1&gcal_email=${encodeURIComponent(email ?? "")}`);
-      }
-    } catch (err: any) {
-      res.redirect(`${errorBase}&gcal_error=${encodeURIComponent(err.message)}`);
-    }
+      },
+    });
+    res.redirect(redirectTo);
   });
 
   // DELETE /api/admin/connectors/google-calendar — disconnect
@@ -16247,7 +15987,15 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
   });
 
   // Public: submit lead capture form
-  app.post("/api/public/lead-capture/:orgSlug/:programSlug/submit", async (req, res) => {
+  //
+  // Unauthenticated, and every POST used to insert a submission, send three
+  // emails (org admin, the caller-supplied applicant address, a high-intent
+  // alert), call OpenAI and enrol a 3-step nurture sequence. Two controls now
+  // bound that: an IP rate limit, and a (program, normalized email) duplicate
+  // window so a repeat POST returns the existing submission instead of relaying
+  // more mail. See server/book-funnel-routes.ts POST /api/book-funnel/leads for
+  // the same pattern.
+  app.post("/api/public/lead-capture/:orgSlug/:programSlug/submit", publicRateLimiter(10, 10 * 60_000, "lead-capture-submit"), async (req, res) => {
     try {
       const org = await storage.getOrganizationBySlug(req.params.orgSlug);
       if (!org) return res.status(404).json({ message: "Organization not found" });
@@ -16294,9 +16042,57 @@ STAGE FUNNEL: ${stageFunnel.map(s => `${s.label}: ${s.count}`).join(" → ")}
 
       const { db } = await import("./db");
       const { leadCaptureSubmissions, leadCaptureAbandoned } = await import("@shared/schema");
-      const { eq } = await import("drizzle-orm");
+      const { eq, sql: sqlTag } = await import("drizzle-orm");
+      const { findRecentSubmission, normalizeIntakeEmail, DEDUP_WINDOW_HOURS } = await import("./lib/public-intake-dedup");
+      const { initialSequenceStatus } = await import("./lib/automation-sends");
+
+      // ── Duplicate window ─────────────────────────────────────────────────
+      // Same program, same email, inside 24h → no second row, no second
+      // applicant email, no second sequence. 200 with the existing id, so a
+      // double-submitting athlete still sees success.
+      const normalizedEmail = normalizeIntakeEmail(email);
+      const duplicate = await findRecentSubmission(
+        db as any,
+        { orgId: org.id, programId: program.id, email: normalizedEmail },
+        sqlTag,
+      ).catch((err: any) => {
+        // Fail open on a lookup error — a broken dedup query must not drop leads.
+        console.error("[LeadCapture] duplicate lookup failed:", err?.message || err);
+        return null;
+      });
+
+      if (duplicate?.id) {
+        console.log(`[LeadCapture] Duplicate submit within ${DEDUP_WINDOW_HOURS}h for ${normalizedEmail} @ ${program.slug} — returning existing submission ${duplicate.id}`);
+        let dupBookingUrl: string | null = null;
+        let dupBookingType = "none";
+        try {
+          const { leadCapturePrograms: lcpDup } = await import("@shared/schema");
+          const [lcDupRow] = await db.select({ bookingUrl: lcpDup.bookingUrl, bookingType: lcpDup.bookingType })
+            .from(lcpDup).where(eq(lcpDup.programId, program.id)).limit(1);
+          dupBookingUrl = lcDupRow?.bookingUrl ?? null;
+          dupBookingType = lcDupRow?.bookingType ?? "none";
+        } catch (_) {}
+        return res.status(200).json({
+          success: true,
+          duplicate: true,
+          submissionId: duplicate.id,
+          orgSlug: org.slug,
+          orgName: org.name,
+          orgId: org.id,
+          programId: program.id,
+          programName: program.name,
+          athleteName,
+          email,
+          bookingUrl: dupBookingUrl,
+          bookingType: dupBookingType,
+          emailStatus: { admin: "already_sent", applicant: "already_sent" },
+        });
+      }
 
       const [submission] = await db.insert(leadCaptureSubmissions).values({
+        // Nurture enrolment is automation: with the kill-switch on, the lead is
+        // still captured in full, but in a state the sequence cron never selects.
+        sequenceStatus: initialSequenceStatus(),
         orgId: org.id,
         programId: program.id,
         athleteName,
@@ -17288,11 +17084,13 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       const coachName = owner?.firstName ? `${owner.firstName} ${owner.lastName || ""}`.trim() : "Coach";
       const step = req.body.step || "followup_24hr";
       const { sendSubmissionFollowUp } = await import("./lead-capture-sequences");
-      const sent = await sendSubmissionFollowUp({ submissionId: sub.id, step, orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName });
+      // Returns "sent" | "failed" | "skipped" — "skipped" is the kill-switch or an opt-out.
+      const outcome = await sendSubmissionFollowUp({ submissionId: sub.id, step, orgId: sub.orgId, athleteName: sub.athleteName, email: sub.email, sport: sub.sport, programName: program.name, orgName: org.name, orgSlug: org.slug, coachName });
+      const sent = outcome === "sent";
       if (sent) {
         await db.update(leadCaptureSubmissions).set({ lastFollowUpAt: new Date(), followUpCount: (sub.followUpCount ?? 0) + 1 }).where(eq(leadCaptureSubmissions.id, sub.id));
       }
-      res.json({ success: sent });
+      res.json({ success: sent, outcome });
     } catch (error) {
       res.status(500).json({ message: "Failed to send follow-up" });
     }
@@ -17348,11 +17146,12 @@ Return JSON: { "score": number, "reason": "one sentence" }`;
       if (!program || !org) return res.status(404).json({ message: "Program/org not found" });
       const { sendAbandonedRecovery } = await import("./lead-capture-sequences");
       const step = req.body.step || "recovery_30min";
-      const sent = await sendAbandonedRecovery({ abandonedId: ab.id, step, orgId: ab.orgId, athleteName: ab.athleteName, email: ab.email, programName: program.name, orgName: org.name, orgSlug: org.slug, programSlug: program.slug });
+      const outcome = await sendAbandonedRecovery({ abandonedId: ab.id, step, orgId: ab.orgId, athleteName: ab.athleteName, email: ab.email, programName: program.name, orgName: org.name, orgSlug: org.slug, programSlug: program.slug });
+      const sent = outcome === "sent";
       if (sent) {
         await db.update(leadCaptureAbandoned).set({ followupSentAt: new Date(), followupCount: (ab.followupCount ?? 0) + 1 }).where(eq(leadCaptureAbandoned.id, ab.id));
       }
-      res.json({ success: sent });
+      res.json({ success: sent, outcome });
     } catch (error) {
       res.status(500).json({ message: "Failed to send recovery" });
     }
@@ -18472,34 +18271,18 @@ Respond with this exact JSON structure:
     return `${returnTo}${sep}gmail=${status}`;
   }
 
-  function buildOAuthState(orgId: string, returnTo?: string): string {
-    const { createHmac, randomBytes } = require("crypto");
-    const nonce = randomBytes(16).toString("hex");
-    const ts = String(Date.now());
-    const payload: Record<string, string> = { orgId, nonce, ts };
-    if (returnTo) payload.returnTo = sanitizeReturnTo(returnTo);
-    const raw = JSON.stringify(payload);
-    const sig = createHmac("sha256", getSessionSecret())
-      .update(raw)
-      .digest("hex");
-    return Buffer.from(JSON.stringify({ ...payload, sig })).toString("base64url");
+  // Signing/verification lives in server/lib/oauth-state.ts (HMAC over
+  // {orgId,nonce,ts,...}, timing-safe compare, 15-min expiry) and is shared
+  // with the Google Calendar flow. These adapters only add the returnTo field.
+  function buildGmailOAuthState(orgId: string, returnTo?: string): string {
+    return buildOAuthState(orgId, returnTo ? { returnTo: sanitizeReturnTo(returnTo) } : {});
   }
 
-  function verifyOAuthState(state: string): { orgId: string; returnTo: string } | null {
-    try {
-      const { createHmac } = require("crypto");
-      const obj = JSON.parse(Buffer.from(state, "base64url").toString("utf8"));
-      const { sig, ...payload } = obj;
-      const raw = JSON.stringify(payload);
-      const expected = createHmac("sha256", getSessionSecret())
-        .update(raw)
-        .digest("hex");
-      if (sig !== expected) return null;
-      if (Date.now() - parseInt(payload.ts) > 15 * 60 * 1000) return null; // 15-min expiry
-      return { orgId: payload.orgId, returnTo: sanitizeReturnTo(payload.returnTo) };
-    } catch {
-      return null;
-    }
+  function verifyGmailOAuthState(state: unknown): { orgId: string; returnTo: string } | null {
+    const verified = verifyOAuthState(state);
+    if (!verified) return null;
+    const returnTo = verified.extra.returnTo;
+    return { orgId: verified.orgId, returnTo: sanitizeReturnTo(typeof returnTo === "string" ? returnTo : undefined) };
   }
 
   // GET /api/integrations/gmail/oauth/start-url — authenticated JSON endpoint.
@@ -18608,7 +18391,7 @@ Respond with this exact JSON structure:
       // Embed returnTo in the signed state so the callback can redirect back
       // to the exact page the admin was on, preserving the tab + any other params.
       const returnTo = sanitizeReturnTo((req.query as any).returnTo as string | undefined);
-      const state = buildOAuthState(orgId, returnTo);
+      const state = buildGmailOAuthState(orgId, returnTo);
 
       const scopes = [
         "https://www.googleapis.com/auth/gmail.send",
@@ -18683,7 +18466,7 @@ Respond with this exact JSON structure:
         return cbRedirect(DEFAULT_OAUTH_RETURN, "error");
       }
 
-      const verified = verifyOAuthState(state);
+      const verified = verifyGmailOAuthState(state);
       if (!verified) {
         console.error("[gmail/oauth/callback] state verification failed — invalid signature or expired. State length:", state?.length);
         return cbRedirect(DEFAULT_OAUTH_RETURN, "error");
@@ -18758,7 +18541,7 @@ Respond with this exact JSON structure:
       try {
         const stateStr = (req.query as any).state as string | undefined;
         if (stateStr) {
-          const v = verifyOAuthState(stateStr);
+          const v = verifyGmailOAuthState(stateStr);
           if (v) fallbackReturnTo = v.returnTo;
         }
       } catch { /* ignore */ }
@@ -24731,12 +24514,18 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   });
 
   // Agent telemetry capture
-  app.post("/api/marketplace/telemetry", async (req, res) => {
+  app.post("/api/marketplace/telemetry", isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     try {
+      // orgId is bound to the caller's resolved organization — a caller may not
+      // choose which org a runtime/memory row is created for via the body.
+      const orgId = await resolveOrgIdOrThrow(req);
       const { captureExecution } = await import("./agent-telemetry-sdk");
-      await captureExecution(req.body);
+      await captureExecution({ ...(req.body ?? {}), orgId });
       res.json({ success: true });
-    } catch (e: any) { res.status(500).json({ message: "Telemetry capture failed" }); }
+    } catch (e: any) {
+      if (handleOrgError(e, res)) return;
+      res.status(500).json({ message: "Telemetry capture failed" });
+    }
   });
 
   // Developer billing statement
@@ -25073,7 +24862,17 @@ Be direct, specific, and actionable. Base your answer entirely on the data above
   // ─── Phase 9: Production Readiness, E2E Validation & Trust Hardening ────────
 
   // End-to-end lifecycle flow test (Part 1)
-  app.post("/api/marketplace/e2e-test", async (req, res) => {
+  // Writes fixture rows (e2e-test-org, e2e-test-dev, trials, installs) into the
+  // real marketplace tables, so it is a development-only ADMIN tool: 404 in
+  // production for everyone (same gate as /api/admin/auth/debug), and an
+  // authenticated ADMIN elsewhere.
+  const notInProduction = (_req: any, res: any, next: any) => {
+    if (process.env.NODE_ENV === "production") {
+      return res.status(404).json({ error: "Not found" });
+    }
+    next();
+  };
+  app.post("/api/marketplace/e2e-test", notInProduction, isAuthenticated, requireRole("ADMIN"), async (req, res) => {
     const steps: Array<{ step: number; name: string; status: "pass" | "fail" | "skip"; detail: string }> = [];
     const pass = (step: number, name: string, detail: string) => steps.push({ step, name, status: "pass", detail });
     const fail = (step: number, name: string, detail: string) => steps.push({ step, name, status: "fail", detail });
