@@ -75,9 +75,10 @@ function runNodeTests(suite, env = {}) {
  * So the database named by TEST_DATABASE_URL is now only a TEMPLATE — built
  * once by `drizzle-kit push` — and each file gets `CREATE DATABASE <tpl>_f<N>
  * TEMPLATE <tpl>`, its own child process, and a `DROP DATABASE ... WITH
- * (FORCE)` afterwards. One process per file also confines the Node test-runner
- * IPC bug ("Unable to deserialize cloned data due to invalid or unsupported
- * version"), which hit random files once many files shared one --test process.
+ * (FORCE)` afterwards. Each file is also run directly rather than under
+ * `node --test`, which removes the supervisor process whose stream parser
+ * raises "Unable to deserialize cloned data due to invalid or unsupported
+ * version" — see runTestFile below.
  * ------------------------------------------------------------------ */
 
 // Postgres truncates identifiers at 63 bytes, which would collide two clones
@@ -166,11 +167,23 @@ async function dropClone(maintenance, clone) {
   await maintenance.query(`DROP DATABASE IF EXISTS ${quoteIdentifier(clone)} WITH (FORCE)`);
 }
 
+/**
+ * Runs the file directly — `node --import tsx <file>` — rather than through
+ * `node --test <file>`. node:test executes the tests either way and sets a
+ * non-zero exit code on failure, but `--test` makes this process a supervisor
+ * that spawns the file in yet another child and parses a serialized stream back
+ * from it. That parser is where Node's "Unable to deserialize cloned data due
+ * to invalid or unsupported version" comes from — it surfaced on Node 20 in
+ * #proccessRawBuffer (node:internal/test_runner/runner) and failed
+ * stripe-webhook.test.ts in CI *after* all 15 of its subtests had passed.
+ * Running the file directly removes that layer, so there is nothing to
+ * mis-parse.
+ */
 function runTestFile(file, env, capture) {
   return new Promise((resolve) => {
     const child = spawn(
       process.execPath,
-      ["--import", "tsx", "--test", file],
+      ["--import", "tsx", file],
       { stdio: capture ? ["ignore", "pipe", "pipe"] : "inherit", env: { ...process.env, ...env } },
     );
     let output = "";

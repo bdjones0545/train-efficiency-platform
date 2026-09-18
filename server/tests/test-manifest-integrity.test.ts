@@ -230,6 +230,15 @@ test("the db runner exposes its per-file clone machinery for testing", () => {
     /export async function runDbSuiteForTests/,
     "script/test-runner.mjs must export runDbSuiteForTests so this wiring test can drive it",
   );
+  // `node --test <file>` makes this process a supervisor that re-spawns the file
+  // and parses a serialized stream back from it. That parser raised "Unable to
+  // deserialize cloned data due to invalid or unsupported version" on Node 20 and
+  // failed stripe-webhook.test.ts in CI after all 15 of its subtests had passed.
+  assert.match(
+    runnerSource,
+    /\["--import", "tsx", file\]/,
+    "db files must be run directly, not under `node --test`, which adds the stream parser that raises \"Unable to deserialize cloned data\"",
+  );
 });
 
 test("db mode creates, uses and drops one database per test file", async () => {

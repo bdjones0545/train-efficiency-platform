@@ -24,9 +24,11 @@ The database `TEST_DATABASE_URL` names is a **template**, not the database the t
 CREATE DATABASE "<template>_f<N>" TEMPLATE "<template>"
 ```
 
-from the `postgres` maintenance database, spawns `node --import tsx --test <file>` as its own child process with `DATABASE_URL` and `TEST_DATABASE_URL` pointing at that clone, and then drops the clone with `DROP DATABASE ... WITH (FORCE)`. Nothing is left behind on a normal or a failing run.
+from the `postgres` maintenance database, runs `node --import tsx <file>` as its own child process with `DATABASE_URL` and `TEST_DATABASE_URL` pointing at that clone, and then drops the clone with `DROP DATABASE ... WITH (FORCE)`. Nothing is left behind on a normal or a failing run.
 
-This exists because 21 of the db files execute destructive DDL to build the tables they assert on. `server/tests/cashout-tenant-isolation.test.ts:38` runs `DROP TABLE IF EXISTS revenue_ledger_events,cashouts,coach_profiles,user_profiles,users CASCADE`, and `CASCADE` also drops the foreign keys on `bookings`, `booking_participants`, `availability_blocks` and `blocked_times`. Against one shared database, every later file calling `runApplicationMigrations()` then failed in `validateExistingBaseline`. Running one file at a time ordered that damage; it never prevented it. One process per file also confines the Node test-runner IPC failure ("Unable to deserialize cloned data due to invalid or unsupported version") that hit random files once dozens shared a single `node --test` process.
+The file is run **directly**, not under `node --test`. `node:test` executes the tests and sets a non-zero exit code either way, but `--test` makes the runner a supervisor that spawns the file in a further child and parses a serialized stream back from it. That parser is where Node's `Unable to deserialize cloned data due to invalid or unsupported version` comes from; on Node 20 it failed `stripe-webhook.test.ts` in CI *after* all 15 of its subtests had passed.
+
+This exists because 21 of the db files execute destructive DDL to build the tables they assert on. `server/tests/cashout-tenant-isolation.test.ts:38` runs `DROP TABLE IF EXISTS revenue_ledger_events,cashouts,coach_profiles,user_profiles,users CASCADE`, and `CASCADE` also drops the foreign keys on `bookings`, `booking_participants`, `availability_blocks` and `blocked_times`. Against one shared database, every later file calling `runApplicationMigrations()` then failed in `validateExistingBaseline`. Running one file at a time ordered that damage; it never prevented it. 
 
 Requirements:
 
