@@ -307,7 +307,8 @@ before the heartbeat queries them.
 - All automated outreach passes the guard chain (autonomy policy → send guard →
   guarded-outbound-email → audit log); see `docs/core-services.md`.
 - **Inbound webhooks:** SendGrid Inbound Parse `POST /api/webhooks/sendgrid-inbound`
-  (optional `?token=SENDGRID_INBOUND_SECRET`); AgentMail `POST /api/agentmail/webhook`
+  (`?token=SENDGRID_INBOUND_SECRET` — required in production, 503 without it);
+  AgentMail `POST /api/agentmail/webhook`
   (HMAC `x-agentmail-signature`).
 
 **Troubleshooting:**
@@ -580,6 +581,8 @@ actual `process.env.*` reads found in source.
       `STRIPE_PUBLISHABLE_KEY`; webhook endpoint registered in Stripe
 - [ ] AI: `OPENAI_API_KEY` (and/or `AI_INTEGRATIONS_OPENAI_*`, `OPENROUTER_API_KEY`)
 - [ ] Email: `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_INBOUND_SECRET`
+      (the inbound secret is required before Inbound Parse works in production, and
+      the Inbound Parse URL in SendGrid must carry `?token=<secret>`)
 - [ ] AgentMail: `AGENTMAIL_API_KEY`, `AGENTMAIL_WEBHOOK_SECRET`, `AGENTMAIL_ORG_DOMAIN`
 - [ ] SMS: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER`
 - [ ] Google: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
