@@ -8,7 +8,7 @@
 import { db } from "./db";
 import { attentionItems, bookings } from "@shared/schema";
 import type { InsertAttentionItem } from "@shared/schema";
-import { eq, and, gte, lt, inArray, ne, count } from "drizzle-orm";
+import { eq, and, gte, lt, inArray, ne, count, sql } from "drizzle-orm";
 
 // ─── Event types ──────────────────────────────────────────────────────────────
 
@@ -311,7 +311,14 @@ export async function trackBookingEvent(
       .insert(attentionItems)
       .values(item)
       .onConflictDoUpdate({
-        target: attentionItems.sourceId,
+        // The only unique index on attention_items is the PARTIAL index
+        // attention_items_active_source_unique (org_id, source_id)
+        // WHERE source_id IS NOT NULL AND status IN (active, snoozed, escalated).
+        // Postgres only infers a partial index when the conflict target names the
+        // same columns AND carries a predicate that implies the index predicate;
+        // a bare `target: sourceId` raises 42P10 on every call.
+        target: [attentionItems.orgId, attentionItems.sourceId],
+        targetWhere: sql`${attentionItems.sourceId} IS NOT NULL AND ${attentionItems.status} IN ('active', 'snoozed', 'escalated')`,
         set: {
           title: item.title,
           body: item.body,

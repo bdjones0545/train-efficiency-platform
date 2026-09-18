@@ -74,7 +74,9 @@ test("empty database reaches the complete ordered formal schema and ledger", asy
     "0018_book_funnel_schema.sql",
     "0019_agent_outcome_attribution_schema.sql",
     "0020_agentmail_followup_schema.sql",
+    "0021_connector_tokens_org_connector_unique.sql",
     "0022_wallet_redemption_idempotency_indexes.sql",
+    "0025_agent_action_sent_at.sql",
   ]);
   assert.equal(rows[0].execution_kind, "executed");
   const column = await pool.query(`SELECT is_nullable FROM information_schema.columns
@@ -254,7 +256,7 @@ test("startup orders formal migrations before bootstrap, workers, routes, and li
 test("migration readiness exposes only expected/applied identifiers and state", async () => {
   const state = migrations.getApplicationMigrationReadiness();
   assert.equal(state.state, "ready");
-  assert.equal(state.latestExpected, "0022_wallet_redemption_idempotency_indexes.sql");
-  assert.equal(state.latestApplied, "0022_wallet_redemption_idempotency_indexes.sql");
+  assert.equal(state.latestExpected, "0025_agent_action_sent_at.sql");
+  assert.equal(state.latestApplied, "0025_agent_action_sent_at.sql");
   assert.equal("databaseUrl" in state, false);
 });

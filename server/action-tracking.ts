@@ -2,7 +2,7 @@ import { db } from "./db";
 import { storage } from "./storage";
 import { agentActions, campaigns, bookings, services, users, coachProfiles, availabilityBlocks } from "@shared/schema";
 import type { AgentAction, InsertAgentAction, Campaign } from "@shared/schema";
-import { eq, and, inArray, gte, lte, lt, isNull, or, desc, sql, ne } from "drizzle-orm";
+import { eq, and, inArray, gte, lte, lt, isNull, isNotNull, or, desc, sql, ne } from "drizzle-orm";
 import { subHours, subDays, addHours, format, startOfDay, endOfDay, addDays, differenceInDays } from "date-fns";
 import { toZonedTime, fromZonedTime } from "date-fns-tz";
 import {
@@ -14,6 +14,26 @@ import { getClientConversionModifier } from "./client-intelligence";
 import { getGoalPriorityWeights, getActionGoalDimension } from "./goal-tracking";
 
 export type { AgentAction };
+
+/**
+ * Injectable collaborators for the automation engines. Production callers pass
+ * nothing and get the module-level `db`/`storage`; tests pass stubs so the
+ * engines can be executed without a database.
+ */
+export type ActionTrackingDb = Pick<typeof db, "select" | "insert" | "update">;
+export type ActionTrackingStorage = Pick<typeof storage, "getOrganizationById">;
+export interface ActionTrackingDeps {
+  db?: ActionTrackingDb;
+  storage?: ActionTrackingStorage;
+}
+
+/**
+ * Text written to agent_actions.autoReason for rows the automation produced but
+ * did not deliver. Automated delivery is not implemented: every automated draft
+ * lands in the human send queue, which only accepts status 'pending'.
+ */
+export const AUTOMATION_QUEUED_REASON =
+  "queued for review — automated delivery is not implemented";
 
 // ============================================================
 // PHASE 1: Core CRUD for agent_actions
@@ -27,9 +47,12 @@ export async function createAgentAction(entry: InsertAgentAction): Promise<Agent
 export async function updateAgentActionStatus(
   id: string,
   status: "pending" | "sent" | "responded" | "booked" | "ignored" | "failed",
-  extra: { bookingId?: string; outcomeValueCents?: number } = {}
+  extra: { bookingId?: string; outcomeValueCents?: number; sentAt?: Date } = {}
 ): Promise<void> {
-  await db.update(agentActions).set({ status, ...extra }).where(eq(agentActions.id, id));
+  // 'sent' is only ever recorded by a caller that got a provider result, so it
+  // also stamps the delivery marker consumers read.
+  const delivery = status === "sent" ? { sentAt: extra.sentAt ?? new Date() } : {};
+  await db.update(agentActions).set({ status, ...extra, ...delivery }).where(eq(agentActions.id, id));
 }
 
 export async function getAgentActionsForOrg(
@@ -773,9 +796,9 @@ const AUTO_MODE_LEVELS: Record<number, Omit<AutoModeStatus, "level" | "isActive"
   },
   3: {
     label: "Full Operator",
-    description: "Agent pre-populates the daily queue every morning with ready-to-review drafts for all action types. Coach approves, agent tracks outcomes.",
-    allowedActions: ["All level-2 actions", "Daily queue auto-population", "Weekly recap auto-generation"],
-    blockedActions: ["Auto-book sessions", "First-touch churn outreach without coach flag"],
+    description: "Agent pre-populates the daily queue every morning with ready-to-review drafts for all action types, including campaign steps and 24h follow-ups. Coach approves and sends every message; the agent tracks outcomes. Automated delivery is not implemented — nothing leaves without a coach.",
+    allowedActions: ["All level-2 actions", "Daily queue auto-population", "Campaign step drafts on schedule", "Weekly recap auto-generation"],
+    blockedActions: ["Auto-send without review", "Auto-book sessions", "First-touch churn outreach without coach flag"],
   },
 };
 
@@ -1222,13 +1245,15 @@ export interface ThrottleCheck {
 export async function checkThrottleRules(
   orgId: string,
   clientId: string,
-  campaignId?: string
+  campaignId?: string,
+  deps: ActionTrackingDeps = {}
 ): Promise<ThrottleCheck> {
+  const database = deps.db ?? db;
   const now = new Date();
   const since24h = subHours(now, 24);
   const since7d = subDays(now, 7);
 
-  const recentMessages = await db
+  const recentMessages = await database
     .select({ id: agentActions.id })
     .from(agentActions)
     .where(
@@ -1245,7 +1270,7 @@ export async function checkThrottleRules(
     return { allowed: false, reason: "Max 1 message per client per 24h — already sent within 24 hours." };
   }
 
-  const last7dMessages = await db
+  const last7dMessages = await database
     .select({ status: agentActions.status })
     .from(agentActions)
     .where(
@@ -1269,7 +1294,7 @@ export async function checkThrottleRules(
   }
 
   if (campaignId) {
-    const campaignAttempts = await db
+    const campaignAttempts = await database
       .select({ id: agentActions.id })
       .from(agentActions)
       .where(
@@ -1549,13 +1574,18 @@ export async function getActiveCampaigns(orgId: string): Promise<{
   };
 }
 
-export async function runCampaignEngine(orgId: string): Promise<{ executed: number; drafted: number; completed: number }> {
-  const org = await storage.getOrganizationById(orgId);
+export async function runCampaignEngine(
+  orgId: string,
+  deps: ActionTrackingDeps = {},
+): Promise<{ executed: number; drafted: number; completed: number }> {
+  const database = deps.db ?? db;
+  const store = deps.storage ?? storage;
+  const org = await store.getOrganizationById(orgId);
   const automationLevel = (org as any)?.automationLevel ?? 1;
   if (automationLevel < 2) return { executed: 0, drafted: 0, completed: 0 };
 
   const now = new Date();
-  const dueCampaigns = await db
+  const dueCampaigns = await database
     .select()
     .from(campaigns)
     .where(
@@ -1566,7 +1596,9 @@ export async function runCampaignEngine(orgId: string): Promise<{ executed: numb
       )
     );
 
-  let executed = 0;
+  // Nothing in this engine delivers a message, so nothing is ever "executed".
+  // The counter stays in the result shape for callers that still read it.
+  const executed = 0;
   let drafted = 0;
   let completedCount = 0;
 
@@ -1574,22 +1606,38 @@ export async function runCampaignEngine(orgId: string): Promise<{ executed: numb
     const template = CAMPAIGN_TEMPLATES[campaign.campaignType];
     if (!template) continue;
 
-    const nextStepNum = (campaign.currentStep ?? 1) + 1;
+    // Campaign progress is earned by delivery, never by drafting. A draft the
+    // coach has not sent does not consume a step; once a real send stamps
+    // sentAt, the campaign advances on the next run.
+    const [latestDelivered] = await database
+      .select({ step: agentActions.campaignStep })
+      .from(agentActions)
+      .where(
+        and(
+          eq(agentActions.campaignId, campaign.id),
+          isNotNull(agentActions.sentAt),
+        )
+      )
+      .orderBy(desc(agentActions.campaignStep))
+      .limit(1);
+
+    const currentStep = Math.max(campaign.currentStep ?? 1, latestDelivered?.step ?? 0);
+    const nextStepNum = currentStep + 1;
 
     if (nextStepNum > template.totalSteps) {
-      await db.update(campaigns).set({ status: "completed", completedAt: now }).where(eq(campaigns.id, campaign.id));
+      await database.update(campaigns).set({ status: "completed", completedAt: now }).where(eq(campaigns.id, campaign.id));
       completedCount++;
       continue;
     }
 
-    const throttle = await checkThrottleRules(orgId, campaign.clientId, campaign.id);
+    const throttle = await checkThrottleRules(orgId, campaign.clientId, campaign.id, deps);
     if (!throttle.allowed) {
-      await db.update(campaigns).set({ status: "stopped", stoppedReason: throttle.reason }).where(eq(campaigns.id, campaign.id));
+      await database.update(campaigns).set({ status: "stopped", stoppedReason: throttle.reason }).where(eq(campaigns.id, campaign.id));
       completedCount++;
       continue;
     }
 
-    const recentSuccess = await db
+    const recentSuccess = await database
       .select({ id: agentActions.id })
       .from(agentActions)
       .where(
@@ -1603,7 +1651,7 @@ export async function runCampaignEngine(orgId: string): Promise<{ executed: numb
       .limit(1);
 
     if (recentSuccess.length > 0) {
-      await db.update(campaigns).set({ status: "completed", stoppedReason: "Client booked or responded — campaign complete", completedAt: now }).where(eq(campaigns.id, campaign.id));
+      await database.update(campaigns).set({ status: "completed", stoppedReason: "Client booked or responded — campaign complete", completedAt: now }).where(eq(campaigns.id, campaign.id));
       completedCount++;
       continue;
     }
@@ -1611,14 +1659,32 @@ export async function runCampaignEngine(orgId: string): Promise<{ executed: numb
     const stepTemplate = template.steps[nextStepNum - 1];
     if (!stepTemplate) continue;
 
+    // A draft from an earlier run may still be waiting in the coach's queue.
+    // Queueing another one every cron tick would flood the queue with messages
+    // for a client who has heard nothing yet, so hold until it is acted on.
+    const [queuedDraft] = await database
+      .select({ id: agentActions.id })
+      .from(agentActions)
+      .where(
+        and(
+          eq(agentActions.campaignId, campaign.id),
+          eq(agentActions.status, "pending" as any),
+        )
+      )
+      .limit(1);
+
+    if (queuedDraft) {
+      await database.update(campaigns).set({ nextActionAt: addHours(now, 24) }).where(eq(campaigns.id, campaign.id));
+      continue;
+    }
+
     const firstName = (campaign.clientName ?? "there").split(" ")[0];
     const message = stepTemplate.template.replace("{name}", firstName);
 
-    const isLevel3 = automationLevel >= 3;
-    const isSafeForAutoSend = ["backfill", "renewal"].includes(stepTemplate.messageSubType) || nextStepNum > 1;
-    const canAutoSend = isLevel3 && isSafeForAutoSend;
-
-    await db.insert(agentActions).values({
+    // No provider is called here and none is wired to pick these rows up, so the
+    // row is written exactly as what it is: a draft awaiting coach approval. The
+    // human send path (send_drafted_outreach_sms) only accepts status 'pending'.
+    await database.insert(agentActions).values({
       organizationId: orgId,
       clientId: campaign.clientId,
       clientName: campaign.clientName,
@@ -1626,26 +1692,24 @@ export async function runCampaignEngine(orgId: string): Promise<{ executed: numb
       actionType: "outreach",
       actionSubType: stepTemplate.messageSubType,
       messageContent: { sms: message, campaignStep: nextStepNum },
-      status: canAutoSend ? "sent" : "pending",
-      autoSent: canAutoSend,
-      autoReason: canAutoSend ? `Campaign "${campaign.campaignType}" step ${nextStepNum}/${template.totalSteps} — auto-sent at level 3` : null,
+      status: "pending",
+      autoSent: false,
+      autoReason: `Campaign "${campaign.campaignType}" step ${nextStepNum}/${template.totalSteps} — ${AUTOMATION_QUEUED_REASON}`,
       campaignId: campaign.id,
       campaignStep: nextStepNum,
     });
 
+    // currentStep is deliberately NOT advanced: nothing was delivered. The step
+    // is consumed when the coach sends the draft, which stamps sentAt and is
+    // picked up by the reconciliation at the top of this loop. Only the timer
+    // moves, so the engine re-checks instead of re-drafting immediately.
     const nextNextStep = template.steps[nextStepNum];
-    const nextActionAt = nextNextStep ? addHours(now, nextNextStep.delayHours) : null;
-    const isDone = nextStepNum >= template.totalSteps;
-
-    await db.update(campaigns).set({
-      currentStep: nextStepNum,
-      nextActionAt: nextActionAt ?? undefined,
-      status: isDone ? "completed" : "active",
-      completedAt: isDone ? now : undefined,
+    await database.update(campaigns).set({
+      nextActionAt: addHours(now, nextNextStep?.delayHours ?? 24),
+      status: "active",
     }).where(eq(campaigns.id, campaign.id));
 
-    if (canAutoSend) executed++;
-    else drafted++;
+    drafted++;
   }
 
   return { executed, drafted, completed: completedCount };
@@ -1664,30 +1728,40 @@ export interface AutoActionResult {
   actionId: string;
 }
 
-export async function executeAutoActions(orgId: string): Promise<{
-  sent: AutoActionResult[];
+/**
+ * Drafts level-3 follow-ups for messages that were really delivered and got no
+ * response. Nothing here contacts a provider: every row it writes is a draft
+ * queued for coach approval, and `queued` reports exactly that.
+ */
+export async function executeAutoActions(orgId: string, deps: ActionTrackingDeps = {}): Promise<{
+  queued: AutoActionResult[];
   skipped: number;
   skipReasons: string[];
 }> {
-  const org = await storage.getOrganizationById(orgId);
+  const database = deps.db ?? db;
+  const store = deps.storage ?? storage;
+  const org = await store.getOrganizationById(orgId);
   const automationLevel = (org as any)?.automationLevel ?? 1;
-  if (automationLevel < 3) return { sent: [], skipped: 0, skipReasons: [] };
+  if (automationLevel < 3) return { queued: [], skipped: 0, skipReasons: [] };
 
-  const sent: AutoActionResult[] = [];
+  const queued: AutoActionResult[] = [];
   const skipReasons: string[] = [];
   let skipped = 0;
 
   const now = new Date();
   const cutoff24h = subHours(now, 24);
 
-  const eligibleFollowUps = await db
+  // Only messages that actually reached the client can be followed up on.
+  // status='sent' alone is not proof of delivery, so sentAt is required.
+  const eligibleFollowUps = await database
     .select()
     .from(agentActions)
     .where(
       and(
         eq(agentActions.organizationId, orgId),
         eq(agentActions.status, "sent"),
-        lt(agentActions.createdAt, cutoff24h),
+        isNotNull(agentActions.sentAt),
+        lt(agentActions.sentAt, cutoff24h),
         lte(agentActions.followUpCount, 0),
       )
     )
@@ -1695,13 +1769,17 @@ export async function executeAutoActions(orgId: string): Promise<{
 
   for (const action of eligibleFollowUps) {
     if (!action.clientId) continue;
-    const throttle = await checkThrottleRules(orgId, action.clientId);
+    const throttle = await checkThrottleRules(orgId, action.clientId, undefined, deps);
     if (!throttle.allowed) { skipped++; skipReasons.push(`${action.clientName}: ${throttle.reason}`); continue; }
 
-    const hoursSince = Math.floor((now.getTime() - new Date(action.createdAt!).getTime()) / 3600000);
+    const deliveredAt = action.sentAt ?? action.createdAt;
+    const hoursSince = deliveredAt ? Math.floor((now.getTime() - new Date(deliveredAt).getTime()) / 3600000) : 24;
     const msg = `Hey ${(action.clientName ?? "there").split(" ")[0]}, just following up — still have that spot available. Let me know!`;
 
-    const [newAction] = await db.insert(agentActions).values({
+    // Written as a draft, not a send: no provider is called here, and no
+    // downstream job delivers these rows. The human send path only accepts
+    // status 'pending', so this row stays reachable by a coach.
+    const [newAction] = await database.insert(agentActions).values({
       organizationId: orgId,
       clientId: action.clientId,
       clientName: action.clientName,
@@ -1709,24 +1787,24 @@ export async function executeAutoActions(orgId: string): Promise<{
       actionType: "outreach",
       actionSubType: "follow_up",
       messageContent: { sms: msg },
-      status: "sent",
-      autoSent: true,
-      autoReason: `Auto follow-up: no response after ${hoursSince}h — level 3 automation`,
+      status: "pending",
+      autoSent: false,
+      autoReason: `Auto follow-up draft: no response after ${hoursSince}h — ${AUTOMATION_QUEUED_REASON}`,
     }).returning();
 
-    await db.update(agentActions).set({ followUpCount: (action.followUpCount ?? 0) + 1 }).where(eq(agentActions.id, action.id));
+    await database.update(agentActions).set({ followUpCount: (action.followUpCount ?? 0) + 1 }).where(eq(agentActions.id, action.id));
 
-    sent.push({
+    queued.push({
       type: "follow_up",
       clientId: action.clientId,
       clientName: action.clientName ?? "Unknown",
       message: msg,
-      autoReason: `No response after ${hoursSince}h`,
+      autoReason: `No response after ${hoursSince}h — queued for your approval`,
       actionId: newAction.id,
     });
   }
 
-  return { sent, skipped, skipReasons };
+  return { queued, skipped, skipReasons };
 }
 
 // ============================================================
@@ -1764,19 +1842,24 @@ export async function getAutoPilotDashboard(orgId: string): Promise<AutoPilotDas
   ]);
 
   const automationLevel = (org as any)?.automationLevel ?? 1;
-  const levelLabels = ["Off", "Draft Only", "Semi-Auto", "Auto-Send"];
+  const levelLabels = ["Off", "Draft Only", "Semi-Auto", "Full Operator (review required)"];
   const automationLevelLabel = levelLabels[automationLevel] ?? "Unknown";
 
-  const autoSentToday = todayActions.filter(a => a.autoSent === true && a.status === "sent");
-  const autoDraftedToday = todayActions.filter(a => a.status === "pending" && a.campaignId != null);
+  // Delivered-and-automated only. autoSent + status 'sent' without sentAt is a
+  // historic phantom row written by the old auto-pilot, not a delivered message,
+  // and must never be counted as one.
+  const autoSentToday = todayActions.filter(a => a.autoSent === true && a.status === "sent" && a.sentAt != null);
+  const autoDraftedToday = todayActions.filter(a => a.status === "pending" && (a.campaignId != null || a.autoReason != null));
   const todayRevenueCents = todayActions.filter(a => a.status === "booked").reduce((s, a) => s + (a.outcomeValueCents ?? 0), 0);
 
-  const autoActionsToday = autoSentToday.slice(0, 10).map(a => ({
+  // What the agent actually did today: drafts it queued, plus anything a real
+  // send delivered. Nothing here is described as sent unless sentAt says so.
+  const autoActionsToday = [...autoSentToday, ...autoDraftedToday].slice(0, 10).map(a => ({
     clientName: a.clientName ?? "Unknown",
     type: a.actionSubType ?? a.actionType,
     message: (a.messageContent as any)?.sms ?? "",
     time: a.createdAt ? format(new Date(a.createdAt), "h:mm a") : "",
-    autoReason: a.autoReason ?? "Auto-sent",
+    autoReason: a.autoReason ?? (a.sentAt != null ? "Delivered" : "Queued for your approval"),
   }));
 
   const activeCampaignDetails = activeCampaignsData.active.slice(0, 10).map(c => ({
@@ -1800,9 +1883,9 @@ export async function getAutoPilotDashboard(orgId: string): Promise<AutoPilotDas
     whatIsRunning.push("Auto-drafting follow-ups for sent actions with no response after 24h");
   }
   if (automationLevel >= 3) {
-    whatIsRunning.push("Auto-send ACTIVE: follow-up messages sent automatically after 24h no-response");
-    whatIsRunning.push("Campaign steps at level 3 are sent automatically (safe types: backfill, renewal, follow-ups)");
-    whatIsRunning.push("Hard blocks: NO auto-booking, NO first-touch churn outreach, NO upsell messages over threshold");
+    whatIsRunning.push("Auto-drafting follow-ups 24h after a message was actually delivered with no response — queued for your approval");
+    whatIsRunning.push("Campaign steps are drafted on schedule and wait in your queue; a step is only consumed once you send it");
+    whatIsRunning.push("Hard blocks: NO automated delivery (not implemented), NO auto-booking, NO first-touch churn outreach, NO upsell messages over threshold");
   }
 
   const summary = automationLevel === 0
@@ -1811,7 +1894,7 @@ export async function getAutoPilotDashboard(orgId: string): Promise<AutoPilotDas
       ? "Draft-only mode. I create drafts but you send everything."
       : automationLevel === 2
         ? `Semi-auto. Auto-drafting campaigns + follow-ups. ${activeCampaignsData.active.length} campaign${activeCampaignsData.active.length !== 1 ? "s" : ""} running.`
-        : `Auto-send mode. ${autoSentToday.length} message${autoSentToday.length !== 1 ? "s" : ""} sent automatically today. $${(todayRevenueCents / 100).toFixed(0)} in revenue attributed to agent activity today.`;
+        : `Full Operator. ${autoDraftedToday.length} message${autoDraftedToday.length !== 1 ? "s" : ""} drafted automatically today and waiting for your approval — nothing is sent without you. $${(todayRevenueCents / 100).toFixed(0)} in revenue attributed to agent activity today.`;
 
   return {
     generatedAt: format(now, "EEEE, MMMM d 'at' h:mm a"),

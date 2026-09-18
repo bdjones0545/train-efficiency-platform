@@ -238,6 +238,14 @@ export interface IStorage {
   updateUser(id: string, data: { firstName?: string; lastName?: string; email?: string | null; phone?: string | null; smsOptIn?: boolean; smsOptInAt?: Date | null; smsOptOutAt?: Date | null; smsConsentSource?: string | null }): Promise<User | undefined>;
   updateClientForOrganization(id: string, orgId: string, data: { firstName?: string; lastName?: string; email?: string | null }): Promise<User | undefined>;
   updateUserSmsOptIn(userId: string, optIn: boolean, source?: string): Promise<User | undefined>;
+  /** Every user record whose phone matches the normalized E.164 number. */
+  getUsersByPhone(normalizedPhone: string): Promise<User[]>;
+  /**
+   * Carrier-level STOP: flips smsOptIn=false on EVERY user_org_preferences row
+   * of the user. sendSms reads org preferences first, so a STOP that only
+   * touched users.smsOptIn was ignored for any user with an org-preference row.
+   */
+  optOutUserSmsInAllOrgs(userId: string): Promise<{ orgPreferenceRowsUpdated: number }>;
   deleteUser(id: string): Promise<boolean>;
   deleteClientForOrganization(id: string, orgId: string): Promise<boolean>;
   getBookingsForUser(userId: string): Promise<(Booking & { service?: Service; coach?: CoachProfile & { user: User }; redemption?: Redemption })[]>;
@@ -250,6 +258,9 @@ export interface IStorage {
   createCoachProfile(profile: InsertCoachProfile): Promise<CoachProfile>;
   updateCoachProfile(id: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined>;
   deleteCoachProfile(id: string): Promise<boolean>;
+  getCoachProfileForOrganization(id: string, orgId: string): Promise<(CoachProfile & { user: User }) | undefined>;
+  updateCoachProfileForOrganization(id: string, orgId: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined>;
+  deleteCoachProfileForOrganization(id: string, orgId: string): Promise<boolean>;
 
   getServices(): Promise<Service[]>;
   getServicesByOrganization(orgId: string): Promise<Service[]>;
@@ -568,7 +579,15 @@ export interface IStorage {
   isProspectOptedOut(orgId: string, email: string): Promise<boolean>;
   addProspectOptOut(orgId: string, email: string, reason?: string): Promise<void>;
   getProspectDashboardStats(orgId: string): Promise<{ newLeads: number; pendingApproval: number; sentThisWeek: number; replies: number }>;
-  findProspectByContactEmail(email: string): Promise<{ prospect: import("@shared/schema").TeamTrainingProspect; orgId: string } | undefined>;
+  /**
+   * Org-scoped prospect lookup by contact/decision-maker email.
+   * Prospect emails are NOT unique across organizations — a global lookup by
+   * email cannot say which tenant a message belongs to, so callers must bring
+   * an organization they have already established by other evidence.
+   */
+  findProspectByContactEmailForOrganization(orgId: string, email: string): Promise<import("@shared/schema").TeamTrainingProspect | undefined>;
+  /** Organizations that have actually SENT outreach to this address. */
+  findOrganizationIdsWithSentOutreachToEmail(email: string): Promise<string[]>;
   getOutreachDraftsByOrg(orgId: string): Promise<(import("@shared/schema").TeamTrainingOutreachDraft & { prospect?: import("@shared/schema").TeamTrainingProspect })[]>;
   getEmailPerformanceStats(orgId: string): Promise<{ sent: number; opened: number; clicked: number; replied: number; openRate: number; clickRate: number; replyRate: number; conversionRate: number; bestVariant: import("@shared/schema").EmailMessageVariant | null }>;
   getEmailMessageVariants(orgId: string): Promise<import("@shared/schema").EmailMessageVariant[]>;
@@ -758,6 +777,20 @@ export class DatabaseStorage implements IStorage {
     return updated || undefined;
   }
 
+  async getUsersByPhone(normalizedPhone: string): Promise<User[]> {
+    return db.select().from(users).where(eq(users.phone, normalizedPhone));
+  }
+
+  async optOutUserSmsInAllOrgs(userId: string): Promise<{ orgPreferenceRowsUpdated: number }> {
+    const now = new Date();
+    const updated = await db
+      .update(userOrgPreferences)
+      .set({ smsOptIn: false, smsOptOutAt: now, updatedAt: now })
+      .where(eq(userOrgPreferences.userId, userId))
+      .returning({ id: userOrgPreferences.id });
+    return { orgPreferenceRowsUpdated: updated.length };
+  }
+
   async deleteUser(id: string): Promise<boolean> {
     await db.delete(bookingParticipants).where(eq(bookingParticipants.userId, id));
     await db.delete(walletTransactions).where(eq(walletTransactions.userId, id));
@@ -887,6 +920,54 @@ export class DatabaseStorage implements IStorage {
     await db.delete(bookings).where(eq(bookings.coachId, id));
     await db.delete(coachProfiles).where(eq(coachProfiles.id, id));
     return true;
+  }
+
+  // ── Org-scoped coach profile access ─────────────────────────────────────────
+  // The org predicate lives in the SQL so a coach id from another tenant matches
+  // zero rows: no read, no write, no delete.
+
+  async getCoachProfileForOrganization(id: string, orgId: string): Promise<(CoachProfile & { user: User }) | undefined> {
+    const [result] = await db
+      .select()
+      .from(coachProfiles)
+      .innerJoin(users, eq(coachProfiles.userId, users.id))
+      .where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)));
+    if (!result) return undefined;
+    return { ...result.coach_profiles, user: result.users };
+  }
+
+  async updateCoachProfileForOrganization(id: string, orgId: string, data: Partial<CoachProfile>): Promise<CoachProfile | undefined> {
+    // Never let a scoped update re-home the profile or change its identity.
+    const { id: _id, userId: _userId, organizationId: _organizationId, ...safeData } = data;
+    if (Object.keys(safeData).length === 0) return this.getCoachProfileForOrganization(id, orgId);
+    const [updated] = await db
+      .update(coachProfiles)
+      .set(safeData)
+      .where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)))
+      .returning();
+    return updated || undefined;
+  }
+
+  async deleteCoachProfileForOrganization(id: string, orgId: string): Promise<boolean> {
+    return db.transaction(async (tx) => {
+      const [owned] = await tx
+        .select({ id: coachProfiles.id })
+        .from(coachProfiles)
+        .where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)))
+        .for("update");
+      if (!owned) return false;
+      await tx.delete(availabilityBlocks).where(eq(availabilityBlocks.coachId, id));
+      const coachBookings = await tx.select({ id: bookings.id }).from(bookings).where(eq(bookings.coachId, id));
+      for (const b of coachBookings) {
+        await tx.delete(bookingParticipants).where(eq(bookingParticipants.bookingId, b.id));
+        await tx.delete(redemptions).where(eq(redemptions.bookingId, b.id));
+      }
+      await tx.delete(redemptions).where(eq(redemptions.coachId, id));
+      await tx.delete(cashouts).where(eq(cashouts.coachId, id));
+      await tx.delete(bookings).where(eq(bookings.coachId, id));
+      await tx.delete(coachProfiles).where(and(eq(coachProfiles.id, id), eq(coachProfiles.organizationId, orgId)));
+      return true;
+    });
   }
 
   async getServices(): Promise<Service[]> {
@@ -3370,17 +3451,46 @@ export class DatabaseStorage implements IStorage {
     return db.select().from(teamTrainingOutreachDrafts).where(eq(teamTrainingOutreachDrafts.prospectId, prospectId)).orderBy(desc(teamTrainingOutreachDrafts.createdAt));
   }
 
-  async findProspectByContactEmail(email: string) {
+  async findProspectByContactEmailForOrganization(orgId: string, email: string) {
     const { teamTrainingProspects } = await import("@shared/schema");
     const lowerEmail = email.toLowerCase().trim();
     const rows = await db.select().from(teamTrainingProspects).where(
-      or(
-        sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
-        sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+      and(
+        eq(teamTrainingProspects.orgId, orgId),
+        or(
+          sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
+          sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+        ),
       )
-    );
-    if (rows.length === 0) return undefined;
-    return { prospect: rows[0], orgId: rows[0].orgId };
+    ).orderBy(desc(teamTrainingProspects.lastContactedAt), desc(teamTrainingProspects.createdAt));
+    return rows[0] || undefined;
+  }
+
+  async findOrganizationIdsWithSentOutreachToEmail(email: string): Promise<string[]> {
+    const { teamTrainingProspects, teamTrainingOutreachDrafts } = await import("@shared/schema");
+    const lowerEmail = email.toLowerCase().trim();
+    const rows = await db
+      .select({ orgId: teamTrainingOutreachDrafts.orgId })
+      .from(teamTrainingOutreachDrafts)
+      .innerJoin(
+        teamTrainingProspects,
+        and(
+          eq(teamTrainingProspects.id, teamTrainingOutreachDrafts.prospectId),
+          // A draft may only speak for the org that owns the prospect.
+          eq(teamTrainingProspects.orgId, teamTrainingOutreachDrafts.orgId),
+        ),
+      )
+      .where(
+        and(
+          isNotNull(teamTrainingOutreachDrafts.sentAt),
+          or(
+            sql`lower(${teamTrainingProspects.contactEmail}) = ${lowerEmail}`,
+            sql`lower(${teamTrainingProspects.decisionMakerEmail}) = ${lowerEmail}`,
+          ),
+        ),
+      )
+      .groupBy(teamTrainingOutreachDrafts.orgId);
+    return rows.map((r) => r.orgId).filter((id): id is string => typeof id === "string" && id.length > 0);
   }
 
   async getOutreachDraftsByOrg(orgId: string) {
