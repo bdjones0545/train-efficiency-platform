@@ -175,6 +175,7 @@
         "server/tests/email-notification-authorization.test.ts",
         "server/tests/execution-approval-authorization.test.ts",
         "server/tests/google-calendar-oauth-state.test.ts",
+        "server/tests/kevin-action-api-replay.test.ts",
         "server/tests/marketplace-stripe-webhook.test.ts",
         "server/tests/org-isolation-helpers.test.ts",
         "server/tests/phase10-write-gate.test.ts",

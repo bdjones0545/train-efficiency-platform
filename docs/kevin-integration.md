@@ -67,6 +67,14 @@ KEVIN_HERMES_API_KEY=<secret>             # Bearer token for Hermes API
 # ─── Internal service-to-service auth ─────────────────────────────────────
 TE_INTERNAL_SERVICE_TOKEN=<secret>        # Min 24 chars. Kevin uses this
                                           # to POST /api/internal/kevin/signals
+                                          # and the /api/internal/kevin/v1 action API
+TE_INTERNAL_SERVICE_TOKEN_NEW=            # Set ONLY during a rotation (see below).
+                                          # While set, both tokens are accepted.
+
+# ─── Kevin Action API scoping (/api/internal/kevin/v1/*) ──────────────────
+KEVIN_ALLOWED_ORG_IDS=                    # Optional. Comma-separated org UUIDs the
+                                          # internal token may act on. Unset = any org
+                                          # (production logs a warning once at boot).
 
 # ─── Feature flags (independent, default off) ─────────────────────────────
 KEVIN_EVENT_DISPATCH_ENABLED=false        # Enable outbound event queue flush
@@ -81,11 +89,65 @@ KEVIN_SIGNAL_INTAKE_ENABLED=false         # Signal intake — default OFF.
 
 ### Rotation procedure for TE_INTERNAL_SERVICE_TOKEN
 
+Implemented in `server/middleware/require-internal-service-token.ts`: the middleware
+accepts **either** `TE_INTERNAL_SERVICE_TOKEN` or `TE_INTERNAL_SERVICE_TOKEN_NEW`
+(each hashed and compared with `timingSafeEqual`, with no early exit), so the
+overlap window has no 401s.
+
 1. Generate a new secret (≥ 32 chars): `openssl rand -hex 32`
-2. Add `TE_INTERNAL_SERVICE_TOKEN_NEW=<new-secret>` to env
-3. Update Kevin's outbound config to use the new secret
+2. Add `TE_INTERNAL_SERVICE_TOKEN_NEW=<new-secret>` to env — both tokens now work
+3. Update Kevin's outbound config to use the new secret; confirm traffic succeeds
 4. Rename `TE_INTERNAL_SERVICE_TOKEN=<new-secret>` and remove `_NEW`
 5. No restart required (middleware reads from `process.env` at request time)
+
+A token shorter than 24 characters is ignored, so a truncated paste into `_NEW`
+cannot silently become a valid credential. When neither variable holds a usable
+value the internal endpoints fail closed with `503 INTERNAL_TOKEN_NOT_CONFIGURED`.
+
+---
+
+### Organization scoping for the action API
+
+`/api/internal/kevin/v1/*` is guarded by one **global** bearer token that carries no
+organization claim, so `org_id` can only come from the request body, query or
+`X-Org-ID` header. Per-org credentials are the real fix and are **not** implemented
+here. Until they are, set `KEVIN_ALLOWED_ORG_IDS` to the orgs Kevin is actually
+allowed to act on:
+
+```bash
+KEVIN_ALLOWED_ORG_IDS=11111111-1111-1111-1111-111111111111,2222...
+```
+
+* set → any other `org_id` is rejected with `403 ORG_NOT_ALLOWED` before the handler runs
+* unset → behaviour is unchanged, and production logs `KEVIN_ALLOWED_ORG_IDS_UNSET` once at boot
+
+The action API is additionally rate-limited to **120 requests/minute per token**
+(`429 RATE_LIMIT_EXCEEDED`). That counter is per process: on Replit autoscale the
+effective ceiling is 120 × instances, so treat it as defence in depth, not a quota.
+
+---
+
+### Replay protection on the action API
+
+Every **mutating** request (POST/PUT/PATCH/DELETE) to `/api/internal/kevin/v1/*` must
+carry both headers, which is what `kevin/te-client.ts` already sends:
+
+| Header | Value |
+|--------|-------|
+| `X-Kevin-Timestamp` | unix **milliseconds** (epoch seconds also accepted) |
+| `X-Kevin-Nonce` | UUID, used exactly once |
+
+* missing in production → `400 REPLAY_HEADERS_REQUIRED`
+* outside the skew window (`KEVIN_CALLBACK_ALLOWED_SKEW_SECONDS`, default 300) → `400 REPLAY_REJECTED`
+* nonce reused → `409 REPLAY_REJECTED`
+* nonce store unreachable → `503 REPLAY_STORE_UNAVAILABLE` (fails **closed**)
+
+Nonces are claimed in PostgreSQL (`kevin_callback_nonces`, rows namespaced
+`action_api:<nonce>`, same table and TTL cleanup as the callback webhook), so a
+request replayed against a different autoscale instance is still rejected.
+Outside production the headers remain optional and their absence is logged once.
+
+**Operational requirement:** Hermes/Kevin must send both headers in production.
 
 ---
 
@@ -337,6 +399,11 @@ The circuit breaker is process-local (not distributed).
 ```
 GET /api/admin/kevin/circuit-breaker
 ```
+
+Read-only. Registered in `server/kevin-routes.ts` behind `isAuthenticated` +
+`requireKevinAccess` (ADMIN), returning `getCircuitStatus()` from
+`server/services/kevin-circuit-breaker.ts`. Regression-tested in
+`server/tests/kevin-action-api-replay.test.ts`.
 
 ---
 
