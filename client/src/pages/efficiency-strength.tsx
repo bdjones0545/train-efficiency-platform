@@ -234,7 +234,7 @@ export default function EfficiencyStrengthPage() {
                 <Calendar className="h-4 w-4 mr-2" />
                 Book a Session
               </Button>
-              <a href="/sessions">
+              <a href="/sessions?org=efficiencystrength">
                 <Button variant="outline" size="lg" data-testid="button-view-sessions">
                   <Users className="h-4 w-4 mr-2" />
                   View Group Sessions

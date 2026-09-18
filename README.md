@@ -73,7 +73,8 @@ Key variables (see `.env.example` for the full, annotated list):
 | `ADMIN_REPAIR_KEY` | — | Gates admin "repair" endpoints (fails closed if unset) |
 | `STRIPE_SECRET_KEY`, `STRIPE_PUBLISHABLE_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_MARKETPLACE_WEBHOOK_SECRET` | — | Payments & webhooks |
 | `OPENAI_API_KEY`, `OPENROUTER_API_KEY` | — | AI providers |
-| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL`, `SENDGRID_INBOUND_SECRET` | — | Transactional & inbound email |
+| `SENDGRID_API_KEY`, `SENDGRID_FROM_EMAIL` | — | Transactional email |
+| `SENDGRID_INBOUND_SECRET` | Required in prod to use Inbound Parse | Shared secret for `POST /api/webhooks/sendgrid-inbound`. In production the endpoint returns 503 and processes nothing when this is unset. Append `?token=<secret>` to the Inbound Parse URL in SendGrid. |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` | — | SMS |
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | — | Gmail & Google Calendar |
 | `COMPOSIO_API_KEY` | — | Governed tool-calling |

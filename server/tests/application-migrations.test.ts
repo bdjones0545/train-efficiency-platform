@@ -74,6 +74,9 @@ test("empty database reaches the complete ordered formal schema and ledger", asy
     "0018_book_funnel_schema.sql",
     "0019_agent_outcome_attribution_schema.sql",
     "0020_agentmail_followup_schema.sql",
+    "0021_connector_tokens_org_connector_unique.sql",
+    "0022_wallet_redemption_idempotency_indexes.sql",
+    "0025_agent_action_sent_at.sql",
   ]);
   assert.equal(rows[0].execution_kind, "executed");
   const column = await pool.query(`SELECT is_nullable FROM information_schema.columns
@@ -110,7 +113,7 @@ test("compatible populated database adopts baseline without rewriting rows", asy
   assert.equal(rows[0].execution_kind, "adopted");
   assert.equal((await pool.query(`SELECT count(*)::int AS n FROM user_org_preferences WHERE id='existing-pref'`)).rows[0].n, 1);
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  assert.equal((await ledger(pool)).length, 21);
+  assert.equal((await ledger(pool)).length, 22);
   await pool.end();
 });
 
@@ -220,7 +223,7 @@ test("failed middle migration is not recorded, blocks later files, and retry con
   ]);
   assert.equal(migrations.getApplicationMigrationReadiness().state, "failed");
   await migrations.runApplicationMigrations(pool, { migrationsDirectory });
-  assert.equal((await ledger(pool)).length, 21);
+  assert.equal((await ledger(pool)).length, 22);
   assert.equal(migrations.getApplicationMigrationReadiness().state, "ready");
   await pool.end();
 });
@@ -234,8 +237,8 @@ test("three independent migrators serialize and converge on one ledger", async (
   ]);
   await Promise.all(pools.map((pool) => migrations.runApplicationMigrations(pool, { migrationsDirectory })));
   const rows = await ledger(pools[0]);
-  assert.equal(rows.length, 21);
-  assert.equal(new Set(rows.map((row) => row.migration_id)).size, 21);
+  assert.equal(rows.length, 22);
+  assert.equal(new Set(rows.map((row) => row.migration_id)).size, 22);
   assert.ok(rows.every((row) => row.execution_kind === "executed"));
   await Promise.all(pools.map((pool) => pool.end()));
 });
@@ -253,7 +256,7 @@ test("startup orders formal migrations before bootstrap, workers, routes, and li
 test("migration readiness exposes only expected/applied identifiers and state", async () => {
   const state = migrations.getApplicationMigrationReadiness();
   assert.equal(state.state, "ready");
-  assert.equal(state.latestExpected, "0020_agentmail_followup_schema.sql");
-  assert.equal(state.latestApplied, "0020_agentmail_followup_schema.sql");
+  assert.equal(state.latestExpected, "0025_agent_action_sent_at.sql");
+  assert.equal(state.latestApplied, "0025_agent_action_sent_at.sql");
   assert.equal("databaseUrl" in state, false);
 });

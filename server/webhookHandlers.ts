@@ -441,7 +441,9 @@ export class WebhookHandlers {
               } else {
                 try {
                   const priorBalance = await storage.getUserBalance(metaUserId);
-                  await storage.creditWallet(
+                  // creditWallet serializes per payment (advisory lock) and re-checks inside
+                  // the lock, so a webhook racing the verify-session poll credits once.
+                  const credit = await storage.creditWallet(
                     metaUserId,
                     amountCents,
                     `Added $${(amountCents / 100).toFixed(2)} via Stripe (webhook)`,
@@ -452,8 +454,12 @@ export class WebhookHandlers {
                     'succeeded',
                     livemode
                   );
-                  const newBalance = await storage.getUserBalance(metaUserId);
-                  console.log(`${LOG_PREFIX} wallet deposit credited — userId: ${metaUserId}, amount: $${(amountCents / 100).toFixed(2)}, prior: $${(priorBalance / 100).toFixed(2)}, new: $${(newBalance / 100).toFixed(2)}`);
+                  if (credit.alreadyCredited) {
+                    console.log(`${LOG_PREFIX} skipped duplicate — payment already credited under lock (txId ${credit.transaction.id})`);
+                  } else {
+                    const newBalance = await storage.getUserBalance(metaUserId);
+                    console.log(`${LOG_PREFIX} wallet deposit credited — userId: ${metaUserId}, amount: $${(amountCents / 100).toFixed(2)}, prior: $${(priorBalance / 100).toFixed(2)}, new: $${(newBalance / 100).toFixed(2)}`);
+                  }
                   logWebhookEvent({ eventId, eventType, livemode, userId: metaUserId, paymentIntentId: piId, amountCents, credited: true });
                 } catch (creditErr: any) {
                   console.error(`${LOG_PREFIX} wallet credit failed:`, creditErr.message);

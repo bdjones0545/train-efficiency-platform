@@ -55,6 +55,30 @@ const SMS_TYPE_TO_PREF_KEY: Record<string, keyof typeof DEFAULT_SMS_PREFS> = {
   marketing: 'marketing',
 };
 
+/**
+ * Message types that always require explicit SMS opt-in. Everything else is
+ * treated as operational (booking confirmations, reminders, cancellations)
+ * unless ctx.messagePurpose says otherwise. `agent_outreach` is the AI agent's
+ * send_sms tool — automated outreach, never operational.
+ */
+export const OPT_IN_REQUIRED_SMS_TYPES: ReadonlySet<string> = new Set([
+  'marketing',
+  'automated_outreach',
+  'agent_outreach',
+]);
+
+/** Skip reason recorded when a carrier-level STOP blocks a send. */
+export const SMS_CARRIER_STOP_SKIP_REASON = 'sms_carrier_stop';
+
+/**
+ * A carrier-level STOP (Twilio webhook) is authoritative for EVERY message type,
+ * operational included: Twilio rejects the send anyway (error 21610) and the
+ * number stays blocked until the subscriber texts START.
+ */
+export function isCarrierSmsStopped(user: { smsOptIn?: boolean | null; smsConsentSource?: string | null } | null | undefined): boolean {
+  return !!user && user.smsOptIn === false && user.smsConsentSource === 'twilio_stop';
+}
+
 export interface SmsContext {
   orgId: string;
   type: string;
@@ -160,6 +184,21 @@ export async function sendSms(params: {
     return { sent: false, skipped: reason };
   }
 
+  // ── Carrier STOP: hard block before any preference lookup ─────────────────
+  // Checked on the user record (the STOP webhook writes users.smsConsentSource)
+  // and, when no recipient user is known, on every user with this phone.
+  {
+    const candidates = ctx.recipientUserId
+      ? [await storage.getUser(ctx.recipientUserId)]
+      : await storage.getUsersByPhone(normalizedPhone);
+    if (candidates.some(isCarrierSmsStopped)) {
+      const reason = SMS_CARRIER_STOP_SKIP_REASON;
+      console.log(`[SMS] Skipped: ${reason} for ${normalizedPhone} (type: ${ctx.type}, purpose: ${ctx.messagePurpose ?? 'none'})`);
+      await logSms({ ...ctx, recipientPhone: normalizedPhone, body, status: 'skipped', provider: 'twilio', errorMessage: reason });
+      return { sent: false, skipped: reason };
+    }
+  }
+
   if (ctx.recipientUserId) {
     // Phase 6: Org-only reads — org prefs are the source of truth
     let effectiveSmsOptIn: boolean = false;
@@ -192,8 +231,8 @@ export async function sendSms(params: {
     }
 
     // Operational messages (manual coach-to-client) bypass the opt-in gate.
-    // Only marketing and automated outreach require explicit SMS opt-in.
-    const isOperational = ctx.messagePurpose === "operational" || (!ctx.messagePurpose && ctx.type !== "marketing" && ctx.type !== "automated_outreach");
+    // Marketing, automated outreach and the AI agent's outreach require explicit SMS opt-in.
+    const isOperational = ctx.messagePurpose === "operational" || (!ctx.messagePurpose && !OPT_IN_REQUIRED_SMS_TYPES.has(ctx.type));
     if (!isOperational && !effectiveSmsOptIn) {
       const reason = 'sms_not_opted_in';
       console.log(`[SMS] Skipped: ${reason} for ${normalizedPhone} (purpose: ${ctx.messagePurpose ?? ctx.type})`);

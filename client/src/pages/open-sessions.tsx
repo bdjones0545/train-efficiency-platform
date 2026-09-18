@@ -27,6 +27,7 @@ import {
   ChevronDown, ChevronsUpDown, Eye, RefreshCw
 } from "lucide-react";
 import { useState, useMemo } from "react";
+import { useSearch } from "wouter";
 import {
   format, parseISO, startOfDay, endOfDay, startOfWeek, endOfWeek,
   startOfMonth, endOfMonth, addDays, addWeeks, addMonths,
@@ -2082,7 +2083,7 @@ function SelectedDayPanel({
 // ─── Main Page ──────────────────────────────────────────────────────────────
 
 export default function OpenSessionsPage() {
-  const { user, isAuthenticated } = useAuth();
+  const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [view, setView] = useState<CalendarView>("month");
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(null);
@@ -2105,8 +2106,21 @@ export default function OpenSessionsPage() {
   const isCoach = profile?.role === "COACH" || profile?.role === "ADMIN";
   const userId = user?.id;
 
+  // /api/sessions/open is scoped to one organization. A signed-in user's org
+  // comes from their profile; the public page (/sessions?org=<slug>) names it
+  // in the URL. Without either the server refuses (400) rather than listing
+  // every organization's sessions, so the query waits for one.
+  const search = useSearch();
+  const orgSlug = useMemo(() => new URLSearchParams(search).get("org")?.trim() || undefined, [search]);
+  const canLoadSessions = isAuthenticated || !!orgSlug;
+  const sessionsUrl = orgSlug
+    ? `/api/sessions/open?slug=${encodeURIComponent(orgSlug)}`
+    : "/api/sessions/open";
+
   const { data: sessions = [], isLoading, isError, refetch } = useQuery<OpenSession[]>({
-    queryKey: ["/api/sessions/open"],
+    queryKey: ["/api/sessions/open", orgSlug ?? null],
+    queryFn: () => authenticatedFetch<OpenSession[]>(sessionsUrl),
+    enabled: canLoadSessions,
     staleTime: 60_000,
     refetchOnWindowFocus: true,
   });
@@ -2205,13 +2219,27 @@ export default function OpenSessionsPage() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || (authLoading && !canLoadSessions)) {
     return (
       <div className="space-y-4 p-4">
         <Skeleton className="h-8 w-56" />
         <Skeleton className="h-10 w-full" />
         <Skeleton className="h-[400px] w-full" />
       </div>
+    );
+  }
+
+  if (!canLoadSessions) {
+    return (
+      <Card className="p-8 text-center space-y-2" data-testid="open-sessions-needs-org">
+        <h2 className="text-lg font-semibold">Open sessions are listed per organization</h2>
+        <p className="text-sm text-muted-foreground">
+          Open this page from your organization's site, or sign in to see your organization's sessions.
+        </p>
+        <a href="/">
+          <Button variant="outline" size="sm" className="mt-2" data-testid="button-open-sessions-sign-in">Sign Up / Log In</Button>
+        </a>
+      </Card>
     );
   }
 
