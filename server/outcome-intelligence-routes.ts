@@ -9,13 +9,11 @@ import { db } from "./db";
 import { eq, and, desc } from "drizzle-orm";
 import { agentCommunicationOutcomes, employmentApplicants } from "@shared/schema";
 import { isAuthenticated } from "./replit_integrations/auth";
+import { resolveOrgIdOrNull } from "./lib/org-visibility";
 
+/** Trusted org for the caller (the users table has no orgId column). */
 async function getAdminOrgId(req: any): Promise<string | null> {
-  const userId = req.user?.claims?.sub ?? req.user?.id;
-  if (!userId) return null;
-  const { storage } = await import("./storage");
-  const user = await storage.getUser(userId);
-  return user?.orgId ?? null;
+  return resolveOrgIdOrNull(req);
 }
 
 export async function registerOutcomeIntelligenceRoutes(app: Express) {

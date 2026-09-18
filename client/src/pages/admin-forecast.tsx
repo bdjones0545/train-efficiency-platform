@@ -9,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
+import { getErrorMessage } from "@/lib/api-helpers";
 import {
   TrendingUp, TrendingDown, AlertTriangle, Zap, Brain, DollarSign,
   Users, Activity, Target, BarChart3, RefreshCw, Loader2, Play,
@@ -64,11 +65,38 @@ function ConfidenceBar({ value }: { value: number }) {
   );
 }
 
+/**
+ * Inline failure state for a forecast panel.
+ *
+ * Every number on this page comes from `/api/forecast/*` and is read with
+ * `?? 0` / `?? []`. When those calls failed the page kept rendering a
+ * confident-looking dashboard of zeros, so a broken org resolver was
+ * indistinguishable from a quiet month. Failures are now visible.
+ */
+function ForecastError({ error }: { error: unknown }) {
+  return (
+    <div
+      role="alert"
+      data-testid="forecast-error"
+      className="flex items-start gap-3 rounded-md border border-destructive/40 bg-destructive/10 p-4 text-sm"
+    >
+      <AlertTriangle className="w-5 h-5 text-destructive shrink-0 mt-0.5" />
+      <div className="space-y-1">
+        <div className="font-semibold text-destructive">Forecast data could not be loaded.</div>
+        <div className="text-muted-foreground">
+          {getErrorMessage(error, "The request failed.")} Nothing below is current — this panel is
+          showing no data rather than real zeros.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── OS Score Tab ─────────────────────────────────────────────────────────────
 function OSScoreWidget() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data, isLoading } = useQuery<any>({ queryKey: ["/api/forecast/os-score"] });
+  const { data, isLoading, isError, error } = useQuery<any>({ queryKey: ["/api/forecast/os-score"] });
 
   const refresh = useMutation({
     mutationFn: () => apiRequest("POST", "/api/forecast/refresh-twin", {}),
@@ -76,6 +104,7 @@ function OSScoreWidget() {
   });
 
   if (isLoading) return <div className="flex items-center justify-center h-32"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>;
+  if (isError) return <ForecastError error={error} />;
 
   const total = data?.total ?? 0;
   const components = data?.components ?? [];
@@ -121,10 +150,11 @@ function OSScoreWidget() {
 
 // ─── Overview Tab ─────────────────────────────────────────────────────────────
 function OverviewTab() {
-  const { data: dash, isLoading } = useQuery<any>({ queryKey: ["/api/forecast/dashboard"] });
-  const { data: twin } = useQuery<any>({ queryKey: ["/api/forecast/digital-twin"] });
+  const { data: dash, isLoading, isError, error } = useQuery<any>({ queryKey: ["/api/forecast/dashboard"] });
+  const { data: twin, isError: twinError, error: twinErrorValue } = useQuery<any>({ queryKey: ["/api/forecast/digital-twin"] });
 
   if (isLoading) return <div className="flex items-center justify-center h-64"><Loader2 className="w-8 h-8 animate-spin text-muted-foreground" /></div>;
+  if (isError || twinError) return <ForecastError error={error ?? twinErrorValue} />;
 
   const t = twin ?? {};
   const rev = parseFloat(t.monthly_revenue ?? "0");
@@ -203,7 +233,7 @@ function ProjectionsTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const [selectedHorizon, setSelectedHorizon] = useState<number>(30);
-  const { data: projections, isLoading } = useQuery<any[]>({ queryKey: ["/api/forecast/projections"] });
+  const { data: projections, isLoading, isError, error } = useQuery<any[]>({ queryKey: ["/api/forecast/projections"] });
 
   const generate = useMutation({
     mutationFn: () => apiRequest("POST", "/api/forecast/generate", {}),
@@ -211,6 +241,8 @@ function ProjectionsTab() {
   });
 
   const filtered = projections?.filter((p: any) => p.horizon_days === selectedHorizon) ?? [];
+
+  if (isError) return <ForecastError error={error} />;
 
   return (
     <div className="space-y-4">
@@ -304,12 +336,14 @@ function ProjectionsTab() {
 function RiskRadarTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: risks, isLoading } = useQuery<any[]>({ queryKey: ["/api/forecast/risks"] });
+  const { data: risks, isLoading, isError, error } = useQuery<any[]>({ queryKey: ["/api/forecast/risks"] });
 
   const detect = useMutation({
     mutationFn: () => apiRequest("POST", "/api/forecast/detect-risks", {}),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/forecast/risks"] }); toast({ title: "Risk scan complete" }); },
   });
+
+  if (isError) return <ForecastError error={error} />;
 
   return (
     <div className="space-y-4">
@@ -371,7 +405,7 @@ function RiskRadarTab() {
 function OpportunitiesTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: opps, isLoading } = useQuery<any[]>({ queryKey: ["/api/forecast/opportunities"] });
+  const { data: opps, isLoading, isError, error } = useQuery<any[]>({ queryKey: ["/api/forecast/opportunities"] });
 
   const detect = useMutation({
     mutationFn: () => apiRequest("POST", "/api/forecast/detect-opportunities", {}),
@@ -382,6 +416,8 @@ function OpportunitiesTab() {
     expansion: TrendingUp, hiring: Users, pricing: DollarSign,
     marketing: Star, retention: Shield, capacity: Activity,
   };
+
+  if (isError) return <ForecastError error={error} />;
 
   return (
     <div className="space-y-4">
@@ -454,7 +490,7 @@ const SCENARIO_TYPES = [
 function ScenarioSimulatorTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: simulations } = useQuery<any[]>({ queryKey: ["/api/forecast/simulations"] });
+  const { data: simulations, isError, error } = useQuery<any[]>({ queryKey: ["/api/forecast/simulations"] });
   const [scenarioType, setScenarioType] = useState("ad_spend_increase");
   const [changePct, setChangePct] = useState("25");
   const [lastResult, setLastResult] = useState<any>(null);
@@ -475,6 +511,8 @@ function ScenarioSimulatorTab() {
 
   const formatCurrency = (v: number) => `$${Math.abs(v).toLocaleString("en", { maximumFractionDigits: 0 })}`;
   const formatPct = (v: number) => `${v >= 0 ? "+" : ""}${v}%`;
+
+  if (isError) return <ForecastError error={error} />;
 
   return (
     <div className="space-y-6">
@@ -585,7 +623,7 @@ function ScenarioSimulatorTab() {
 function StrategicPlansTab() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const { data: plans, isLoading } = useQuery<any[]>({ queryKey: ["/api/forecast/strategic-plans"] });
+  const { data: plans, isLoading, isError, error } = useQuery<any[]>({ queryKey: ["/api/forecast/strategic-plans"] });
   const [horizon, setHorizon] = useState(30);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -598,6 +636,8 @@ function StrategicPlansTab() {
     if (Array.isArray(v)) return v;
     try { return JSON.parse(v ?? "[]"); } catch { return []; }
   };
+
+  if (isError) return <ForecastError error={error} />;
 
   return (
     <div className="space-y-4">
@@ -696,7 +736,7 @@ function StrategicPlansTab() {
 
 // ─── Forecast Accuracy Tab ────────────────────────────────────────────────────
 function AccuracyTab() {
-  const { data: accuracy, isLoading } = useQuery<any[]>({ queryKey: ["/api/forecast/accuracy"] });
+  const { data: accuracy, isLoading, isError, error } = useQuery<any[]>({ queryKey: ["/api/forecast/accuracy"] });
   const [recordForm, setRecordForm] = useState({ metric: "revenue", horizonDays: "30", predictedValue: "", actualValue: "" });
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -713,6 +753,8 @@ function AccuracyTab() {
   const avgAccuracy = accuracy?.length
     ? Math.round(accuracy.reduce((acc: number, r: any) => acc + parseInt(r.avg_accuracy ?? "0"), 0) / accuracy.length)
     : null;
+
+  if (isError) return <ForecastError error={error} />;
 
   return (
     <div className="space-y-4">
