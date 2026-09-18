@@ -109,7 +109,9 @@ test("both anonymous coach routes are wired to the projection and no longer hand
 });
 
 test("the coach contact address is served only from a role-guarded listing", async () => {
-  const source = await readFile(new URL("../routes.ts", import.meta.url), "utf8");
+  // The coach admin routes live in ./admin-coach-routes.ts, which routes.ts
+  // mounts via registerAdminCoachRoutes.
+  const source = await readFile(new URL("../admin-coach-routes.ts", import.meta.url), "utf8");
   const registration = source.match(/app\.get\("\/api\/admin\/coaches",([^\n]*)/);
   assert.ok(registration, "GET /api/admin/coaches must exist for the admin screens");
   assert.match(registration[1], /isAuthenticated, requireRole\("COACH", "ADMIN"\)/);
