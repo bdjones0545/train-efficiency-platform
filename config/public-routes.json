@@ -1,8 +1,8 @@
 {
   "description": "Routes registered with no middleware. A route may only appear here deliberately — see server/lib/route-guard-audit.ts. Entries marked UNREVIEWED are a backlog, not an approval: each needs a decision to be either guarded or given a real reason. Regenerate with: npm run audit:routes -- --update",
   "totalRoutes": 1896,
-  "unguardedRoutes": 211,
-  "unreviewed": 200,
+  "unguardedRoutes": 210,
+  "unreviewed": 199,
   "routes": [
     {
       "method": "DELETE",
@@ -1189,12 +1189,6 @@
     {
       "method": "POST",
       "path": "/api/public/lead-capture/:orgSlug/:programSlug/partial",
-      "file": "server/routes.ts",
-      "reason": "UNREVIEWED — inherited when the audit was introduced"
-    },
-    {
-      "method": "POST",
-      "path": "/api/public/lead-capture/:orgSlug/:programSlug/submit",
       "file": "server/routes.ts",
       "reason": "UNREVIEWED — inherited when the audit was introduced"
     },

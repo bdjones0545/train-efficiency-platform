@@ -1,6 +1,10 @@
 import { db } from "./db";
 import { sql } from "drizzle-orm";
 import { validateAttendanceSchema } from "./attendance-schema-validation";
+import { automationRunBlocked, resetAutomationSendsLog } from "./lib/automation-sends";
+
+const AUTOMATION_SCOPE = "attendance report cron";
+const ATTENDANCE_REPORT_LOCK = "attendance_report_cron";
 
 function rows(result: unknown): any[] {
   if (Array.isArray(result)) return result;
@@ -107,24 +111,44 @@ export async function checkSendGridConfigured(): Promise<{ configured: boolean; 
 }
 
 // ── Duplicate-send guard ──────────────────────────────────────────────────────
+//
+// This used to be check-then-write: SELECT "did we already send?", then send,
+// then INSERT the history row. Two instances (autoscale) reaching 17:00 ET at
+// the same second both read "no" and both sent. The window is now closed from
+// two sides:
+//
+//   1. The whole run holds a global job lock (see startAttendanceReportCron).
+//   2. The history row is RESERVED BEFORE the send with
+//      INSERT ... ON CONFLICT DO NOTHING RETURNING id, against the partial
+//      unique index added in migrations/0023_attendance_report_send_uniqueness.sql
+//      over (org_id, attendance_program_id, recipient_email, report_type,
+//      period_start) WHERE status IN ('sending','sent'). No row returned means
+//      somebody else owns this send, so we do not send.
+//
+// The reservation is written as status='sending' and settled to 'sent' or
+// 'failed' afterwards. A 'failed' row leaves the partial index, so a genuine
+// failure can be retried; a 'sent' row keeps the slot forever.
+//
+// ON CONFLICT is intentionally untargeted: it then works whether the guard is
+// enforced by this index or by a differently-named one, and never raises
+// "no unique or exclusion constraint matching the ON CONFLICT specification".
 
-async function alreadySent(
+async function reserveReportSend(
   orgId: string,
   programId: string,
   recipientEmail: string,
   reportType: "daily" | "weekly",
   periodStart: string,
-): Promise<boolean> {
-  const existing = row0(await db.execute(sql`
-    SELECT id FROM attendance_report_email_history
-    WHERE org_id = ${orgId} AND attendance_program_id = ${programId}
-      AND recipient_email = ${recipientEmail}
-      AND report_type = ${reportType}
-      AND period_start = ${periodStart}::date
-      AND status = 'sent'
-    LIMIT 1
+  periodEnd: string,
+): Promise<string | null> {
+  const reserved = row0(await db.execute(sql`
+    INSERT INTO attendance_report_email_history
+      (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, status)
+    VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, 'sending')
+    ON CONFLICT DO NOTHING
+    RETURNING id
   `));
-  return !!existing;
+  return reserved?.id ?? null;
 }
 
 // ── Stats queries ─────────────────────────────────────────────────────────────
@@ -347,9 +371,16 @@ async function sendOneReport(opts: {
 }): Promise<SendResult> {
   const { sg, orgId, programId, programName, orgName, recipientEmail, subject, html, reportType, periodStart, periodEnd, skipDupCheck } = opts;
 
-  if (!skipDupCheck && await alreadySent(orgId, programId, recipientEmail, reportType, periodStart)) {
-    console.log(`[AttendanceReportCron] ${reportType} already sent → ${recipientEmail} — skipping`);
-    return { email: recipientEmail, status: "skipped" };
+  // Reserve the history row BEFORE sending. `skipDupCheck` is the manual
+  // "send me a test report" path, which is a human clicking a button and is
+  // deliberately allowed to repeat.
+  let reservationId: string | null = null;
+  if (!skipDupCheck) {
+    reservationId = await reserveReportSend(orgId, programId, recipientEmail, reportType, periodStart, periodEnd);
+    if (!reservationId) {
+      console.log(`[AttendanceReportCron] ${reportType} already reserved/sent → ${recipientEmail} — skipping`);
+      return { email: recipientEmail, status: "skipped" };
+    }
   }
 
   console.log(`[AttendanceReportCron] Sending ${reportType} → ${recipientEmail} [${programName}]`);
@@ -366,11 +397,19 @@ async function sendOneReport(opts: {
     const statusCode: number = sgResponse?.statusCode ?? 202;
     const messageId = (sgResponse?.headers?.["x-message-id"] as string | undefined) || undefined;
     console.log(`[AttendanceReportCron] ${reportType} ✓ → ${recipientEmail} statusCode=${statusCode} messageId=${messageId ?? "n/a"}`);
-    await db.execute(sql`
-      INSERT INTO attendance_report_email_history
-        (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, sendgrid_message_id, sendgrid_status_code)
-      VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'sent', ${messageId ?? null}, ${statusCode})
-    `).catch((e: any) => console.error("[AttendanceReportCron] history insert error:", e?.message));
+    if (reservationId) {
+      await db.execute(sql`
+        UPDATE attendance_report_email_history
+        SET status = 'sent', sent_at = NOW(), sendgrid_message_id = ${messageId ?? null}, sendgrid_status_code = ${statusCode}
+        WHERE id = ${reservationId}
+      `).catch((e: any) => console.error("[AttendanceReportCron] history settle error:", e?.message));
+    } else {
+      await db.execute(sql`
+        INSERT INTO attendance_report_email_history
+          (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, sendgrid_message_id, sendgrid_status_code)
+        VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'sent', ${messageId ?? null}, ${statusCode})
+      `).catch((e: any) => console.error("[AttendanceReportCron] history insert error:", e?.message));
+    }
     return { email: recipientEmail, status: "sent", sendgridMessageId: messageId, sendgridStatusCode: statusCode };
   } catch (e: any) {
     const statusCode: number | undefined = e?.response?.status ?? e?.code;
@@ -378,21 +417,40 @@ async function sendOneReport(opts: {
     const errMsg = (errBody?.errors?.[0]?.message) || e?.message || String(e);
     console.error(`[AttendanceReportCron] ${reportType} ✗ → ${recipientEmail}: statusCode=${statusCode ?? "n/a"} error=${errMsg}`);
     if (errBody) console.error(`[AttendanceReportCron] SendGrid error body:`, JSON.stringify(errBody));
-    await db.execute(sql`
-      INSERT INTO attendance_report_email_history
-        (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, error_message, sendgrid_status_code)
-      VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'failed', ${errMsg}, ${statusCode ?? null})
-    `).catch(() => {});
+    if (reservationId) {
+      // 'failed' leaves the partial unique index, so a genuine failure can be retried.
+      await db.execute(sql`
+        UPDATE attendance_report_email_history
+        SET status = 'failed', sent_at = NOW(), error_message = ${errMsg}, sendgrid_status_code = ${statusCode ?? null}
+        WHERE id = ${reservationId}
+      `).catch(() => {});
+    } else {
+      await db.execute(sql`
+        INSERT INTO attendance_report_email_history
+          (org_id, attendance_program_id, recipient_email, report_type, period_start, period_end, sent_at, status, error_message, sendgrid_status_code)
+        VALUES (${orgId}, ${programId}, ${recipientEmail}, ${reportType}, ${periodStart}::date, ${periodEnd}::date, NOW(), 'failed', ${errMsg}, ${statusCode ?? null})
+      `).catch(() => {});
+    }
     return { email: recipientEmail, status: "failed", error: errMsg, sendgridStatusCode: statusCode };
   }
 }
 
 // ── Scheduled senders ─────────────────────────────────────────────────────────
 
-export async function sendDailyReports(dateStr: string): Promise<void> {
+export interface AttendanceReportRunDeps {
+  /** Injected SendGrid client resolution (tests pass a counting stub). */
+  getSendGrid?: () => Promise<{ sgMail: any; fromEmail: string } | null>;
+}
+
+export async function sendDailyReports(dateStr: string, deps: AttendanceReportRunDeps = {}): Promise<void> {
+  // ── 0: Global kill-switch — before the schema probe, the provider and the DB.
+  // Attendance reports are produced by a timer, to a recipient list, with no
+  // human in the loop: the emergency off-switch has to reach them.
+  if (automationRunBlocked(AUTOMATION_SCOPE)) return;
+
   console.log(`[AttendanceReportCron] sendDailyReports — date=${dateStr} tz=America/New_York`);
   await validateAttendanceSchema();
-  const sg = await getSendGridSettings();
+  const sg = await (deps.getSendGrid ?? getSendGridSettings)();
   if (!sg) {
     console.warn("[AttendanceReportCron] SendGrid not configured — daily reports skipped");
     return;
@@ -433,10 +491,13 @@ export async function sendDailyReports(dateStr: string): Promise<void> {
   console.log(`[AttendanceReportCron] sendDailyReports complete for ${dateStr}`);
 }
 
-export async function sendWeeklyReports(fridayDateStr: string): Promise<void> {
+export async function sendWeeklyReports(fridayDateStr: string, deps: AttendanceReportRunDeps = {}): Promise<void> {
+  // ── 0: Global kill-switch ─────────────────────────────────────────────────
+  if (automationRunBlocked(AUTOMATION_SCOPE)) return;
+
   await validateAttendanceSchema();
   console.log(`[AttendanceReportCron] sendWeeklyReports — friday=${fridayDateStr} tz=America/New_York`);
-  const sg = await getSendGridSettings();
+  const sg = await (deps.getSendGrid ?? getSendGridSettings)();
   if (!sg) {
     console.warn("[AttendanceReportCron] SendGrid not configured — weekly reports skipped");
     return;
@@ -617,24 +678,71 @@ export function startAttendanceReportCron(): void {
   }).catch((error) => console.error("[AttendanceReportCron] Attendance schema unavailable; reports remain degraded:", error));
 
   setInterval(() => {
-    try {
-      const { hour, minute, day, dateStr } = getNYDatetime();
-      if (hour === 17 && minute === 0) {
-        const isWeekday = day >= 1 && day <= 5;
-        const isFriday = day === 5;
-        if (isWeekday) {
-          console.log(`[AttendanceReportCron] ⏰ Scheduled trigger — daily reports for ${dateStr}`);
-          sendDailyReports(dateStr).catch(console.error);
-        }
-        if (isFriday) {
-          console.log(`[AttendanceReportCron] ⏰ Scheduled trigger — weekly reports for ${dateStr}`);
-          sendWeeklyReports(dateStr).catch(console.error);
-        }
-      }
-    } catch (e) {
-      console.error("[AttendanceReportCron] tick error:", e);
-    }
+    runAttendanceReportTick().catch((e) => console.error("[AttendanceReportCron] tick error:", e));
   }, 60_000);
 
   console.log("[AttendanceReportCron] Attendance report scheduler registered — daily Mon–Fri 5 PM ET, weekly Fri 5 PM ET");
+}
+
+export interface AttendanceReportLock {
+  acquire: (orgId: string, jobName: string, ttlMinutes: number) => Promise<{ acquired: boolean; lockKey: string }>;
+  release: (lockKey: string) => Promise<unknown>;
+}
+
+async function defaultLock(): Promise<AttendanceReportLock> {
+  const { acquireJobLock, releaseJobLock } = await import("./services/ceo-heartbeat-service");
+  return {
+    acquire: (orgId, jobName, ttlMinutes) => acquireJobLock(orgId, jobName, ttlMinutes),
+    release: (lockKey) => releaseJobLock(lockKey),
+  };
+}
+
+/**
+ * One scheduler tick, wrapped in the standard global job lock.
+ *
+ * Without the lock every autoscale instance ran the 17:00 ET sweep, and the
+ * check-then-write dedup could not stop them racing. The lock is global
+ * ("__global__") because the sweep is cross-org, and it is taken for 5 minutes
+ * — comfortably longer than a sweep, shorter than the once-a-minute tick's
+ * 24-hour gap to the next trigger.
+ */
+export async function runAttendanceReportTick(
+  opts: { lock?: AttendanceReportLock; now?: ReturnType<typeof getNYDatetime>; deps?: AttendanceReportRunDeps } = {},
+): Promise<"skipped_not_due" | "skipped_lock_held" | "ran"> {
+  const { hour, minute, day, dateStr } = opts.now ?? getNYDatetime();
+  if (hour !== 17 || minute !== 0) return "skipped_not_due";
+
+  const isWeekday = day >= 1 && day <= 5;
+  const isFriday = day === 5;
+  if (!isWeekday && !isFriday) return "skipped_not_due";
+
+  resetAutomationSendsLog(AUTOMATION_SCOPE);
+
+  const lock = opts.lock ?? (await defaultLock());
+  const { acquired, lockKey } = await lock
+    .acquire("__global__", ATTENDANCE_REPORT_LOCK, 5)
+    .catch((error) => {
+      // Fail closed: a lock service we cannot reach is not permission to send.
+      console.error("[AttendanceReportCron] lock failure:", error);
+      return { acquired: false, lockKey: "" };
+    });
+
+  if (!acquired) {
+    console.log("[AttendanceReportCron] Lock held by another instance — skipping this run");
+    return "skipped_lock_held";
+  }
+
+  try {
+    if (isWeekday) {
+      console.log(`[AttendanceReportCron] ⏰ Scheduled trigger — daily reports for ${dateStr}`);
+      await sendDailyReports(dateStr, opts.deps).catch(console.error);
+    }
+    if (isFriday) {
+      console.log(`[AttendanceReportCron] ⏰ Scheduled trigger — weekly reports for ${dateStr}`);
+      await sendWeeklyReports(dateStr, opts.deps).catch(console.error);
+    }
+    return "ran";
+  } finally {
+    if (lockKey) await lock.release(lockKey).catch(() => {});
+  }
 }
